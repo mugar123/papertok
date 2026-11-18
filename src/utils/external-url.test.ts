@@ -31,6 +31,9 @@ test('builds DOI links only from DOI-shaped identifiers', () => {
   // A resolver link is held to the same shape once it is decoded.
   assert.equal(safeDoiUrl('https://doi.org/javascript:alert(1)'), '');
   assert.equal(safeDoiUrl('https://doi.org/10.1234%2F'), '');
+  // A lone surrogate has no UTF-8 form: no link, and no error for the caller.
+  assert.equal(safeDoiUrl('10.1234/a\uD800'), '');
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/a\uD800'), '');
 });
 
 // A real Wiley DOI (Crossref, 2026-11-16) whose last character is `#`. doi.org

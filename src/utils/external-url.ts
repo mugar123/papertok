@@ -96,9 +96,13 @@ export function safeDoiUrl(doi: unknown) {
     }
     normalized = normalized.trim();
   }
-  return /^10\.\d{4,9}\/.+/.test(normalized)
-    ? `https://doi.org/${encodeURI(normalized).replace(/[#?]/g, character => encodeURIComponent(character))}`
-    : '';
+  if (!/^10\.\d{4,9}\/.+/.test(normalized)) return '';
+  try {
+    return `https://doi.org/${encodeURI(normalized).replace(/[#?]/g, character => encodeURIComponent(character))}`;
+  } catch {
+    // A lone surrogate has no UTF-8 form, so no link can carry the DOI.
+    return '';
+  }
 }
 
 export function isTrustedInlinePdfUrl(value: unknown) {

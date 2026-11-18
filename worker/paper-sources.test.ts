@@ -331,6 +331,19 @@ test('the working-paper series lane asks OpenAlex for the series in the window a
   }
 });
 
+test('a work whose DOI no link can carry leaves the rest of its page to the lane', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  // Synthetic: the middle work has no landing page of its own and a lone
+  // surrogate in its DOI, which no URL can encode.
+  const { env } = relay(t, () => ({ results: [
+    seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, null),
+    { ...seriesWork('W7222541626', '10.65864/jochq5qfxv\uD800', 'report', CESIFO, null), primary_location: { is_published: true, source: { id: `https://openalex.org/${CESIFO.id}`, display_name: CESIFO.display_name, type: 'journal' } } },
+    seriesWork('W7220380262', '10.3386/w35873', 'report', NBER, null),
+  ] }));
+  const { items } = await SOURCES['openalex-series'].fetchPage(env, { lane: 'series:working-papers', page: 1, since: '', waits: { seconds: 0 } });
+  assert.deepEqual(items.map(({ paper }) => paper.id), ['openalex:W7221947410', 'openalex:W7222541626', 'openalex:W7220380262']);
+});
+
 test("every series the lane names is on the review rule's list, so its journal articles carry the Working paper tag", () => {
   for (const id of WORKING_PAPER_SERIES_IDS) {
     // An `article` in a `journal` source: only the rule's list tells it apart.
