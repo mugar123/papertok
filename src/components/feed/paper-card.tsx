@@ -2309,6 +2309,7 @@ const PaperCard = memo(function PaperCard({
             {canRequestRewrite && (
               <Button
                 variant="brand"
+                className="pc-action-simple"
                 aria-describedby={publicMode ? rewriteHintId : undefined}
                 onClick={(event) => {
                   event.stopPropagation();
