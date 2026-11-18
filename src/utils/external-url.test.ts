@@ -28,4 +28,68 @@ test('allows inline PDFs only from hosts that permit framing', () => {
 test('builds DOI links only from DOI-shaped identifiers', () => {
   assert.equal(safeDoiUrl('10.1000/example'), 'https://doi.org/10.1000/example');
   assert.equal(safeDoiUrl('javascript:alert(1)'), '');
+  // A resolver link is held to the same shape once it is decoded.
+  assert.equal(safeDoiUrl('https://doi.org/javascript:alert(1)'), '');
+  assert.equal(safeDoiUrl('https://doi.org/10.1234%2F'), '');
+  // A lone surrogate has no UTF-8 form: no link, and no error for the caller.
+  assert.equal(safeDoiUrl('10.1234/a\uD800'), '');
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/a\uD800'), '');
+});
+
+// A real Wiley DOI (Crossref, 2026-11-16) whose last character is `#`. doi.org
+// decodes a link's path once: asked that day through `doi.org/api/handles/`,
+// `…3.0.co;2-%23` resolved to Wiley, and `…3.0.co;2-#` was looked up without
+// the `#` and not found. The 10.1234 DOIs below are synthetic.
+const SICI_DOI = '10.1002/(sici)1097-0282(1996)40:1<1::aid-bip1>3.0.co;2-#';
+const SICI_LINK = 'https://doi.org/10.1002/(sici)1097-0282(1996)40:1%3C1::aid-bip1%3E3.0.co;2-%23';
+
+test('a DOI link carries every character of the DOI in its path', () => {
+  assert.equal(safeDoiUrl(SICI_DOI), SICI_LINK);
+  assert.equal(safeDoiUrl('10.1234/odd?part#two'), 'https://doi.org/10.1234/odd%3Fpart%23two');
+  assert.equal(safeDoiUrl('10.1234/a b"c\\d'), 'https://doi.org/10.1234/a%20b%22c%5Cd');
+
+  // What a browser sends doi.org for each link, decoded once as doi.org does,
+  // after the gate `openExternalUrl` puts every link through.
+  const dois = [
+    SICI_DOI,
+    '10.1234/odd?part#two',
+    '10.1234/50%off',
+    '10.1234/a%3Fb',
+    '10.1234/a b"c\\d^e`f{g}h|i[j]k',
+    '10.1234/a+b&c=d;e,f:g@h$i',
+    '10.1234/análisis-β',
+  ];
+  for (const doi of dois) {
+    const url = new URL(safeExternalUrl(safeDoiUrl(doi)));
+    assert.equal(url.origin, 'https://doi.org', doi);
+    assert.equal(url.search + url.hash, '', doi);
+    assert.equal(decodeURIComponent(url.pathname.slice(1)), doi, doi);
+  }
+});
+
+test('a `%` is the DOI\'s own in a bare DOI and an escape in a resolver link', () => {
+  // The DOI 10.1234/a%3Fb, whose own characters include `%3F`.
+  assert.equal(safeDoiUrl('10.1234/a%3Fb'), 'https://doi.org/10.1234/a%253Fb');
+  // A link is already percent-encoded: these name 10.1234/a?b.
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/a%3Fb'), 'https://doi.org/10.1234/a%3Fb');
+  assert.equal(safeDoiUrl('http://dx.doi.org/10.1234%2Fa%3fb'), 'https://doi.org/10.1234/a%3Fb');
+  // So the helper's own link comes back unchanged.
+  assert.equal(safeDoiUrl(SICI_LINK), SICI_LINK);
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/a%253Fb'), 'https://doi.org/10.1234/a%253Fb');
+  // A path whose `%` starts no escape is read as written.
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/50%off'), 'https://doi.org/10.1234/50%25off');
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/a%3Fb%zz'), 'https://doi.org/10.1234/a%253Fb%25zz');
+});
+
+test('a resolver link names the DOI in its path, not in its query or fragment', () => {
+  // The DOI Handbook's own example of a resolver query names 10.1000/1.
+  assert.equal(safeDoiUrl('https://doi.org/10.1000/1?noredirect&type=URL'), 'https://doi.org/10.1000/1');
+  assert.equal(safeDoiUrl('HTTPS://DOI.ORG/10.1000/1#section-2'), 'https://doi.org/10.1000/1');
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/50%off?x#y'), 'https://doi.org/10.1234/50%25off');
+  // Escaped, `?` and `#` belong to the path, as for doi.org.
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/a%3Fb%23c?x'), 'https://doi.org/10.1234/a%3Fb%23c');
+  // Space around the DOI is not part of it, encoded or not.
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/report%20'), 'https://doi.org/10.1234/report');
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/50%off ?x'), 'https://doi.org/10.1234/50%25off');
+  assert.equal(safeDoiUrl('https://doi.org/?10.1234/a'), '');
 });
