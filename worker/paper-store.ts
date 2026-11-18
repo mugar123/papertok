@@ -2172,8 +2172,10 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // read of every vector takes those of the day's notable slice, beside the
     // check of which of them the lanes still offer: those it drops are read
     // for nothing. With a like it takes the papers the request names too,
-    // which the groups rank to find each notable paper's group (below);
-    // without one it leaves them out.
+    // which a group that shares a notable paper with another ranks to find
+    // the paper's group (below); which groups share one comes from the check
+    // that runs beside the read, so they are read whether or not any group
+    // does. Without a like it leaves them out.
     !likes.length && !negatives.length ? true
       : likes.length || query.skipsSeen || query.order === 'daily' || placed.size
         ? readEvery(likes.length ? notableRead.slice : notableRead.slice.filter(id => !excluded.has(id)))
