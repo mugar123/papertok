@@ -429,12 +429,13 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   covering nothing. Beside `Read in plain words` the link is its
   `ArrowSquareOut` glyph alone at every width, named and titled "Publisher's
   page (opens in a new tab)", so Source and `Read in plain words` keep their
-  slots. On a phone it is also the glyph alone, with the same name, in a row
+  slots where the row has room for them, and that row draws no lock at any
+  width. On a phone it is also the glyph alone, with the same name, in a row
   too narrow for its word beside Source. Beside Source it has no title: in
   most rows its word shows, and a title would only repeat the name. On a
   phone the three share a line when they fit;
-  otherwise Source takes the first line and the other two the second, and
-  that row draws no lock. On a screen short enough for the rail to reach the
+  otherwise Source takes the first line and the other two the second. On a
+  screen short enough for the rail to reach the
   row, the row stops short of the rail. While the feed still asks a source
   for the abstract, the link holds its place in the row unseen, so the row
   keeps its shape when the wait ends with no abstract.

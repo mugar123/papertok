@@ -1173,11 +1173,18 @@ button.pc-topics-pop-item:focus-visible {
    glyph alone in a 40px column at every width, named on the link. With its
    label, as a third 14rem slot, the three shared the 40rem column, and a
    visitor's "Read in plain words" with its lock was cut from 641px to about
-   1216px wide. Source and "Read in plain words" keep their 14rem slots. The
-   link adds no line to the row, except on a phone row too narrow for the
-   three (below). */
+   1216px wide. Source and "Read in plain words" keep their 14rem slots
+   where the row has room for them; with large text in a narrower row they
+   share it with the glyph. The row draws no lock at any width: beside the
+   glyph it cut a visitor's "Read in plain words" at 200% text, and the
+   button keeps "Needs a free account" as its description. The link adds no
+   line to the row, except on a phone row too narrow for the three (below). */
 .pc-action-primary--three {
   grid-template-columns: repeat(2, minmax(0, 14rem)) auto;
+}
+
+.pc-action-primary--three .pc-action-lock {
+  display: none;
 }
 
 .pc-action-primary--three > .pc-action-publisher {
@@ -3040,20 +3047,14 @@ button.pc-topics-pop-item:focus-visible {
      "Simple" at 360px with text at 200%, and at 150% on a screen short
      enough for the rail. Source keeps out of the glyph's column, which is
      where the rail comes down beside a row that tall: across the whole
-     line, the rail covered its end at 360x640 with text at 150%. The lock
-     that marks "Read in plain words" for a visitor is not drawn in this
-     row. Beside the glyph it cut "Simple" at 375px with text at 150%, and
-     the button keeps "Needs a free account" as its description. */
+     line, the rail covered its end at 360x640 with text at 150%. As on a
+     wider screen, the row draws no lock. */
   .pc-action-primary--three {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .pc-action-primary--three > :is(.pc-action-read, .pc-action-simple) {
     grid-column: 1;
-  }
-
-  .pc-action-primary--three .pc-action-lock {
-    display: none;
   }
 
   @container action-row (width > calc(124px + 7.75em)) {
