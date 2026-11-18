@@ -1724,6 +1724,31 @@ const PaperCard = memo(function PaperCard({
       )}
     </Button>
   );
+  // The publisher's page of a paper with no abstract to show, as a control of
+  // the action row. The sentence that names it is in the abstract's panel,
+  // the one row of the card that yields: under a four-line title on a phone
+  // on its side that panel is 0px tall, and no touch reaches a link in it.
+  // This row keeps its height, so the link is here at every size and nothing
+  // measures the panel to decide where it goes. It is a link drawn as the
+  // row's outline button. Where the row has no room for its word it shows
+  // the glyph alone (paper-card.css), so its name is set here: the full label
+  // and the new tab at every width, which contains the word a phone shows
+  // (WCAG 2.5.3).
+  const publisher = !abstractText && !abstractLoading ? missingAbstract.publisher : null;
+  const publisherAction = publisher && (
+    <Button
+      variant="outline"
+      className="pc-action-publisher"
+      role="link"
+      render={<a href={publisher.url} target="_blank" rel="noopener noreferrer" />}
+      aria-label={`${publisher.label} (opens in a new tab)`}
+      onClick={swallowClick}
+    >
+      <ArrowSquareOut size={16} aria-hidden="true" />
+      <span className="pc-action-label">{publisher.label}</span>
+      <span className="pc-action-label--short">{publisher.short}</span>
+    </Button>
+  );
   const projectLabel = project
     && ([project.funderLevel, project.funder].find(Boolean) || 'Project');
   const openProject = (event: MouseEvent) => {
@@ -2210,10 +2235,9 @@ const PaperCard = memo(function PaperCard({
             ) : (
               // No abstract in the record: the shared empty state, centred in
               // the abstract's place like every other one, not set as the first
-              // line of an article (drop cap and all). The publisher's page is
-              // a link in the sentence, like the abstract's source credit, not
-              // a button under it: a button row adds 52px, and at 360x640 the
-              // panel clipped most of the button.
+              // line of an article (drop cap and all). Words only: the
+              // publisher's page the sentence names is `publisherAction`, in
+              // the action row, because this panel can be 0px tall.
               <motion.div
                 key={abstractKey}
                 ref={attachAbstractBody}
@@ -2226,15 +2250,6 @@ const PaperCard = memo(function PaperCard({
                   title={missingAbstract.title}
                 >
                   {missingAbstract.body}
-                  {missingAbstract.publisher && (
-                    <>
-                      {missingAbstract.publisher.lead}
-                      <a href={missingAbstract.publisher.url} target="_blank" rel="noopener noreferrer" onClick={swallowClick}>
-                        {missingAbstract.publisher.label}<span className="visually-hidden"> (opens in a new tab)</span>
-                      </a>
-                      {missingAbstract.publisher.end}
-                    </>
-                  )}
                 </EmptyState>
               </motion.div>
             )}
@@ -2276,9 +2291,10 @@ const PaperCard = memo(function PaperCard({
         <span className="visually-hidden" role="status">{abstractStatus}</span>
 
         {/* Two reading actions first, then the utilities behind a rule: what to
-            read is the decision, sharing and related work are afterthoughts. */}
+            read is the decision, sharing and related work are afterthoughts.
+            On a card with no abstract the publisher's page comes last. */}
         <div className="pc-action-bar">
-          <div className="pc-action-primary">
+          <div className={`pc-action-primary${publisherAction && canRequestRewrite ? ' pc-action-primary--three' : ''}`}>
             {readAction}
 
             {canRequestRewrite && (
@@ -2319,6 +2335,7 @@ const PaperCard = memo(function PaperCard({
                 {'Needs a free account'}
               </span>
             )}
+            {publisherAction}
           </div>
 
         </div>

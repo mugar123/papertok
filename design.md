@@ -415,6 +415,18 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   (`.pc-body::before`, `.ehc-info::before`).
 - **Stat block:** mono tabular-nums value over a mono uppercase label, in a
   ruled grid (`.ehc-stats-grid`).
+- **A card with no abstract** (`feed/paper-card.tsx`): the abstract's panel
+  holds the shared empty state, "No abstract to show" and one sentence, which
+  scrolls inside a panel too short for it. When the paper has a DOI the
+  sentence ends "Try the publisher's page." and the action row's last control
+  is `Publisher's page` ("Publisher" on a phone), an `outline` link to the
+  DOI in a new tab. The link is in the row and not in the sentence because
+  the panel is the one row that yields, down to 0px. That row stays at the
+  sheet's foot when the rows above it are taller than the card. On a phone
+  the link is its `ArrowSquareOut` glyph alone, named "Publisher's page
+  (opens in a new tab)", beside `Read in plain words` and on a screen short
+  enough for the rail to reach the row, where the row stops short of the
+  rail.
 - **Settings › Feeds** (`settings/feeds-settings-page.tsx`), reached from
   Discovery: a `New feed` button over the reader's feeds in tab order, as
   ruled rows. Each row has the feed's name in the serif, its ingredients on one

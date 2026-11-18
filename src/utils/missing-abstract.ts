@@ -16,14 +16,20 @@ export const MISSING_ABSTRACT_TITLE = 'No abstract to show';
  * The link is the DOI's, which resolves to the publisher's page.
  * `landingPageUrl` is not used: for many records it is an index's page
  * (PubMed, ADS, an OpenAlex work), and calling it the publisher's would be
- * false. Without a DOI the card links nothing. After `body` the card renders
- * `lead`, the link labeled `label`, then `end`.
+ * false. Without a DOI the card links nothing.
+ *
+ * The link is not part of the sentence. The sentence is in the abstract's
+ * panel, the one row of the card that gives up its height, and under a long
+ * title on a phone on its side that panel is 0px tall. `publisher` is a
+ * control of the card's action row, which keeps its height: `label` is its
+ * label and starts its name, and `short` is the word a phone has room for.
+ * `body` names it.
  */
 export function missingAbstractNotice(paper: Pick<Paper, 'doi'>) {
   const url = safeDoiUrl(paper.doi);
   return {
     title: MISSING_ABSTRACT_TITLE,
-    body: 'PaperTok found none in open sources.',
-    publisher: url ? { lead: ' Try the ', label: "publisher's page", end: '.', url } : null,
+    body: url ? "PaperTok found none in open sources. Try the publisher's page." : 'PaperTok found none in open sources.',
+    publisher: url ? { label: "Publisher's page", short: 'Publisher', url } : null,
   };
 }
