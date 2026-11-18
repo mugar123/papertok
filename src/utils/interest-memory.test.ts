@@ -480,3 +480,14 @@ test("an area group ranks by its own area's examples and those of areas the read
     { categories: ['econ.GN'], positiveIds: ['cs.RO-0'], weight: 1 },
   ]);
 });
+
+// The Worker reads a group's `exampleCategories` up to the taxonomy's leaf
+// count. A retired id is no leaf: listed, it pushed out the last one
+// (chem.spectro), and a like of no area filed there ranked no group.
+test('a retired pick is no example category, so the first group lists every leaf beside a like of no area', () => {
+  const allLeaves = Object.keys(CATEGORIES).flatMap(leaves);
+  const plan = planInterestGroups(memory({ selected: ['bio.gen', 'q-bio.NC'], examples: examples('', 1, 'article') }));
+  assert.deepEqual([...plan.groups[0].exampleCategories].sort(), [...allLeaves].sort());
+  const split = planInterestGroups(memory({ selected: ['q-bio.NC', 'bio.gen', 'bio.mol'], added: ['bio.mol'], examples: examples('bio.gen', 8) }));
+  assert.deepEqual(split.groups.map(group => group.exampleCategories), [leaves('bio'), leaves('bio')]);
+});

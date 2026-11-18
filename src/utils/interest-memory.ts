@@ -69,8 +69,9 @@ function chosenIds(selected: string[], dormant: Set<string>) {
 
 /**
  * Every subarea of an area with a selected subarea, less the deselected
- * ones, and any selected id retired from the taxonomy: what exploration may
- * offer, and what an added area learns and ranks by.
+ * ones, and any selected id retired from the taxonomy. Its leaves are what
+ * exploration may offer, the subareas whose exposure counts toward an area's
+ * progress, and the leaves an area's groups list as `exampleCategories`.
  */
 export function selectedAreaSubareas(selected: string[], deselected: string[]) {
   const dormant = dormantIds(selected, deselected);
@@ -150,19 +151,20 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
   const awake = examples.filter(example => !isDormantCategory(example.category, sleeping));
   const examplesOf = (areas: (area: string) => boolean) =>
     awake.filter(example => areas(areaKeyForCategory(example.category) ?? '')).map(example => example.id);
-  const retiredIn = (area: string) => chosen.filter(id => areaKeyForCategory(id) === area && !getCategoryArea(id));
-  const activeLeavesOf = (area: string) =>
-    [...getAllLeafCategories().filter(leaf => leaf.area === area && active.has(leaf.id)).map(leaf => leaf.id), ...retiredIn(area)];
+  // Leaves only: the Worker reads a group's `exampleCategories` up to the
+  // taxonomy's leaf count and places a like by leaves, so a retired id there
+  // would only push the last leaf out.
+  const activeLeavesOf = (area: string) => getAllLeafCategories().filter(leaf => leaf.area === area && active.has(leaf.id)).map(leaf => leaf.id);
 
   const progress: Record<string, number> = {};
   const established = new Set<string>();
   const cold: PlannedGroup[] = [];
   for (const area of areaKeys) {
-    const retired = retiredIn(area);
+    const retired = chosen.filter(id => areaKeyForCategory(id) === area && !getCategoryArea(id));
     const activeLeaves = activeLeavesOf(area);
     // A retired id has no exposure of its own; its examples count for the area.
     // A card that names no subarea (an area lane's article) is shown under the area itself.
-    const shown = activeLeaves.filter(leaf => !retired.includes(leaf)).reduce((total, leaf) => total + shownIn(leaf), shownIn(area));
+    const shown = activeLeaves.reduce((total, leaf) => total + shownIn(leaf), shownIn(area));
     const areaProgress = progressOf(examplesOf(key => key === area).length, shown, AREA_LEARNED_EXAMPLES, AREA_LEARNED_SHOWN);
     const subareas = rankPreferences(chosen.filter(id => areaKeyForCategory(id) === area), affinities);
     const coldGroup = (categories: string[], weight: number, ownSubarea: boolean): PlannedGroup =>
