@@ -23,6 +23,9 @@ test('a work without a landing page links to doi.org with every character of its
   const paper = mapOpenAlexWork({ ...work(null), doi: `https://doi.org/${doi}`, primary_location: { source: null } });
   assert.equal(paper?.doi, doi);
   assert.equal(paper?.landingPageUrl, 'https://doi.org/10.1002/(sici)1097-0282(1996)40:1%3C1::aid-bip1%3E3.0.co;2-%23');
+  // A DOI the encoder refuses keeps the link OpenAlex gave, as before.
+  const subPrefix = 'https://doi.org/10.1000.10/123';
+  assert.equal(mapOpenAlexWork({ ...work(null), doi: subPrefix, primary_location: { source: null } })?.landingPageUrl, subPrefix);
 });
 
 test("a work keeps the OpenAlex id of the journal that published it, and no id when its source is not a journal", () => {

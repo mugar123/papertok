@@ -254,8 +254,9 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
   const isOpenAccess = typeof work.open_access?.is_oa === 'boolean' ? work.open_access.is_oa : undefined;
   const pdfUrl = work.open_access?.oa_url || null;
   // `work.doi` is the resolver followed by the DOI's raw characters, not a valid
-  // URL: a browser drops a final `#` from it. Encode the bare DOI instead.
-  const landingPageUrl = work.primary_location?.landing_page_url || safeDoiUrl(doi) || null;
+  // URL: a browser drops a final `#` from it. Encode the bare DOI instead, and
+  // keep the raw link only for a DOI the encoder refuses (`10.1000.10/123`).
+  const landingPageUrl = work.primary_location?.landing_page_url || safeDoiUrl(doi) || work.doi || null;
 
   const sourceName = work.primary_location?.source?.display_name || UNNAMED_SOURCE;
 

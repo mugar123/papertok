@@ -76,8 +76,9 @@ const DOI_RESOLVER = /^https?:\/\/(?:dx\.)?doi\.org\//i;
  *   decoded once, and a `?` or `#` ends the path, so a query or fragment is
  *   not part of the DOI (`https://doi.org/10.1000/1?noredirect` is 10.1000/1).
  *   `https://doi.org/10.1234/a%3Fb` is 10.1234/a?b, so this function's own
- *   link comes back unchanged. A path whose `%` starts no escape is read as
- *   written. Space around the DOI is not part of it, decoded or not.
+ *   link comes back unchanged. A path that does not decode (a `%` that
+ *   starts no escape, or escapes that are not UTF-8) is read as written.
+ *   Space around the DOI is not part of it, decoded or not.
  * A provider that writes the resolver before the DOI's characters unencoded,
  * as OpenAlex does (`…/3.0.co;2-#`), has written no URL: its adapter strips
  * the resolver and hands the bare DOI on.
@@ -90,7 +91,8 @@ export function safeDoiUrl(doi: unknown) {
     try {
       normalized = decodeURIComponent(normalized);
     } catch {
-      // A `%` that starts no escape is the DOI's own: the path is read as written.
+      // A `%` that starts no escape, or escapes that are not UTF-8: the path
+      // is read as written.
     }
     normalized = normalized.trim();
   }
