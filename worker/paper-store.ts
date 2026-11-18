@@ -2268,7 +2268,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // paper over (PR #520's review, 2026-11-17). So while the likes, the
   // rejections, the day's slice and each group's categories stay the same, a
   // paper has the same group when a load shows it and when a later load names
-  // it. A like or a rejection ("Not interested") that changes the rankings can
+  // it, in whatever order the request lists the groups, their categories and
+  // the named papers, ties of score and date included. A like or a rejection ("Not interested") that changes the rankings can
   // move papers already shown to another group (Pablo's decision of
   // 2026-11-18): from the first load ranked so, each moved paper gives its old
   // group one extra turn and its new group one fewer. With two groups of equal
@@ -2282,19 +2283,25 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     const rank = (index: number, rows: Candidate[]): Array<{ row: Candidate; semanticScore: number }> => (groupLikes[index].length
       ? rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: 'relevance' })
       : yearsInTurns(rows, groupLanes[index]));
-    // The groups whose categories list each paper. A group with likes that
-    // shares none of its papers with another group ranks only the papers the
-    // request does not name, the order it shows them in: the named ones are
-    // all its own and only their number counts.
+    // The groups whose categories list each paper.
     const holders = new Map<number, number[]>();
     ofLanes.forEach((rows, index) => rows.forEach(({ workId }) => holders.set(workId, [...holders.get(workId) ?? [], index])));
     const shares = ofLanes.map(rows => rows.some(({ workId }) => holders.get(workId)!.length > 1));
-    const rankings = ofLanes.map((rows, index) => rank(index, shares[index] || !groupLikes[index].length ? rows : offeredOf(rows)));
-    // A group without likes that shares a paper places it with its categories
-    // in id order (above); a group that shares none decides no paper's group.
-    const ownerRankings = rankings.map((ranking, index) => (groupLikes[index].length || !shares[index]
-      ? ranking
-      : yearsInTurns(ofLanes[index], [...groupLanes[index]].sort())));
+    // The order each group shows its papers in, from the order the request
+    // asks. A group with likes ranks only the papers the request does not
+    // name; the named papers that are its own take its first turns (below).
+    const rankings = ofLanes.map((rows, index) => rank(index, groupLikes[index].length ? offeredOf(rows) : rows));
+    // The rankings that find each shared paper's group, the named papers
+    // included. The candidates come in the order the request lists its groups
+    // and their categories in, and a ranking keeps its input's order where
+    // scores and dates tie (`rankByUnitVectors`, whose diversity pass starts
+    // from that order too). So a group with likes ranks them in work id order,
+    // and a group without likes takes its categories in id order (above): no
+    // order in the request decides a paper's group, ties included (PR #520's
+    // review, 2026-11-18). A group that shares no paper decides no paper's group.
+    const ownerRankings = ofLanes.map((rows, index) => (!shares[index] ? []
+      : groupLikes[index].length ? rank(index, [...rows].sort((a, b) => a.workId - b.workId))
+        : yearsInTurns(rows, [...groupLanes[index]].sort())));
     const places = ownerRankings.map(ranking => new Map(ranking.map(({ row }, place) => [row.workId, place])));
     const firstLane = (index: number, candidate: Candidate) => candidate.lanes.filter(lane => groupLanes[index].includes(lane)).sort()[0];
     const groupOf = (candidate: Candidate) => holders.get(candidate.workId)!.reduce((group, index) => {
@@ -2305,10 +2312,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     const groups = new Map(ofLanes.flat().map(candidate => [candidate.workId, groupOf(candidate)]));
     return interleaveByWeight(rankings.map((ranking, index) => {
       const passed = ofLanes[index].filter(row => excluded.has(row.workId) && groups.get(row.workId) === index).map(row => ({ row, semanticScore: 0 }));
-      const shown = groupLikes[index].length && shares[index] && ofLanes[index].some(candidate => excluded.has(candidate.workId))
-        ? rank(index, offeredOf(ofLanes[index]))
-        : ranking.filter(({ row }) => !excluded.has(row.workId));
-      return [...passed, ...shown.filter(({ row }) => groups.get(row.workId) === index)].map(notableRank);
+      const shown = ranking.filter(({ row }) => !excluded.has(row.workId) && groups.get(row.workId) === index);
+      return [...passed, ...shown].map(notableRank);
     }), query.groups.map(group => group.weight)).filter(candidate => !excluded.has(candidate.workId));
   };
   const notable = likes.length

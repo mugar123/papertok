@@ -2675,6 +2675,119 @@ test("listing the groups in another order leaves each notable paper of both grou
   assert.deepEqual(await notableOf(areaGroups(AREA_LIKES.map(id => [id])).reverse()), [['econ.GN'], ['econ.GN'], ['cs.LG'], ['econ.GN'], ['cs.LG']]);
 });
 
+// Notable papers without a vector: a group with likes scores them all alike,
+// so it orders them by date, and the papers of one date tie. `papers` gives
+// each its label, categories and date. Each group's like lies along an axis of
+// its own (SHARED_LIKES).
+async function tiedNotableCorpus(papers: Array<{ label: string; leaves: string[]; date: string }>) {
+  const { env, db } = corpus();
+  await ingestPapers(env, recentPapers(60), { now: NOW });
+  const ids = papers.map((_, index) => `W96${String(index).padStart(2, '0')}`);
+  await ingestPapers(env, papers.map(({ label, leaves, date }, index) => (
+    { paper: notableWork(ids[index], `Highly cited study ${label}`, date, 5000, true), lanes: leaves.map(leaf => `notable:${leaf}`) }
+  )), { now: NOW, keepUntil: LISTED_UNTIL });
+  const embed = db.prepare("INSERT INTO work_vectors (work_id, embedding) SELECT id, ? FROM works WHERE paper ->> '$.id' = ?");
+  SHARED_LIKES.forEach((id, axis) => embed.run(Buffer.from(sharedVector({ [axis]: 1 }).buffer), id));
+  const labels = new Map(papers.map(({ label }, index) => [`openalex:${ids[index]}`, label]));
+  return { env, label: (card: { id: string }) => labels.get(card.id)! };
+}
+
+// The verifier's finding on 8af91906 (PR #520, 2026-11-18). Computer science
+// asks for cs.LG and cs.CV, economics for econ.GN, each with a like, of equal
+// weight. S, of cs.CV and econ.GN, is economics' newest paper and ties with L0,
+// cs.LG's newest, in computer science. When a group with likes found each
+// paper's group with the papers in the order the request asks its categories
+// in, S was economics' with cs.LG asked first (2nd of 4 against 1st of 3) and
+// computer science's with cs.CV first (1st of 4, a tie that cs.CV wins over
+// econ.GN). Swapping the two after S was shown on economics' turn charged it to
+// computer science: L0, S, E0, E1 instead of L0, S, C1, E0. Computer science
+// now ranks L0 and S in work id order, a hash of the paper id, which puts S
+// 2nd in either order, so S is economics'.
+test("a notable paper two groups hold stays with one group when the app swaps the order of a group's categories, though it ties with that group's other papers", async () => {
+  const { env, label } = await tiedNotableCorpus([
+    { label: 'L0', leaves: ['cs.LG'], date: '2025-06-01' },
+    { label: 'L1', leaves: ['cs.LG'], date: '2025-03-01' },
+    { label: 'C1', leaves: ['cs.CV'], date: '2025-04-01' },
+    { label: 'S', leaves: ['cs.CV', 'econ.GN'], date: '2025-06-01' },
+    { label: 'E0', leaves: ['econ.GN'], date: '2025-05-01' },
+    { label: 'E1', leaves: ['econ.GN'], date: '2025-02-01' },
+  ]);
+  const groups = (computing: string[]) => [
+    { categories: computing, exampleCategories: computing, positiveIds: [SHARED_LIKES[0]], weight: 1 },
+    { categories: ['econ.GN'], exampleCategories: ['econ.GN'], positiveIds: [SHARED_LIKES[1]], weight: 1 },
+  ];
+  const asked = ['cs.LG', 'cs.CV'];
+  const swapped = ['cs.CV', 'cs.LG'];
+  const cards = async (computingAt: (load: number) => string[]) => (await notableCardByLoad(env, 6, load => groups(computingAt(load)))).map(label);
+  const inOneOrder = await cards(() => asked);
+  assert.deepEqual(await cards(load => (load < 2 ? asked : swapped)), inOneOrder, 'swapped after two loads');
+  assert.deepEqual(inOneOrder, ['L0', 'S', 'C1', 'E0', 'L1', 'E1']);
+  assert.deepEqual(await cards(load => (load < 2 ? swapped : asked)), await cards(() => swapped), 'swapped back after two loads');
+});
+
+// Every order in which the request can list three groups of equal weight and
+// each group's categories: computer science's two, economics' two, and
+// statistics' one. Each category has a notable paper of 2025-06-01 and eight
+// older ones; four papers of that date are listed by two groups' categories
+// and two by all three. Each group has a like, and no notable paper has a
+// vector, so a group ranks its papers of that date alike and only the tie
+// decides each shared paper's group. With equal weights and no group running
+// out, the fresh loads give the notable place to the groups in the order
+// listed, so each load's card is the group's whose turn it is. Every order
+// gives each shared paper the same group, whatever order `excludedIds` lists
+// the cards in, and every other card comes on its own group's turn.
+test("every order of the groups and of each group's categories leaves each notable paper that two or three groups hold with the same group, ties included", async () => {
+  const tie = '2025-06-01';
+  const areas: Record<string, string[]> = { computing: ['cs.LG', 'cs.CV'], economics: ['econ.GN', 'econ.EM'], statistics: ['math.ST'] };
+  const shared = [
+    { label: 'S0', leaves: ['cs.LG', 'econ.GN'] },
+    { label: 'S1', leaves: ['cs.CV', 'econ.EM'] },
+    { label: 'S2', leaves: ['cs.CV', 'math.ST'] },
+    { label: 'S3', leaves: ['econ.GN', 'math.ST'] },
+    { label: 'T0', leaves: ['cs.LG', 'econ.EM', 'math.ST'] },
+    { label: 'T1', leaves: ['cs.CV', 'econ.GN', 'math.ST'] },
+  ];
+  const { env, label } = await tiedNotableCorpus([
+    ...Object.values(areas).flat().flatMap((leaf, leafIndex) => [
+      { label: `${leaf} 0`, leaves: [leaf], date: tie },
+      ...Array.from({ length: 8 }, (_, rank) => ({ label: `${leaf} ${rank + 1}`, leaves: [leaf], date: `${2024 - rank}-0${1 + leafIndex}-01` })),
+    ]),
+    ...shared.map(paper => ({ ...paper, date: tie })),
+  ]);
+  const likeOf: Record<string, string> = { computing: SHARED_LIKES[0], economics: SHARED_LIKES[1], statistics: SHARED_LIKES[2] };
+  const orders = <T>(items: T[]): T[][] => (items.length <= 1 ? [items]
+    : items.flatMap((item, index) => orders([...items.slice(0, index), ...items.slice(index + 1)]).map(rest => [item, ...rest])));
+  const owners: Array<Record<string, string>> = [];
+  let walk = 0;
+  for (const groupOrder of orders(Object.keys(areas))) {
+    for (const computing of orders(areas.computing)) {
+      for (const economics of orders(areas.economics)) {
+        const categoriesOf: Record<string, string[]> = { computing, economics, statistics: areas.statistics };
+        const groups = groupOrder.map(name => ({ categories: categoriesOf[name], exampleCategories: categoriesOf[name], positiveIds: [likeOf[name]], weight: 1 }));
+        const shown: string[] = [];
+        const owner: Record<string, string> = {};
+        // Until every shared paper is shown: at most 7 papers of the tied date a group.
+        for (let load = 0; load < 21 && Object.keys(owner).length < shared.length; load += 1) {
+          const answer = await readFeedPage(env, parseFeedRequest({
+            groups, excludedIds: walk % 2 ? [...shown] : [...shown].reverse(), pageSize: 15, seen: feedSeenFilter(shown), skipsSeen: true, notable: 3,
+          }), { now: NOW });
+          const [card] = answer.filter(paper => paper._notable);
+          const turn = groupOrder[load % groupOrder.length];
+          const name = label(card);
+          if (shared.some(paper => paper.label === name)) owner[name] = turn;
+          else assert.ok(areas[turn].includes(name.split(' ')[0]), `${groupOrder}, ${computing}, ${economics}: load ${load} shows ${name} on ${turn}'s turn`);
+          shown.push(card.id);
+        }
+        owners.push(owner);
+        walk += 1;
+      }
+    }
+  }
+  assert.equal(owners.length, 24);
+  assert.deepEqual(Object.keys(owners[0]).sort(), shared.map(paper => paper.label));
+  for (const owner of owners) assert.deepEqual(owner, owners[0]);
+});
+
 // A rejection says nothing about the years the reader wants: "Not interested"
 // on a card with a vector left every notable card of the newest year (ENG-166 review).
 test('with only rejections, the notable papers take the years in turns, the near copies of the rejected papers last, the nearest last of all', async () => {
