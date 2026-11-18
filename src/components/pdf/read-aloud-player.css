@@ -8,6 +8,8 @@
 /* The read-aloud player, in the paper viewer's dock in place of its tools. */
 .rd-listen {
   display: grid;
+  /* A long chapter title is cut short instead of widening the player. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
   width: min(460px, calc(100vw - 2 * var(--space-4) - 10px));
   max-width: calc(100vw - 2 * var(--space-4) - 10px);

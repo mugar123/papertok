@@ -98,7 +98,7 @@ export function fullTextListen(doc: FullText, { withAbstract }: { withAbstract: 
   return { queue, chapters: chapters.filter((chapter, index) => chapter.first < queue.length && chapter.first !== chapters[index + 1]?.first) };
 }
 
-/** Cartesia's voice speaks about this many characters a second, measured on a summary. */
+/** The voice speaks about this many characters a second, until a clip's real length is known. */
 const CHARS_PER_SECOND = 15;
 
 /**
