@@ -424,11 +424,13 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the panel is the first row to yield, down to 0px. When the rows above the
   action row are taller than the card, the head's rows give way after the
   panel and scroll, and the action row stays whole at the sheet's foot,
-  covering nothing. On a phone
-  the link is its `ArrowSquareOut` glyph alone, named "Publisher's page
-  (opens in a new tab)", beside `Read in plain words` and on a screen short
-  enough for the rail to reach the row, where the row stops short of the
-  rail.
+  covering nothing. On a phone the link is its `ArrowSquareOut` glyph alone,
+  named and titled "Publisher's page (opens in a new tab)", in a row too
+  narrow for its word beside Source, and always beside `Read in plain
+  words`. Those three share a line when they fit; otherwise Source takes the
+  first line and the other two the second, and that row draws no lock. On a
+  screen short enough for the rail to reach the row, the row stops short of
+  the rail.
 - **Settings › Feeds** (`settings/feeds-settings-page.tsx`), reached from
   Discovery: a `New feed` button over the reader's feeds in tab order, as
   ruled rows. Each row has the feed's name in the serif, its ingredients on one

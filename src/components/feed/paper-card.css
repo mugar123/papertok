@@ -2973,13 +2973,50 @@ button.pc-topics-pop-item:focus-visible {
     width: 100%;
   }
 
+  /* The row of a card with the publisher's page measures itself against its
+     words (`action-row` below). A container query's `em` is the row's own
+     text size, so it follows the browser's text setting, and its width is
+     what the sheet and the rail leave the row. */
+  .pc-action-bar:has(.pc-action-publisher) {
+    container: action-row / inline-size;
+  }
+
+  /* With two controls, Source and the publisher's page share the row while
+     both words fit: "Publisher" needs 42px plus 4.5em. In a narrower row the
+     link is its glyph alone in a 40px column, named on the link
+     (paper-card.tsx): with its word it cut "Publisher" at 390px with text
+     at 200%. */
+  @container action-row (max-width: calc(94px + 9em)) {
+    .pc-action-primary:not(.pc-action-primary--three) {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .pc-action-primary:not(.pc-action-primary--three) > .pc-action-publisher {
+      width: 40px;
+      padding-inline: 0;
+    }
+
+    .pc-action-primary:not(.pc-action-primary--three) > .pc-action-publisher > .pc-action-label--short {
+      display: none;
+    }
+  }
+
   /* Beside "Read in plain words" the publisher's page is its glyph alone in
-     a 40px column, so both reading actions keep their slots: three equal
-     slots cut "Simple" and "Publisher" at 375px with text at 150%. Its name
-     is set on the link (paper-card.tsx). The width is in px like the glyph,
-     so larger text leaves the room to the words. */
+     a 40px column: three equal slots cut "Simple" and "Publisher" at 375px
+     with text at 150%. In a row wide enough for the three (124px plus
+     7.75em) they share one line. In a narrower one Source takes the first
+     line and the other two the second, in the order the keyboard reaches
+     them: side by side, the two reading actions cut "Simple" at 360px with
+     text at 200%, and at 150% on a screen short enough for the rail. The
+     lock that marks "Read in plain words" for a visitor is not drawn in
+     this row. Beside the glyph it cut "Simple" at 375px with text at 150%,
+     and the button keeps "Needs a free account" as its description. */
   .pc-action-primary--three {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pc-action-primary--three > .pc-action-read {
+    grid-column: 1 / -1;
   }
 
   .pc-action-primary--three > .pc-action-publisher {
@@ -2987,8 +3024,19 @@ button.pc-topics-pop-item:focus-visible {
     padding-inline: 0;
   }
 
-  .pc-action-primary--three > .pc-action-publisher > .pc-action-label--short {
+  .pc-action-primary--three > .pc-action-publisher > .pc-action-label--short,
+  .pc-action-primary--three .pc-action-lock {
     display: none;
+  }
+
+  @container action-row (width > calc(126px + 7.75em)) {
+    .pc-action-primary--three {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+    }
+
+    .pc-action-primary--three > .pc-action-read {
+      grid-column: auto;
+    }
   }
 
   .pc-sheet {
@@ -3055,25 +3103,12 @@ button.pc-topics-pop-item:focus-visible {
      screen shorter than 292px + 12em. An `em` media query follows the
      browser's font size, which grows the rail and lifts the row. That row
      then stops short of the rail by the rail's own offset, which clears its
-     54px buttons at any text size. In the narrower row the publisher's page
-     is its glyph alone, as beside "Read in plain words": with its word, it
-     cut "Publisher" at 150% and Source at 200%. */
+     54px buttons at any text size. Its narrower width decides, as any
+     width does, whether the publisher's page keeps its word (`action-row`,
+     above). */
   @media (max-height: calc(292px + 12em)) {
     .pc-action-bar:has(.pc-action-publisher) {
       margin-right: var(--space-2);
-    }
-
-    .pc-action-primary:not(.pc-action-primary--three):has(> .pc-action-publisher) {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
-
-    .pc-action-primary > .pc-action-publisher {
-      width: 40px;
-      padding-inline: 0;
-    }
-
-    .pc-action-primary > .pc-action-publisher > .pc-action-label--short {
-      display: none;
     }
   }
 

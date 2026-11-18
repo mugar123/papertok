@@ -1733,15 +1733,19 @@ const PaperCard = memo(function PaperCard({
   // goes. It is a link drawn as the row's outline button. Where the row has
   // no room for its word it shows the glyph alone (paper-card.css), so its
   // name is set here: the full label and the new tab at every width, which
-  // contains the word a phone shows (WCAG 2.5.3).
+  // contains the word a phone shows (WCAG 2.5.3). The same words are its
+  // `title`, so a pointer resting on the glyph alone reads where it goes, as
+  // on the reader's link to the original.
   const publisher = !abstractText && !abstractLoading ? missingAbstract.publisher : null;
+  const publisherName = publisher ? `${publisher.label} (opens in a new tab)` : '';
   const publisherAction = publisher && (
     <Button
       variant="outline"
       className="pc-action-publisher"
       role="link"
       render={<a href={publisher.url} target="_blank" rel="noopener noreferrer" />}
-      aria-label={`${publisher.label} (opens in a new tab)`}
+      aria-label={publisherName}
+      title={publisherName}
       onClick={swallowClick}
     >
       <ArrowSquareOut size={16} aria-hidden="true" />
