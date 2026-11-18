@@ -65,6 +65,7 @@ import { EmptyState } from '../ui/empty-state.tsx';
 import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, lastVisitNote, nextPageStatusText, showsLastVisit, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
+import { arrowKeyMovesFeed } from '../../utils/feed-arrow-keys.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
 import { feedTabPathForSurface, tabSwipeTarget } from '../../utils/feed-tab-swipe.ts';
 import { useFeedTabs } from '../../hooks/use-feed-tabs.ts';
@@ -843,20 +844,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         const activeTarget = e.target instanceof Element ? e.target : null;
-        // `[role="dialog"]` covers a non-modal popup over the feed, such as a
-        // visitor's Privacy panel: its keys are its own, and with large text it
-        // scrolls with them.
-        const exempt = activeTarget?.closest(
-          'input, textarea, select, button, a, summary, [contenteditable="true"], [role="textbox"], [role="button"], [role="link"], [role="dialog"]',
-        );
-        // The Similar layer is a modal dialog this feed lives IN: its arrows
-        // are this feed's, and the feed under it is the one that keeps still.
-        const isInteractive = exempt && !(exempt.matches('[role="dialog"]') && exempt.contains(container));
         // A modal Base UI has hidden behind a newer one (`aria-hidden`) — the
         // explorer's paper overlay under the Similar layer — owns no keys.
         const hasOpenModal = [...document.querySelectorAll('[aria-modal="true"]')]
           .some(modal => !modal.contains(container) && !modal.closest('[aria-hidden="true"]'));
-        if (isInteractive || hasOpenModal) return;
+        if (!arrowKeyMovesFeed({ target: activeTarget, key: e.key, feed: container }) || hasOpenModal) return;
 
         e.preventDefault();
         const direction = e.key === 'ArrowDown' ? 1 : -1;

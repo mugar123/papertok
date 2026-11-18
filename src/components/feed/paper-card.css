@@ -967,8 +967,8 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 /* A scrolling state takes the keyboard's focus itself in Chrome, so the arrow
-   keys can move it. The panel would clip a ring drawn around it, so the ring
-   is drawn inside. */
+   keys can move it: the feed leaves them to it (feed-arrow-keys.ts). The
+   panel would clip a ring drawn around it, so the ring is drawn inside. */
 .pc-abstract-empty:focus-visible {
   outline-offset: -2px;
 }
