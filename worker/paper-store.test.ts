@@ -2536,16 +2536,71 @@ test("a group whose every notable paper another group's category lists too takes
     ['cs.LG', 'q-fin.GN', 'cs.LG', 'q-fin.GN', 'cs.LG', 'q-fin.GN', 'cs.LG', 'q-fin.GN', 'cs.LG', 'cs.LG']);
 });
 
+// Notable papers at chosen cosines to cs.LG's and economics' likes
+// (SHARED_LIKES, each along an axis of its own; PR #520's review, 2026-11-17).
+// `own` gives the cosine of each of a leaf's papers to that leaf's like; paper
+// i is of 2025 - i % 10, and the higher index is the newer within a year.
+// `shared` gives each paper of both lanes its cosine to each like. The rest of
+// a vector lies along the paper's own axis, so no two papers are near copies.
+// A card's label: A or B and the index for a paper of cs.LG or economics alone,
+// S and the index for a shared one.
+async function cosineNotableCorpus(own: [number[], number[]], shared: Array<{ cosines: number[]; date: string }>) {
+  const { env, db } = corpus();
+  await ingestPapers(env, recentPapers(60), { now: NOW });
+  const papers = [
+    ...own.flatMap((cosines, leaf) => cosines.map((cosine, index) => ({
+      id: `W7${leaf}${String(index).padStart(2, '0')}`, label: `${'AB'[leaf]}${index}`, date: `${2025 - (index % 10)}-0${1 + Math.floor(index / 10)}-15`,
+      leaves: [SHARED_LEAVES[leaf]], cosines: leaf ? [0, cosine] : [cosine, 0],
+    }))),
+    ...shared.map(({ cosines, date }, index) => ({ id: `W80${index}`, label: `S${index}`, date, leaves: SHARED_LEAVES.slice(0, 2), cosines })),
+  ];
+  await ingestPapers(env, papers.map(({ id, label, date, leaves }) => (
+    { paper: notableWork(id, `Highly cited study ${label}`, date, 5000, true), lanes: leaves.map(leaf => `notable:${leaf}`) }
+  )), { now: NOW, keepUntil: LISTED_UNTIL });
+  const embed = db.prepare("INSERT INTO work_vectors (work_id, embedding) SELECT id, ? FROM works WHERE paper ->> '$.id' = ?");
+  const vector = (axes: Record<number, number>) => Buffer.from(quantize(Array.from({ length: 64 }, (_, axis) => axes[axis] ?? 0)).buffer);
+  SHARED_LIKES.slice(0, 2).forEach((id, axis) => embed.run(vector({ [axis]: 1 }), id));
+  papers.forEach(({ id, cosines: [csLG, economics] }, index) => (
+    embed.run(vector({ 0: csLG, 1: economics, [2 + index]: Math.sqrt(1 - csLG ** 2 - economics ** 2) }), `openalex:${id}`)
+  ));
+  const labels = new Map(papers.map(({ id, label }) => [`openalex:${id}`, label]));
+  return { env, label: (card: { id: string }) => labels.get(card.id) };
+}
+
+// Pablo's decision of 2026-11-17 places a paper for the ranking's length. cs.LG
+// ranks 34 papers, economics 14. S0 is 8th of both (7/34 against 7/14):
+// cs.LG's. S1 is economics' first: economics'. S2 is closer to cs.LG's like
+// (0.61 against 0.47) but 15th of 34 there and 3rd of 14 for economics:
+// economics'. S3 is 11th of 34 for cs.LG and 6th of 14 for economics: cs.LG's,
+// though economics places it lower. Each group ranks the papers the request
+// names too: ranked without them, S3 came on economics' turn at load 12 and
+// counted for cs.LG once named, so economics showed loads 20 to 22.
+test("a notable paper two groups hold counts for the group whose ranking places it highest for the ranking's length, before and after a load names it", async () => {
+  const { env, label } = await cosineNotableCorpus(
+    [Array.from({ length: 30 }, (_, index) => 0.84 - 0.02 * index), Array.from({ length: 10 }, (_, index) => 0.5 - 0.06 * index)],
+    [[0.71, 0.29], [0.31, 0.83], [0.61, 0.47], [0.67, 0.33]].map((cosines, index) => ({ cosines, date: `2024-10-1${index}` })),
+  );
+  // cs.LG: A0 to A6, S0, A7, A8, S3, A9; economics: S1, B0, S2, B1 to B9.
+  assert.deepEqual((await notableCardByLoad(env, 24, sharedGroups(SHARED_LEAVES.slice(0, 2), [1, 1]))).map(label), [
+    'A0', 'S1', 'A1', 'B0', 'A2', 'S2', 'A3', 'B1', 'A4', 'B2', 'A5', 'B3',
+    'A6', 'B4', 'S0', 'B5', 'A7', 'B6', 'A8', 'B7', 'S3', 'B8', 'A9', 'B9',
+  ]);
+});
+
 // A group without likes ranks by its years in turns: its place for a paper
 // says how soon its turns reach the paper's year, not how close it is to a like.
-test('a notable paper of a group with likes and a group without goes to the one whose ranking places it higher for its length', async () => {
-  const leaves = SHARED_LEAVES.slice(0, 2);
-  // The newer paper leans away from cs.LG's like and opens economics' years in
-  // turns: economics'. The older one is cs.LG's first and the first of
-  // economics' second round of the years, 11th of its 22: cs.LG's.
-  const { env } = await sharedNotableCorpus(leaves, [{ groups: [0, 1], rankedFirstBy: 1 }, { groups: [0, 1], rankedFirstBy: 0 }]);
-  assert.deepEqual((await notableCardByLoad(env, 4, sharedGroups(leaves, [1, 1], ['econ.GN']))).map(card => card.id),
-    ['W202591', 'W202590', 'W202511', 'W202421'].map(id => `openalex:${id}`));
+test('a notable paper of a group with likes and a group without goes to the one whose ranking places it higher for its length, however close it is to the like', async () => {
+  // Economics, without likes, has 2025's newest paper first, then S0, the
+  // newest of 2024: its 2nd of 22. S0 is cs.LG's last of 12: economics',
+  // though only cs.LG's like scores it (cosine 0.1). S1, the newest of 2016,
+  // is economics' 10th and cs.LG's 2nd: cs.LG's.
+  const { env, label } = await cosineNotableCorpus(
+    [Array.from({ length: 10 }, (_, index) => 0.84 - 0.03 * index), Array.from({ length: 20 }, () => 0)],
+    [{ cosines: [0.1, 0], date: '2024-10-10' }, { cosines: [0.825, 0], date: '2016-10-11' }],
+  );
+  // cs.LG: A0, S1, A1, A2; economics: B10 (2025), S0 (2024), B12 (2023), B13.
+  assert.deepEqual((await notableCardByLoad(env, 8, sharedGroups(SHARED_LEAVES.slice(0, 2), [1, 1], ['econ.GN']))).map(label),
+    ['A0', 'B10', 'S1', 'S0', 'A1', 'B12', 'A2', 'B13']);
 });
 
 test("a notable paper of both groups' categories that the request names, though no load showed it, takes a turn of the group that ranks it higher", async () => {
