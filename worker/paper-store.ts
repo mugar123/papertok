@@ -1616,8 +1616,9 @@ const WALK_KEPT_MS = 2 * 60 * 60_000;
 // no version. A Worker that ranks the other pages otherwise names another
 // version, so neither serves an order the other kept as its own: the next page
 // ranks again after the ranks served and walked past. The groups' turns for
-// the notable papers a request names (PR #520's review) keep the version: no
-// deployed Worker had named it before them.
+// the notable papers a request names, and the one group a notable paper
+// belongs to (PR #520's reviews), keep the version: no deployed Worker had
+// named it before them.
 const GROUPS_RANKING = '2026-11-13';
 
 /**
@@ -2237,13 +2238,24 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // turns before they leave the order, as turns already passed. Left out
   // before the turns, the cards a fresh load names would give every load's
   // first notable place to the same group (PR #520's review, 2026-11-15). A
-  // named paper two groups hold takes one turn, of the first of them to reach
-  // it. A paper the filter holds and the request does not name stays in the
-  // order, and the walk passes over it.
+  // paper the filter holds and the request does not name stays in the order,
+  // and the walk passes over it.
+  // A notable paper is one group's alone, so the turn that shows it and the
+  // turn it gives up once named are the same group's. Ranked by each group
+  // whose categories listed it, a paper shown on one group's turn gave up the
+  // other's once named (PR #520's review, 2026-11-17). Its group is the first
+  // in the request that asks for the category whose id sorts first among the
+  // asked categories whose day's slice offers it. The ids decide, not the
+  // order of the groups, which the app changes between loads as it learns the
+  // reader's affinities.
+  const notableGroup = (candidate: Candidate) => {
+    const category = candidate.lanes.reduce((first, lane) => (lane < first ? lane : first)).slice(NOTABLE_LANE_PREFIX.length);
+    return query.groups.findIndex(group => group.categories.includes(category));
+  };
   const notable = likes.length
     ? interleaveByWeight(query.groups.map((group, index) => {
       const groupLanes = group.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`);
-      const ofGroup = notableCandidates.filter(candidate => candidate.lanes.some(lane => groupLanes.includes(lane)));
+      const ofGroup = notableCandidates.filter(candidate => notableGroup(candidate) === index);
       const passed = ofGroup.filter(candidate => excluded.has(candidate.workId)).map(row => ({ row, semanticScore: 0 }));
       const ranked = groupLikes[index].length
         ? rankByUnitVectors(offeredOf(ofGroup), unitOf, groupLikes[index], negatives, { now, order: 'relevance' })
