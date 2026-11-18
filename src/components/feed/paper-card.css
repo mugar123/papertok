@@ -1164,8 +1164,9 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 /* The publisher's page of a card with no abstract is the row's last control
-   (paper-card.tsx), so it adds no row and takes no height from the card: the
-   second slot, or a third beside "Read in plain words". */
+   (paper-card.tsx): the second slot, or a third beside "Read in plain
+   words". It adds no line to the row, except on a phone row too narrow for
+   the three (below). */
 .pc-action-primary--three {
   grid-template-columns: repeat(3, minmax(0, 14rem));
 }

@@ -19,7 +19,7 @@ export const MISSING_ABSTRACT_TITLE = 'No abstract to show';
  * false. Without a DOI the card links nothing.
  *
  * The link is not part of the sentence. The sentence is in the abstract's
- * panel, the one row of the card that gives up its height, and under a long
+ * panel, the first row of the card to give up its height, and under a long
  * title on a phone on its side that panel is 0px tall. `publisher` is a
  * control of the card's action row, which keeps its height: `label` is its
  * label and starts its name, and `short` is the word a phone has room for.
