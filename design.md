@@ -306,8 +306,10 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   place, and everything that offsets from the bar reads it.
 - **The card on a phone** is top-anchored: kicker, chips, title and authors
   under the bar, the abstract filling the middle, the actions at the foot where
-  the thumb is. Only the abstract yields height; on a tablet the column stops at
-  a 40rem reading measure.
+  the thumb is. Only the abstract yields height, except on a card with the
+  publisher's page, whose head rows yield after the panel and scroll (Cards /
+  Containers, "A card with no abstract"). On a tablet the column stops at a
+  40rem reading measure.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 

@@ -71,7 +71,9 @@
      text well in it. The abstract is the only thing here that can be any
      length, so the abstract is the only thing that scrolls — see
      `.pc-abstract`, which yields space to its siblings and takes the overflow
-     on itself. */
+     on itself. The exception is a card with the publisher's page, whose
+     head rows yield after the panel and scroll in their own box
+     (`.pc-head-rows`). */
   overflow-x: hidden;
   overflow-y: hidden;
   /* A property because the glyph in the head reads it: it may rise into this
@@ -472,7 +474,8 @@
 }
 
 /* Only the abstract gives way. Every other row keeps the height its content
-   asks for.
+   asks for, except on a card with the publisher's page, whose head rows give
+   way after the panel and scroll (`.pc-action-publisher`, below).
 
    This is not belt-and-braces, it is the load-bearing half of letting the body
    shrink. Flex items default to `flex-shrink: 1`, and `.pc-title` carries
@@ -885,7 +888,9 @@ button.pc-topics-pop-item:focus-visible {
   overflow: hidden;
   position: relative;
   margin-bottom: var(--space-4);
-  /* The one part of the card that yields. Everything else — kicker, badges,
+  /* The part of the card that yields. On a card with the publisher's page
+     it yields first, and the head's rows give way after it
+     (`.pc-action-publisher`, below). Everything else — kicker, badges,
      title, authors, actions — keeps its natural height; the abstract fills
      whatever is left, and the graph fills the same room when it takes its
      place (`.pc-slot`), so switching never resizes the block. */
