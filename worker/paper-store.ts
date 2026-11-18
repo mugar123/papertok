@@ -2169,11 +2169,14 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // that decide its ranks, when it offers no notable paper; a walk past seen
     // papers can reach any rank, and so can a daily page, whose days reorder
     // the ranks the scores decide, and a feed's keywords, whose turns do. A
-    // read of every vector takes those of the day's notable slice less the
-    // papers the request names, beside the check of which of them the lanes
-    // still offer: those it drops are read for nothing.
+    // read of every vector takes those of the day's notable slice, beside the
+    // check of which of them the lanes still offer: those it drops are read
+    // for nothing. With a like it takes the papers the request names too,
+    // which the groups rank to find each notable paper's group (below);
+    // without one it leaves them out.
     !likes.length && !negatives.length ? true
-      : likes.length || query.skipsSeen || query.order === 'daily' || placed.size ? readEvery(notableRead.slice.filter(id => !excluded.has(id)))
+      : likes.length || query.skipsSeen || query.order === 'daily' || placed.size
+        ? readEvery(likes.length ? notableRead.slice : notableRead.slice.filter(id => !excluded.has(id)))
         : checked.then(notable => {
           const offeredNotable = offeredOf(notable);
           return offeredNotable.length
@@ -2225,7 +2228,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // on every fresh load the app excludes the latest cards it showed, notable
   // ones included, which would otherwise start the turns again from the first
   // year; the seen filter holds the ones before (ENG-166).
-  const yearsInTurns = (rows: Candidate[], rowLanes: string[]) => offeredOf(notableYearsInTurns(rows, rowLanes))
+  const yearsInTurns = (rows: Candidate[], rowLanes: string[]) => notableYearsInTurns(rows, rowLanes)
     .map(row => ({ row, semanticScore: -rejection(unitOf(row), negatives) }))
     .sort((a, b) => b.semanticScore - a.semanticScore);
   const notableRank = ({ row, semanticScore }: { row: Candidate; semanticScore: number }): RankedCandidate =>
@@ -2240,30 +2243,55 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // first notable place to the same group (PR #520's review, 2026-11-15). A
   // paper the filter holds and the request does not name stays in the order,
   // and the walk passes over it.
-  // A notable paper is one group's alone, so the turn that shows it and the
-  // turn it gives up once named are the same group's. Ranked by each group
-  // whose categories listed it, a paper shown on one group's turn gave up the
-  // other's once named (PR #520's review, 2026-11-17). Its group is the first
-  // in the request that asks for the category whose id sorts first among the
-  // asked categories whose day's slice offers it. The ids decide, not the
-  // order of the groups, which the app changes between loads as it learns the
-  // reader's affinities; the order decides only between two groups that ask
-  // for one category, which the app does not send.
-  const notableGroup = (candidate: Candidate) => {
-    const category = candidate.lanes.reduce((first, lane) => (lane < first ? lane : first)).slice(NOTABLE_LANE_PREFIX.length);
-    return query.groups.findIndex(group => group.categories.includes(category));
+  // A paper that the categories of several groups list is one group's, so the
+  // turn that shows it and the turn it gives up once named are the same
+  // group's (PR #520's review, 2026-11-17): the group whose ranking places it
+  // highest for the ranking's length, its place divided by the number of
+  // papers that group ranks (Pablo's decision of 2026-11-17). A tie goes to
+  // the group that asks for the first of the paper's categories by id, not to
+  // the first in the request, whose order the app changes between loads; the
+  // order decides only between two groups that ask for one category, which
+  // the app does not send. Each group ranks every notable paper of its
+  // categories, the named ones included, so while the likes, the rejections
+  // and the day's slice stay the same, a paper has the same group when a load
+  // shows it and when a later load names it. A like or a rejection that
+  // changes the rankings can move a paper already shown to another group:
+  // from the first load ranked so it counts for its new group, so its old
+  // group takes one turn more and the new group one less, once. A group
+  // without likes ranks by its years in turns, so its place for a paper says
+  // how soon its turns reach the paper's year and category, not how close the
+  // paper is to anything. A group with likes still shows its papers in the
+  // order it ranks the ones the request does not name: in its ranking with
+  // the named ones, the diversity pass would move their near copies down.
+  const notableInGroupTurns = () => {
+    const groupLanes = query.groups.map(group => group.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`));
+    const ofLanes = groupLanes.map(lanes => notableCandidates.filter(candidate => candidate.lanes.some(lane => lanes.includes(lane))));
+    const rank = (index: number, rows: Candidate[]): Array<{ row: Candidate; semanticScore: number }> => (groupLikes[index].length
+      ? rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: 'relevance' })
+      : yearsInTurns(rows, groupLanes[index]));
+    const rankings = ofLanes.map((rows, index) => rank(index, rows));
+    const places = rankings.map(ranking => new Map(ranking.map(({ row }, place) => [row.workId, place])));
+    const firstLane = (index: number, candidate: Candidate) => candidate.lanes.filter(lane => groupLanes[index].includes(lane)).sort()[0];
+    const groupOf = (candidate: Candidate) => rankings.reduce<number | undefined>((group, ranking, index) => {
+      const place = places[index].get(candidate.workId);
+      if (place === undefined) return group;
+      if (group === undefined) return index;
+      // place / length against the group's so far, multiplied out to compare whole numbers.
+      const higher = place * rankings[group].length - places[group].get(candidate.workId)! * ranking.length;
+      return higher < 0 || (higher === 0 && firstLane(index, candidate) < firstLane(group, candidate)) ? index : group;
+    }, undefined);
+    const groups = new Map(notableCandidates.map(candidate => [candidate.workId, groupOf(candidate)]));
+    return interleaveByWeight(rankings.map((ranking, index) => {
+      const owned = (rows: typeof ranking) => rows.filter(({ row }) => groups.get(row.workId) === index);
+      const shown = groupLikes[index].length && ofLanes[index].some(candidate => excluded.has(candidate.workId))
+        ? rank(index, offeredOf(ofLanes[index]))
+        : ranking.filter(({ row }) => !excluded.has(row.workId));
+      return [...owned(ranking).filter(({ row }) => excluded.has(row.workId)), ...owned(shown)].map(notableRank);
+    }), query.groups.map(group => group.weight)).filter(candidate => !excluded.has(candidate.workId));
   };
   const notable = likes.length
-    ? interleaveByWeight(query.groups.map((group, index) => {
-      const groupLanes = group.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`);
-      const ofGroup = notableCandidates.filter(candidate => notableGroup(candidate) === index);
-      const passed = ofGroup.filter(candidate => excluded.has(candidate.workId)).map(row => ({ row, semanticScore: 0 }));
-      const ranked = groupLikes[index].length
-        ? rankByUnitVectors(offeredOf(ofGroup), unitOf, groupLikes[index], negatives, { now, order: 'relevance' })
-        : yearsInTurns(ofGroup, groupLanes);
-      return [...passed, ...ranked].map(notableRank);
-    }), query.groups.map(group => group.weight)).filter(candidate => !excluded.has(candidate.workId))
-    : yearsInTurns(notableCandidates, notableLanes).map(notableRank);
+    ? notableInGroupTurns()
+    : yearsInTurns(notableCandidates, notableLanes).filter(({ row }) => !excluded.has(row.workId)).map(notableRank);
   timings?.since('rankCpu', step);
   return {
     ranks,
