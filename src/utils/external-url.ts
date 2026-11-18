@@ -59,7 +59,8 @@ export function safeCatalogUrl(value: unknown) {
 const DOI_RESOLVER = /^https?:\/\/(?:dx\.)?doi\.org\//i;
 
 /**
- * The doi.org link of a DOI, or '' when the value is not DOI-shaped.
+ * The doi.org link of a DOI, or '' when the value is not DOI-shaped or no
+ * URL can encode it.
  *
  * A DOI may hold any printable character, and doi.org decodes the path of a
  * link once, so each character that means something else in a URL travels

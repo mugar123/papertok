@@ -342,6 +342,8 @@ test('a work whose DOI no link can carry leaves the rest of its page to the lane
   ] }));
   const { items } = await SOURCES['openalex-series'].fetchPage(env, { lane: 'series:working-papers', page: 1, since: '', waits: { seconds: 0 } });
   assert.deepEqual(items.map(({ paper }) => paper.id), ['openalex:W7221947410', 'openalex:W7222541626', 'openalex:W7220380262']);
+  // It keeps the link OpenAlex gave, as before.
+  assert.equal(items[1].paper.landingPageUrl, 'https://doi.org/10.65864/jochq5qfxv\uD800');
 });
 
 test("every series the lane names is on the review rule's list, so its journal articles carry the Working paper tag", () => {
