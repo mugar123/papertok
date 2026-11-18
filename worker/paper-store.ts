@@ -2252,15 +2252,21 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // the first in the request, whose order the app changes between loads; the
   // order decides only between two groups that ask for one category, which
   // the app does not send. Each group ranks every notable paper of its
-  // categories, the named ones included, so while the likes, the rejections
-  // and the day's slice stay the same, a paper has the same group when a load
-  // shows it and when a later load names it. A like or a rejection that
-  // changes the rankings can move a paper already shown to another group:
-  // from the first load ranked so it counts for its new group, so its old
-  // group takes one turn more and the new group one less, once. A group
-  // without likes ranks by its years in turns, so its place for a paper says
+  // categories, the named ones included, so while the likes, the rejections,
+  // the day's slice and the order of each group's categories stay the same, a
+  // paper has the same group when a load shows it and when a later load names
+  // it. A group without likes ranks by its years in turns, which follow the
+  // order the request asks its categories in, so its place for a paper says
   // how soon its turns reach the paper's year and category, not how close the
-  // paper is to anything. A group with likes still shows its papers in the
+  // paper is to anything. A like or a rejection that changes the rankings, or
+  // a new order of the categories of a group without likes (the app orders
+  // them by affinity, which moves with skips and view times), can move papers
+  // already shown to another group: from the first load ranked so, each counts
+  // for its new group, so its old group takes one turn more and the new group
+  // one fewer. With two groups of equal weight, k papers moved give the old
+  // group the next 2k cards, or 2k + 1 when its turn was next. While the order
+  // keeps changing, a paper not shown yet can change group from load to load
+  // and be passed over. A group with likes still shows its papers in the
   // order it ranks the ones the request does not name: in its ranking with
   // the named ones, the diversity pass would move their near copies down.
   const notableInGroupTurns = () => {
