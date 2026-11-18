@@ -5,8 +5,6 @@ import {
   PULL_FLING_MIN_PX,
   PULL_BAND_MIN_PX,
   pullBandDepth,
-  PULL_BLOCKING_SCROLLERS,
-  PULL_YIELDING_SCROLLERS,
   pullStartFrom,
   pullTakesOver,
   pullProgress,
@@ -16,8 +14,12 @@ import {
 } from './feed-pull-to-refresh.ts';
 
 const plain = { closest: () => null };
-const insideAbstract = { closest: (sel: string) => (sel === PULL_BLOCKING_SCROLLERS ? {} : null) };
-const insideNoAbstractState = (scrollTop: number) => ({ closest: (sel: string) => (sel === PULL_YIELDING_SCROLLERS ? { scrollTop } : null) });
+// A touch inside the element that answers to `own`. Like Element.closest, it
+// matches a selector list one selector at a time.
+const inside = (own: string, found: object) => ({ closest: (sel: string) => (sel.split(',').some(one => one.trim() === own) ? found : null) });
+const insideAbstract = inside('.pc-abstract--open', {});
+const insideNoAbstractState = (scrollTop: number) => inside('.pc-abstract-empty', { scrollTop });
+const insideHeadRows = (scrollTop: number) => inside('.pc-head-rows', { scrollTop });
 // The scroller sits under the navbar, so its own top is the band's origin,
 // and it is as tall as the phone minus the bar.
 const TOP = 52;
@@ -54,6 +56,12 @@ test('a drag that begins inside the scrolled no-abstract state is refused until 
   assert.equal(pullStartFrom({ target: insideNoAbstractState(23), scrollTop: 812, clientY: TOP + 4, containerTop: TOP, containerHeight: H }), null, 'in the band of a later card');
   assert.equal(pullStartFrom({ target: insideNoAbstractState(0), scrollTop: 0, clientY: 300, containerTop: TOP }), 300, 'at its heading, or where it fits its panel and never scrolls');
   assert.equal(pullStartFrom({ target: insideNoAbstractState(0), scrollTop: 812, clientY: 600, containerTop: TOP, containerHeight: H }), null, 'and below the band it is still the previous paper');
+});
+
+test('a drag that begins on the scrolled head of a card with the publisher\'s page is refused until the head is back at its top', () => {
+  assert.equal(pullStartFrom({ target: insideHeadRows(41), scrollTop: 0, clientY: 300, containerTop: TOP }), null, 'on the first card');
+  assert.equal(pullStartFrom({ target: insideHeadRows(41), scrollTop: 812, clientY: TOP + 4, containerTop: TOP, containerHeight: H }), null, 'in the band of a later card');
+  assert.equal(pullStartFrom({ target: insideHeadRows(0), scrollTop: 0, clientY: 300, containerTop: TOP }), 300, 'at its top, or where the head fits and never scrolls');
 });
 
 test('the first move decides: down is the pull, up is the feed, sideways is neither', () => {

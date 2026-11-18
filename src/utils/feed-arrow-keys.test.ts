@@ -78,6 +78,16 @@ test('at the end of the state, or within a pixel of it, the arrow goes to the ne
   assert.equal(press(state(0.5), 'ArrowUp'), true, 'half a pixel under the heading');
 });
 
+test('the focused head rows of a card with the publisher\'s page keep the arrows while they can scroll their way', () => {
+  // A record with no authors and no topic gives the rows no control, so
+  // where they scroll (41px here) the box itself is the Tab stop.
+  const head = (scrollTop: number) => node(card, ['.pc-head-rows'], { box: { top: 60, bottom: 344 }, scrollTop, scrollHeight: 325, clientHeight: 284 });
+  assert.equal(press(head(0), 'ArrowDown'), false, 'at their top there are rows below');
+  assert.equal(press(head(41), 'ArrowUp'), false, 'at their end there are rows above');
+  assert.equal(press(head(41), 'ArrowDown'), true, 'at their end the arrow goes to the next paper');
+  assert.equal(press(head(0), 'ArrowUp'), true, 'at their top it goes to the previous one');
+});
+
 test('a state that fits its panel leaves the arrows to the feed', () => {
   const fits = state(0, { scrollHeight: 74, clientHeight: 74 });
   assert.equal(press(fits, 'ArrowDown'), true);
