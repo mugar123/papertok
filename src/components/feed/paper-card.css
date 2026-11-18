@@ -1164,11 +1164,24 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 /* The publisher's page of a card with no abstract is the row's last control
-   (paper-card.tsx): the second slot, or a third beside "Read in plain
-   words". It adds no line to the row, except on a phone row too narrow for
-   the three (below). */
+   (paper-card.tsx): the second slot, or beside "Read in plain words" its
+   glyph alone in a 40px column at every width, named on the link. With its
+   label, as a third 14rem slot, the three shared the 40rem column, and a
+   visitor's "Read in plain words" with its lock was cut from 641px to about
+   1216px wide. Source and "Read in plain words" keep their 14rem slots. The
+   link adds no line to the row, except on a phone row too narrow for the
+   three (below). */
 .pc-action-primary--three {
-  grid-template-columns: repeat(3, minmax(0, 14rem));
+  grid-template-columns: repeat(2, minmax(0, 14rem)) auto;
+}
+
+.pc-action-primary--three > .pc-action-publisher {
+  width: 40px;
+  padding-inline: 0;
+}
+
+.pc-action-primary--three > .pc-action-publisher > :is(.pc-action-label, .pc-action-label--short) {
+  display: none;
 }
 
 .pc-action-primary > :is(button, a) {
@@ -3003,18 +3016,18 @@ button.pc-topics-pop-item:focus-visible {
   }
 
   /* Beside "Read in plain words" the publisher's page is its glyph alone in
-     a 40px column: three equal slots cut "Simple" and "Publisher" at 375px
-     with text at 150%. In a row wide enough for the three (124px plus
-     7.75em) they share one line. In a narrower one Source is on the first
-     line and the other two on the second, in the order the keyboard reaches
-     them: side by side, the two reading actions cut "Simple" at 360px with
-     text at 200%, and at 150% on a screen short enough for the rail. Source
-     keeps out of the glyph's column, which is where the rail comes down
-     beside a row that tall: across the whole line, the rail covered its end
-     at 360x640 with text at 150%. The lock that marks "Read in plain words"
-     for a visitor is not drawn in this row. Beside the glyph it cut
-     "Simple" at 375px with text at 150%, and the button keeps "Needs a free
-     account" as its description. */
+     a 40px column, as on a wider screen: three equal slots cut "Simple" and
+     "Publisher" at 375px with text at 150%. In a row wide enough for the
+     three (124px plus 7.75em) they share one line. In a narrower one Source
+     is on the first line and the other two on the second, in the order the
+     keyboard reaches them: side by side, the two reading actions cut
+     "Simple" at 360px with text at 200%, and at 150% on a screen short
+     enough for the rail. Source keeps out of the glyph's column, which is
+     where the rail comes down beside a row that tall: across the whole
+     line, the rail covered its end at 360x640 with text at 150%. The lock
+     that marks "Read in plain words" for a visitor is not drawn in this
+     row. Beside the glyph it cut "Simple" at 375px with text at 150%, and
+     the button keeps "Needs a free account" as its description. */
   .pc-action-primary--three {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -3023,12 +3036,6 @@ button.pc-topics-pop-item:focus-visible {
     grid-column: 1;
   }
 
-  .pc-action-primary--three > .pc-action-publisher {
-    width: 40px;
-    padding-inline: 0;
-  }
-
-  .pc-action-primary--three > .pc-action-publisher > .pc-action-label--short,
   .pc-action-primary--three .pc-action-lock {
     display: none;
   }

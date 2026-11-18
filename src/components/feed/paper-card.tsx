@@ -1730,9 +1730,10 @@ const PaperCard = memo(function PaperCard({
   // on its side that panel is 0px tall, and no touch reaches a link in it.
   // This row keeps its height and its place (paper-card.css), so the link is
   // here at every size and nothing measures the panel to decide where it
-  // goes. It is a link drawn as the row's outline button. Where the row has
-  // no room for its word it shows the glyph alone (paper-card.css), so its
-  // name is set here: the full label and the new tab at every width, which
+  // goes. It is a link drawn as the row's outline button. Beside "Read in
+  // plain words", and where the row has no room for its word, it shows the
+  // glyph alone (paper-card.css), so its name is set here: the full label
+  // and the new tab at every width, which
   // contains the word a phone shows (WCAG 2.5.3). The same words are its
   // `title`, so a pointer resting on the glyph alone reads where it goes, as
   // on the reader's link to the original.
