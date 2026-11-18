@@ -1184,6 +1184,17 @@ button.pc-topics-pop-item:focus-visible {
   display: none;
 }
 
+/* While the feed still asks a source for the abstract, the publisher's page
+   holds its place in the row unseen (paper-card.tsx), so the row and the
+   rows that give way to it have the shape they keep when the wait ends with
+   none. Added only then, the link took a three-control row on a phone at
+   200% text to two lines, and "Read in plain words" landed where Source had
+   been. Hidden, it is out of the tab order, the accessibility tree and the
+   reach of a tap. */
+.pc-action-publisher--pending {
+  visibility: hidden;
+}
+
 .pc-action-primary > :is(button, a) {
   min-width: 0;
 }

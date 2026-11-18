@@ -431,7 +431,9 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   word beside Source. On a phone the three share a line when they fit;
   otherwise Source takes the first line and the other two the second, and
   that row draws no lock. On a screen short enough for the rail to reach the
-  row, the row stops short of the rail.
+  row, the row stops short of the rail. While the feed still asks a source
+  for the abstract, the link holds its place in the row unseen, so the row
+  keeps its shape when the wait ends with no abstract.
 - **Settings › Feeds** (`settings/feeds-settings-page.tsx`), reached from
   Discovery: a `New feed` button over the reader's feeds in tab order, as
   ruled rows. Each row has the feed's name in the serif, its ingredients on one

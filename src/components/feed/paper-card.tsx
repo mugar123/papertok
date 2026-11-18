@@ -1736,13 +1736,16 @@ const PaperCard = memo(function PaperCard({
   // and the new tab at every width, which
   // contains the word a phone shows (WCAG 2.5.3). The same words are its
   // `title`, so a pointer resting on the glyph alone reads where it goes, as
-  // on the reader's link to the original.
-  const publisher = !abstractText && !abstractLoading ? missingAbstract.publisher : null;
+  // on the reader's link to the original. While the feed still asks a
+  // source for the abstract, the link holds its place in the row unseen
+  // (`--pending`): the row then has the shape it keeps when the wait ends
+  // with none, and no control moves under the reader's finger at that moment.
+  const publisher = !abstractText ? missingAbstract.publisher : null;
   const publisherName = publisher ? `${publisher.label} (opens in a new tab)` : '';
   const publisherAction = publisher && (
     <Button
       variant="outline"
-      className="pc-action-publisher"
+      className={`pc-action-publisher${abstractLoading ? ' pc-action-publisher--pending' : ''}`}
       role="link"
       render={<a href={publisher.url} target="_blank" rel="noopener noreferrer" />}
       aria-label={publisherName}
