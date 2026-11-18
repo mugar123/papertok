@@ -2248,30 +2248,34 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // A paper that the categories of several groups list is one group's, so the
   // turn that shows it and the turn it gives up once named are the same
   // group's (PR #520's review, 2026-11-17): the group whose ranking places it
-  // highest for the ranking's length, its place divided by the number of
-  // papers that group ranks (Pablo's decision of 2026-11-17). A tie goes to
-  // the group that asks for the first of the paper's categories by id, not to
-  // the first in the request, whose order the app changes between loads; the
-  // order decides only between two groups that ask for one category, which
-  // the app does not send. Each group that holds such a paper ranks every
-  // notable paper of its categories, the named ones included, so while the
-  // likes, the rejections, the day's slice and the order of each group's
-  // categories stay the same, a paper has the same group when a load shows it
-  // and when a later load names it. A group without likes ranks by its years
-  // in turns, which follow the order the request asks its categories in, so
-  // its place for a paper says how soon its turns reach the paper's year and
-  // category, not how close the paper is to anything. A like or a rejection
-  // that changes the rankings, or a new order of the categories of a group
-  // without likes (the app orders them by affinity, which moves with skips
-  // and view times), can move papers already shown to another group: from the
-  // first load ranked so, each counts for its new group, so its old group
-  // takes one turn more and the new group one fewer. With two groups of equal
+  // highest for the ranking's length, measured as the number of papers that
+  // group ranks above it divided by the number it ranks, not by how close it
+  // is to the group's likes (Pablo's decisions of 2026-11-17 and 2026-11-18).
+  // A tie goes to the group that asks for the first of the paper's categories
+  // by id, not to the first in the request, whose order the app changes
+  // between loads. A paper that two groups both rank first is such a tie,
+  // whatever the number each ranks. The order decides only between two groups
+  // that ask for one category, which the app does not send. Each group that
+  // holds such a paper ranks every notable paper of its categories, the named
+  // ones included. A group without likes ranks by its years in turns, so its
+  // place for a paper says how soon its turns reach the paper's year and
+  // category, not how close the paper is to anything. To find each paper's
+  // group it takes its categories in id order, and to show its papers, in the
+  // order the request asks them in (Pablo's decision of 2026-11-18). The app
+  // orders them by affinity, which moves with skips and view times: when the
+  // request's order also decided each paper's group, a swap moved papers
+  // already shown to another group, and a swap on every load could pass a
+  // paper over (PR #520's review, 2026-11-17). So while the likes, the
+  // rejections, the day's slice and each group's categories stay the same, a
+  // paper has the same group when a load shows it and when a later load names
+  // it. A like or a rejection ("Not interested") that changes the rankings can
+  // move papers already shown to another group (Pablo's decision of
+  // 2026-11-18): from the first load ranked so, each moved paper gives its old
+  // group one extra turn and its new group one fewer. With two groups of equal
   // weight, k papers moved give the old group the next 2k cards, or 2k + 1
-  // when its turn was next. While the order keeps changing, a paper not shown
-  // yet can change group from load to load and be passed over. A group with
-  // likes still shows its papers in the order it ranks the ones the request
-  // does not name: in its ranking with the named ones, the diversity pass
-  // would move their near copies down.
+  // when its turn was next. A group with likes still shows its papers in the
+  // order it ranks the ones the request does not name: in its ranking with
+  // the named ones, the diversity pass would move their near copies down.
   const notableInGroupTurns = () => {
     const groupLanes = query.groups.map(group => group.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`));
     const ofLanes = groupLanes.map(lanes => notableCandidates.filter(candidate => candidate.lanes.some(lane => lanes.includes(lane))));
@@ -2286,11 +2290,16 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     ofLanes.forEach((rows, index) => rows.forEach(({ workId }) => holders.set(workId, [...holders.get(workId) ?? [], index])));
     const shares = ofLanes.map(rows => rows.some(({ workId }) => holders.get(workId)!.length > 1));
     const rankings = ofLanes.map((rows, index) => rank(index, shares[index] || !groupLikes[index].length ? rows : offeredOf(rows)));
-    const places = rankings.map(ranking => new Map(ranking.map(({ row }, place) => [row.workId, place])));
+    // A group without likes that shares a paper places it with its categories
+    // in id order (above); a group that shares none decides no paper's group.
+    const ownerRankings = rankings.map((ranking, index) => (groupLikes[index].length || !shares[index]
+      ? ranking
+      : yearsInTurns(ofLanes[index], [...groupLanes[index]].sort())));
+    const places = ownerRankings.map(ranking => new Map(ranking.map(({ row }, place) => [row.workId, place])));
     const firstLane = (index: number, candidate: Candidate) => candidate.lanes.filter(lane => groupLanes[index].includes(lane)).sort()[0];
     const groupOf = (candidate: Candidate) => holders.get(candidate.workId)!.reduce((group, index) => {
       // place / length against the group's so far, multiplied out to compare whole numbers.
-      const higher = places[index].get(candidate.workId)! * rankings[group].length - places[group].get(candidate.workId)! * rankings[index].length;
+      const higher = places[index].get(candidate.workId)! * ownerRankings[group].length - places[group].get(candidate.workId)! * ownerRankings[index].length;
       return higher < 0 || (higher === 0 && firstLane(index, candidate) < firstLane(group, candidate)) ? index : group;
     });
     const groups = new Map(ofLanes.flat().map(candidate => [candidate.workId, groupOf(candidate)]));
