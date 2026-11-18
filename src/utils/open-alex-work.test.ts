@@ -16,6 +16,15 @@ const work = (source: NonNullable<OpenAlexWork['primary_location']>['source']): 
   primary_location: { is_published: true, landing_page_url: 'https://doi.org/10.1257/aer.20260001', source },
 });
 
+test('a work without a landing page links to doi.org with every character of its DOI', () => {
+  // OpenAlex writes the resolver before the DOI's characters unencoded (a
+  // lookup on 2026-11-16); this real Wiley DOI ends in `#`. The work is synthetic.
+  const doi = '10.1002/(sici)1097-0282(1996)40:1<1::aid-bip1>3.0.co;2-#';
+  const paper = mapOpenAlexWork({ ...work(null), doi: `https://doi.org/${doi}`, primary_location: { source: null } });
+  assert.equal(paper?.doi, doi);
+  assert.equal(paper?.landingPageUrl, 'https://doi.org/10.1002/(sici)1097-0282(1996)40:1%3C1::aid-bip1%3E3.0.co;2-%23');
+});
+
 test("a work keeps the OpenAlex id of the journal that published it, and no id when its source is not a journal", () => {
   const journal = work({ id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' });
   assert.equal(mapOpenAlexWork(journal)?.venueId, 'S23254222');

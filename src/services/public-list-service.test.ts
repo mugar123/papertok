@@ -231,6 +231,20 @@ test('a public paper keeps its DOI character for character, on both passes', () 
   assert.equal(sanitizePublicPaper({ title: 'A paper', doi: 'https://doi.org/10.1234/a%3Fb' })?.doi, '10.1234/a?b');
 });
 
+test('a public paper given a resolver link keeps the DOI its path names, on both passes', () => {
+  const links = new Map([
+    ['https://doi.org/10.1000/1?noredirect&type=URL', '10.1000/1'],
+    ['https://doi.org/10.1000/1#section-2', '10.1000/1'],
+    ['https://doi.org/10.1234/report%20', '10.1234/report'],
+  ]);
+  for (const [link, doi] of links) {
+    const first = sanitizePublicPaper({ title: 'A paper', doi: link });
+    assert.equal(first?.doi, doi, link);
+    assert.equal(first?.id, `doi:${doi}`, link);
+    assert.deepEqual(sanitizePublicPaper(first), first, link);
+  }
+});
+
 test('P25: papers record the id the private list files them under', async () => {
   // THE BUG this shape exists to avoid: sanitizePublicPaper rewrites ids to
   // their stable doi:/arxiv: spelling, and the Worker joins the membership

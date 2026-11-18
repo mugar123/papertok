@@ -69,27 +69,30 @@ const DOI_RESOLVER = /^https?:\/\/(?:dx\.)?doi\.org\//i;
  * `..` segment is the exception no encoding covers: the URL parser resolves
  * it, written as `%2E` too, before the request leaves.
  *
- * Whether a `%` is the DOI's own depends on how the DOI arrives, the rule
- * `get_paper` follows (`paperIdentity` in worker/mcp-server.ts):
+ * A value is read in one of two ways:
  * - a DOI given as itself is read as written. `10.1234/a%3Fb` has `%3F` among
  *   its characters and links to `…/a%253Fb`;
- * - a resolver link carries the DOI percent-encoded, so it is decoded once.
- *   `https://doi.org/10.1234/a%3Fb` is 10.1234/a?b and links to `…/a%3Fb`,
- *   so this function's own link comes back unchanged. OpenAlex writes the
- *   resolver before the DOI as it is, `<` and `#` unencoded. Such a link
- *   reads the same, except that a `%XX` among the DOI's own characters is
- *   taken for an escape: a link cannot tell the two apart.
+ * - a resolver link is a URL, read as doi.org reads it: the DOI is its path,
+ *   decoded once, and a `?` or `#` ends the path, so a query or fragment is
+ *   not part of the DOI (`https://doi.org/10.1000/1?noredirect` is 10.1000/1).
+ *   `https://doi.org/10.1234/a%3Fb` is 10.1234/a?b, so this function's own
+ *   link comes back unchanged. A path whose `%` starts no escape is read as
+ *   written. Space around the DOI is not part of it, decoded or not.
+ * A provider that writes the resolver before the DOI's characters unencoded,
+ * as OpenAlex does (`…/3.0.co;2-#`), has written no URL: its adapter strips
+ * the resolver and hands the bare DOI on.
  */
 export function safeDoiUrl(doi: unknown) {
   const text = String(doi || '').trim();
   let normalized = text.replace(DOI_RESOLVER, '');
   if (normalized !== text) {
+    normalized = normalized.split(/[?#]/, 1)[0];
     try {
       normalized = decodeURIComponent(normalized);
     } catch {
-      // A `%` that starts no escape is the DOI's own, so the whole link is
-      // read as written.
+      // A `%` that starts no escape is the DOI's own: the path is read as written.
     }
+    normalized = normalized.trim();
   }
   return /^10\.\d{4,9}\/.+/.test(normalized)
     ? `https://doi.org/${encodeURI(normalized).replace(/[#?]/g, character => encodeURIComponent(character))}`

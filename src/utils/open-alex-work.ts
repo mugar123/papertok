@@ -4,6 +4,7 @@ import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 import { usableOpenAlexAbstract } from './open-alex-abstract.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
+import { safeDoiUrl } from './external-url.ts';
 import { normalizePmid } from './public-navigation.ts';
 import { isListedWorkingPaperSeries, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from './publication-status.ts';
 
@@ -252,7 +253,9 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
   // reads only an explicit `false` as a paywall.
   const isOpenAccess = typeof work.open_access?.is_oa === 'boolean' ? work.open_access.is_oa : undefined;
   const pdfUrl = work.open_access?.oa_url || null;
-  const landingPageUrl = work.primary_location?.landing_page_url || work.doi || null;
+  // `work.doi` is the resolver followed by the DOI's raw characters, not a valid
+  // URL: a browser drops a final `#` from it. Encode the bare DOI instead.
+  const landingPageUrl = work.primary_location?.landing_page_url || safeDoiUrl(doi) || null;
 
   const sourceName = work.primary_location?.source?.display_name || UNNAMED_SOURCE;
 

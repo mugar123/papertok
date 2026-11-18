@@ -42,8 +42,6 @@ const SICI_LINK = 'https://doi.org/10.1002/(sici)1097-0282(1996)40:1%3C1::aid-bi
 
 test('a DOI link carries every character of the DOI in its path', () => {
   assert.equal(safeDoiUrl(SICI_DOI), SICI_LINK);
-  // OpenAlex writes the DOI behind the resolver, its characters as they are.
-  assert.equal(safeDoiUrl(`https://doi.org/${SICI_DOI}`), SICI_LINK);
   assert.equal(safeDoiUrl('10.1234/odd?part#two'), 'https://doi.org/10.1234/odd%3Fpart%23two');
   assert.equal(safeDoiUrl('10.1234/a b"c\\d'), 'https://doi.org/10.1234/a%20b%22c%5Cd');
 
@@ -75,7 +73,20 @@ test('a `%` is the DOI\'s own in a bare DOI and an escape in a resolver link', (
   // So the helper's own link comes back unchanged.
   assert.equal(safeDoiUrl(SICI_LINK), SICI_LINK);
   assert.equal(safeDoiUrl('https://doi.org/10.1234/a%253Fb'), 'https://doi.org/10.1234/a%253Fb');
-  // A link whose `%` starts no escape is read as written, whole.
+  // A path whose `%` starts no escape is read as written.
   assert.equal(safeDoiUrl('https://doi.org/10.1234/50%off'), 'https://doi.org/10.1234/50%25off');
   assert.equal(safeDoiUrl('https://doi.org/10.1234/a%3Fb%zz'), 'https://doi.org/10.1234/a%253Fb%25zz');
+});
+
+test('a resolver link names the DOI in its path, not in its query or fragment', () => {
+  // The DOI Handbook's own example of a resolver query names 10.1000/1.
+  assert.equal(safeDoiUrl('https://doi.org/10.1000/1?noredirect&type=URL'), 'https://doi.org/10.1000/1');
+  assert.equal(safeDoiUrl('HTTPS://DOI.ORG/10.1000/1#section-2'), 'https://doi.org/10.1000/1');
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/50%off?x#y'), 'https://doi.org/10.1234/50%25off');
+  // Escaped, `?` and `#` belong to the path, as for doi.org.
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/a%3Fb%23c?x'), 'https://doi.org/10.1234/a%3Fb%23c');
+  // Space around the DOI is not part of it, encoded or not.
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/report%20'), 'https://doi.org/10.1234/report');
+  assert.equal(safeDoiUrl('https://doi.org/10.1234/50%off ?x'), 'https://doi.org/10.1234/50%25off');
+  assert.equal(safeDoiUrl('https://doi.org/?10.1234/a'), '');
 });
