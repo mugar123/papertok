@@ -1733,13 +1733,16 @@ const PaperCard = memo(function PaperCard({
   // goes. It is a link drawn as the row's outline button. Beside "Read in
   // plain words", and where the row has no room for its word, it shows the
   // glyph alone (paper-card.css), so its name is set here: the full label
-  // and the new tab at every width, which
-  // contains the word a phone shows (WCAG 2.5.3). The same words are its
-  // `title`, so a pointer resting on the glyph alone reads where it goes, as
-  // on the reader's link to the original. While the feed still asks a
-  // source for the abstract, the link holds its place in the row unseen
-  // (`--pending`): the row then has the shape it keeps when the wait ends
-  // with none, and no control moves under the reader's finger at that moment.
+  // and the new tab at every width, which contains the word a phone shows
+  // (WCAG 2.5.3). Beside "Read in plain words" it is always the glyph, and
+  // the same words are its `title`, so a pointer resting on it reads where
+  // it goes, as on the reader's link to the original. Beside Source alone it
+  // shows its word, except in a phone's row too narrow for it, so it has no
+  // `title`: with the word showing, a title only repeats the name as its
+  // description. While the feed still asks a source for the abstract, the
+  // link holds its place in the row unseen (`--pending`): the row then has
+  // the shape it keeps when the wait ends with none, and no control moves
+  // under the reader's finger at that moment.
   const publisher = !abstractText ? missingAbstract.publisher : null;
   const publisherName = publisher ? `${publisher.label} (opens in a new tab)` : '';
   const publisherAction = publisher && (
@@ -1749,7 +1752,7 @@ const PaperCard = memo(function PaperCard({
       role="link"
       render={<a href={publisher.url} target="_blank" rel="noopener noreferrer" />}
       aria-label={publisherName}
-      title={publisherName}
+      title={canRequestRewrite ? publisherName : undefined}
       onClick={swallowClick}
     >
       <ArrowSquareOut size={16} aria-hidden="true" />
