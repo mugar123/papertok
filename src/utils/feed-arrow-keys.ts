@@ -30,7 +30,9 @@ type KeyTarget<Feed> = { closest: (selectors: string) => PageNode<Feed> | null }
  *
  * The card's no-abstract state scrolls inside a panel too short for it
  * (paper-card.css). It holds no control, so Chrome and Firefox make the
- * scroller itself a Tab stop for the arrows to move it. While the focused
+ * scroller itself a Tab stop for the arrows to move it. The head's rows on a
+ * card with the publisher's page do the same when they scroll and the record
+ * gives them no control (no authors and no topic). While the focused
  * state can still move the way of the key, the key is the state's and the
  * browser scrolls it. At its end the key is the feed's, as a drag is
  * (`PULL_YIELDING_SCROLLERS`): left to the browser there, the key could stop

@@ -1726,14 +1726,14 @@ const PaperCard = memo(function PaperCard({
   );
   // The publisher's page of a paper with no abstract to show, as a control of
   // the action row. The sentence that names it is in the abstract's panel,
-  // the one row of the card that yields: under a four-line title on a phone
+  // the first row of the card to give way: under a four-line title on a phone
   // on its side that panel is 0px tall, and no touch reaches a link in it.
-  // This row keeps its height, so the link is here at every size and nothing
-  // measures the panel to decide where it goes. It is a link drawn as the
-  // row's outline button. Where the row has no room for its word it shows
-  // the glyph alone (paper-card.css), so its name is set here: the full label
-  // and the new tab at every width, which contains the word a phone shows
-  // (WCAG 2.5.3).
+  // This row keeps its height and its place (paper-card.css), so the link is
+  // here at every size and nothing measures the panel to decide where it
+  // goes. It is a link drawn as the row's outline button. Where the row has
+  // no room for its word it shows the glyph alone (paper-card.css), so its
+  // name is set here: the full label and the new tab at every width, which
+  // contains the word a phone shows (WCAG 2.5.3).
   const publisher = !abstractText && !abstractLoading ? missingAbstract.publisher : null;
   const publisherAction = publisher && (
     <Button
@@ -1954,13 +1954,17 @@ const PaperCard = memo(function PaperCard({
         <div className="pc-body">
         {/* The head: lead, kicker, title and authors, parted from the abstract
             by the authors' rule. The field's glyph lives in it (paper-card.css,
-            `.pc-watermark`), standing on that rule. */}
+            `.pc-watermark`), standing on that rule. The rows have a box of
+            their own, which scrolls on a card with the publisher's page when
+            they are taller than the room the action row leaves them; the
+            glyph stays outside it, so that box does not clip it. */}
         <div className="pc-head">
         {watermark && (
           <span ref={watermarkRef} className="pc-watermark" aria-hidden="true">
             <watermark.Icon size={220} weight={watermark.weight} viewBox={watermark.ink} />
           </span>
         )}
+        <div className="pc-head-rows">
         <div className="pc-lead" aria-hidden="true">
           {figures[0] && (
             <img
@@ -2134,6 +2138,7 @@ const PaperCard = memo(function PaperCard({
               </ul>
             </div>
           )}
+        </div>
         </div>
         </div>
 

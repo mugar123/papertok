@@ -58,11 +58,13 @@ export const PULL_BLOCKING_SCROLLERS = '.pc-abstract--open';
 
 /**
  * Scrollers that keep a drag down only while they are scrolled. The card's
- * no-abstract state scrolls inside a panel too short for it (paper-card.css):
- * a drag down takes it back to its heading, and from the heading the drag is
- * the feed's again, as on a state that fits its panel and never scrolls.
+ * no-abstract state scrolls inside a panel too short for it, and on a card
+ * with the publisher's page the head's rows scroll when the action row
+ * leaves them too little room (paper-card.css). A drag down takes either
+ * back to its top, and from there the drag is the feed's again, as where it
+ * fits and never scrolls.
  */
-export const PULL_YIELDING_SCROLLERS = '.pc-abstract-empty';
+export const PULL_YIELDING_SCROLLERS = '.pc-abstract-empty, .pc-head-rows';
 
 /**
  * Where a pull may begin, or null. `containerTop` and `containerHeight` are
