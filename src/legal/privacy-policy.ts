@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-18';
+export const PRIVACY_POLICY_VERSION = '2026-11-20';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -91,16 +91,19 @@ export const PRIVACY_POLICY_VERSION = '2026-11-18';
  * instant follows the rule above for a text that ships with its own pull
  * request.
  *
- * Version 2026-11-18 adds ORCID: the iD and the record's name kept while a
+ * Version 2026-11-20 adds ORCID: the iD and the record's name kept while a
  * reader has ORCID connected, the access token that is not stored, and My
  * profile, shown only to the reader, whose works the browser loads from
- * ORCID's public API. It ships with the pull request that adds the ORCID
- * routes and My profile, and this instant follows the rule above for such a
- * text: if the merge falls after it, move the page's "Last updated" date,
- * PRIVACY_POLICY_VERSION and this instant to the merge day before merging,
- * and lower it to the deployment's success time once it is live.
+ * ORCID's public API, with the works OpenAlex links to the iD and the
+ * identifiers of those the reader marks as theirs or not. It ships with the
+ * pull request that adds the ORCID routes and My profile, and this instant
+ * follows the rule above for such a text: it stands at the end of the day
+ * the merge is planned for. If the merge falls after it, move the page's
+ * "Last updated" date, PRIVACY_POLICY_VERSION and this instant to the merge
+ * day before merging, and lower it to the deployment's success time once it
+ * is live.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-18T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
@@ -118,6 +121,7 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
   "If you connect ORCID, your ORCID iD and the name on your ORCID record are kept with your account. ORCID's access token is not stored.",
   "My profile lists the public works of your ORCID record and is shown only to you. Your browser loads those works from ORCID directly.",
+  "My profile also suggests works OpenAlex links to your iD. Which ones you mark as yours or not is kept with your account until you disconnect.",
 ];
 
 /**
@@ -139,6 +143,9 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ["ORCID's access token is not stored", /ORCID also gives an access token, which PaperTok does not store\./],
     ['My profile lists the public works of your ORCID record and is shown only to you', /My profile lists the public works of your ORCID record and is shown only to you\./],
     ['Your browser loads those works from ORCID directly', /Your browser loads those works from ORCID's public API directly/],
+    ['My profile also suggests works OpenAlex links to your iD', /My profile suggests works that OpenAlex links to your iD/],
+    ['Which ones you mark as yours or not is kept with your account', /PaperTok keeps the work's identifier \(its DOI, or its OpenAlex id when it has none\) in one of those two lists with your account/],
+    ['until you disconnect', /Disconnecting in <strong>My profile<\/strong> deletes your iD, your name and those two lists/],
   ],
   unsaid: [
     [/\bpublic profile\b|anyone|everyone/i, 'My profile is shown only to the reader'],

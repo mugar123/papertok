@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 18 November 2026.</p>
+      <p class="lp-updated">Last updated 20 November 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -129,9 +129,9 @@
               <td>Sending a paper and your highlights to your Zotero library when you ask, and updating them instead of adding copies</td>
             </tr>
             <tr>
-              <td>If you connect ORCID: your ORCID iD, the name on your ORCID record and when you connected it</td>
-              <td>ORCID, when you sign in there to connect it</td>
-              <td>Showing your iD on My profile and listing the public works of your ORCID record there, only to you</td>
+              <td>If you connect ORCID: your ORCID iD, the name on your ORCID record and when you connected it, and the identifiers of the suggested works you marked as yours or as not yours</td>
+              <td>ORCID, when you sign in there to connect it; you, when you mark a suggested work</td>
+              <td>Showing your iD on My profile and listing there, only to you, the public works of your ORCID record and the works you added</td>
             </tr>
             <tr>
               <td>Comments and content reports from earlier versions of PaperTok</td>
@@ -275,8 +275,15 @@
         My profile lists the public works of your ORCID record and is shown only to you. Your
         browser loads those works from ORCID's public API directly, so ORCID receives your IP
         address and your iD. The details of each work with a DOI come from OpenAlex through
-        PaperTok's server, like other lookups. Disconnecting in <strong>My profile</strong>
-        deletes your iD and name from your account. PaperTok stays among the trusted
+        PaperTok's server, like other lookups. Under them, My profile suggests works that
+        OpenAlex links to your iD and that your ORCID record does not list, also asked of
+        OpenAlex through PaperTok's server with your iD. OpenAlex can link a work to the wrong
+        person. When you mark a suggested work as yours, it joins your publications on My
+        profile; when you mark it as not yours, it stops being suggested. PaperTok keeps the
+        work's identifier (its DOI, or its OpenAlex id when it has none) in one of those two
+        lists with your account; only your account can read them, and your ORCID record does
+        not change. Disconnecting in <strong>My profile</strong> deletes your iD, your name
+        and those two lists from your account. PaperTok stays among the trusted
         organizations in your ORCID account settings until you remove it there.
       </p>
 
@@ -493,7 +500,7 @@
         <strong>Settings → Account → Delete account</strong>. That deletes your lists, your
         highlights, your plain-words summaries, what you follow, your interactions with
         papers and the lists of papers you viewed, your preferences, the record of the latest
-        policy announcement you were shown, the email subscription, your Zotero connection, your ORCID connection and the sign-in account, along
+        policy announcement you were shown, the email subscription, your Zotero connection, your ORCID connection with the works you marked on My profile, and the sign-in account, along
         with what earlier versions of PaperTok kept for you: your
         public profile, the photo you uploaded, the people you followed, your comments, the
         content reports you filed and those filed about your comments. The feed order the

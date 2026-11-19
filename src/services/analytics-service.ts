@@ -33,9 +33,9 @@ const DAY_7_MS = 7 * DAY_MS;
 // report. `/profile`, `/settings/profile`, `/settings/comments` and
 // `/admin/moderation` shipped missing and took a tenth of all page views with
 // them; `/research` (removed) and its legacy alias `/report` both
-// redirect to `/feed`, `/profile` (removed) redirects to `/lists`, and they
-// stay listed so those arrivals read as the old link they came from rather
-// than as noise. The test 'every route the app
+// redirect to `/feed`, and they stay listed so those arrivals read as the old
+// link they came from rather than as noise. `/profile` is My profile again,
+// the account's own page. The test 'every route the app
 // declares is a named analytics path' is what keeps this list from drifting
 // behind the router again.
 const STATIC_ANALYTICS_PATHS = new Set([
