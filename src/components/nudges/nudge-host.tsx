@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { EnvelopeSimple } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -36,7 +36,7 @@ import {
   type AccountNoticeRecord,
   type VisitNotices,
 } from '../../utils/nudges.ts';
-import { pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
+import { pmfSurveyAreas, pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
 import { setCardsCovered } from '../../utils/visible-time.ts';
 import NudgePanel from './nudge-panel.tsx';
 import PmfSurvey from './pmf-survey.tsx';
@@ -120,7 +120,7 @@ function subscribeToTabVisibility(onChange: () => void) {
 }
 
 export default function NudgeHost() {
-  const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth();
+  const { user, loading: authLoading, onboardingComplete, profileLoadError, userPreferences, readingPreferences } = useAuth();
   const { health, loading: emailLoading } = useEmailNotifications();
   const location = useLocation();
   const navigate = useNavigate();
@@ -275,9 +275,13 @@ export default function NudgeHost() {
   // The survey's version counts as asked once it is on screen, as the privacy
   // notice's counts as told. When it closes without an answer from the dialog,
   // because the reader left the feed (Back included), that is its dismissal.
+  // Both of its events describe the reader as they were when it opened: their
+  // reading level and the broad areas of their interests. A change to either
+  // while it is open does not reopen it.
   const shownSurvey = useRef<PmfSurveyShown | null>(null);
+  const surveyReader = useEffectEvent(() => ({ readingLevel: readingPreferences.aiExplanationLevel, areas: pmfSurveyAreas(userPreferences) }));
   useEffect(() => {
-    const shown = recordPmfSurveyShown({ uid, surveyOpen, version: APP_VERSION, track: trackPmfSurvey });
+    const shown = recordPmfSurveyShown({ uid, surveyOpen, version: APP_VERSION, reader: surveyReader(), track: trackPmfSurvey });
     shownSurvey.current = shown;
     return () => shown?.close();
   }, [uid, surveyOpen]);

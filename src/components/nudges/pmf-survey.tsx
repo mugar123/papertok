@@ -1,12 +1,12 @@
 import { useId, useRef, useState } from 'react';
 import { Button } from '../ui/button.tsx';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
-import type { PmfDisappointment, PmfSurveyAnswer } from '../../utils/pmf-survey.ts';
+import type { PmfDisappointment, PmfRole, PmfSurveyAnswer } from '../../utils/pmf-survey.ts';
 import PmfSurveyQuestions from './pmf-survey-questions.ts';
 import './pmf-survey.css';
 
 const COPY = {
-  title: 'Two quick questions',
+  title: 'Three quick questions',
   description: 'Your answers help decide what PaperTok does next.',
   send: 'Send',
   sendNeeds: 'Answer the first question to send.',
@@ -29,6 +29,7 @@ export default function PmfSurvey({ open, onAnswer }: { open: boolean; onAnswer:
   const sendNeedsId = useId();
   const [disappointment, setDisappointment] = useState<PmfDisappointment | null>(null);
   const [nps, setNps] = useState<number | null>(null);
+  const [role, setRole] = useState<PmfRole | null>(null);
   // Once handed over, the dialog is closing: a second press while it leaves sends nothing.
   const answer = (value: PmfSurveyAnswer) => { if (open) onAnswer(value); };
 
@@ -40,8 +41,10 @@ export default function PmfSurvey({ open, onAnswer }: { open: boolean; onAnswer:
         <PmfSurveyQuestions
           disappointment={disappointment}
           nps={nps}
+          role={role}
           onDisappointmentChange={setDisappointment}
           onNpsChange={setNps}
+          onRoleChange={setRole}
         />
         <div className="pmf-survey-actions">
           <Button
@@ -49,7 +52,7 @@ export default function PmfSurvey({ open, onAnswer }: { open: boolean; onAnswer:
             disabled={!disappointment}
             focusableWhenDisabled
             aria-describedby={disappointment ? undefined : sendNeedsId}
-            onClick={() => { if (disappointment) answer({ disappointment, nps }); }}
+            onClick={() => { if (disappointment) answer({ disappointment, nps, role }); }}
           >
             {COPY.send}
           </Button>

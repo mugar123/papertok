@@ -63,7 +63,8 @@
 }
 
 .pmf-survey-choice,
-.pmf-survey-score {
+.pmf-survey-score,
+.pmf-survey-role {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--bg-card);
@@ -83,15 +84,31 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The roles as compact buttons that wrap onto as many rows as the width and
+   the text size need, each label kept whole on one line where it fits. */
+.pmf-survey-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.pmf-survey-role {
+  min-height: 2.5rem;
+  padding: var(--space-1) var(--space-3);
+  text-align: left;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .pmf-survey-choice:not([data-checked]):hover,
-  .pmf-survey-score:not([data-checked]):hover {
+  .pmf-survey-score:not([data-checked]):hover,
+  .pmf-survey-role:not([data-checked]):hover {
     background: var(--bg-secondary);
   }
 }
 
 .pmf-survey-choice[data-checked],
-.pmf-survey-score[data-checked] {
+.pmf-survey-score[data-checked],
+.pmf-survey-role[data-checked] {
   border-color: var(--border-ink);
   background: var(--bg-sunken);
   box-shadow: inset 0 0 0 1px var(--border-ink);
@@ -99,7 +116,8 @@
 }
 
 .pmf-survey-choice:focus-visible,
-.pmf-survey-score:focus-visible {
+.pmf-survey-score:focus-visible,
+.pmf-survey-role:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -138,7 +156,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .pmf-survey-choice,
-  .pmf-survey-score {
+  .pmf-survey-score,
+  .pmf-survey-role {
     transition: none;
   }
 }

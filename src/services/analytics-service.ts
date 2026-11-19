@@ -1,3 +1,4 @@
+import { CATEGORIES as TAXONOMY_AREAS } from '../data/category-taxonomy.ts';
 import { loadOptionalModule } from '../utils/module-load-recovery.ts';
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
 import { APP_RELOAD_KEY, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/app-reload.ts';
@@ -166,6 +167,9 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   feed_order: new Set(['newest', 'best']),
   zotero_result: new Set(['sent', 'failed']),
   pmf_disappointment: new Set(['very', 'somewhat', 'not', 'dismissed']),
+  pmf_role: new Set(['undergraduate', 'graduate', 'researcher', 'industry', 'other']),
+  // The taxonomy's broad areas (data/category-taxonomy.ts), never a subarea.
+  reader_area: new Set(Object.keys(TAXONOMY_AREAS)),
 });
 
 const FEED_LOAD_DIMENSIONS = { load_type: 'feed_load_type', attempt: 'feed_load_attempt', first_screen: 'boolean', client_release: 'release' };
@@ -263,12 +267,19 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   custom_feed_open: { feed_order: 'feed_order' },
   zotero_send: { result: 'zotero_result' },
   // The product-market fit survey (components/nudges/pmf-survey.tsx): that it
-  // opened, then the answer or the dismissal. Fixed labels, a 0 to 10 score and
-  // the product version, never text. `activation_age` tells readers who arrived
+  // opened, then the answer or the dismissal. Fixed labels, a 0 to 10 score,
+  // the optional role the reader chose (sent only with an answer) and the
+  // product version, never text. `activation_age` tells readers who arrived
   // in the last days from those who have used PaperTok for weeks, and opened
-  // against answered gives the response rate.
-  pmf_survey_shown: { app_version: 'app_version', activation_age: 'activation_age' },
-  pmf_survey: { disappointment: 'pmf_disappointment', nps: 'nps', app_version: 'app_version', activation_age: 'activation_age' },
+  // against answered gives the response rate. Both events also carry the
+  // reader's reading level setting and the broad areas of their interests
+  // (utils/pmf-survey.ts), so either can be split by kind of reader; the areas
+  // describe the reader's interests, so they are a detail-level list.
+  pmf_survey_shown: { app_version: 'app_version', activation_age: 'activation_age', reading_level: 'rewrite_level', areas: 'detail_list:reader_area' },
+  pmf_survey: {
+    disappointment: 'pmf_disappointment', nps: 'nps', role: 'pmf_role', app_version: 'app_version', activation_age: 'activation_age',
+    reading_level: 'rewrite_level', areas: 'detail_list:reader_area',
+  },
 }) satisfies Readonly<Record<string, Record<string, string>>>;
 
 export type ProductAnalyticsEvent = keyof typeof EVENT_PARAMETER_SCHEMAS;
@@ -481,6 +492,15 @@ export function sanitizeProductEventParams(eventName: string | number, params: R
     }
     if (type === 'identifier' && consent === ANALYTICS_CONSENT.ENABLED && typeof value === 'string' && value.trim()) {
       safeParams[key] = value.trim().slice(0, 300);
+    }
+    // A list of one category's labels, sent like an identifier only at the
+    // enabled level: an unknown label is dropped, each label kept once (so the
+    // list never holds more than the category does) and sorted, and a list
+    // left empty is not sent.
+    if (type.startsWith('detail_list:') && consent === ANALYTICS_CONSENT.ENABLED && Array.isArray(value)) {
+      const labels = CATEGORIES[type.slice('detail_list:'.length)];
+      const kept = [...new Set(value.filter((label): label is string => typeof label === 'string' && labels.has(label)))].sort();
+      if (kept.length) safeParams[key] = kept;
     }
     if (CATEGORIES[type]?.has(value as string)) safeParams[key] = value;
     return safeParams;
