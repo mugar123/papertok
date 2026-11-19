@@ -167,8 +167,9 @@ function AddedWorkRow({ itemKey, actions }: { itemKey: string; actions: ReactNod
  * The reader's publications and the works that might also be theirs, read
  * when the page opens and kept only in this component: the works of their
  * public ORCID record, the works OpenAlex attributes to the iD, and the
- * reader's decisions about those. Mounted with a key per iD, so another record
- * starts empty and a late answer for the previous one is dropped.
+ * reader's decisions about those. Mounted with a key per connection, so
+ * another record, or the same iD connected again, starts empty and a late
+ * answer for the previous one is dropped.
  */
 function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string }) {
   const navigate = useNavigate();
@@ -196,7 +197,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
 
   useEffect(() => {
     let live = true;
-    loadOrcidPublications(orcid.id, orcid.host, readOrcidWorkDecisions(uid)).then((result) => {
+    loadOrcidPublications(orcid.id, orcid.host, readOrcidWorkDecisions(uid, orcid.connectedAt)).then((result) => {
       if (!live) return;
       setLoaded(result);
       setDecisions(result.decisions);
@@ -208,7 +209,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
       setStatus('error');
     });
     return () => { live = false; };
-  }, [orcid.id, orcid.host, uid, attempt]);
+  }, [orcid.id, orcid.host, orcid.connectedAt, uid, attempt]);
 
   // A decision replaces the control that made it; focus moves to the one that takes its place.
   useEffect(() => {
@@ -268,7 +269,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
     pendingFocus.current = focus;
     setDecisionNote(note);
     try {
-      await saveOrcidWorkDecision(uid, keys, decision);
+      await saveOrcidWorkDecision(uid, orcid.connectedAt, keys, decision);
     } catch (error) {
       if (!mounted.current) return;
       console.warn('An ORCID work decision could not be saved', error);
@@ -673,7 +674,7 @@ export default function ProfilePage() {
           <p>{COPY.subtitle}</p>
         </header>
         <OrcidSection />
-        {orcid && user && <OrcidPublications key={`${orcid.host}/${orcid.id}`} orcid={orcid} uid={user.uid} />}
+        {orcid && user && <OrcidPublications key={`${orcid.host}/${orcid.id}/${orcid.connectedAt}`} orcid={orcid} uid={user.uid} />}
       </div>
     </main>
   );
