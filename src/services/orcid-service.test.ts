@@ -246,6 +246,44 @@ test('a work the reader added that OpenAlex no longer attributes is found by its
   assert.equal(publications.length, 7);
 });
 
+test('a record work matches OpenAlex by any DOI its versions list and by its arXiv id, so it is never also suggested', async t => {
+  const recordWithTwoDois = {
+    group: [...WORKS.group, {
+      'external-ids': { 'external-id': [id('doi', '10.48550/arXiv.2203.00002'), id('doi', '10.1000/journal.1')] },
+      'work-summary': [summary(61, {
+        title: { title: { value: 'Preprint, then journal' } }, 'publication-date': { year: { value: '2022' } },
+        'external-ids': { 'external-id': [id('doi', '10.48550/arXiv.2203.00002')] },
+      })],
+    }],
+  };
+  stubOpenAlex(t, {
+    attributed: [
+      // The journal version of the work above, which ORCID lists under the preprint's DOI first.
+      openAlexWork(80, '10.1000/journal.1', 'The journal version', 2022),
+      // The record's preprint known only by its arXiv id (2101.00001), under arXiv's DOI here.
+      openAlexWork(81, '10.48550/arXiv.2101.00001', 'The preprint at OpenAlex', 2021),
+    ],
+  });
+  const loaded = await load(NO_DECISIONS, recordWithTwoDois);
+  const { candidates, publications } = arrangeOrcidWorks(loaded, NO_DECISIONS);
+  assert.deepEqual(candidates, []);
+  assert.deepEqual(publications.map(item => (item.kind === 'record' ? [item.work.title, item.paper?.title ?? null] : ['added', item.key])), [
+    ['Preprint, then journal', 'The journal version'],
+    ['A preprint', 'The preprint at OpenAlex'],
+    ['An article, as the author listed it', null],
+    ['A chapter', null],
+    ['An undated talk', null],
+  ]);
+});
+
+test('a sandbox record is not matched against OpenAlex, which knows production iDs only', async t => {
+  const asked = stubOpenAlex(t, { attributed: [openAlexWork(90, '10.2000/stranger', 'Someone else', 2024)] });
+  const loaded = await withStubbedFetch(async () => Response.json(WORKS), () => loadOrcidPublications(IDENTIFIER, 'sandbox.orcid.org', Promise.resolve(NO_DECISIONS)));
+  assert.ok(!asked.some(filter => filter.startsWith('author.orcid:')), asked.join(' '));
+  assert.deepEqual(arrangeOrcidWorks(loaded, NO_DECISIONS).candidates, []);
+  assert.equal(loaded.publications.length, 4);
+});
+
 test('when the decisions cannot be read the load fails, so nothing already decided is suggested again', async t => {
   stubOpenAlex(t);
   await assert.rejects(withStubbedFetch(async () => Response.json(WORKS), () => (

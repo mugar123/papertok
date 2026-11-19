@@ -1704,7 +1704,8 @@ export const ORCID_ATTRIBUTED_WORKS_MAX = 200;
  * first, at most ORCID_ATTRIBUTED_WORKS_MAX of them, a page at a time with no
  * retry. `total` is how many OpenAlex attributes in all. Rejects when the
  * first page does not come; a later page that does not come ends the list
- * there, with `complete: false`. Kept in no cache: they describe the reader.
+ * there, with `complete: false`. Kept out of the browser's cache, since they
+ * describe the reader; the relay still caches the public answer for a day.
  */
 export async function getWorksByOrcid(orcidId: string) {
   const papers: Paper[] = [];

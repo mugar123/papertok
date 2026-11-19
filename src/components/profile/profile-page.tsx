@@ -76,10 +76,11 @@ const COPY = {
   showAgain: 'Show again',
   showAgainLabel: (title: string) => `Show again: ${title}`,
   saveFailed: 'Your choice could not be saved. Try again.',
-  announceMine: 'Added to your publications.',
-  announceNotMine: 'Marked as not yours. It no longer appears among the suggestions.',
-  announceBack: 'Back among the suggestions.',
-  announceRemoved: 'Removed from your publications.',
+  // Each names the work, so two decisions in a row are both read out.
+  announceMine: (title: string) => `Added "${title}" to your publications.`,
+  announceNotMine: (title: string) => `Marked "${title}" as not yours. It no longer appears among the suggestions.`,
+  announceBack: (title: string) => `"${title}" is back among the suggestions.`,
+  announceRemoved: (title: string) => `Removed "${title}" from your publications.`,
 };
 
 /** ORCID's work type as words: `journal-article` reads "Journal article". */
@@ -325,13 +326,14 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
           focusableWhenDisabled
           onClick={(event) => {
             event.stopPropagation();
-            void decide(keys, 'mine', { undoRow: 'mine', focus: `${candidate.key}:undo`, origin: `${candidate.key}:mine`, note: COPY.announceMine });
+            void decide(keys, 'mine', { undoRow: 'mine', focus: `${candidate.key}:undo`, origin: `${candidate.key}:mine`, note: COPY.announceMine(title) });
           }}
         >
           <Check size={15} aria-hidden="true" />
           {COPY.mine}
         </Button>
         <Button
+          ref={registerControl(`${candidate.key}:notMine`)}
           variant="ghost"
           size="sm"
           aria-label={COPY.notMineLabel(title)}
@@ -339,7 +341,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
           focusableWhenDisabled
           onClick={(event) => {
             event.stopPropagation();
-            void decide(keys, 'notMine', { undoRow: 'notMine', focus: `${candidate.key}:undo`, origin: `${candidate.key}:mine`, note: COPY.announceNotMine });
+            void decide(keys, 'notMine', { undoRow: 'notMine', focus: `${candidate.key}:undo`, origin: `${candidate.key}:notMine`, note: COPY.announceNotMine(title) });
           }}
         >
           <X size={15} aria-hidden="true" />
@@ -354,7 +356,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
       <section className="settings-section" aria-labelledby="my-profile-publications-heading">
         <div className="settings-section-heading">
           <h2 ref={headingRef} id="my-profile-publications-heading" tabIndex={-1}>{COPY.publications}</h2>
-          <p>{status === 'ready' && publications.length > 0 ? COPY.publicationsCount(loaded?.publications.length ?? 0, addedCount) : COPY.publicationsIntro}</p>
+          <p>{status === 'ready' && publications.length > 0 ? COPY.publicationsCount(loaded?.totalWorks ?? 0, addedCount) : COPY.publicationsIntro}</p>
         </div>
 
         {/* One status line from loading to the result, so each change is read
@@ -410,7 +412,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
                     focusableWhenDisabled
                     onClick={(event) => {
                       event.stopPropagation();
-                      void decide(keys, null, { undoRow: null, focus: 'heading', origin: 'heading', note: COPY.announceRemoved });
+                      void decide(keys, null, { undoRow: null, focus: 'heading', origin: 'heading', note: COPY.announceRemoved(title) });
                     }}
                   >
                     <X size={15} aria-hidden="true" />
@@ -485,7 +487,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
                             aria-label={COPY.undoLabel(paper.title ?? COPY.untitled)}
                             disabled={saving.has(candidate.key)}
                             focusableWhenDisabled
-                            onClick={() => { void decide(orcidWorkKeys(paper), null, { undoRow: null, focus: `${candidate.key}:mine`, origin: `${candidate.key}:undo`, note: COPY.announceBack }); }}
+                            onClick={() => { void decide(orcidWorkKeys(paper), null, { undoRow: null, focus: `${candidate.key}:mine`, origin: `${candidate.key}:undo`, note: COPY.announceBack(paper.title ?? COPY.untitled) }); }}
                           >
                             <ArrowCounterClockwise size={15} aria-hidden="true" />
                             {COPY.undo}
@@ -532,7 +534,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
                           focusableWhenDisabled
                           onClick={(event) => {
                             event.stopPropagation();
-                            void decide(orcidWorkKeys(paper), null, { undoRow: null, focus: 'hidden-toggle', origin: 'hidden-toggle', note: COPY.announceBack });
+                            void decide(orcidWorkKeys(paper), null, { undoRow: null, focus: 'hidden-toggle', origin: 'hidden-toggle', note: COPY.announceBack(paper.title ?? COPY.untitled) });
                           }}
                         >
                           <ArrowCounterClockwise size={15} aria-hidden="true" />

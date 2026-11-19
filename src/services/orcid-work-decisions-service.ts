@@ -7,8 +7,8 @@ import { db } from './firebase.ts';
  * `mine` holds those they added to their publications, `notMine` those they
  * said are someone else's. One document, users/{uid}/orcid/works, holding only
  * the works' identifiers as orcid-service.ts names them (`doi:<DOI>` or
- * `openalex:<work id>`). firestore.rules lets only its owner read or write it,
- * and only while an ORCID iD is connected; the Worker deletes it when ORCID is
+ * `openalex:<work id>`). firestore.rules lets only its owner read it, and
+ * write it only while an ORCID iD is connected; the Worker deletes it when ORCID is
  * disconnected or connected again, and with the account.
  */
 export interface OrcidWorkDecisions { mine: string[]; notMine: string[] }

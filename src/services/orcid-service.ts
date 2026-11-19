@@ -63,7 +63,7 @@ import type { OrcidHost } from '../utils/orcid-id.ts';
 import type { OrcidWorkDecision, OrcidWorkDecisions } from './orcid-work-decisions-service.ts';
 import { withRequestDeadline } from '../utils/request-deadline.ts';
 import { isValidOrcidId } from '../utils/orcid-id.ts';
-import { canonicalDoiOf } from '../utils/paper-canonical-key.ts';
+import { canonicalArxivIdOf, canonicalDoiOf } from '../utils/paper-canonical-key.ts';
 import { fetchPapersByDois, fetchPapersByOpenAlexIds, getWorksByOrcid } from './open-alex-service.ts';
 
 /**
@@ -275,22 +275,47 @@ export async function getOrcidWorks(orcidId: string, host: OrcidHost = 'orcid.or
   return works.sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity));
 }
 
+/** The DOI arXiv gives each preprint, `10.48550/arxiv.<id>` once canonical. */
+const ARXIV_DOI = /^10\.48550\/arxiv\.(.+)$/;
+
+/**
+ * `arxiv:<id>` for each arXiv id, and for each arXiv DOI among `dois`, so a
+ * work one side knows by its arXiv id and the other by arXiv's DOI still
+ * matches. Only for matching: no decision is kept under these names.
+ */
+function arxivKeys(arxivIds: unknown[], dois: string[]) {
+  const ids = [...arxivIds, ...dois.map(doi => ARXIV_DOI.exec(doi)?.[1])]
+    .map(canonicalArxivIdOf)
+    .filter((id): id is string => id !== null);
+  return [...new Set(ids)].map(id => `arxiv:${id}`);
+}
+
 /**
  * The names a paper is matched by: `doi:<DOI>` (case-insensitive, as
- * canonicalDoiOf spells it) and `openalex:<work id>`. The first one is the
- * name the reader's decision about it is kept under.
+ * canonicalDoiOf spells it) and `openalex:<work id>`, then its arXiv names
+ * (arxivKeys). The first one is the name the reader's decision about it is
+ * kept under; a paper with neither a DOI nor an OpenAlex id has no names.
  */
 export function orcidWorkKeys(paper: Partial<Paper>) {
   const doi = canonicalDoiOf(paper);
   const id = openAlexWorkId(paper.id);
-  return [doi ? `doi:${doi}` : null, id ? `openalex:${id}` : null].filter((key): key is string => key !== null);
+  const names = [doi ? `doi:${doi}` : null, id ? `openalex:${id}` : null].filter((key): key is string => key !== null);
+  return names.length > 0 ? [...names, ...arxivKeys([paper.arxivId], doi ? [doi] : [])] : [];
 }
 
-/** The names an ORCID work is matched by: its DOI, and an OpenAlex id when the record lists one. */
+/**
+ * The names an ORCID work is matched by: every DOI its versions list (a
+ * preprint's and the journal's), every OpenAlex id, and its arXiv names.
+ */
 function recordWorkKeys(work: OrcidWork) {
-  const openAlexIds = work.externalIds.filter(id => id.type === 'openalex').map(id => openAlexWorkId(id.value));
-  return [work.doi ? `doi:${work.doi}` : null, ...openAlexIds.map(id => (id ? `openalex:${id}` : null))]
-    .filter((key): key is string => key !== null);
+  const idsOf = (type: string) => work.externalIds.filter(id => id.type === type).map(id => id.value);
+  const dois = idsOf('doi');
+  const openAlexIds = idsOf('openalex').map(openAlexWorkId).filter((id): id is string => id !== null);
+  return [...new Set([
+    ...dois.map(doi => `doi:${doi}`),
+    ...openAlexIds.map(id => `openalex:${id}`),
+    ...arxivKeys(idsOf('arxiv'), dois),
+  ])];
 }
 
 function papersByKey(papers: Paper[]) {
@@ -316,7 +341,8 @@ function papersByKey(papers: Paper[]) {
 export async function loadOrcidPublications(orcidId: string, host: OrcidHost, decisionsRead: Promise<OrcidWorkDecisions>) {
   const [works, attributed, decisions] = await Promise.all([
     getOrcidWorks(orcidId, host),
-    getWorksByOrcid(orcidId).then(
+    // OpenAlex knows production iDs only: a sandbox iD may name someone else there.
+    (host === 'orcid.org' ? getWorksByOrcid(orcidId) : Promise.resolve({ papers: [] as Paper[], total: 0, complete: true })).then(
       result => ({ ...result, failed: false }),
       (error: unknown) => {
         console.warn('OpenAlex did not list the works of the ORCID iD', error);
