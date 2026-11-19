@@ -115,6 +115,7 @@ import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
 import type { ReaderCard, ReaderMenu } from './paper-menu.tsx';
 import { paperActions, shareMethod } from './paper-actions.ts';
+import { useZoteroAction } from '../pdf/use-zotero-action.ts';
 import { followReasonLabels } from '../../utils/follow-reasons.ts';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
@@ -1309,6 +1310,7 @@ const PaperCard = memo(function PaperCard({
     if (path) openPath(event, path);
   }, [analyticsSurface, openPath, position, publicMode, trackEvent]);
   const [menuView, setMenuView] = useState<'closed' | 'actions' | 'about'>('closed');
+  const zotero = useZoteroAction(paper, publicMode ? null : user?.uid, menuView === 'actions');
   const [readTime, setReadTime] = useState<{ paperId: string; minutes: number } | null>(null);
   useEffect(() => {
     if (menuView !== 'about' || readTime?.paperId === paper.id || !fullTextQuery(paper)) return;
@@ -2462,6 +2464,7 @@ const PaperCard = memo(function PaperCard({
             onToggleRead: handleMarkAsRead,
             onNotInterested: handleNotInterested,
             notInterestedHint,
+            zotero,
           })}
           trigger={(
             <button

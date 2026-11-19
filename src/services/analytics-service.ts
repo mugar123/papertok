@@ -201,6 +201,7 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // event at all.
   paper_rewrite: { level: 'rewrite_level', surface: 'surface', ...PAPER_DETAIL },
   reader_open: { surface: 'surface' },
+  read_aloud_start: { surface: 'surface' },
   paper_rewrite_result: { level: 'rewrite_level', surface: 'surface', result: 'rewrite_result', cached: 'boolean', duration_ms: 'duration', error_code: 'rewrite_error' },
   auth_prompt_view: { reason: 'auth_reason', surface: 'surface' },
   auth_result: { method: 'method', surface: 'surface', result: 'auth_result', error_code: 'auth_error' },

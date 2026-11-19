@@ -318,7 +318,7 @@ test('an old account can make every write the app makes to its user document', a
   const writes = [
     { onboardingComplete: true, preferences: ['cs.LG'] },
     { preferences: ['math.AP', 'cs.CL'] },
-    { readingPreferences: { aiExplanationLevel: 'researcher', language: 'en', languagePreferenceSet: true } },
+    { readingPreferences: { aiExplanationLevel: 'researcher', language: 'en', languagePreferenceSet: true, readAloudFromPosition: true } },
     { followedAuthors: [], followingMigratedAt: serverTimestamp() },
   ];
   for (const write of writes) {

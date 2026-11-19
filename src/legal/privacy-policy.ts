@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-15';
+export const PRIVACY_POLICY_VERSION = '2026-11-17';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -90,8 +90,20 @@ export const PRIVACY_POLICY_VERSION = '2026-11-15';
  * version because 2026-11-14 went live with the feed refresh notice. This
  * instant follows the rule above for a text that ships with its own pull
  * request.
+ *
+ * Version 2026-11-17 adds Voice in the reader (ENG-119): the paragraph text
+ * sent to ElevenLabs, which keeps it in its request history, or to Cartesia
+ * when ElevenLabs cannot answer; the audio PaperTok stores in R2 and plays to
+ * every listener of the same paragraph; and the usage event that records only
+ * that a paper was read aloud. Asier authorized both providers and what they
+ * receive on 2026-11-17. The text ships with the read-aloud pull request, so
+ * this instant follows the rule above: it stands after that merge, at the
+ * last moment the version's day allows. If the merge falls after it, move the
+ * page's "Last updated" date, PRIVACY_POLICY_VERSION and this instant to the
+ * merge day before merging; once Vercel reports the merge live, lower this
+ * instant to that success time.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-15T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-17T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
@@ -107,9 +119,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "If you connect Zotero, an encrypted key to your Zotero library is kept with your account until you disconnect.",
-  "Sending a paper gives Zotero its citation and the highlights and notes you made on it, never the AI's highlights.",
-  "Usage analytics records only whether a send to Zotero worked, not which paper.",
+  "When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs, or to Cartesia when ElevenLabs cannot answer, never your identity or your email.",
+  "ElevenLabs keeps the text in its request history, and PaperTok stores the audio for anyone who listens to the same paragraph.",
+  "Usage analytics records only that a paper was read aloud, not which paper.",
 ];
 
 /**
@@ -122,21 +134,20 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since 14 November: connecting Zotero, what a send gives it,
-  // and the usage event about sends.
-  lead: 'If you connect Zotero',
+  // The changes since 15 November: Voice in the reader, who receives the
+  // paragraph text, the stored audio and the usage event.
+  lead: 'When you listen to a paper',
   clauses: [
-    ['If you connect Zotero', /<td>If you connect Zotero: an encrypted access key to your Zotero library/],
-    ['kept with your account until you disconnect', /Disconnecting in <strong>Settings → Profile<\/strong> deletes the key/],
-    ['Sending a paper gives Zotero its citation', /Each send gives Zotero the paper's citation/],
-    ['the highlights and notes you made on it', /the highlights and notes you made on that paper/],
-    ["never the AI's highlights", /Highlights made by the AI are not sent\./],
+    ['When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs', /When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs/],
+    ['or to Cartesia when ElevenLabs cannot answer', /When ElevenLabs cannot answer, the text goes to Cartesia/],
+    ['never your identity or your email', /Both receive the text, never your identity or your email\./],
+    ['ElevenLabs keeps the text in its request history', /which turns it into speech and keeps the text in its request history/],
+    ['PaperTok stores the audio for anyone who listens to the same paragraph', /PaperTok's server stores the audio[^.]*plays it to anyone who listens to the same paragraph/],
     ['Usage analytics', /Usage analytics is enabled by default/],
-    ['only whether a send to Zotero worked, not which paper', /Sending a paper to Zotero records only whether it was sent, not which paper\./],
+    ['only that a paper was read aloud, not which paper', /Starting to read a paper aloud records only that it happened, not which paper\./],
   ],
   unsaid: [
-    [/group/i, 'only the personal library is reached'],
-    [/\bPDF\b|full text/i, "Zotero receives the citation and the reader's own highlights, never the paper's file"],
+    [/\bPDF\b|full text|account|uid/i, 'the providers receive paragraph text only, nothing that identifies the reader'],
     [/\bsince \d{1,2} [a-z]+/i, 'the summary says only what changed since the previous version'],
   ],
 };
