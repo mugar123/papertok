@@ -312,8 +312,10 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   place, and everything that offsets from the bar reads it.
 - **The card on a phone** is top-anchored: kicker, chips, title and authors
   under the bar, the abstract filling the middle, the actions at the foot where
-  the thumb is. Only the abstract yields height; on a tablet the column stops at
-  a 40rem reading measure.
+  the thumb is. Only the abstract yields height, except on a card with the
+  publisher's page, whose head rows yield after the panel and scroll (Cards /
+  Containers, "A card with no abstract"). On a tablet the column stops at a
+  40rem reading measure.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 
@@ -421,6 +423,28 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   (`.pc-body::before`, `.ehc-info::before`).
 - **Stat block:** mono tabular-nums value over a mono uppercase label, in a
   ruled grid (`.ehc-stats-grid`).
+- **A card with no abstract** (`feed/paper-card.tsx`): the abstract's panel
+  holds the shared empty state, "No abstract to show" and one sentence, which
+  scrolls inside a panel too short for it. When the paper has a DOI the
+  sentence ends "Try the publisher's page." and the action row's last control
+  is `Publisher's page` ("Publisher" on a phone), an `outline` link to the
+  DOI in a new tab. The link is in the row and not in the sentence because
+  the panel is the first row to yield, down to 0px. When the rows above the
+  action row are taller than the card, the head's rows give way after the
+  panel and scroll, and the action row stays whole at the sheet's foot,
+  covering nothing. Beside `Read in plain words` the link is its
+  `ArrowSquareOut` glyph alone at every width, named and titled "Publisher's
+  page (opens in a new tab)", so Source and `Read in plain words` keep their
+  slots where the row has room for them, and that row draws no lock at any
+  width. On a phone it is also the glyph alone, with the same name, in a row
+  too narrow for its word beside Source. Beside Source it has no title: in
+  most rows its word shows, and a title would only repeat the name. On a
+  phone the three share a line when they fit;
+  otherwise Source takes the first line and the other two the second. On a
+  screen short enough for the rail to reach the
+  row, the row stops short of the rail. While the feed still asks a source
+  for the abstract, the link holds its place in the row unseen, so the row
+  keeps its shape when the wait ends with no abstract.
 - **Settings › Feeds** (`settings/feeds-settings-page.tsx`), reached from
   Discovery: a `New feed` button over the reader's feeds in tab order, as
   ruled rows. Each row has the feed's name in the serif, its ingredients on one

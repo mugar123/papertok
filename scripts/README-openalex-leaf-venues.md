@@ -63,8 +63,8 @@ lane asks for must be one the review rule calls reviewed
 The lane asks with the sample's type and topic or author filter, the live
 window and `is_retracted:false`. It does not ask `has_abstract:true`
 (Pablo, 2026-10-23: it drops most closed Elsevier, Springer and University of
-Chicago Press articles), so a card without an abstract says "No abstract
-available". It does not ask `primary_location.source.is_core:true`: the
+Chicago Press articles), so a card without an abstract shows the no-abstract
+empty state. It does not ask `primary_location.source.is_core:true`: the
 sources are named, and six of them are not core in OpenAlex: the three
 conferences the lanes ask for (ICPP, SPLASH and PIMRC), npj Soft Matter,
 Natural Language Processing and ACM Transactions on Information Systems. The
