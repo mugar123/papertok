@@ -25,12 +25,16 @@ const NOW = Date.parse('2026-11-18T10:00:00Z');
 
 function memoryAdmin(seed: Record<string, FirestoreData> = {}) {
   const documents: Record<string, FirestoreData> = { ...seed };
+  /** Each commit, as the documents it wrote or deleted. */
+  const commits: string[][] = [];
   const path = (name: string) => name.split('/documents/')[1];
   return {
     documents,
+    commits,
     name: (segments: string[]) => `projects/${PROJECT_ID}/databases/(default)/documents/${segments.join('/')}`,
     async getDocument<T>(segments: string[]) { return (documents[segments.join('/')] ?? null) as T | null; },
     async commit(writes: FirestoreWrite[]) {
+      commits.push(writes.map(write => path(write.delete ?? write.update!.name)));
       for (const write of writes) {
         const key = path(write.delete ?? write.update!.name);
         if (write.currentDocument?.exists === true && !documents[key]) throw new FirestoreAdminError('FAILED_PRECONDITION', 409);
@@ -59,10 +63,12 @@ globalThis.fetch = async (input) => { throw new Error(`unstubbed request to ${St
 /** Identity Toolkit names the account of the token; every other request goes to `handler`. */
 function stubFetch(handler: Handler) {
   const calls: Array<{ url: string; init: RequestInit }> = [];
+  const lookups: string[] = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
     if (url.includes('accounts:lookup')) {
+      lookups.push(url);
       const { idToken } = JSON.parse(String(init.body));
       const { sub } = JSON.parse(atob(idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
       return Response.json({ users: [{ localId: sub, email: `${sub}@example.com`, emailVerified: true }] });
@@ -70,7 +76,7 @@ function stubFetch(handler: Handler) {
     calls.push({ url, init });
     return handler(url, init);
   };
-  return { calls, restore: () => { globalThis.fetch = original; } };
+  return { calls, lookups, restore: () => { globalThis.fetch = original; } };
 }
 
 function request(path: string, uid = ALICE, body?: unknown) {
@@ -130,7 +136,11 @@ test('the sandbox environment sends the reader to the sandbox registry', async (
 });
 
 test('completing stores the iD and the name on the account and never the token', async () => {
-  const admin = memoryAdmin({ [`users/${ALICE}`]: { onboardingComplete: true } });
+  const admin = memoryAdmin({
+    [`users/${ALICE}`]: { onboardingComplete: true },
+    // Decisions left from another connection do not carry over to this one.
+    [`users/${ALICE}/orcid/works`]: { mine: ['doi:10.1000/a'], notMine: [] },
+  });
   const upstream = stubFetch(() => orcidAnswer());
   try {
     const state = (await connect(admin)).searchParams.get('state');
@@ -154,6 +164,7 @@ test('completing stores the iD and the name on the account and never the token',
     orcid: { id: IDENTIFIER, name: 'Josiah Carberry', host: 'orcid.org', connectedAt: '2026-11-18T10:01:00.000Z' },
   });
   assert.equal(admin.documents[`users/${ALICE}/orcid/link`], undefined, 'the state cannot be used again');
+  assert.equal(admin.documents[`users/${ALICE}/orcid/works`], undefined);
   assert.ok(!JSON.stringify(admin.documents).includes(ACCESS_TOKEN));
   assert.ok(!JSON.stringify(admin.documents).includes('refresh-token'));
 });
@@ -236,18 +247,22 @@ test('without a client, or with an unknown environment, every route answers not 
   const upstream = stubFetch(() => orcidAnswer());
   try {
     for (const env of [{ ...ENV, ORCID_CLIENT_ID: '' }, { ...ENV, ORCID_CLIENT_SECRET: '' }, { ...ENV, ORCID_ENVIRONMENT: 'staging' }]) {
-      await assert.rejects(handleOrcidRequest(request('/orcid/connect'), env, ORIGIN, { admin: memoryAdmin() }), rejectsWith('ORCID_NOT_CONFIGURED'));
+      for (const path of ['/orcid/connect', '/orcid/complete', '/orcid/disconnect']) {
+        await assert.rejects(handleOrcidRequest(request(path), env, ORIGIN, { admin: memoryAdmin() }), rejectsWith('ORCID_NOT_CONFIGURED'));
+      }
     }
     assert.equal(upstream.calls.length, 0);
+    assert.equal(upstream.lookups.length, 0, 'the session is not read');
   } finally {
     upstream.restore();
   }
 });
 
-test('disconnecting forgets the iD and any pending state, also for an account with no user document', async () => {
+test('disconnecting forgets the iD, any pending state and the decisions about its works, also for an account with no user document', async () => {
   const connectedAccount = memoryAdmin({
     [`users/${ALICE}`]: { onboardingComplete: true, orcid: { id: IDENTIFIER, name: 'Josiah Carberry', host: 'orcid.org', connectedAt: '2026-11-18T10:01:00.000Z' } },
     [`users/${ALICE}/orcid/link`]: { stateHash: 'abc', createdAt: NOW },
+    [`users/${ALICE}/orcid/works`]: { mine: ['doi:10.1000/a'], notMine: ['openalex:W2'] },
   });
   const newAccount = memoryAdmin({ [`users/${ALICE}/orcid/link`]: { stateHash: 'abc', createdAt: NOW } });
   const upstream = stubFetch(() => new Response('unexpected', { status: 500 }));
@@ -260,6 +275,8 @@ test('disconnecting forgets the iD and any pending state, also for an account wi
   }
   assert.deepEqual(connectedAccount.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
   assert.deepEqual(newAccount.documents, {});
+  // The iD goes before the decisions: the rules take a decision only while an iD is connected.
+  assert.deepEqual(connectedAccount.commits, [[`users/${ALICE}`], [`users/${ALICE}/orcid/link`, `users/${ALICE}/orcid/works`]]);
 });
 
 test('only POST is answered', async () => {

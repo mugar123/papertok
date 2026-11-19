@@ -29,6 +29,7 @@ import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
 import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
+import { orcidWorkDecisionWrite } from '../src/services/orcid-work-decisions-service.ts';
 import { PRIVACY_POLICY_VERSION } from '../src/legal/privacy-policy.ts';
 import {
   deleteDoc,
@@ -528,6 +529,45 @@ test('the pending ORCID connection is closed to its own account', async () => {
   const db = asAlice();
   await assertFails(getDoc(doc(db, 'users', ALICE, 'orcid', 'link')));
   await assertFails(setDoc(doc(db, 'users', ALICE, 'orcid', 'link'), { stateHash: 'mine', createdAt: 2 }));
+});
+
+// What the account said about the works OpenAlex attributes to its iD
+// (src/services/orcid-work-decisions-service.ts), written as the app writes it.
+test('an account with an ORCID iD keeps its own decisions about the works attributed to it', async () => {
+  await reset();
+  await seedLegacyUserDoc({ orcid: ORCID });
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'orcid', 'works');
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(['doi:10.1000/a'], 'mine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(['openalex:W2'], 'notMine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(['openalex:W3'], 'mine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(['openalex:W3'], null), { merge: true }));
+  const stored = await assertSucceeds(getDoc(ref));
+  assert.deepEqual(stored.get('mine'), ['doi:10.1000/a']);
+  assert.deepEqual(stored.get('notMine'), ['openalex:W2']);
+
+  // Nobody else reads or writes them, and the collection is not listed.
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'orcid', 'works')));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'orcid', 'works'), orcidWorkDecisionWrite(['doi:10.1000/b'], 'mine'), { merge: true }));
+  await assertFails(getDocs(collection(db, 'users', ALICE, 'orcid')));
+  // Only the two lists of identifiers and the server's time.
+  await assertFails(setDoc(ref, { ...orcidWorkDecisionWrite(['doi:10.1000/c'], 'mine'), title: 'A paper' }, { merge: true }));
+  await assertFails(setDoc(ref, { mine: [], notMine: [], updatedAt: new Date(0) }));
+  await assertFails(setDoc(ref, { mine: 'doi:10.1000/a', notMine: [], updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(ref, {
+    mine: Array.from({ length: 1001 }, (_, index) => `doi:10.1000/${index}`), notMine: [], updatedAt: serverTimestamp(),
+  }));
+});
+
+test('no decision about attributed works is kept without a connected ORCID iD', async () => {
+  // Disconnect clears the iD before it deletes the decisions, so a write that
+  // crosses it is refused rather than left behind.
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'orcid', 'works');
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(['doi:10.1000/a'], 'mine'), { merge: true }));
+  await seedLegacyUserDoc();
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(['doi:10.1000/a'], 'mine'), { merge: true }));
 });
 
 // =========================================================================

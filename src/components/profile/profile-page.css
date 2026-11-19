@@ -42,11 +42,11 @@
   text-decoration-color: var(--border-strong);
 }
 
-.orcid-publications {
+.orcid-works {
   padding-block: calc(var(--space-5) - var(--space-2));
 }
 
-.orcid-publications .list-row {
+.orcid-works .list-row {
   align-items: flex-start;
   padding-block: var(--space-4);
 }
@@ -56,13 +56,55 @@
   cursor: auto;
 }
 
+/* A work the reader added that OpenAlex did not describe: its identifier, machine data. */
+.orcid-work-identifier {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+/* A suggestion's decision, or an added work's Remove: under the authors, wrapping on a phone. */
+.orcid-work-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* A work decided during this visit keeps its place, as a line with its Undo. */
+.orcid-works .orcid-decided-row {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.orcid-works .orcid-decided-row p {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.orcid-hidden {
+  margin-top: var(--space-4);
+}
+
+.orcid-hidden .orcid-works {
+  margin-top: var(--space-2);
+}
+
+.orcid-caret-open {
+  rotate: 180deg;
+}
+
 @media (hover: hover) and (pointer: fine) {
   /* ListRow's hover is the panel's own sunken paper here. */
-  .orcid-publications .list-row:hover {
+  .orcid-works .list-row:hover {
     background: var(--bg-card);
   }
 
-  .orcid-publications .orcid-work-row:hover {
+  .orcid-works .orcid-work-row:hover {
     background: none;
   }
 

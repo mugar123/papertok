@@ -15,7 +15,10 @@
  * an access token. Only the iD, the name and the registry are kept, on
  * `users/{uid}.orcid`, a field the Firestore rules freeze for the client; the
  * token is never stored. The Firestore rules close `users/{uid}/orcid` to
- * every client.
+ * every client except `works`, where the account keeps its own decisions
+ * about the works OpenAlex attributes to the iD
+ * (src/services/orcid-work-decisions-service.ts). Those belong to the iD they
+ * were made for, so connecting and disconnecting both delete them.
  */
 
 import type { WorkerEnv } from './env.ts';
@@ -66,6 +69,10 @@ function orcidHost(env: WorkerEnv) {
 
 function linkSegments(uid: string) {
   return ['users', uid, 'orcid', 'link'];
+}
+
+function decisionsSegments(uid: string) {
+  return ['users', uid, 'orcid', 'works'];
 }
 
 function randomState() {
@@ -143,6 +150,7 @@ export async function handleOrcidRequest(request: Request, env: WorkerEnv, origi
   const admin: Admin = options.admin || createFirestoreAdmin(env);
   const now = options.now?.() ?? Date.now();
   const link = admin.name(linkSegments(identity.uid));
+  const decisions = admin.name(decisionsSegments(identity.uid));
   const userDocument = admin.name(['users', identity.uid]);
   // ORCID sends the code only to an address registered for PaperTok's client, and the exchange must name the same one.
   const redirectUri = `${origin}/orcid/callback`;
@@ -170,20 +178,23 @@ export async function handleOrcidRequest(request: Request, env: WorkerEnv, origi
     }
     const holder = await exchangeCode(env, host, code, redirectUri);
     const orcid: OrcidConnection = { ...holder, host, connectedAt: new Date(now).toISOString() };
-    // One commit, so the state cannot be used again once the iD is written.
+    // One commit, so the state cannot be used again once the iD is written,
+    // and the iD starts with no decisions about its works.
     // No existence precondition: an account that has not finished onboarding may have no user document yet.
-    await admin.commit([mergeWrite(userDocument, { orcid }, { mustExist: false }), deleteWrite(link)]);
+    await admin.commit([mergeWrite(userDocument, { orcid }, { mustExist: false }), deleteWrite(link), deleteWrite(decisions)]);
     return { orcid };
   }
 
   if (pathname === '/orcid/disconnect') {
-    await admin.commit([deleteWrite(link)]);
+    // The iD goes first: the rules accept a decision only while one is
+    // connected, so none can be written after the decisions are deleted.
     try {
       await admin.commit([clearFieldsWrite(userDocument, ['orcid'])]);
     } catch (error) {
       // A user document that does not exist has no iD to clear.
       if (!(error instanceof FirestoreAdminError && error.status === 409)) throw error;
     }
+    await admin.commit([deleteWrite(link), deleteWrite(decisions)]);
     return { orcid: null };
   }
 

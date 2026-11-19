@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   dribblingFetch,
@@ -6,7 +6,7 @@ import {
   withStubbedFetch,
 } from '../test-support/deadline-harness.ts';
 import { openAlexClient } from './open-alex-client.ts';
-import { extractOrcid, fetchWithTimeout, getOrcidRecord, getOrcidWorks, loadOrcidPublications } from './orcid-service.ts';
+import { arrangeOrcidWorks, extractOrcid, fetchWithTimeout, getOrcidRecord, getOrcidWorks, loadOrcidPublications, ORCID_LISTED_WORKS_MAX } from './orcid-service.ts';
 
 test('extracts a clean ORCID from a bare id, a URL and a checksum ending in X', () => {
   assert.equal(extractOrcid('0000-0002-1825-0097'), '0000-0002-1825-0097');
@@ -106,37 +106,149 @@ test('reads a sandbox record from the sandbox, and fails loudly when ORCID does 
   await assert.rejects(getOrcidWorks('0000-0002-1825-0098'), /ORCID_INVALID_ID/);
 });
 
-const openAlexWork = (doi: string, title: string) => ({
-  id: `https://openalex.org/W${doi.replace(/\D/g, '')}`, doi: `https://doi.org/${doi}`, title, display_name: title,
-  type: 'article', publication_year: 2019, publication_date: '2019-05-01', authorships: [], primary_location: null,
+const IDENTIFIER = '0000-0002-1825-0097';
+const NO_DECISIONS = { mine: [], notMine: [] };
+// A synthetic OpenAlex work with what formatOpenAlexWorkAsPaper reads.
+const openAlexWork = (id: number, doi: string | null, title: string, year = 2019) => ({
+  id: `https://openalex.org/W${id}`, doi: doi ? `https://doi.org/${doi}` : null, title, display_name: title,
+  type: 'article', publication_year: year, publication_date: `${year}-05-01`, authorships: [], primary_location: null,
 });
+type StubWork = ReturnType<typeof openAlexWork>;
+const page = (results: StubWork[]) => Response.json({ meta: { count: results.length }, results });
 
-test('a work OpenAlex knows by its DOI comes with its paper; the others keep only what ORCID gives', async t => {
+/**
+ * OpenAlex as the relay answers it: `attributed` for the works of the iD,
+ * `byDoi` for a DOI lookup (only the DOIs asked for), `byId` for an id lookup,
+ * and a 503 for the kinds of request in `down`. Returns each filter asked.
+ */
+function stubOpenAlex(t: TestContext, { attributed = [], byDoi = [], byId = [], down = [] }: { attributed?: StubWork[]; byDoi?: StubWork[]; byId?: StubWork[]; down?: string[] } = {}) {
   const asked: string[] = [];
   t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
-    asked.push(new URL(url).searchParams.get('filter')!);
-    // OpenAlex has the article, not the chapter, and an answer for a DOI nobody asked about is not attached.
-    return Response.json({ meta: { count: 2 }, results: [openAlexWork('10.1000/abc.1', 'An article'), openAlexWork('10.9999/other', 'Another paper')] });
+    const filter = new URL(url).searchParams.get('filter')!;
+    asked.push(filter);
+    const kind = filter.slice(0, filter.indexOf(':'));
+    if (down.includes(kind)) return new Response('busy', { status: 503 });
+    if (kind === 'author.orcid') return page(attributed);
+    const values = filter.slice(filter.indexOf(':') + 1).split('|');
+    if (kind === 'doi') return page(byDoi.filter(work => values.includes(work.doi!.replace('https://doi.org/', ''))));
+    return page(byId.filter(work => values.includes(work.id.replace('https://openalex.org/', ''))));
   });
-  const { publications, details } = await withStubbedFetch(async () => Response.json(WORKS), () => loadOrcidPublications('0000-0002-1825-0097', 'orcid.org'));
+  return asked;
+}
 
-  assert.deepEqual(asked, ['doi:10.1000/abc.1|10.1000/chapter.7']);
-  assert.equal(details, 'complete');
-  assert.deepEqual(publications.map(({ work, paper }) => [work.putCode, paper?.title ?? null]), [
-    ['21', null], ['12', 'An article'], ['31', null], ['41', null],
-  ]);
-});
-
-test('when OpenAlex does not answer, every work is still listed and the missing details are said', async t => {
-  t.mock.method(openAlexClient, 'fetch', async () => new Response('busy', { status: 503 }));
+async function quietly<T>(run: () => Promise<T>) {
   const warn = console.warn;
   console.warn = () => {};
   try {
-    const { publications, details } = await withStubbedFetch(async () => Response.json(WORKS), () => loadOrcidPublications('0000-0002-1825-0097', 'orcid.org'));
-    assert.equal(details, 'failed');
-    assert.equal(publications.length, 4);
-    assert.ok(publications.every(publication => publication.paper === null));
+    return await run();
   } finally {
     console.warn = warn;
   }
+}
+
+const load = (decisions: { mine: string[]; notMine: string[] } = NO_DECISIONS, record: unknown = WORKS) => (
+  withStubbedFetch(async () => Response.json(record), () => loadOrcidPublications(IDENTIFIER, 'orcid.org', Promise.resolve(decisions)))
+);
+
+test('a record work takes its paper from the works OpenAlex attributes to the iD, and only the others are looked up by DOI', async t => {
+  const asked = stubOpenAlex(t, {
+    // OpenAlex spells the article's DOI in capitals here; ORCID in lower case.
+    attributed: [openAlexWork(1, '10.1000/ABC.1', 'An article'), openAlexWork(5, '10.5555/elsewhere', 'Attributed, not in the record')],
+    byDoi: [openAlexWork(3, '10.1000/chapter.7', 'A chapter'), openAlexWork(9, '10.9999/other', 'Nobody asked for this')],
+  });
+  const loaded = await load();
+
+  assert.deepEqual(asked, [`author.orcid:${IDENTIFIER}`, 'doi:10.1000/chapter.7']);
+  assert.equal(loaded.details, 'complete');
+  assert.equal(loaded.totalWorks, 4);
+  assert.deepEqual(loaded.publications.map(({ work, paper }) => [work.putCode, paper?.title ?? null]), [
+    ['21', null], ['12', 'An article'], ['31', 'A chapter'], ['41', null],
+  ]);
+});
+
+test('a DOI lookup that fails keeps the papers that came, and says details are missing', async t => {
+  stubOpenAlex(t, { attributed: [openAlexWork(1, '10.1000/abc.1', 'An article')], down: ['doi'] });
+  const loaded = await quietly(() => load());
+  assert.equal(loaded.details, 'failed');
+  assert.deepEqual(loaded.publications.map(({ paper }) => paper?.title ?? null), [null, 'An article', null, null]);
+});
+
+test('when OpenAlex does not answer at all, every work of the record is still listed', async t => {
+  stubOpenAlex(t, { down: ['author.orcid', 'doi'] });
+  const loaded = await quietly(() => load());
+  assert.equal(loaded.details, 'failed');
+  assert.equal(loaded.attributed.failed, true);
+  assert.deepEqual(loaded.publications.map(({ work, paper }) => [work.putCode, paper]), [['21', null], ['12', null], ['31', null], ['41', null]]);
+});
+
+test('a record with more works than the page lists shows the newest, and every one still keeps its work out of the suggestions', async t => {
+  const group = (index: number) => ({
+    'external-ids': { 'external-id': [id('doi', `10.1000/w${index}`)] },
+    'work-summary': [summary(index, { title: { title: { value: `Work ${index}` } }, 'publication-date': { year: { value: String(1700 + index) } } })],
+  });
+  const total = ORCID_LISTED_WORKS_MAX + 5;
+  // The oldest work, past the end of the list, is also attributed to the iD: it is not suggested.
+  stubOpenAlex(t, { attributed: [openAlexWork(1, '10.1000/w0', 'Work 0', 1700)] });
+  const loaded = await load(NO_DECISIONS, { group: Array.from({ length: total }, (_, index) => group(index)) });
+  assert.equal(loaded.totalWorks, total);
+  assert.equal(loaded.publications.length, ORCID_LISTED_WORKS_MAX);
+  assert.equal(loaded.publications[0].work.title, `Work ${total - 1}`);
+  assert.deepEqual(arrangeOrcidWorks(loaded, NO_DECISIONS).candidates, []);
+});
+
+test('the works attributed to the iD that the record does not list are candidates, each once, with the decision made about it', async t => {
+  const recordWithOpenAlexId = {
+    group: [...WORKS.group, {
+      'external-ids': { 'external-id': [id('openalex', 'https://openalex.org/W40')] },
+      'work-summary': [summary(51, { title: { title: { value: 'Listed by its OpenAlex id' } }, 'publication-date': { year: { value: '2018' } } })],
+    }],
+  };
+  stubOpenAlex(t, {
+    attributed: [
+      openAlexWork(60, '10.2000/new', 'Newest suggestion', 2024),
+      openAlexWork(1, '10.1000/abc.1', 'In the record by its DOI'),
+      openAlexWork(40, null, 'In the record by its OpenAlex id'),
+      openAlexWork(61, '10.2000/NEW', 'The same DOI twice', 2024),
+      openAlexWork(62, null, 'Not mine', 2022),
+      openAlexWork(63, '10.2000/added', 'Added by the reader', 2020),
+      openAlexWork(64, null, 'Undecided', 2016),
+    ],
+  });
+  const decisions = { mine: ['doi:10.2000/added'], notMine: ['openalex:W62'] };
+  const loaded = await load(decisions, recordWithOpenAlexId);
+  const { candidates, publications } = arrangeOrcidWorks(loaded, decisions);
+  assert.deepEqual(candidates.map(({ key, paper, decision }) => [key, paper.title, decision]), [
+    ['doi:10.2000/new', 'Newest suggestion', null],
+    ['openalex:W62', 'Not mine', 'notMine'],
+    ['doi:10.2000/added', 'Added by the reader', 'mine'],
+    ['openalex:W64', 'Undecided', null],
+  ]);
+  // The added work joins the record's works by year.
+  assert.deepEqual(publications.map(item => (item.kind === 'record' ? item.work.title : `added: ${item.paper?.title}`)), [
+    'A preprint', 'added: Added by the reader', 'An article, as the author listed it', 'Listed by its OpenAlex id', 'A chapter', 'An undated talk',
+  ]);
+});
+
+test('a work the reader added that OpenAlex no longer attributes is found by its identifier, or kept by it when it cannot be', async t => {
+  const asked = stubOpenAlex(t, {
+    byDoi: [openAlexWork(70, '10.3000/kept', 'Found by its DOI', 2021)],
+    byId: [openAlexWork(71, null, 'Found by its OpenAlex id', 2020)],
+  });
+  // An added work that the record now lists stays a record work, once.
+  const decisions = { mine: ['doi:10.3000/kept', 'openalex:W71', 'openalex:W72', 'doi:10.1000/abc.1'], notMine: [] };
+  const loaded = await load(decisions);
+  assert.ok(asked.includes('doi:10.1000/abc.1|10.1000/chapter.7|10.3000/kept'), asked.join(' '));
+  assert.ok(asked.includes('openalex:W71|W72'), asked.join(' '));
+  const { publications } = arrangeOrcidWorks(loaded, decisions);
+  assert.deepEqual(publications.filter(item => item.kind === 'added').map(item => [item.key, item.paper?.title ?? null]), [
+    ['doi:10.3000/kept', 'Found by its DOI'], ['openalex:W71', 'Found by its OpenAlex id'], ['openalex:W72', null],
+  ]);
+  assert.equal(publications.length, 7);
+});
+
+test('when the decisions cannot be read the load fails, so nothing already decided is suggested again', async t => {
+  stubOpenAlex(t);
+  await assert.rejects(withStubbedFetch(async () => Response.json(WORKS), () => (
+    loadOrcidPublications(IDENTIFIER, 'orcid.org', Promise.reject(new Error('offline')))
+  )), /offline/);
 });

@@ -565,6 +565,26 @@ service cloud.firestore {
           && request.resource.data.updatedAt == request.time;
       }
 
+      // The account's decisions about the works OpenAlex attributes to its
+      // ORCID iD (src/services/orcid-work-decisions-service.ts): two lists of
+      // work identifiers, those it added to its publications and those it said
+      // are not its own. Fetched by id only. Written only while an iD is
+      // connected, so a write cannot land after a Disconnect has deleted the
+      // document; the Worker deletes it on Disconnect, on a new connection and
+      // with the account, past these rules. The rest of users/{uid}/orcid,
+      // the pending ORCID sign-in, stays closed by the catch-all below.
+      match /orcid/works {
+        allow get: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly(['mine', 'notMine', 'updatedAt'])
+          && request.resource.data.mine is list
+          && request.resource.data.mine.size() <= 1000
+          && request.resource.data.notMine is list
+          && request.resource.data.notMine.size() <= 1000
+          && request.resource.data.updatedAt == request.time
+          && get(/databases/$(database)/documents/users/$(userId)).data.get('orcid', null) != null;
+      }
+
       match /{document=**} {
         allow read, write: if false;
       }

@@ -197,6 +197,7 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     [`users/${UID}/summaries/key.university`]: { sections: [{ kind: 'intro', paragraphs: ['Plain words.'] }] },
     [`users/${UID}/summaryHistory/key.university`]: { title: 'A paper', level: 'university' },
     [`users/${UID}/orcid/link`]: { stateHash: 'a-pending-orcid-state', createdAt: 1 },
+    [`users/${UID}/orcid/works`]: { mine: ['doi:10.1000/a'], notMine: ['openalex:W2'] },
     [`users/${UID}`]: { onboardingComplete: true, orcid: { id: '0000-0002-1825-0097', name: 'Josiah Carberry', host: 'orcid.org', connectedAt: '2026-11-18T10:00:00.000Z' } },
   });
   const store = kvStore({
@@ -245,6 +246,7 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     assert.equal(admin.documents[`users/${UID}/summaries/key.university`], undefined);
     assert.equal(admin.documents[`users/${UID}/summaryHistory/key.university`], undefined);
     assert.equal(admin.documents[`users/${UID}/orcid/link`], undefined);
+    assert.equal(admin.documents[`users/${UID}/orcid/works`], undefined);
     assert.equal(store.data.has(`notification:subscription:${UID}`), false);
     assert.equal(store.data.has('notification:unsubscribe:tok-1'), false);
   } finally {

@@ -50,7 +50,7 @@ export interface OrcidWork {
   /** The identifiers of the work itself (relationship `self`), the DOI among them. */
   externalIds: Array<{ type: string; value: string }>;
 }
-/** A work of the reader's record, with its paper when OpenAlex knows its DOI. */
+/** A work of the reader's record, with its paper when OpenAlex knows it. */
 export interface OrcidPublication { work: OrcidWork; paper: Paper | null }
 
 /**
@@ -60,10 +60,11 @@ export interface OrcidPublication { work: OrcidWork; paper: Paper | null }
 
 import type { Paper } from '../models/paper.ts';
 import type { OrcidHost } from '../utils/orcid-id.ts';
+import type { OrcidWorkDecision, OrcidWorkDecisions } from './orcid-work-decisions-service.ts';
 import { withRequestDeadline } from '../utils/request-deadline.ts';
 import { isValidOrcidId } from '../utils/orcid-id.ts';
 import { canonicalDoiOf } from '../utils/paper-canonical-key.ts';
-import { fetchPapersByDois } from './open-alex-service.ts';
+import { fetchPapersByDois, fetchPapersByOpenAlexIds, getWorksByOrcid } from './open-alex-service.ts';
 
 /**
  * One deadline covering the headers and the body. This used to clear its own
@@ -203,10 +204,19 @@ function formatOrcidData(data: OrcidPayload, orcidId: string) {
   };
 }
 
-const WORKS_TIMEOUT_MS = 10_000;
+// ORCID sends a whole record in one response, several megabytes for a large
+// one, so it gets twenty seconds; past that the reader is offered to try again.
+const WORKS_TIMEOUT_MS = 20_000;
+/** The most works of a record the page lists, newest first; it says when a record has more. */
+export const ORCID_LISTED_WORKS_MAX = 300;
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+}
+
+/** An OpenAlex work id in its short form (`W123`), from the id or its address. */
+function openAlexWorkId(value: unknown) {
+  return cleanText(value).match(/^(?:https?:\/\/openalex\.org\/)?(W\d+)$/i)?.[1].toUpperCase() ?? null;
 }
 
 /** The identifiers of the work itself, not of what it is part of or a version of; a DOI in its canonical spelling. */
@@ -266,22 +276,137 @@ export async function getOrcidWorks(orcidId: string, host: OrcidHost = 'orcid.or
 }
 
 /**
- * The works of the reader's ORCID record, each with its OpenAlex paper when
- * OpenAlex has its DOI. `details` is 'failed' when OpenAlex did not answer:
- * the works are still listed, with only what ORCID gives.
+ * The names a paper is matched by: `doi:<DOI>` (case-insensitive, as
+ * canonicalDoiOf spells it) and `openalex:<work id>`. The first one is the
+ * name the reader's decision about it is kept under.
  */
-export async function loadOrcidPublications(orcidId: string, host: OrcidHost) {
-  const works = await getOrcidWorks(orcidId, host);
-  const dois = [...new Set(works.map(work => work.doi).filter((doi): doi is string => Boolean(doi)))];
-  let papers: Paper[] = [];
-  let details: 'complete' | 'failed' = 'complete';
-  try {
-    papers = dois.length > 0 ? await fetchPapersByDois(dois, { strict: true }) : [];
-  } catch (error) {
-    console.warn('OpenAlex details for the ORCID works could not be loaded', error);
-    details = 'failed';
+export function orcidWorkKeys(paper: Partial<Paper>) {
+  const doi = canonicalDoiOf(paper);
+  const id = openAlexWorkId(paper.id);
+  return [doi ? `doi:${doi}` : null, id ? `openalex:${id}` : null].filter((key): key is string => key !== null);
+}
+
+/** The names an ORCID work is matched by: its DOI, and an OpenAlex id when the record lists one. */
+function recordWorkKeys(work: OrcidWork) {
+  const openAlexIds = work.externalIds.filter(id => id.type === 'openalex').map(id => openAlexWorkId(id.value));
+  return [work.doi ? `doi:${work.doi}` : null, ...openAlexIds.map(id => (id ? `openalex:${id}` : null))]
+    .filter((key): key is string => key !== null);
+}
+
+function papersByKey(papers: Paper[]) {
+  const byKey = new Map<string, Paper>();
+  for (const paper of papers) {
+    for (const key of orcidWorkKeys(paper)) if (!byKey.has(key)) byKey.set(key, paper);
   }
-  const byDoi = new Map(papers.map(paper => [canonicalDoiOf(paper), paper]));
-  const publications: OrcidPublication[] = works.map(work => ({ work, paper: (work.doi && byDoi.get(work.doi)) || null }));
-  return { publications, details };
+  return byKey;
+}
+
+/**
+ * Everything My profile shows about the reader's works, read when it opens:
+ * the newest ORCID_LISTED_WORKS_MAX works of their ORCID record, each with its
+ * OpenAlex paper when OpenAlex knows it; the works OpenAlex attributes to the
+ * iD (getWorksByOrcid in open-alex-service.ts); and the reader's decisions
+ * about those (`decisionsRead`). A paper attributed to the iD serves the
+ * record's work with the same DOI or OpenAlex id, so only the other works are
+ * looked up by DOI, with the works the reader added that the attributed list
+ * no longer holds. `details` is 'failed' when some of those lookups did not
+ * answer: the papers that did answer are kept. Rejects when ORCID or the
+ * decisions cannot be read.
+ */
+export async function loadOrcidPublications(orcidId: string, host: OrcidHost, decisionsRead: Promise<OrcidWorkDecisions>) {
+  const [works, attributed, decisions] = await Promise.all([
+    getOrcidWorks(orcidId, host),
+    getWorksByOrcid(orcidId).then(
+      result => ({ ...result, failed: false }),
+      (error: unknown) => {
+        console.warn('OpenAlex did not list the works of the ORCID iD', error);
+        return { papers: [] as Paper[], total: 0, complete: false, failed: true };
+      },
+    ),
+    decisionsRead,
+  ]);
+  const listed = works.slice(0, ORCID_LISTED_WORKS_MAX);
+  const recordKeys = new Set(works.flatMap(recordWorkKeys));
+  const known = papersByKey(attributed.papers);
+
+  const dois = listed.flatMap(work => (work.doi && !recordWorkKeys(work).some(key => known.has(key)) ? [work.doi] : []));
+  const addedMissing = decisions.mine.filter(key => !recordKeys.has(key) && !known.has(key));
+  const addedDois = addedMissing.filter(key => key.startsWith('doi:')).map(key => key.slice('doi:'.length));
+  const addedIds = addedMissing.filter(key => key.startsWith('openalex:')).map(key => key.slice('openalex:'.length));
+  const unanswered: string[] = [];
+  const onRequestFailed = (ids: string[], error: unknown) => {
+    console.warn(`OpenAlex details for ${ids.length} works could not be loaded`, error);
+    unanswered.push(...ids);
+  };
+  const [byDoi, byId] = await Promise.all([
+    fetchPapersByDois([...new Set([...dois, ...addedDois])], { onRequestFailed }),
+    fetchPapersByOpenAlexIds(addedIds, { onRequestFailed }),
+  ]);
+  const looked = papersByKey([...byDoi, ...byId]);
+  const paperFor = (keys: string[]) => keys.map(key => known.get(key) ?? looked.get(key)).find(paper => paper !== undefined) ?? null;
+
+  return {
+    publications: listed.map((work): OrcidPublication => ({ work, paper: paperFor(recordWorkKeys(work)) })),
+    /** How many works the record has; more than are listed when it has over ORCID_LISTED_WORKS_MAX. */
+    totalWorks: works.length,
+    details: unanswered.length > 0 ? 'failed' as const : 'complete' as const,
+    recordKeys,
+    attributed,
+    /** Papers of works the reader added that the attributed list does not hold, found by their identifiers. */
+    addedPapers: addedMissing.map(key => looked.get(key)).filter((paper): paper is Paper => paper !== undefined),
+    decisions,
+  };
+}
+
+export type OrcidPublicationsLoad = Awaited<ReturnType<typeof loadOrcidPublications>>;
+
+/** A row of the reader's publications: a work of their ORCID record, or a work they added themselves. */
+export type OrcidListedWork =
+  | { kind: 'record'; work: OrcidWork; paper: Paper | null }
+  | { kind: 'added'; key: string; paper: Paper | null };
+
+/** A work OpenAlex attributes to the iD that the ORCID record does not list, with the reader's decision about it. */
+export interface OrcidCandidate { key: string; paper: Paper; decision: OrcidWorkDecision | null }
+
+/**
+ * The reader's publications and the candidates for "Might also be yours",
+ * from what loadOrcidPublications read and the decisions as they stand now.
+ * The publications are the record's listed works and the works the reader
+ * added, newest first; a work the record lists is never also an added one.
+ * The candidates are the attributed works the record does not list, newest
+ * first, each once.
+ */
+export function arrangeOrcidWorks(loaded: OrcidPublicationsLoad, decisions: OrcidWorkDecisions) {
+  const mine = new Set(decisions.mine);
+  const notMine = new Set(decisions.notMine);
+  const seen = new Set<string>();
+  const candidates: OrcidCandidate[] = [];
+  for (const paper of loaded.attributed.papers) {
+    const keys = orcidWorkKeys(paper);
+    if (keys.length === 0 || keys.some(key => loaded.recordKeys.has(key) || seen.has(key))) continue;
+    keys.forEach(key => seen.add(key));
+    const decision = keys.some(key => mine.has(key)) ? 'mine' : keys.some(key => notMine.has(key)) ? 'notMine' : null;
+    candidates.push({ key: keys[0], paper, decision });
+  }
+
+  const addedByKey = papersByKey([
+    ...candidates.filter(candidate => candidate.decision === 'mine').map(candidate => candidate.paper),
+    ...loaded.addedPapers,
+  ]);
+  const added: OrcidListedWork[] = [];
+  const shown = new Set<Paper>();
+  for (const key of new Set(decisions.mine)) {
+    if (loaded.recordKeys.has(key)) continue;
+    const paper = addedByKey.get(key) ?? null;
+    if (paper && (shown.has(paper) || orcidWorkKeys(paper).some(other => loaded.recordKeys.has(other)))) continue;
+    if (paper) shown.add(paper);
+    added.push({ kind: 'added', key, paper });
+  }
+
+  const yearOf = (item: OrcidListedWork) => (item.kind === 'record' ? item.work.year : item.paper?.year) ?? -Infinity;
+  const publications = [
+    ...loaded.publications.map((publication): OrcidListedWork => ({ kind: 'record', ...publication })),
+    ...added,
+  ].sort((a, b) => yearOf(b) - yearOf(a));
+  return { publications, candidates };
 }
