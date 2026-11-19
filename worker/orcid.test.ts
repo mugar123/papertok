@@ -23,8 +23,11 @@ const IDENTIFIER = '0000-0002-1825-0097';
 const ACCESS_TOKEN = 'f5af9f51-07e6-4332-8f1a-c0c11c1e3728';
 const NOW = Date.parse('2026-11-18T10:00:00Z');
 
+/** Documents in memory, each with a version that every write changes, and Firestore's preconditions. */
 function memoryAdmin(seed: Record<string, FirestoreData> = {}) {
   const documents: Record<string, FirestoreData> = { ...seed };
+  let clock = 0;
+  const versions: Record<string, string> = Object.fromEntries(Object.keys(seed).map(key => [key, `v${++clock}`]));
   /** Each commit, as the documents it wrote or deleted. */
   const commits: string[][] = [];
   const path = (name: string) => name.split('/documents/')[1];
@@ -32,16 +35,22 @@ function memoryAdmin(seed: Record<string, FirestoreData> = {}) {
     documents,
     commits,
     name: (segments: string[]) => `projects/${PROJECT_ID}/databases/(default)/documents/${segments.join('/')}`,
-    async getDocument<T>(segments: string[]) { return (documents[segments.join('/')] ?? null) as T | null; },
+    async getDocument<T>(segments: string[]) {
+      const key = segments.join('/');
+      return documents[key] ? { data: documents[key] as T, updateTime: versions[key] } : null;
+    },
     async commit(writes: FirestoreWrite[]) {
       commits.push(writes.map(write => path(write.delete ?? write.update!.name)));
       for (const write of writes) {
         const key = path(write.delete ?? write.update!.name);
         if (write.currentDocument?.exists === true && !documents[key]) throw new FirestoreAdminError('FAILED_PRECONDITION', 409);
+        const updateTime = write.currentDocument?.updateTime;
+        if (updateTime && (!documents[key] || versions[key] !== updateTime)) throw new FirestoreAdminError('FAILED_PRECONDITION', 409);
       }
       for (const write of writes) {
-        if (write.delete) { delete documents[path(write.delete)]; continue; }
+        if (write.delete) { delete documents[path(write.delete)]; delete versions[path(write.delete)]; continue; }
         const key = path(write.update!.name);
+        versions[key] = `v${++clock}`;
         const fields = decodeFields(write.update!.fields);
         if (!write.updateMask) { documents[key] = fields; continue; }
         const next = { ...(documents[key] || {}) };
@@ -55,7 +64,7 @@ function memoryAdmin(seed: Record<string, FirestoreData> = {}) {
   };
 }
 
-type Handler = (url: string, init: RequestInit) => Response;
+type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
 
 // Nothing in this file reaches a real service: a request no test stubbed fails.
 globalThis.fetch = async (input) => { throw new Error(`unstubbed request to ${String(input)}`); };
@@ -203,6 +212,95 @@ test('a state this account did not ask for, or asked for too long ago, connects 
   }
 });
 
+/** An ORCID that holds its answer until `release`; `asked` settles once the exchange has been sent. */
+function heldOrcid() {
+  let asked!: () => void;
+  let release!: () => void;
+  const askedPromise = new Promise<void>((resolve) => { asked = resolve; });
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  let first = true;
+  const handler: Handler = async () => {
+    if (first) {
+      first = false;
+      asked();
+      await released;
+    }
+    return orcidAnswer();
+  };
+  return { handler, asked: askedPromise, release };
+}
+
+test('a Disconnect while ORCID is answering stays disconnected', async () => {
+  const admin = memoryAdmin({ [`users/${ALICE}`]: { onboardingComplete: true } });
+  const orcid = heldOrcid();
+  const upstream = stubFetch(orcid.handler);
+  try {
+    const state = (await connect(admin)).searchParams.get('state');
+    const late = complete(admin, state);
+    await orcid.asked;
+    await handleOrcidRequest(request('/orcid/disconnect'), ENV, ORIGIN, { admin });
+    orcid.release();
+    await assert.rejects(late, rejectsWith('ORCID_CONNECTION_EXPIRED'));
+  } finally {
+    upstream.restore();
+  }
+  assert.deepEqual(admin.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
+});
+
+test('a completion that lands between the commits of a Disconnect writes nothing', async () => {
+  const admin = memoryAdmin({ [`users/${ALICE}`]: { onboardingComplete: true } });
+  const orcid = heldOrcid();
+  const upstream = stubFetch(orcid.handler);
+  try {
+    const state = (await connect(admin)).searchParams.get('state');
+    const late = complete(admin, state);
+    await orcid.asked;
+    // ORCID answers, and the completion commits, right after the Disconnect's first commit.
+    let interleaved = false;
+    const disconnecting = {
+      ...admin,
+      async commit(writes: FirestoreWrite[]) {
+        await admin.commit(writes);
+        if (interleaved) return;
+        interleaved = true;
+        orcid.release();
+        await late.catch(() => {});
+      },
+    };
+    await handleOrcidRequest(request('/orcid/disconnect'), ENV, ORIGIN, { admin: disconnecting });
+    await assert.rejects(late, rejectsWith('ORCID_CONNECTION_EXPIRED'));
+  } finally {
+    upstream.restore();
+  }
+  assert.deepEqual(admin.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
+});
+
+test('a new Connect while ORCID is answering keeps its pending state and refuses the old completion', async () => {
+  const admin = memoryAdmin({
+    [`users/${ALICE}`]: { onboardingComplete: true },
+    [`users/${ALICE}/orcid/works`]: { mine: ['doi:10.1000/a'], notMine: [] },
+  });
+  const orcid = heldOrcid();
+  const upstream = stubFetch(orcid.handler);
+  try {
+    const oldState = (await connect(admin)).searchParams.get('state');
+    const late = complete(admin, oldState);
+    await orcid.asked;
+    const newState = (await connect(admin, { now: NOW + 1000 })).searchParams.get('state');
+    const pending = admin.documents[`users/${ALICE}/orcid/link`];
+    orcid.release();
+    await assert.rejects(late, rejectsWith('ORCID_CONNECTION_EXPIRED'));
+    assert.deepEqual(admin.documents[`users/${ALICE}/orcid/link`], pending, 'the new pending state is kept');
+    assert.deepEqual(admin.documents[`users/${ALICE}`], { onboardingComplete: true });
+    assert.deepEqual(admin.documents[`users/${ALICE}/orcid/works`], { mine: ['doi:10.1000/a'], notMine: [] });
+
+    const { orcid: connected } = await complete(admin, newState, { now: NOW + 2000 }) as { orcid: { id: string } };
+    assert.equal(connected.id, IDENTIFIER, 'the new connection still completes');
+  } finally {
+    upstream.restore();
+  }
+});
+
 test('an answer without a valid iD is an ORCID failure, not a connection', async () => {
   for (const orcid of ['0000-0002-1825-0098', 'https://orcid.org/0000-0002-1825-0097', undefined]) {
     const admin = memoryAdmin();
@@ -275,8 +373,9 @@ test('disconnecting forgets the iD, any pending state and the decisions about it
   }
   assert.deepEqual(connectedAccount.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
   assert.deepEqual(newAccount.documents, {});
-  // The iD goes before the decisions: the rules take a decision only while an iD is connected.
-  assert.deepEqual(connectedAccount.commits, [[`users/${ALICE}`], [`users/${ALICE}/orcid/link`, `users/${ALICE}/orcid/works`]]);
+  // The pending state goes first, so a completion in flight writes nothing; then the iD, before
+  // the decisions, since the rules take a decision only for the connected iD.
+  assert.deepEqual(connectedAccount.commits, [[`users/${ALICE}/orcid/link`], [`users/${ALICE}`], [`users/${ALICE}/orcid/works`]]);
 });
 
 test('only POST is answered', async () => {
