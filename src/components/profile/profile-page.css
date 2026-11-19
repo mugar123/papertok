@@ -94,8 +94,11 @@
   line-height: var(--lh-normal);
 }
 
-/* A coauthor: the name in the serif, the shared count as mono machine data. */
-.orcid-coauthor-name {
+/* A coauthor: the name in the serif, the shared count as mono machine data.
+   Prefixed: they have to outrank the row's own muted paragraph. */
+.settings-row-content > p.orcid-coauthor-name {
+  margin-top: 0;
+  color: var(--text-primary);
   font-family: var(--font-serif);
   font-size: var(--fs-base);
   overflow-wrap: anywhere;

@@ -330,7 +330,7 @@ function FrequentCoauthors({ coauthors }: { coauthors: Coauthor[] }) {
               </div>
               <FollowToggle
                 pressed={isFollowing(entity)}
-                disabled={isFollowPending(entity)}
+                pending={isFollowPending(entity)}
                 onClick={() => follow(coauthor)}
                 followLabel={COPY.follow(coauthor.name)}
                 followingLabel={COPY.following(coauthor.name)}
