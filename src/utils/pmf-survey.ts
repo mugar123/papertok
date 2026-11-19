@@ -1,4 +1,4 @@
-import { getPmfSurveyStorageKey, readSeenPaperIds } from './user-scoped-storage.ts';
+import { getPmfSurveyStorageKey } from './user-scoped-storage.ts';
 
 type SurveyStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -7,20 +7,32 @@ type SurveyStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
  * asked and what an answer sends. NudgeHost decides when, as it does for
  * everything else the app asks.
  *
- * Only a signed-in reader who has really used PaperTok is asked: on three
- * different days, or after twenty papers viewed on their cards. The papers are
- * the account's viewed list in this browser (user-scoped-storage.ts); the days
- * and the version already asked are this module's own record. Both are kept
- * per account and swept at sign-out, so an account that signs in again counts
- * from nothing. A reader is asked once per PaperTok version (package.json's,
- * built in by vite.config.ts). Opening the survey settles that version,
- * however it is then closed.
+ * Only a signed-in reader who has really used PaperTok is asked. The first
+ * time, that means PaperTok opened on three different days, or twenty papers
+ * kept on screen for at least a second each (the dwell the cards report to
+ * the feed's trackViewTime; a fast swipe and a paper a load passes over do not
+ * count). After a new version, a reader already asked for an earlier one is
+ * asked again once PaperTok was opened on two different days on that version.
+ * A version is package.json's, built in by vite.config.ts.
+ *
+ * Two records per account in this browser. The days, each with the version it
+ * was opened on, and the papers are swept at sign-out
+ * (user-scoped-storage.ts), so an account that signs in again counts them from
+ * nothing. The version the account was last asked for is kept across
+ * sign-outs, as the privacy notice's is (utils/nudges.ts), so signing in again
+ * does not ask again for the same version; deleting the account removes it
+ * (forgetPmfSurveyAsked). Opening the survey settles its version, however it
+ * is then closed.
  */
 
 const ACTIVE_DAYS = 3;
-const VIEWED_PAPERS = 20;
+const DWELT_PAPERS = 20;
+const DAYS_ON_NEW_VERSION = 2;
 
-interface SurveyRecord { days: string[]; asked: string | null }
+const ASKED_KEY_PREFIX = 'papertok_pmfSurveyAsked:';
+
+interface UsageDay { day: string; version: string }
+interface UsageRecord { days: UsageDay[]; papers: string[] }
 
 export type PmfDisappointment = 'very' | 'somewhat' | 'not';
 /** `nps` is null when the reader left the second question unanswered. */
@@ -35,29 +47,64 @@ function resolveStorage(storage: SurveyStorage | null | undefined) {
   }
 }
 
-function readRecord(key: string, storage: SurveyStorage): SurveyRecord {
+function askedKey(uid: string) {
+  return `${ASKED_KEY_PREFIX}${encodeURIComponent(uid)}`;
+}
+
+/** A version as numbers ('0.10.0' is [0, 10, 0]), or null for anything else. */
+function versionParts(value: string) {
+  return /^\d+(\.\d+)*$/.test(value) ? value.split('.').map(Number) : null;
+}
+
+/** Whether `version` is the same release as `than` or a later one. */
+function versionAtLeast(version: string, than: string) {
+  const had = versionParts(version);
+  const owed = versionParts(than);
+  if (!had || !owed) return version === than;
+  for (let index = 0; index < Math.max(had.length, owed.length); index += 1) {
+    const difference = (had[index] ?? 0) - (owed[index] ?? 0);
+    if (difference !== 0) return difference > 0;
+  }
+  return true;
+}
+
+function isUsageDay(entry: unknown): entry is UsageDay {
+  if (!entry || typeof entry !== 'object') return false;
+  const { day, version } = entry as Record<string, unknown>;
+  return typeof day === 'string' && typeof version === 'string';
+}
+
+function readUsage(key: string, storage: SurveyStorage): UsageRecord {
   try {
     const parsed: unknown = JSON.parse(storage.getItem(key) ?? 'null');
-    if (!parsed || typeof parsed !== 'object') return { days: [], asked: null };
-    const { days, asked } = parsed as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return { days: [], papers: [] };
+    const { days, papers } = parsed as Record<string, unknown>;
     return {
-      days: Array.isArray(days) ? days.filter((day): day is string => typeof day === 'string') : [],
-      asked: typeof asked === 'string' ? asked : null,
+      days: Array.isArray(days) ? days.filter(isUsageDay) : [],
+      papers: Array.isArray(papers) ? papers.filter((paperId): paperId is string => typeof paperId === 'string') : [],
     };
   } catch {
-    return { days: [], asked: null };
+    return { days: [], papers: [] };
   }
 }
 
-function writeRecord(uid: string, storage: SurveyStorage | null | undefined, change: (record: SurveyRecord) => SurveyRecord | null) {
+function writeUsage(uid: string, storage: SurveyStorage | null | undefined, change: (record: UsageRecord) => UsageRecord | null) {
   const key = getPmfSurveyStorageKey(uid);
   const target = resolveStorage(storage);
   if (!key || !target) return;
   try {
-    const next = change(readRecord(key, target));
+    const next = change(readUsage(key, target));
     if (next) target.setItem(key, JSON.stringify(next));
   } catch {
     // Without storage the survey is not offered (pmfSurveyDue), so nothing is lost.
+  }
+}
+
+function readAsked(uid: string, storage: SurveyStorage) {
+  try {
+    return storage.getItem(askedKey(uid)) || null;
+  } catch {
+    return null;
   }
 }
 
@@ -67,48 +114,59 @@ function localDay(now: Date) {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** Counts the day of `now` as one the account opened PaperTok on. The latest three are all the rule needs. */
-export function recordPmfSurveyDay(uid: string, now: Date, storage?: SurveyStorage | null) {
-  const day = localDay(now);
-  writeRecord(uid, storage, record => (record.days.includes(day)
-    ? null
-    : { ...record, days: [...record.days, day].slice(-ACTIVE_DAYS) }));
-}
-
-/** Records that the account was shown the survey for `version`. */
-export function rememberPmfSurveyAsked(uid: string, version: string, storage?: SurveyStorage | null) {
-  writeRecord(uid, storage, record => ({ ...record, asked: version }));
-}
-
 /**
- * Whether having been asked for `asked` settles `version`. A later version
- * settles an earlier one, so a tab still running the previous release does
- * not ask again a reader who already answered for the new one.
+ * Counts the day of `now` as one the account opened PaperTok on, running
+ * `version`. A day already counted for an earlier version is moved to the
+ * later one, which was opened on it too; a tab still running an earlier
+ * version does not move it back. The latest three days are all the rules need.
  */
-function versionSettled(asked: string | null, version: string) {
-  const parse = (value: string | null) => (value && /^\d+(\.\d+)*$/.test(value) ? value.split('.').map(Number) : null);
-  const had = parse(asked);
-  const owed = parse(version);
-  if (!had || !owed) return asked === version;
-  for (let index = 0; index < Math.max(had.length, owed.length); index += 1) {
-    const difference = (had[index] ?? 0) - (owed[index] ?? 0);
-    if (difference !== 0) return difference > 0;
-  }
-  return true;
+export function recordPmfSurveyDay(uid: string, now: Date, version: string, storage?: SurveyStorage | null) {
+  const day = localDay(now);
+  writeUsage(uid, storage, record => {
+    const counted = record.days.find(entry => entry.day === day);
+    if (counted && versionAtLeast(counted.version, version)) return null;
+    const days = [...record.days.filter(entry => entry.day !== day), { day, version }];
+    return { ...record, days: days.slice(-ACTIVE_DAYS) };
+  });
 }
 
 /**
- * Whether the account may be asked for `version`: not asked for it yet, and
- * PaperTok opened on three days or twenty papers viewed. Unreadable storage
- * asks nobody, since the use that qualifies a reader cannot be counted.
+ * Counts a paper that stayed on screen for at least a second, once, up to the
+ * twenty the first ask needs. `viewerId` is the account the card was shown
+ * to, `signedInUid` the one Firebase names now: a card that reports after its
+ * account signed out, whose records sign-out has just swept, writes nothing
+ * back (as in context/feed-viewed-papers.ts).
+ */
+export function recordPmfSurveyPaper({ paperId, viewerId, signedInUid }: { paperId: string; viewerId: string | null | undefined; signedInUid: string | null | undefined }, storage?: SurveyStorage | null) {
+  if (!viewerId || viewerId !== signedInUid) return;
+  writeUsage(viewerId, storage, record => (record.papers.length >= DWELT_PAPERS || record.papers.includes(paperId)
+    ? null
+    : { ...record, papers: [...record.papers, paperId] }));
+}
+
+/**
+ * Whether the account may be asked for `version`: not asked for it or a later
+ * one yet, and with the use the rules above ask for. Unreadable storage asks
+ * nobody, since that use cannot be counted.
  */
 export function pmfSurveyDue(uid: string | null | undefined, version: string, storage?: SurveyStorage | null) {
   const key = getPmfSurveyStorageKey(uid);
   const target = resolveStorage(storage);
-  if (!key || !target) return false;
-  const record = readRecord(key, target);
-  if (versionSettled(record.asked, version)) return false;
-  return record.days.length >= ACTIVE_DAYS || readSeenPaperIds(uid, target).size >= VIEWED_PAPERS;
+  if (!uid || !key || !target) return false;
+  const asked = readAsked(uid, target);
+  if (asked && versionAtLeast(asked, version)) return false;
+  const { days, papers } = readUsage(key, target);
+  if (asked) return days.filter(entry => entry.version === version).length >= DAYS_ON_NEW_VERSION;
+  return days.length >= ACTIVE_DAYS || papers.length >= DWELT_PAPERS;
+}
+
+/** For a deleted account: its uid has no business staying in this browser. */
+export function forgetPmfSurveyAsked(uid: string, storage?: SurveyStorage | null) {
+  try {
+    resolveStorage(storage)?.removeItem(askedKey(uid));
+  } catch {
+    // Clearing site data removes it too.
+  }
 }
 
 /** What `pmf_survey` sends for an answer or a dismissal. */
@@ -119,4 +177,42 @@ export function pmfSurveyParams(answer: PmfSurveyAnswer, version: string) {
     ...(answer.nps !== null && { nps: answer.nps }),
     app_version: version,
   };
+}
+
+type SurveyTrack = (eventName: 'pmf_survey_shown' | 'pmf_survey', params: Record<string, unknown>) => Promise<unknown>;
+
+/** The survey while it is open: one answer, or the dismissal, is sent for it. */
+export interface PmfSurveyShown {
+  answer: (answer: PmfSurveyAnswer) => void;
+  /** It closed: a close nobody answered, such as leaving the feed, is a dismissal. */
+  close: () => void;
+}
+
+/**
+ * Called by NudgeHost after each commit, as recordPrivacyNoticeShown is: once
+ * the survey is open on screen for a signed-in account, `version` counts as
+ * asked for that account and `pmf_survey_shown` is sent. What it returns sends
+ * the one `pmf_survey` event of that opening: the answer the dialog hands
+ * over, or a dismissal when it closes without one. Nothing is recorded before
+ * it opens or without an account.
+ */
+export function recordPmfSurveyShown({ uid, surveyOpen, version, storage, track }: { uid: string | null | undefined; surveyOpen: boolean; version: string; storage?: SurveyStorage | null; track: SurveyTrack }): PmfSurveyShown | null {
+  if (!surveyOpen || !uid) return null;
+  // The newest version asked is kept: a tab still running an earlier one does
+  // not write its version over it.
+  const target = resolveStorage(storage);
+  const asked = target && readAsked(uid, target);
+  try {
+    if (!asked || !versionAtLeast(asked, version)) target?.setItem(askedKey(uid), version);
+  } catch {
+    // The dialog still stays open until it is closed; it may return next visit.
+  }
+  void track('pmf_survey_shown', { app_version: version });
+  let sent = false;
+  const send = (answer: PmfSurveyAnswer) => {
+    if (sent) return;
+    sent = true;
+    void track('pmf_survey', pmfSurveyParams(answer, version));
+  };
+  return { answer: send, close: () => send('dismissed') };
 }

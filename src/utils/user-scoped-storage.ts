@@ -343,7 +343,11 @@ export function getCustomFeedDismissedStorageKey(userId: string | null | undefin
   return `${CUSTOM_FEED_DISMISSED_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
 
-/** One key per account for the survey's days and the version it was asked for (pmf-survey.ts). */
+/**
+ * One key per account for the use that makes the survey due: the days and the
+ * papers kept on screen (pmf-survey.ts). The version it was asked for is kept
+ * in a key of its own, which sign-out does not sweep.
+ */
 export function getPmfSurveyStorageKey(userId: string | null | undefined) {
   if (!userId) return null;
   return `${PMF_SURVEY_KEY_PREFIX}${encodeURIComponent(userId)}`;

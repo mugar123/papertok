@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { EnvelopeSimple } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -36,7 +36,7 @@ import {
   type AccountNoticeRecord,
   type VisitNotices,
 } from '../../utils/nudges.ts';
-import { pmfSurveyDue, pmfSurveyParams, recordPmfSurveyDay, rememberPmfSurveyAsked, type PmfSurveyAnswer } from '../../utils/pmf-survey.ts';
+import { pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
 import { setCardsCovered } from '../../utils/visible-time.ts';
 import NudgePanel from './nudge-panel.tsx';
 import PmfSurvey from './pmf-survey.tsx';
@@ -73,10 +73,11 @@ import PrivacyNotice from './privacy-notice.tsx';
 // The product-market fit survey is one of the visit's candidates like a nudge,
 // picked after the minute of reading on the feed, and shown like the privacy
 // dialog: over the feed's cards, never over another modal, only on the feed.
-// utils/pmf-survey.ts decides who is due; each mount counts a day for the
-// account. It is not offered while analytics is off, where its answers would
-// go nowhere. Once open, its version counts as asked for the account however
-// it is closed, and it does not open again in the visit.
+// utils/pmf-survey.ts decides who is due; each mount, and each time the tab
+// is shown again, counts the day for the account. It is not offered while
+// analytics is off, where its answers would go nowhere. Once open, its version
+// counts as asked for the account however it is closed, and it does not open
+// again in the visit. Leaving the feed closes it as a dismissal.
 
 // The product version this bundle was built from (package.json, through vite.config.ts).
 const APP_VERSION: string = import.meta.env.VITE_APP_VERSION;
@@ -150,8 +151,15 @@ export default function NudgeHost() {
   const [accountReadFailedFor, setAccountReadFailedFor] = useState<string | null>(null);
   const uid = user?.uid;
 
+  // A tab kept open overnight, as an installed app often is, counts the day it
+  // is used on again.
   useEffect(() => {
-    if (uid) recordPmfSurveyDay(uid, new Date());
+    if (!uid) return undefined;
+    const recordDay = () => {
+      if (document.visibilityState === 'visible') recordPmfSurveyDay(uid, new Date(), APP_VERSION);
+    };
+    recordDay();
+    return subscribeToTabVisibility(recordDay);
   }, [uid]);
 
   // Read only while it can decide something: as the visit's choice falls due,
@@ -265,17 +273,19 @@ export default function NudgeHost() {
   }, [uid, privacyOpen]);
 
   // The survey's version counts as asked once it is on screen, as the privacy
-  // notice's counts as told.
+  // notice's counts as told. When it closes without an answer from the dialog,
+  // because the reader left the feed (Back included), that is its dismissal.
+  const shownSurvey = useRef<PmfSurveyShown | null>(null);
   useEffect(() => {
-    if (!surveyOpen || !uid) return;
-    rememberPmfSurveyAsked(uid, APP_VERSION);
-    void trackPmfSurvey('pmf_survey_shown', { app_version: APP_VERSION });
+    const shown = recordPmfSurveyShown({ uid, surveyOpen, version: APP_VERSION, track: trackPmfSurvey });
+    shownSurvey.current = shown;
+    return () => shown?.close();
   }, [uid, surveyOpen]);
 
   const closePrivacy = useCallback(() => setVisit(answerPrivacyNotice), []);
 
   const answerSurvey = useCallback((answer: PmfSurveyAnswer) => {
-    void trackPmfSurvey('pmf_survey', pmfSurveyParams(answer, APP_VERSION));
+    shownSurvey.current?.answer(answer);
     setVisit(current => ({ ...current, picked: null }));
     if (answer !== 'dismissed') toast.success(COPY.en.surveyThanks);
   }, []);

@@ -23,8 +23,8 @@ const BASE_PATH = '/'
 // build.outDir is not overridden anywhere in this config, so it is Vite's
 // default: 'dist' relative to this file's own directory.
 const DIST_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'dist')
-// The product version each release sets in package.json (0.3.0, 0.4.0). The app
-// asks its survey once per account for each one (src/utils/pmf-survey.ts).
+// The product version each release sets in package.json (0.3.0, 0.4.0). The app's
+// survey asks again for each one (src/utils/pmf-survey.ts).
 const APP_VERSION = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version
 
 // Fifteen services read `VITE_PAPER_API_BASE_URL` — arXiv, OpenAlex, Scopus, AI

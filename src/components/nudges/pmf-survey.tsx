@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Button } from '../ui/button.tsx';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import type { PmfDisappointment, PmfSurveyAnswer } from '../../utils/pmf-survey.ts';
@@ -9,6 +9,7 @@ const COPY = {
   title: 'Two quick questions',
   description: 'Your answers help decide what PaperTok does next.',
   send: 'Send',
+  sendNeeds: 'Answer the first question to send.',
   later: 'Not now',
   close: 'Close',
 };
@@ -16,14 +17,16 @@ const COPY = {
 /**
  * The product-market fit survey, in a modal dialog over the feed (NudgeHost
  * decides when, and records the version as asked once it is open). Send hands
- * over the answers once the first question has one. Not now, Escape, the close
- * button and a press outside hand over a dismissal.
+ * over the answers once the first question has one; until then it stays
+ * focusable and its description says why it does nothing. Not now, Escape,
+ * the close button and a press outside hand over a dismissal.
  *
  * Focus starts on the title, as in the privacy notice, so a screen reader
  * starts at the title and Tab then reaches the first question.
  */
 export default function PmfSurvey({ open, onAnswer }: { open: boolean; onAnswer: (answer: PmfSurveyAnswer) => void }) {
   const titleRef = useRef<HTMLHeadingElement | null>(null);
+  const sendNeedsId = useId();
   const [disappointment, setDisappointment] = useState<PmfDisappointment | null>(null);
   const [nps, setNps] = useState<number | null>(null);
   // Once handed over, the dialog is closing: a second press while it leaves sends nothing.
@@ -45,11 +48,13 @@ export default function PmfSurvey({ open, onAnswer }: { open: boolean; onAnswer:
             size="sm"
             disabled={!disappointment}
             focusableWhenDisabled
+            aria-describedby={disappointment ? undefined : sendNeedsId}
             onClick={() => { if (disappointment) answer({ disappointment, nps }); }}
           >
             {COPY.send}
           </Button>
           <Button size="sm" variant="outline" onClick={() => answer('dismissed')}>{COPY.later}</Button>
+          <span id={sendNeedsId} className="visually-hidden">{COPY.sendNeeds}</span>
         </div>
       </DialogContent>
     </Dialog>
