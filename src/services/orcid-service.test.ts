@@ -8,7 +8,7 @@ import {
   withStubbedFetch,
 } from '../test-support/deadline-harness.ts';
 import { openAlexClient } from './open-alex-client.ts';
-import { arrangeOrcidWorks, citedWorkIds, extractOrcid, fetchWithTimeout, frequentCoauthors, getOrcidRecord, getOrcidWorks, loadOrcidPublications, ORCID_LISTED_WORKS_MAX, othersCitations, readerPapers } from './orcid-service.ts';
+import { arrangeOrcidWorks, citedWorkIds, citedWorksState, extractOrcid, fetchWithTimeout, frequentCoauthors, getOrcidRecord, getOrcidWorks, loadOrcidPublications, ORCID_LISTED_WORKS_MAX, othersCitations, readerPapers } from './orcid-service.ts';
 
 test('extracts a clean ORCID from a bare id, a URL and a checksum ending in X', () => {
   assert.equal(extractOrcid('0000-0002-1825-0097'), '0000-0002-1825-0097');
@@ -355,8 +355,8 @@ test('a citing paper by the reader, or that is one of their works, is left out, 
 test('frequent coauthors share two works or more, leave out the reader and large collaborations, and are ordered and capped', () => {
   const crowd = Array.from({ length: 31 }, (_, index): [number, string] => [900 + index, `Member ${index}`]);
   const papers = [
-    listedPaper(1, 2025, [[1, 'Ada Reader'], [2, 'Bea Close'], [3, 'Cy Twice'], [4, 'Dee Once'], [7, 'Pablo Presa']]),
-    listedPaper(2, 2024, [[5, 'Ada Reader'], [2, 'Bea Close'], [3, 'Cy Twice'], [7, 'Pablo Presa']]),
+    listedPaper(1, 2025, [[1, 'Ada Reader'], [2, 'Bea Close'], [3, 'Cy Twice'], [4, 'Dee Once'], [7, 'Rowan Vale']]),
+    listedPaper(2, 2024, [[5, 'Ada Reader'], [2, 'Bea Close'], [3, 'Cy Twice'], [7, 'Rowan Vale']]),
     listedPaper(3, 2022, [[2, 'Bea Close'], [6, 'Eve Older'], [8, 'Al Older']]),
     listedPaper(4, 2021, [[6, 'Eve Older'], [8, 'Al Older'], [1, 'Ada Reader']]),
     listedPaper(5, 2020, crowd),
@@ -364,7 +364,7 @@ test('frequent coauthors share two works or more, leave out the reader and large
     ...Array.from({ length: 10 }, (_, index) => listedPaper(10 + index, 2010, [[300 + index, `Pair ${index}`], [400, 'Zed Many']])),
     ...Array.from({ length: 10 }, (_, index) => listedPaper(20 + index, 2010, [[300 + index, `Pair ${index}`]])),
   ];
-  const result = frequentCoauthors(papers, { readerAuthorIds: ['https://openalex.org/A1', 'A5'], readerName: 'Pablo Presa' });
+  const result = frequentCoauthors(papers, { readerAuthorIds: ['https://openalex.org/A1', 'A5'], readerName: 'Rowan Vale' });
   assert.deepEqual(result.map(({ id, name, sharedWorks }) => [id, name, sharedWorks]), [
     ['A400', 'Zed Many', 10],
     ['A2', 'Bea Close', 3],
@@ -377,4 +377,36 @@ test('frequent coauthors share two works or more, leave out the reader and large
   ]);
   // With fewer than eight who share two, one who shares a single work still stays out.
   assert.deepEqual(frequentCoauthors(papers.slice(0, 4), { readerAuthorIds: ['A1', 'A5'] }).map(coauthor => coauthor.id), ['A2', 'A3', 'A7', 'A8', 'A6']);
+});
+
+test('with no author id of the reader known, only their full name or a place on every paper leaves an author out', () => {
+  const ids = (papers: Paper[], readerName: string | null) => frequentCoauthors(papers, { readerAuthorIds: [], readerName }).map(coauthor => coauthor.id);
+  // OpenAlex files the reader under two ids; the name matches whole, across
+  // case and accents, and a coauthor written with an initial stays.
+  const split = [
+    listedPaper(1, 2025, [[1, 'María García'], [2, 'M. Garcia'], [3, 'Tess Often']]),
+    listedPaper(2, 2024, [[1, 'María García'], [2, 'M. Garcia'], [3, 'Tess Often']]),
+    listedPaper(3, 2023, [[11, 'Maria Garcia'], [3, 'Tess Often']]),
+  ];
+  assert.deepEqual(ids(split, 'maria GARCIA'), ['A2']);
+  // With the reader's ids known, a coauthor on every paper stays.
+  assert.deepEqual(frequentCoauthors(split, { readerAuthorIds: ['A1', 'A11'] }).map(coauthor => coauthor.id), ['A3', 'A2']);
+  // A private or differently spelled name: whoever is on every paper is the reader.
+  const one = [
+    listedPaper(1, 2025, [[1, 'María García'], [2, 'M. Garcia'], [3, 'Tess Often']]),
+    listedPaper(2, 2024, [[1, 'María García'], [2, 'M. Garcia']]),
+    listedPaper(3, 2023, [[1, 'María García'], [3, 'Tess Often']]),
+  ];
+  assert.deepEqual(ids(one, null), ['A2', 'A3']);
+  assert.deepEqual(ids(one, 'Maria G. Garcia'), ['A2', 'A3']);
+});
+
+test('the citations section tells works OpenAlex does not know from works whose details did not load', () => {
+  const known = [listedPaper(1, 2025)];
+  const unidentified = [{ ...listedPaper(2, 2024), id: 'doi:10.1000/x' }];
+  assert.equal(citedWorksState(known, true), 'known');
+  assert.equal(citedWorksState(unidentified, true), 'failed');
+  assert.equal(citedWorksState([], true), 'failed');
+  assert.equal(citedWorksState(unidentified, false), 'unknown');
+  assert.equal(citedWorksState([], false), 'unknown');
 });

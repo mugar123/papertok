@@ -64,7 +64,7 @@ import type { OrcidWorkDecision, OrcidWorkDecisions } from './orcid-work-decisio
 import type { CitingWork } from './open-alex-service.ts';
 import { withRequestDeadline } from '../utils/request-deadline.ts';
 import { isValidOrcidId } from '../utils/orcid-id.ts';
-import { matchesAuthorName } from '../utils/author-name-match.ts';
+import { sameFullName } from '../utils/author-name-match.ts';
 import { canonicalArxivIdOf, canonicalDoiOf } from '../utils/paper-canonical-key.ts';
 import { CITING_WORKS_MAX_CITED, fetchPapersByDois, fetchPapersByOpenAlexIds, getWorksByOrcid, openAlexAuthorId } from './open-alex-service.ts';
 
@@ -472,6 +472,17 @@ export function citedWorkIds(papers: Paper[]) {
 }
 
 /**
+ * What the papers citing the reader's works can be asked for with: 'known'
+ * when some of `papers` have an OpenAlex work id; 'failed' when none has one
+ * and a lookup of their details (`lookupFailed`) did not answer, so their ids
+ * are missing rather than unknown to OpenAlex; 'unknown' otherwise.
+ */
+export function citedWorksState(papers: Paper[], lookupFailed: boolean) {
+  if (citedWorkIds(papers).length > 0) return 'known' as const;
+  return lookupFailed ? 'failed' as const : 'unknown' as const;
+}
+
+/**
  * The papers citing the reader's works that are not their own: a work with an
  * author whose ORCID iD is `orcidId`, or that is itself one of the reader's
  * works (`readerIds`), is left out. Each keeps, in its reference order, the
@@ -499,19 +510,23 @@ export interface Coauthor { id: string; name: string; sharedWorks: number; lates
  * more, by shared works, then the most recent shared year, then name, at most
  * COAUTHORS_SHOWN. A paper of more than COAUTHORS_MAX_AUTHORS authors is
  * skipped. The reader is left out: their author ids (`readerAuthorIds`, the
- * ids that carry their iD on OpenAlex), and an author by their name when it is
- * known (`readerName`), for a work OpenAlex files under another id of theirs.
+ * ids that carry their iD on OpenAlex), and an author with exactly their name
+ * when it is known (`readerName`), for a work OpenAlex files under another id
+ * of theirs. With no author id known, an author on every counted paper is
+ * taken for the reader too, once there are two counted papers or more.
  */
 export function frequentCoauthors(papers: Paper[], { readerAuthorIds, readerName = null }: { readerAuthorIds: string[]; readerName?: string | null }) {
   const reader = new Set(readerAuthorIds.map(openAlexAuthorId).filter((id): id is string => id !== null));
   const found = new Map<string, { name: string; works: Set<number>; latestYear: number | null }>();
+  let counted = 0;
   papers.forEach((paper, index) => {
     const authors = Array.isArray(paper.authors) ? paper.authors : [];
     if (authors.length > COAUTHORS_MAX_AUTHORS) return;
+    counted += 1;
     for (const author of authors) {
       if (typeof author === 'string') continue;
       const id = openAlexAuthorId(author.id);
-      if (!id || reader.has(id) || (readerName && matchesAuthorName(readerName, author.name))) continue;
+      if (!id || reader.has(id) || sameFullName(readerName, author.name)) continue;
       const entry = found.get(id) ?? { name: cleanText(author.name), works: new Set<number>(), latestYear: null };
       entry.works.add(index);
       if (paper.year && (entry.latestYear === null || paper.year > entry.latestYear)) entry.latestYear = paper.year;
@@ -521,6 +536,7 @@ export function frequentCoauthors(papers: Paper[], { readerAuthorIds, readerName
   return [...found]
     .map(([id, { name, works, latestYear }]): Coauthor => ({ id, name, sharedWorks: works.size, latestYear }))
     .filter(coauthor => coauthor.sharedWorks >= COAUTHORS_MIN_SHARED && coauthor.name)
+    .filter(coauthor => reader.size > 0 || counted < 2 || coauthor.sharedWorks < counted)
     .sort((a, b) => b.sharedWorks - a.sharedWorks || (b.latestYear ?? -Infinity) - (a.latestYear ?? -Infinity) || a.name.localeCompare(b.name))
     .slice(0, COAUTHORS_SHOWN);
 }

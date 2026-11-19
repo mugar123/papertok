@@ -12,7 +12,7 @@ import { useFollowing } from '../../context/following-context.tsx';
 import { usePageRestored } from '../../hooks/use-page-restored.ts';
 import { connectOrcid, orcidRecordUrl } from '../../services/orcid-connection-service.ts';
 import { CITING_WORKS_PAGE_SIZE, getWorksCiting, twelveMonthsBefore } from '../../services/open-alex-service.ts';
-import { arrangeOrcidWorks, citedWorkIds, frequentCoauthors, loadOrcidPublications, orcidWorkKeys, othersCitations, readerPapers, readerWorkIds } from '../../services/orcid-service.ts';
+import { arrangeOrcidWorks, citedWorkIds, citedWorksState, frequentCoauthors, loadOrcidPublications, orcidWorkKeys, othersCitations, readerPapers, readerWorkIds } from '../../services/orcid-service.ts';
 import { readOrcidWorkDecisions, saveOrcidWorkDecision } from '../../services/orcid-work-decisions-service.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
@@ -86,7 +86,7 @@ const COPY = {
   announceBack: (title: string) => `"${title}" is back among the suggestions.`,
   announceRemoved: (title: string) => `Removed "${title}" from your publications.`,
   citations: 'Papers citing your work',
-  citationsIntro: 'Papers from the last 12 months that cite your publications, newest first, as OpenAlex lists them. Papers you are an author of are left out.',
+  citationsIntro: 'Papers from the last 12 months that cite your publications, newest first, as OpenAlex lists them. Papers OpenAlex lists with your ORCID iD among the authors, and the publications listed here, are left out.',
   citationsLoading: 'Loading papers citing your work…',
   citationsLoaded: (count: number) => `${count} ${count === 1 ? 'paper cites' : 'papers cite'} your work.`,
   citationsFailed: 'The papers citing your work could not be loaded from OpenAlex.',
@@ -95,6 +95,8 @@ const COPY = {
   citationsAllOwnCapped: (total: number) => `The newest ${CITING_WORKS_PAGE_SIZE} of the ${total} papers OpenAlex lists from the last 12 months that cite these works are all your own.`,
   citationsCapped: (total: number) => `These come from the newest ${CITING_WORKS_PAGE_SIZE} of the ${total} papers OpenAlex lists from the last 12 months that cite these works.`,
   citationsUnknown: 'Papers citing your work appear here for works OpenAlex knows, and OpenAlex knows none of your publications yet.',
+  citationsDetailsFailed: 'Papers citing your work could not be looked up, because the details of your publications did not load from OpenAlex.',
+  citationsNextVisit: 'Papers citing your work will be listed the next time you open this page.',
   cites: 'Cites',
   citesMore: (count: number) => ` and ${count} more of your works`,
   coauthors: 'Frequent coauthors',
@@ -208,9 +210,10 @@ type CitationsState =
  * (`papers`, readerPapers), from one OpenAlex request when the section
  * mounts and one more for each Try again: a decision made meanwhile does not
  * ask again. Mounted once the publications are loaded, and gone while they
- * load again; a late answer after it left is dropped.
+ * load again; a late answer after it left is dropped. `lookupFailed` says the
+ * details of some publications did not load, so their OpenAlex ids are missing.
  */
-function CitingPapers({ orcidId, papers }: { orcidId: string; papers: Paper[] }) {
+function CitingPapers({ orcidId, papers, lookupFailed }: { orcidId: string; papers: Paper[]; lookupFailed: boolean }) {
   const openPaper = useOpenPaper();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<CitationsState>({ status: 'loading' });
@@ -218,7 +221,9 @@ function CitingPapers({ orcidId, papers }: { orcidId: string; papers: Paper[] })
   // The works as they stand when a request is made, not as each decision changes them.
   const latestPapers = useRef(papers);
   useEffect(() => { latestPapers.current = papers; }, [papers]);
-  const [known] = useState(() => citedWorkIds(papers).length > 0);
+  // Whether the mount asked; what the works allow now can change with a decision.
+  const [requested] = useState(() => citedWorkIds(papers).length > 0);
+  const cited = citedWorksState(papers, lookupFailed);
 
   useEffect(() => {
     const current = latestPapers.current;
@@ -258,7 +263,7 @@ function CitingPapers({ orcidId, papers }: { orcidId: string; papers: Paper[] })
         <h2 ref={headingRef} id="my-profile-citations-heading" tabIndex={-1}>{COPY.citations}</h2>
         <p>{COPY.citationsIntro}</p>
       </div>
-      {known ? (
+      {requested ? (
         <>
           {/* As the publications do: one status line from loading to the
               result, visible while loading and when nothing is listed. A
@@ -296,7 +301,9 @@ function CitingPapers({ orcidId, papers }: { orcidId: string; papers: Paper[] })
           )}
         </>
       ) : (
-        <p className="my-profile-note">{COPY.citationsUnknown}</p>
+        <p className="my-profile-note">
+          {cited === 'known' ? COPY.citationsNextVisit : cited === 'failed' ? COPY.citationsDetailsFailed : COPY.citationsUnknown}
+        </p>
       )}
     </section>
   );
@@ -471,7 +478,9 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
   // there, so it gets no citations, coauthors or suggestions.
   const onOpenAlex = orcid.host === 'orcid.org';
   const coauthors = useMemo(() => (
-    onOpenAlex && attributed ? frequentCoauthors(papers, { readerAuthorIds: attributed.authorIds, readerName: orcid.name }) : []
+    // Without the attributed works the reader's own author ids are unknown,
+    // and the reader could be listed as their own coauthor.
+    onOpenAlex && attributed && !attributed.failed ? frequentCoauthors(papers, { readerAuthorIds: attributed.authorIds, readerName: orcid.name }) : []
   ), [onOpenAlex, attributed, papers, orcid.name]);
 
   // The load's result, read out once: a decision is read out by its own line
@@ -612,7 +621,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
         )}
       </section>
 
-      {status === 'ready' && onOpenAlex && <CitingPapers orcidId={orcid.id} papers={papers} />}
+      {status === 'ready' && onOpenAlex && <CitingPapers orcidId={orcid.id} papers={papers} lookupFailed={loaded?.details === 'failed' || Boolean(attributed?.failed)} />}
       {status === 'ready' && coauthors.length > 0 && <FrequentCoauthors coauthors={coauthors} />}
 
       {status === 'ready' && attributed && onOpenAlex && (
