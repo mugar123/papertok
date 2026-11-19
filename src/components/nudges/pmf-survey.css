@@ -84,11 +84,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The roles as compact buttons that wrap onto as many rows as the width and
-   the text size need, each label kept whole on one line where it fits. */
+/* The roles as compact buttons in even columns: two where the width allows,
+   one on a narrow screen or with large text, so the rows line up. */
 .pmf-survey-roles {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.5rem), 1fr));
   gap: var(--space-2);
 }
 
