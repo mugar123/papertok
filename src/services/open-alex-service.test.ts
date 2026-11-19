@@ -1790,3 +1790,41 @@ test('the ids of a failed enrichment request are reported, and not those OpenAle
     openAlexClient.fetchImpl = realFetch;
   }
 });
+
+test('a long DOI list is asked in chunks whose filter the relay forwards whole', async t => {
+  const asked: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    asked.push(new URL(url).searchParams.get('filter')!);
+    return Response.json({ meta: { count: 0 }, results: [] });
+  });
+  // 45 DOIs of 60 characters: 40 of them would make a 2,443-character filter,
+  // over the 2,000 the Worker's relay forwards.
+  const dois = Array.from({ length: 45 }, (_, index) => `10.1000/${String(index).padStart(52, 'x')}`);
+  await fetchPapersByDois(dois);
+
+  assert.ok(asked.length > 1);
+  for (const filter of asked) assert.ok(filter.length <= 2000, `a ${filter.length}-character filter`);
+  assert.deepEqual(asked.flatMap(filter => filter.replace(/^doi:/, '').split('|')), dois);
+});
+
+test('a DOI holding # or & reaches OpenAlex whole, and one holding a filter separator is not asked for', async t => {
+  const asked: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    asked.push(new URL(url).searchParams.get('filter')!);
+    return Response.json({ meta: { count: 0 }, results: [] });
+  });
+  await fetchPapersByDois(['10.1000/a#b', '10.1000/c&d=e', '10.1000/f|g', '10.1000/h,i']);
+  assert.deepEqual(asked, ['doi:10.1000/a#b|10.1000/c&d=e']);
+});
+
+test('a chunk OpenAlex does not answer is left out, or with strict rejects the call', async t => {
+  t.mock.method(openAlexClient, 'fetch', async () => new Response('busy', { status: 503 }));
+  const error = console.error;
+  console.error = () => {};
+  try {
+    assert.deepEqual(await fetchPapersByDois(['10.1000/a']), []);
+  } finally {
+    console.error = error;
+  }
+  await assert.rejects(fetchPapersByDois(['10.1000/a'], { strict: true }));
+});

@@ -11,6 +11,7 @@ import {
   Moon,
   SignOut,
   Sun,
+  UserCircle,
 } from '@phosphor-icons/react';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
@@ -22,6 +23,7 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
 import './account-menu.css';
 
 const LINKS = [
+  { to: '/profile', label: 'My profile', Icon: UserCircle },
   { to: '/lists', label: 'My lists', Icon: FolderOpen },
   { to: '/settings', label: 'Settings', Icon: GearSix },
 ];

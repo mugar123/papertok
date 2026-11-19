@@ -8,6 +8,7 @@ const LABELS: Record<string, string> = {
   '/feed': 'For you',
   '/recent': 'Most recent',
   '/lists': 'My lists',
+  '/profile': 'My profile',
   '/following': 'Following',
   '/search': 'Search',
   // Each settings page titles itself "<page> · Settings" (settings-page.tsx),
@@ -24,6 +25,7 @@ const LABELS: Record<string, string> = {
   '/onboarding': 'Welcome',
   '/institution/verify': 'Verify your university email',
   '/zotero/callback': 'Connect Zotero',
+  '/orcid/callback': 'Connect ORCID',
 }
 
 // These set document.title on their own (the SettingsPage pages); the

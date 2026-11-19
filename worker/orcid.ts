@@ -57,7 +57,7 @@ interface Admin {
 }
 interface OrcidOptions { admin?: Admin; now?: () => number }
 interface LinkDocument { stateHash?: string; createdAt?: number }
-export interface OrcidConnection { id: string; name: string | null; host: OrcidHost; connectedAt: string }
+interface OrcidConnection { id: string; name: string | null; host: OrcidHost; connectedAt: string }
 
 function orcidHost(env: WorkerEnv) {
   const environment = env.ORCID_ENVIRONMENT || 'production';
@@ -113,7 +113,7 @@ async function exchangeCode(env: WorkerEnv, host: OrcidHost, code: string, redir
     throw new OrcidError('ORCID_UNAVAILABLE', 502);
   }
   if (response.status === 429) throw new OrcidError('ORCID_RATE_LIMITED', 429, response.headers.get('retry-after') || '60');
-  let payload: { orcid?: unknown; name?: unknown; error?: unknown } | null = null;
+  let payload: { orcid?: unknown; name?: unknown; error?: unknown } | null;
   try {
     payload = JSON.parse(text);
   } catch {

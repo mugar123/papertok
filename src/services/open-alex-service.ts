@@ -1615,42 +1615,67 @@ export async function getAuthorsByEntity(type: string|undefined, id: string, pag
   return { authors: [], total: 0 };
 }
 
+const DOI_CHUNK_SIZE = 40;
+// The Worker's OpenAlex relay drops a parameter longer than 2,000 characters
+// (worker/openalex-api.ts), and OpenAlex then lists works without the filter,
+// so a chunk also ends before its filter grows past that.
+const DOI_FILTER_MAX_LENGTH = 1_900;
+
+/** The DOIs in chunks of at most 40 whose `doi:A|B|C` filter stays under the relay's limit. */
+function doiChunks(dois: string[]) {
+  const chunks: string[][] = [];
+  let chunk: string[] = [];
+  let length = 'doi:'.length;
+  for (const doi of dois) {
+    if (chunk.length > 0 && (chunk.length === DOI_CHUNK_SIZE || length + 1 + doi.length > DOI_FILTER_MAX_LENGTH)) {
+      chunks.push(chunk);
+      chunk = [];
+      length = 'doi:'.length;
+    }
+    length += (chunk.length > 0 ? 1 : 0) + doi.length;
+    chunk.push(doi);
+  }
+  if (chunk.length > 0) chunks.push(chunk);
+  return chunks;
+}
+
 /**
  * Fetch full paper metadata from OpenAlex using a list of DOIs,
  * and format them as standard Paper objects (since they might not be on arXiv).
- * @param {string[]} dois 
+ * A chunk OpenAlex does not answer is left out, or, with `strict`, rejects the
+ * whole call, for a caller that tells the reader the details are missing.
  */
-export async function fetchPapersByDois(dois: string[]) {
+export async function fetchPapersByDois(dois: string[], { strict = false } = {}) {
   if (!dois || dois.length === 0) return [];
-  
+
+  // An OpenAlex filter has no escape for its `|` and `,` separators, so a DOI
+  // holding one cannot be asked for, nor one longer than a whole filter.
   const cleanDois = dois.map(doi => {
     if (doi.includes('doi.org/')) return doi.split('doi.org/')[1];
     return doi;
-  }).filter(Boolean);
-  
+  }).filter(doi => doi && !/[|,]/.test(doi) && doi.length < DOI_FILTER_MAX_LENGTH - 'doi:'.length);
+
   if (cleanDois.length === 0) return [];
-  
+
   const results: OpenAlexWork[] = [];
-  const chunkSize = 40;
-  for (let i = 0; i < cleanDois.length; i += chunkSize) {
-    const chunk = cleanDois.slice(i, i + chunkSize);
-    // OpenAlex OR syntax requires the property name once: filter=doi:A|B|C
-    const filterIds = chunk.join('|');
-    const url = `https://api.openalex.org/works?filter=doi:${filterIds}&per-page=50`;
-    
+  for (const chunk of doiChunks(cleanDois)) {
+    // OpenAlex OR syntax requires the property name once: filter=doi:A|B|C.
+    // Each DOI is encoded, so a `#`, `&` or `+` in one stays part of it.
+    const url = `https://api.openalex.org/works?filter=doi:${chunk.map(encodeURIComponent).join('|')}&per-page=50`;
+
     try {
       const response = await fetchWithTimeout(url, 10000);
-      if (response.ok) {
-        const data = await response.json() as OpenAlexPage<OpenAlexWork>;
-        if (data && data.results) {
-          results.push(...data.results);
-        }
+      if (!response.ok) throw new Error(`OpenAlex answered ${response.status}`);
+      const data = await response.json() as OpenAlexPage<OpenAlexWork>;
+      if (data && data.results) {
+        results.push(...data.results);
       }
     } catch (err) {
+      if (strict) throw err;
       console.error("OpenAlex fetchPapersByDois failed", err);
     }
   }
-  
+
   return results.map(work => {
     return formatOpenAlexWorkAsPaper(work);
   });

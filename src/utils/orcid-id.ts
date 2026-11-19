@@ -13,7 +13,7 @@ export function isValidOrcidId(value: unknown): value is string {
 }
 
 /** The ORCID registries PaperTok connects to: production, or the sandbox for testing. */
-export const ORCID_HOSTS = ['orcid.org', 'sandbox.orcid.org'] as const;
+const ORCID_HOSTS = ['orcid.org', 'sandbox.orcid.org'] as const;
 export type OrcidHost = typeof ORCID_HOSTS[number];
 
 export function isOrcidHost(value: unknown): value is OrcidHost {

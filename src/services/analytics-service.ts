@@ -67,6 +67,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/settings/profile',
   '/settings/reading',
   '/zotero/callback',
+  '/orcid/callback',
 ]);
 const EXPLORER_TYPES = new Set(['author', 'institution', 'project', 'topic']);
 const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
