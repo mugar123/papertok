@@ -134,8 +134,10 @@ function OrcidPublications({ orcid }: { orcid: OrcidConnection }) {
     if (doiUrl) window.open(doiUrl, '_blank', 'noopener,noreferrer');
   };
 
+  // Missing OpenAlex details are read out with the count, not left to the visible note alone.
   const announcement = status === 'loading' ? COPY.loading
-    : status === 'ready' && publications.length > 0 ? COPY.loaded(publications.length)
+    : status === 'ready' && publications.length > 0
+      ? `${COPY.loaded(publications.length)}${details === 'failed' ? ` ${COPY.detailsFailed}` : ''}`
       : status === 'ready' ? COPY.emptyTitle
         : '';
 
