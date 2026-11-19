@@ -491,6 +491,45 @@ test('a client cannot award itself an institution', async () => {
   await assertFails(setDoc(ref, { institution: INSTITUTION }, { merge: true }));
 });
 
+// The ORCID iD an ORCID sign-in proved (worker/orcid.ts) is frozen the same way.
+const ORCID = {
+  id: '0000-0002-1825-0097',
+  name: 'Josiah Carberry',
+  host: 'orcid.org',
+  connectedAt: '2026-11-18T10:00:00.000Z',
+};
+
+test('a connected ORCID iD survives the owner\'s own writes and cannot be edited or dropped', async () => {
+  await reset();
+  await seedLegacyUserDoc({ orcid: ORCID });
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.LG'] }, { merge: true }));
+  await assertFails(setDoc(ref, { orcid: { ...ORCID, id: '0000-0001-5109-3700' } }, { merge: true }));
+  await assertFails(updateDoc(ref, { 'orcid.name': 'Someone Else' }));
+  await assertFails(updateDoc(ref, { orcid: deleteField() }));
+});
+
+test('a client cannot connect an ORCID iD itself', async () => {
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  await assertFails(setDoc(ref, { onboardingComplete: true, orcid: ORCID }));
+  await assertSucceeds(setDoc(ref, { onboardingComplete: true }));
+  await assertFails(setDoc(ref, { orcid: ORCID }, { merge: true }));
+});
+
+test('the pending ORCID connection is closed to its own account', async () => {
+  // Only a hash of the state is kept there, and only the Worker reads it.
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE, 'orcid', 'link'), { stateHash: 'abc', createdAt: 1 });
+  });
+  const db = asAlice();
+  await assertFails(getDoc(doc(db, 'users', ALICE, 'orcid', 'link')));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'orcid', 'link'), { stateHash: 'mine', createdAt: 2 }));
+});
+
 // =========================================================================
 // Likes, saves and the feed aggregate under users/{uid}
 //

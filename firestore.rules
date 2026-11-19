@@ -87,11 +87,12 @@ service cloud.firestore {
 
     // Fields the Worker writes with the service identity after verifying a
     // proof the client cannot show these rules: `institution` is the
-    // university a verified address resolved to (worker/institution-link.js).
+    // university a verified address resolved to (worker/institution-link.js),
+    // and `orcid` the ORCID iD an ORCID sign-in proved (worker/orcid.ts).
     // Tolerated in a merge so the client's own writes keep working once the
     // field exists; never writable, or anyone could award themselves one.
     function serviceUserKeys() {
-      return ['institution'];
+      return ['institution', 'orcid'];
     }
 
     function frozenUserKeys() {
