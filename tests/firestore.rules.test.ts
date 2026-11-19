@@ -580,6 +580,8 @@ test('a decision counts only for the ORCID connection the account holds now', as
   const ref = doc(asAlice(), 'users', ALICE, 'orcid', 'works');
   await assertFails(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
   await assertFails(setDoc(ref, orcidWorkDecisionWrite(null, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  // A first write that names no connection is refused too. (A later merge without the field
+  // keeps the stored one, which is the current connection's; the client always sends it.)
   const unbound: Record<string, unknown> = orcidWorkDecisionWrite(next.connectedAt, ['doi:10.1000/a'], 'mine');
   delete unbound.connectedAt;
   await assertFails(setDoc(ref, unbound, { merge: true }));

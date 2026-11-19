@@ -199,15 +199,19 @@ export async function handleOrcidRequest(request: Request, env: WorkerEnv, origi
   }
 
   if (pathname === '/orcid/disconnect') {
-    // The iD goes first: the rules accept a decision only while one is
-    // connected, so none can be written after the decisions are deleted.
+    // The pending state goes first, on its own: a completion still waiting on
+    // ORCID deletes only the version of it that it read, so once it is gone
+    // that completion writes nothing, wherever it lands among these commits.
+    await admin.commit([deleteWrite(link)]);
+    // Then the iD: the rules accept a decision only for the connected iD, so
+    // none can be written after the decisions are deleted.
     try {
       await admin.commit([clearFieldsWrite(userDocument, ['orcid'])]);
     } catch (error) {
       // A user document that does not exist has no iD to clear.
       if (!(error instanceof FirestoreAdminError && error.status === 409)) throw error;
     }
-    await admin.commit([deleteWrite(link), deleteWrite(decisions)]);
+    await admin.commit([deleteWrite(decisions)]);
     return { orcid: null };
   }
 

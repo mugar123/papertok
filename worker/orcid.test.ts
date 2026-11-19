@@ -247,6 +247,34 @@ test('a Disconnect while ORCID is answering stays disconnected', async () => {
   assert.deepEqual(admin.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
 });
 
+test('a completion that lands between the commits of a Disconnect writes nothing', async () => {
+  const admin = memoryAdmin({ [`users/${ALICE}`]: { onboardingComplete: true } });
+  const orcid = heldOrcid();
+  const upstream = stubFetch(orcid.handler);
+  try {
+    const state = (await connect(admin)).searchParams.get('state');
+    const late = complete(admin, state);
+    await orcid.asked;
+    // ORCID answers, and the completion commits, right after the Disconnect's first commit.
+    let interleaved = false;
+    const disconnecting = {
+      ...admin,
+      async commit(writes: FirestoreWrite[]) {
+        await admin.commit(writes);
+        if (interleaved) return;
+        interleaved = true;
+        orcid.release();
+        await late.catch(() => {});
+      },
+    };
+    await handleOrcidRequest(request('/orcid/disconnect'), ENV, ORIGIN, { admin: disconnecting });
+    await assert.rejects(late, rejectsWith('ORCID_CONNECTION_EXPIRED'));
+  } finally {
+    upstream.restore();
+  }
+  assert.deepEqual(admin.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
+});
+
 test('a new Connect while ORCID is answering keeps its pending state and refuses the old completion', async () => {
   const admin = memoryAdmin({
     [`users/${ALICE}`]: { onboardingComplete: true },
@@ -345,8 +373,9 @@ test('disconnecting forgets the iD, any pending state and the decisions about it
   }
   assert.deepEqual(connectedAccount.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
   assert.deepEqual(newAccount.documents, {});
-  // The iD goes before the decisions: the rules take a decision only while an iD is connected.
-  assert.deepEqual(connectedAccount.commits, [[`users/${ALICE}`], [`users/${ALICE}/orcid/link`, `users/${ALICE}/orcid/works`]]);
+  // The pending state goes first, so a completion in flight writes nothing; then the iD, before
+  // the decisions, since the rules take a decision only for the connected iD.
+  assert.deepEqual(connectedAccount.commits, [[`users/${ALICE}/orcid/link`], [`users/${ALICE}`], [`users/${ALICE}/orcid/works`]]);
 });
 
 test('only POST is answered', async () => {
