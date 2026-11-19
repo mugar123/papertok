@@ -23,6 +23,7 @@ import {
   startAnalyticsClient,
   trackAcquisition,
   trackDay7Return,
+  trackPmfSurvey,
   trackProductEvent,
 } from './analytics-service.ts';
 
@@ -385,6 +386,29 @@ test('a session after activation says how long ago, in weeks rather than days', 
   assert.equal(await sessionAt(1000 + day), 'day_1');
   assert.equal(await sessionAt(1000 + 9 * day), 'days_7_13');
   assert.equal(await sessionAt(1000 + 400 * day), 'days_60_plus');
+});
+
+test('the survey events say how long ago this browser activated, and nothing when it has not', async t => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const day = 24 * 60 * 60 * 1000;
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ENABLED }) });
+  t.after(() => {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
+  });
+  const events: unknown[] = [];
+  const track = async (eventName: string, params?: Record<string, unknown>) => {
+    events.push([eventName, params]);
+    return true;
+  };
+
+  await trackPmfSurvey('pmf_survey_shown', { app_version: '0.3.0' }, { now: 1000, track });
+  await markActivation({ now: 1000, track: async () => true });
+  await trackPmfSurvey('pmf_survey', { disappointment: 'very', nps: 8, app_version: '0.3.0' }, { now: 1000 + 9 * day, track });
+  assert.deepEqual(events, [
+    ['pmf_survey_shown', { app_version: '0.3.0' }],
+    ['pmf_survey', { disappointment: 'very', nps: 8, app_version: '0.3.0', activation_age: 'days_7_13' }],
+  ]);
 });
 
 test('tracks acquisition once even when session storage is unavailable', async t => {

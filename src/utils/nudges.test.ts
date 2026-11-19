@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   NUDGE_DISMISSED_KEY,
   NUDGE_DWELL_MS,
+  PMF_SURVEY_ID,
   PRIVACY_NOTICE_ID,
   VISIT_START,
   accountAnswerPending,
@@ -729,6 +730,36 @@ test('the privacy dialog, recorded as told on opening, stays open until it is cl
   assert.equal(on('/feed', false), null, 'and it does not open again on return');
   assert.equal(noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: false, pathname: '/feed', privacyOwed, dialogOpen: true }), null, 'signed out');
   assert.equal(answerPrivacyNotice({ ...VISIT_START, choiceMade: true, picked: PRIVACY_NOTICE_ID }).picked, null, 'Got it or any other close puts it away');
+});
+
+test('the survey is a candidate after the minute of reading, and a privacy change owed takes the visit first', () => {
+  const facts = { gates: ON_FEED, privacyOwed: false, eligible: [PMF_SURVEY_ID], dismissed: [] };
+  assert.equal(chooseVisitNotice(VISIT_START, facts), VISIT_START, 'not on arrival');
+  assert.equal(chooseVisitNotice(readingMinutePassed(VISIT_START), facts).picked, PMF_SURVEY_ID);
+  assert.equal(chooseVisitNotice(readingMinutePassed(VISIT_START), { ...facts, privacyOwed: true }).picked, PRIVACY_NOTICE_ID);
+  assert.equal(
+    chooseVisitNotice(readingMinutePassed(VISIT_START), { ...facts, gates: { nudge: false, privacy: false } }).picked,
+    null,
+    'nothing is chosen off the feed or during onboarding',
+  );
+});
+
+test('the survey dialog is shown on the feed while it is due, and once open stays until it is closed or the reader leaves the feed', () => {
+  const on = ({ pathname = '/feed', signedIn = true, surveyDue = true, dialogOpen = false } = {}) => noticeOnScreen({ picked: PMF_SURVEY_ID, signedIn, pathname, privacyOwed: false, surveyDue, dialogOpen });
+  assert.equal(on(), PMF_SURVEY_ID);
+  assert.equal(on({ pathname: '/Feed/' }), PMF_SURVEY_ID);
+  for (const pathname of ['/search', '/settings', '/paper/abc', '/public/paper/abc', '/onboarding', '/']) {
+    assert.equal(on({ pathname }), null, pathname);
+  }
+  assert.equal(on({ signedIn: false }), null, 'signed out, onboarding or with a profile that failed to load');
+  assert.equal(on({ surveyDue: false }), null, 'asked for this version in another tab');
+  assert.equal(on({ surveyDue: false, dialogOpen: true }), PMF_SURVEY_ID, 'open, recorded as asked, it stays');
+  assert.equal(on({ surveyDue: false, dialogOpen: true, pathname: '/settings' }), null, 'leaving the feed closes it');
+  assert.equal(
+    noticeOnScreen({ picked: PRIVACY_NOTICE_ID, signedIn: true, pathname: '/feed', privacyOwed: false, surveyDue: true }),
+    null,
+    'a due survey does not hold the privacy notice on screen',
+  );
 });
 
 test('a notice shown in another tab puts away the one this tab picked and has not opened', () => {

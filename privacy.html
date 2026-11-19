@@ -307,6 +307,10 @@
         one also records how many areas or topics, authors and keywords it holds. Deleting
         one records only that it happened. No event records a feed's name or what is in it.
         Sending a paper to Zotero records only whether it was sent, not which paper.
+        When PaperTok shows you its two-question survey, product events record that it was
+        shown, the answers you chose or that you closed it, the app version, and roughly
+        how long ago this browser's first real use was, in days or weeks. The survey has
+        no free text.
         Feed diagnostics record load starts, duration, result, initial loads versus
         refreshes or additional pages, automatic retries, and the web and server versions.
         They contain no paper identifiers or interests.
@@ -509,7 +513,11 @@
         latest 200 papers you removed from it, under your account identifier. Unlike the
         things above, these are sent to the server with each request for that feed, so the
         feed leaves them out. They are cleared when you delete that feed in this browser,
-        when you sign out and when you clear the site's data. While usage analytics is
+        when you sign out and when you clear the site's data. Under your account identifier
+        it also keeps the last three days you opened PaperTok and the app version you were
+        last shown the two-question survey for, so the survey waits until you have used the app and
+        is shown once per version. They are cleared when you sign out and when you clear
+        the site's data. While usage analytics is
         enabled, PostHog also keeps an
         identifier and your choice in a cookie and in local storage, as described under
         Analytics. When the browser blocks the Google or GitHub sign-in window, the tab goes

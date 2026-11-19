@@ -1,0 +1,144 @@
+/* The Dialog's sheet (ui/dialog.tsx) with the privacy notice's spacing
+   (privacy-notice.css). On a short screen or at a large text size the whole
+   sheet scrolls, so no choice is cut off and Send is reached by scrolling. */
+.pmf-survey {
+  --pmf-survey-pad: min(var(--space-6), 8vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(460px, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100vh - 2 * var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--pmf-survey-pad);
+}
+
+/* Clear of the close button in the corner, as in privacy-notice.css. */
+.pmf-survey-title {
+  display: block;
+}
+
+.pmf-survey-title::before {
+  content: '';
+  float: right;
+  width: calc(var(--space-3) + var(--space-8) - var(--pmf-survey-pad) + var(--space-2));
+  height: calc(var(--space-3) + var(--space-8) - var(--pmf-survey-pad));
+}
+
+.pmf-survey-questions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  margin-top: var(--space-1);
+}
+
+/* A container, so the scale below picks its rows from the width it has. */
+.pmf-survey-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  container-type: inline-size;
+}
+
+.pmf-survey-question-text {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-normal);
+}
+
+.pmf-survey-optional {
+  color: var(--text-secondary);
+  font-weight: var(--fw-regular);
+}
+
+/* Card-shaped radios like the feed window's orders (feed-dialog.css): the
+   choice is marked by an ink frame, a sunken ground and a bolder label, not
+   by colour alone. */
+.pmf-survey-choices {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.pmf-survey-choice,
+.pmf-survey-score {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.pmf-survey-choice {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+}
+
+.pmf-survey-score {
+  min-height: 2.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pmf-survey-choice:not([data-checked]):hover,
+  .pmf-survey-score:not([data-checked]):hover {
+    background: var(--bg-secondary);
+  }
+}
+
+.pmf-survey-choice[data-checked],
+.pmf-survey-score[data-checked] {
+  border-color: var(--border-ink);
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--border-ink);
+  font-weight: var(--fw-semibold);
+}
+
+.pmf-survey-choice:focus-visible,
+.pmf-survey-score:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* 0 to 10 in one row where each score keeps a wide target, otherwise in two
+   rows, 0 to 5 over 6 to 10: on a phone, and at a large text size, since the
+   breakpoint is in rem. */
+.pmf-survey-scale {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+
+@container (min-width: 22rem) {
+  .pmf-survey-scale {
+    grid-template-columns: repeat(11, minmax(0, 1fr));
+  }
+}
+
+.pmf-survey-scale-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+/* Send first, on the left, wrapping rather than clipping at a large text size
+   (design.md, Rule 6). */
+.pmf-survey-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pmf-survey-choice,
+  .pmf-survey-score {
+    transition: none;
+  }
+}

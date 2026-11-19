@@ -2,13 +2,17 @@ import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore
 import { AnimatePresence } from 'framer-motion';
 import { EnvelopeSimple } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
+import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
+import { ANALYTICS_CONSENT, trackPmfSurvey } from '../../services/analytics-service.ts';
 import { readAccountPrivacyNotice, saveAccountPrivacyNotice } from '../../services/privacy-notice-service.ts';
 import {
   NUDGE_DWELL_MS,
+  PMF_SURVEY_ID,
   PRIVACY_NOTICE_ID,
   VISIT_START,
   accountAnswerPending,
@@ -32,8 +36,10 @@ import {
   type AccountNoticeRecord,
   type VisitNotices,
 } from '../../utils/nudges.ts';
+import { pmfSurveyDue, pmfSurveyParams, recordPmfSurveyDay, rememberPmfSurveyAsked, type PmfSurveyAnswer } from '../../utils/pmf-survey.ts';
 import { setCardsCovered } from '../../utils/visible-time.ts';
 import NudgePanel from './nudge-panel.tsx';
+import PmfSurvey from './pmf-survey.tsx';
 import PrivacyNotice from './privacy-notice.tsx';
 
 // The one place that decides whether anybody is told or asked anything, and when.
@@ -63,9 +69,21 @@ import PrivacyNotice from './privacy-notice.tsx';
 // visit whose feed never shows cards (an error, an empty feed) or whose profile
 // never loads shows neither the dialog nor a nudge. A change of account
 // remounts this component, which clears what was picked for the previous reader.
+//
+// The product-market fit survey is one of the visit's candidates like a nudge,
+// picked after the minute of reading on the feed, and shown like the privacy
+// dialog: over the feed's cards, never over another modal, only on the feed.
+// utils/pmf-survey.ts decides who is due; each mount counts a day for the
+// account. It is not offered while analytics is off, where its answers would
+// go nowhere. Once open, its version counts as asked for the account however
+// it is closed, and it does not open again in the visit.
+
+// The product version this bundle was built from (package.json, through vite.config.ts).
+const APP_VERSION: string = import.meta.env.VITE_APP_VERSION;
 
 const COPY = {
   en: {
+    surveyThanks: 'Thanks for answering',
     dismiss: 'Dismiss and do not show again',
     'email-down': {
       'not-configured': {
@@ -117,6 +135,7 @@ export default function NudgeHost() {
   const gates = visitChoiceGates({ user, loading: authLoading, onboardingComplete, pathname: location.pathname });
   const { signedIn } = gates;
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
+  const analyticsOn = useAnalyticsConsent().consent !== ANALYTICS_CONSENT.DENIED;
 
   useEffect(() => {
     if (!signedIn || dwellDone) return undefined;
@@ -130,6 +149,20 @@ export default function NudgeHost() {
   // The uid whose read failed in this visit, so the visit stops waiting for it.
   const [accountReadFailedFor, setAccountReadFailedFor] = useState<string | null>(null);
   const uid = user?.uid;
+
+  useEffect(() => {
+    if (uid) recordPmfSurveyDay(uid, new Date());
+  }, [uid]);
+
+  // Read only while it can decide something: as the visit's choice falls due,
+  // and while the survey is the notice picked. Another tab that showed it
+  // settles it here too.
+  const surveyMatters = analyticsOn && signedIn && (picked === PMF_SURVEY_ID || (dwellDone && !visit.choiceMade));
+  const surveyDue = useSyncExternalStore(
+    subscribeToOtherTabs,
+    () => surveyMatters && pmfSurveyDue(uid, APP_VERSION),
+    () => false,
+  );
 
   // Read again on every render and whenever another tab writes storage, so a
   // notice shown in another tab puts away the one waiting here as well.
@@ -170,7 +203,7 @@ export default function NudgeHost() {
     gates,
     privacyOwed,
     privacyPending,
-    eligible: emailProblem ? ['email-down'] : [],
+    eligible: [...(emailProblem ? ['email-down'] : []), ...(surveyDue ? [PMF_SURVEY_ID] : [])],
     dismissed,
   });
   if (chosen !== visit) setVisit(chosen);
@@ -185,19 +218,25 @@ export default function NudgeHost() {
   // it open over another modal: one still open, or still playing its exit, is
   // waited for. Modals are watched only while it waits with cards on screen.
   const cardsShown = useFeed().papers.length > 0;
-  const [privacyOpen, setPrivacyOpen] = useState(false);
+  // Whether the privacy or survey dialog was open on the previous render.
+  const [noticeOpen, setNoticeOpen] = useState(false);
 
   const readerReady = visitReaderReady({ user, loading: authLoading, onboardingComplete, profileLoadError });
-  const onScreen = noticeOnScreen({ picked, signedIn: readerReady, pathname: location.pathname, privacyOwed, dialogOpen: privacyOpen });
-  const privacyShown = onScreen === PRIVACY_NOTICE_ID;
-  const waiting = privacyShown && cardsShown && !privacyOpen;
+  const onScreen = noticeOnScreen({ picked, signedIn: readerReady, pathname: location.pathname, privacyOwed, surveyDue, dialogOpen: noticeOpen });
+  const dialogShown = onScreen === PRIVACY_NOTICE_ID || onScreen === PMF_SURVEY_ID;
+  const waiting = dialogShown && cardsShown && !noticeOpen;
   const subscribe = useCallback((onChange: () => void) => (waiting ? subscribeToModals(onChange) : () => undefined), [waiting]);
   const modalOpen = useSyncExternalStore(subscribe, () => waiting && modalIsOpen(document), () => false);
   const tabVisible = useSyncExternalStore(subscribeToTabVisibility, () => document.visibilityState === 'visible', () => false);
-  const dialogOpen = privacyDialogOpen({ shown: privacyShown, cardsShown, modalOpen, tabVisible, wasOpen: privacyOpen });
-  if (dialogOpen !== privacyOpen) setPrivacyOpen(dialogOpen);
+  const dialogOpen = privacyDialogOpen({ shown: dialogShown, cardsShown, modalOpen, tabVisible, wasOpen: noticeOpen });
+  if (dialogOpen !== noticeOpen) setNoticeOpen(dialogOpen);
+  const privacyOpen = dialogOpen && onScreen === PRIVACY_NOTICE_ID;
+  const surveyOpen = dialogOpen && onScreen === PMF_SURVEY_ID;
+  // The survey, once open, has had the visit's turn however it closes, leaving
+  // the feed included, so it does not open again in this visit.
+  if (noticeOpen && !dialogOpen && picked === PMF_SURVEY_ID) setVisit(current => ({ ...current, picked: null }));
   // Open, the version counts as told for the rest of the visit too.
-  const heldNotice = heldAccountNotice({ dialogOpen, uid, version: PRIVACY_POLICY_VERSION, account: accountNotice });
+  const heldNotice = heldAccountNotice({ dialogOpen: privacyOpen, uid, version: PRIVACY_POLICY_VERSION, account: accountNotice });
   if (heldNotice !== accountNotice) setAccountNotice(heldNotice);
 
   // The cards under the open dialog stop counting their time on screen. When
@@ -222,10 +261,24 @@ export default function NudgeHost() {
   // not return. Only the full-screen reader, PDF viewer and Similar layer
   // borrow an entry (use-overlay-history.ts).
   useEffect(() => {
-    recordPrivacyNoticeShown({ uid, dialogOpen, version: PRIVACY_POLICY_VERSION, saveToAccount: saveAccountPrivacyNotice });
-  }, [uid, dialogOpen]);
+    recordPrivacyNoticeShown({ uid, dialogOpen: privacyOpen, version: PRIVACY_POLICY_VERSION, saveToAccount: saveAccountPrivacyNotice });
+  }, [uid, privacyOpen]);
+
+  // The survey's version counts as asked once it is on screen, as the privacy
+  // notice's counts as told.
+  useEffect(() => {
+    if (!surveyOpen || !uid) return;
+    rememberPmfSurveyAsked(uid, APP_VERSION);
+    void trackPmfSurvey('pmf_survey_shown', { app_version: APP_VERSION });
+  }, [uid, surveyOpen]);
 
   const closePrivacy = useCallback(() => setVisit(answerPrivacyNotice), []);
+
+  const answerSurvey = useCallback((answer: PmfSurveyAnswer) => {
+    void trackPmfSurvey('pmf_survey', pmfSurveyParams(answer, APP_VERSION));
+    setVisit(current => ({ ...current, picked: null }));
+    if (answer !== 'dismissed') toast.success(COPY.en.surveyThanks);
+  }, []);
 
   const handleSettings = useCallback(() => {
     close('email-down');
@@ -237,7 +290,8 @@ export default function NudgeHost() {
 
   return (
     <>
-      <PrivacyNotice open={dialogOpen} onClose={closePrivacy} />
+      <PrivacyNotice open={privacyOpen} onClose={closePrivacy} />
+      <PmfSurvey open={surveyOpen} onAnswer={answerSurvey} />
       <AnimatePresence>
         {onScreen === 'email-down' && emailCopy && (
           <NudgePanel

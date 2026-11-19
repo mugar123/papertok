@@ -23,6 +23,9 @@ const BASE_PATH = '/'
 // build.outDir is not overridden anywhere in this config, so it is Vite's
 // default: 'dist' relative to this file's own directory.
 const DIST_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'dist')
+// The product version each release sets in package.json (0.3.0, 0.4.0). The app
+// asks its survey once per account for each one (src/utils/pmf-survey.ts).
+const APP_VERSION = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version
 
 // Fifteen services read `VITE_PAPER_API_BASE_URL` — arXiv, OpenAlex, Scopus, AI
 // explanations, citations, related papers, Unpaywall, public lists and
@@ -183,7 +186,10 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     base: BASE_PATH,
-    define: { 'import.meta.env.VITE_APP_RELEASE': JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? null) },
+    define: {
+      'import.meta.env.VITE_APP_RELEASE': JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? null),
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(APP_VERSION),
+    },
     plugins: [
       {
         name: 'startup-guard',
