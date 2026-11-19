@@ -276,6 +276,26 @@ test('a record work matches OpenAlex by any DOI its versions list and by its arX
   ]);
 });
 
+test('two works OpenAlex keeps for one arXiv paper stay two suggestions, each with its own decision', async t => {
+  const withArxiv = (work: StubWork, arxiv: string) => ({ ...work, ids: { arxiv: `https://arxiv.org/abs/${arxiv}` } }) as StubWork;
+  stubOpenAlex(t, {
+    attributed: [
+      withArxiv(openAlexWork(200, '10.7000/journal.9', 'Journal twin', 2023), '2305.00009'),
+      openAlexWork(201, '10.48550/arXiv.2305.00009', 'Preprint twin', 2022),
+    ],
+  });
+  const decisions = { mine: ['doi:10.48550/arxiv.2305.00009'], notMine: [] };
+  const loaded = await load(decisions);
+  const { candidates, publications } = arrangeOrcidWorks(loaded, decisions);
+  assert.deepEqual(candidates.map(({ key, paper, decision }) => [key, paper.title, decision]), [
+    ['doi:10.7000/journal.9', 'Journal twin', null],
+    ['doi:10.48550/arxiv.2305.00009', 'Preprint twin', 'mine'],
+  ]);
+  assert.deepEqual(publications.filter(item => item.kind === 'added').map(item => [item.key, item.paper?.title ?? null]), [
+    ['doi:10.48550/arxiv.2305.00009', 'Preprint twin'],
+  ]);
+});
+
 test('a sandbox record is not matched against OpenAlex, which knows production iDs only', async t => {
   const asked = stubOpenAlex(t, { attributed: [openAlexWork(90, '10.2000/stranger', 'Someone else', 2024)] });
   const loaded = await withStubbedFetch(async () => Response.json(WORKS), () => loadOrcidPublications(IDENTIFIER, 'sandbox.orcid.org', Promise.resolve(NO_DECISIONS)));

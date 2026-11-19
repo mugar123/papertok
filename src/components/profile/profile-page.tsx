@@ -434,7 +434,8 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
         )}
       </section>
 
-      {status === 'ready' && attributed && (
+      {/* OpenAlex knows production iDs only, so a sandbox iD gets no suggestions. */}
+      {status === 'ready' && attributed && orcid.host === 'orcid.org' && (
         <section className="settings-section" aria-labelledby="my-profile-suggestions-heading">
           <div className="settings-section-heading">
             <h2 ref={suggestionsHeadingRef} id="my-profile-suggestions-heading" tabIndex={-1}>{COPY.suggestions}</h2>

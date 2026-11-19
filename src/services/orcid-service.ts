@@ -332,7 +332,7 @@ function papersByKey(papers: Paper[]) {
  * OpenAlex paper when OpenAlex knows it; the works OpenAlex attributes to the
  * iD (getWorksByOrcid in open-alex-service.ts); and the reader's decisions
  * about those (`decisionsRead`). A paper attributed to the iD serves the
- * record's work with the same DOI or OpenAlex id, so only the other works are
+ * record's work with the same DOI, OpenAlex id or arXiv id, so only the other works are
  * looked up by DOI, with the works the reader added that the attributed list
  * no longer holds. `details` is 'failed' when some of those lookups did not
  * answer: the papers that did answer are kept. Rejects when ORCID or the
@@ -409,8 +409,11 @@ export function arrangeOrcidWorks(loaded: OrcidPublicationsLoad, decisions: Orci
   const candidates: OrcidCandidate[] = [];
   for (const paper of loaded.attributed.papers) {
     const keys = orcidWorkKeys(paper);
-    if (keys.length === 0 || keys.some(key => loaded.recordKeys.has(key) || seen.has(key))) continue;
-    keys.forEach(key => seen.add(key));
+    // The arXiv names match a work against the record only: two works OpenAlex
+    // keeps for one arXiv paper stay two candidates, each with its own decision.
+    const names = keys.filter(key => !key.startsWith('arxiv:'));
+    if (names.length === 0 || keys.some(key => loaded.recordKeys.has(key)) || names.some(key => seen.has(key))) continue;
+    names.forEach(key => seen.add(key));
     const decision = keys.some(key => mine.has(key)) ? 'mine' : keys.some(key => notMine.has(key)) ? 'notMine' : null;
     candidates.push({ key: keys[0], paper, decision });
   }
