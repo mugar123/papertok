@@ -59,6 +59,7 @@ test('every section of the Spanish policy survives the translation', () => {
     'What is public and what is not',
     'University email verification',
     'Zotero',
+    'ORCID',
     'Email updates',
     'Analytics',
     'Scientific sources and AI features',
