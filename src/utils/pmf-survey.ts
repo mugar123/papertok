@@ -16,7 +16,7 @@ type SurveyStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
  * A version is package.json's, built in by vite.config.ts.
  *
  * Two records per account in this browser. The days, each with the version it
- * was opened on, and the papers are swept at sign-out
+ * was opened on, and the papers (kept only until the first ask) are swept at sign-out
  * (user-scoped-storage.ts), so an account that signs in again counts them from
  * nothing. The version the account was last asked for is kept across
  * sign-outs, as the privacy notice's is (utils/nudges.ts), so signing in again
@@ -135,11 +135,14 @@ export function recordPmfSurveyDay(uid: string, now: Date, version: string, stor
  * twenty the first ask needs. `viewerId` is the account the card was shown
  * to, `signedInUid` the one Firebase names now: a card that reports after its
  * account signed out, whose records sign-out has just swept, writes nothing
- * back (as in context/feed-viewed-papers.ts).
+ * back (as in context/feed-viewed-papers.ts). Once the account has been asked,
+ * only days count, so no paper is kept.
  */
 export function recordPmfSurveyPaper({ paperId, viewerId, signedInUid }: { paperId: string; viewerId: string | null | undefined; signedInUid: string | null | undefined }, storage?: SurveyStorage | null) {
   if (!viewerId || viewerId !== signedInUid) return;
-  writeUsage(viewerId, storage, record => (record.papers.length >= DWELT_PAPERS || record.papers.includes(paperId)
+  const target = resolveStorage(storage);
+  if (!target || readAsked(viewerId, target)) return;
+  writeUsage(viewerId, target, record => (record.papers.length >= DWELT_PAPERS || record.papers.includes(paperId)
     ? null
     : { ...record, papers: [...record.papers, paperId] }));
 }
@@ -207,6 +210,8 @@ export function recordPmfSurveyShown({ uid, surveyOpen, version, storage, track 
   } catch {
     // The dialog still stays open until it is closed; it may return next visit.
   }
+  // Only the first ask reads the papers; the ones kept for it go now.
+  writeUsage(uid, target, record => (record.papers.length ? { ...record, papers: [] } : null));
   void track('pmf_survey_shown', { app_version: version });
   let sent = false;
   const send = (answer: PmfSurveyAnswer) => {

@@ -54,7 +54,7 @@ export default function PmfSurvey({ open, onAnswer }: { open: boolean; onAnswer:
             {COPY.send}
           </Button>
           <Button size="sm" variant="outline" onClick={() => answer('dismissed')}>{COPY.later}</Button>
-          <span id={sendNeedsId} className="visually-hidden">{COPY.sendNeeds}</span>
+          <span id={sendNeedsId} hidden>{COPY.sendNeeds}</span>
         </div>
       </DialogContent>
     </Dialog>

@@ -270,3 +270,13 @@ test('the survey opening reaches analytics as the version and the activation age
     { app_version: '0.3.0', activation_age: 'day_1' },
   );
 });
+
+test('the papers kept for the first ask are dropped once the survey is shown, and none are kept after it', () => {
+  const storage = createStorage();
+  dwellOn('reader', papers(20), storage);
+  showSurvey('reader', '0.3.0', storage);
+  const keptPapers = () => (JSON.parse(storage.getItem('papertok_pmfSurvey:reader') ?? '{}') as { papers?: unknown[] }).papers;
+  assert.deepEqual(keptPapers(), [], 'shown');
+  dwellOn('reader', papers(5, 50), storage);
+  assert.deepEqual(keptPapers(), [], 'papers on screen after the ask');
+});
