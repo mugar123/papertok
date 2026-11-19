@@ -1,6 +1,7 @@
 import type { OpenAlexWork, OpenAlexPage, OpenAlexAuthor, OpenAlexInstitution, OpenAlexJournal, OpenAlexTopic } from './adapters/open-alex-types.ts';
 import type { OpenAlexJsonOptions } from './open-alex-client.ts';
 import type { OpenAlexEnrichment } from '../utils/open-alex-work.ts';
+import type { Paper } from '../models/paper.ts';
 
 type Enrichment = OpenAlexEnrichment;
 type Entity = OpenAlexAuthor | OpenAlexInstitution | OpenAlexTopic;
@@ -1615,45 +1616,117 @@ export async function getAuthorsByEntity(type: string|undefined, id: string, pag
   return { authors: [], total: 0 };
 }
 
+const DOI_CHUNK_SIZE = 40;
+// The Worker's OpenAlex relay drops a parameter longer than 2,000 characters
+// (worker/openalex-api.ts), and OpenAlex then lists works without the filter,
+// so a chunk also ends before its filter grows past that.
+const DOI_FILTER_MAX_LENGTH = 1_900;
+
+/** The DOIs in chunks of at most 40 whose `doi:A|B|C` filter stays under the relay's limit. */
+function doiChunks(dois: string[]) {
+  const chunks: string[][] = [];
+  let chunk: string[] = [];
+  let length = 'doi:'.length;
+  for (const doi of dois) {
+    if (chunk.length > 0 && (chunk.length === DOI_CHUNK_SIZE || length + 1 + doi.length > DOI_FILTER_MAX_LENGTH)) {
+      chunks.push(chunk);
+      chunk = [];
+      length = 'doi:'.length;
+    }
+    length += (chunk.length > 0 ? 1 : 0) + doi.length;
+    chunk.push(doi);
+  }
+  if (chunk.length > 0) chunks.push(chunk);
+  return chunks;
+}
+
+type WorkLookupOptions = {
+  /** Told the identifiers of each chunk OpenAlex did not answer; the chunks that answered are still returned. */
+  onRequestFailed?: (ids: string[], error: unknown) => void;
+};
+
+/** Asks for the works of each chunk in turn, keeping every chunk that answers. */
+async function fetchWorkChunks(chunks: string[][], filterFor: (chunk: string[]) => string, { onRequestFailed }: WorkLookupOptions) {
+  const results: OpenAlexWork[] = [];
+  for (const chunk of chunks) {
+    const url = `https://api.openalex.org/works?filter=${filterFor(chunk)}&per-page=50`;
+    try {
+      const response = await fetchWithTimeout(url, 10000);
+      if (!response.ok) throw new Error(`OpenAlex answered ${response.status}`);
+      const data = await response.json() as OpenAlexPage<OpenAlexWork>;
+      if (data && data.results) {
+        results.push(...data.results);
+      }
+    } catch (err) {
+      if (onRequestFailed) onRequestFailed(chunk, err);
+      else console.error('OpenAlex works lookup failed', err);
+    }
+  }
+  return results.map(work => formatOpenAlexWorkAsPaper(work));
+}
+
 /**
  * Fetch full paper metadata from OpenAlex using a list of DOIs,
  * and format them as standard Paper objects (since they might not be on arXiv).
- * @param {string[]} dois 
+ * A chunk OpenAlex does not answer is left out and reported to `onRequestFailed`.
  */
-export async function fetchPapersByDois(dois: string[]) {
+export async function fetchPapersByDois(dois: string[], options: WorkLookupOptions = {}) {
   if (!dois || dois.length === 0) return [];
-  
+
+  // An OpenAlex filter has no escape for its `|` and `,` separators, so a DOI
+  // holding one cannot be asked for, nor one longer than a whole filter.
   const cleanDois = dois.map(doi => {
     if (doi.includes('doi.org/')) return doi.split('doi.org/')[1];
     return doi;
-  }).filter(Boolean);
-  
+  }).filter(doi => doi && !/[|,]/.test(doi) && doi.length < DOI_FILTER_MAX_LENGTH - 'doi:'.length);
+
   if (cleanDois.length === 0) return [];
-  
-  const results: OpenAlexWork[] = [];
-  const chunkSize = 40;
-  for (let i = 0; i < cleanDois.length; i += chunkSize) {
-    const chunk = cleanDois.slice(i, i + chunkSize);
-    // OpenAlex OR syntax requires the property name once: filter=doi:A|B|C
-    const filterIds = chunk.join('|');
-    const url = `https://api.openalex.org/works?filter=doi:${filterIds}&per-page=50`;
-    
+
+  // OpenAlex OR syntax requires the property name once: filter=doi:A|B|C.
+  // Each DOI is encoded, so a `#`, `&` or `+` in one stays part of it.
+  return fetchWorkChunks(doiChunks(cleanDois), chunk => `doi:${chunk.map(encodeURIComponent).join('|')}`, options);
+}
+
+/** The same for OpenAlex work ids (`W123`), fifty to a request. */
+export async function fetchPapersByOpenAlexIds(ids: string[], options: WorkLookupOptions = {}) {
+  const workIds = [...new Set(ids.filter(id => /^W\d+$/.test(id)))];
+  const chunks: string[][] = [];
+  for (let index = 0; index < workIds.length; index += 50) chunks.push(workIds.slice(index, index + 50));
+  return fetchWorkChunks(chunks, buildOpenAlexIdFilter, options);
+}
+
+const ORCID_WORKS_PAGE_SIZE = 50;
+/** How many of the works OpenAlex attributes to an ORCID iD are read, newest first. */
+export const ORCID_ATTRIBUTED_WORKS_MAX = 200;
+
+/**
+ * The works OpenAlex attributes to an ORCID iD (`author.orcid`), newest
+ * first, at most ORCID_ATTRIBUTED_WORKS_MAX of them, a page at a time with no
+ * retry. `total` is how many OpenAlex attributes in all. Rejects when the
+ * first page does not come; a later page that does not come ends the list
+ * there, with `complete: false`. Kept out of the app's response cache, since
+ * they describe the reader; the relay's public answer can still come from the
+ * browser's HTTP cache for 5 minutes and from the relay's for a day.
+ */
+export async function getWorksByOrcid(orcidId: string) {
+  const papers: Paper[] = [];
+  let total = 0;
+  for (let page = 1; papers.length < ORCID_ATTRIBUTED_WORKS_MAX; page += 1) {
+    const url = `https://api.openalex.org/works?filter=author.orcid:${encodeURIComponent(orcidId)}&sort=publication_date:desc&per-page=${ORCID_WORKS_PAGE_SIZE}&page=${page}`;
+    let data: OpenAlexPage<OpenAlexWork>;
     try {
-      const response = await fetchWithTimeout(url, 10000);
-      if (response.ok) {
-        const data = await response.json() as OpenAlexPage<OpenAlexWork>;
-        if (data && data.results) {
-          results.push(...data.results);
-        }
-      }
-    } catch (err) {
-      console.error("OpenAlex fetchPapersByDois failed", err);
+      data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(url, { timeoutMs: 10_000, retries: 0, cacheTtlMs: 0 });
+    } catch (error) {
+      if (page === 1) throw error;
+      console.warn('OpenAlex stopped answering for the works of an ORCID iD', error);
+      return { papers, total, complete: false };
     }
+    const results = Array.isArray(data?.results) ? data.results : [];
+    if (page === 1) total = Number(data?.meta?.count) || 0;
+    papers.push(...results.map(formatOpenAlexWorkAsPaper));
+    if (results.length < ORCID_WORKS_PAGE_SIZE) break;
   }
-  
-  return results.map(work => {
-    return formatOpenAlexWorkAsPaper(work);
-  });
+  return { papers: papers.slice(0, ORCID_ATTRIBUTED_WORKS_MAX), total: Math.max(total, papers.length), complete: true };
 }
 
 /**

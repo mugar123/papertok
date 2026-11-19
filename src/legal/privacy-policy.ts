@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-15';
+export const PRIVACY_POLICY_VERSION = '2026-11-20';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -90,8 +90,20 @@ export const PRIVACY_POLICY_VERSION = '2026-11-15';
  * version because 2026-11-14 went live with the feed refresh notice. This
  * instant follows the rule above for a text that ships with its own pull
  * request.
+ *
+ * Version 2026-11-20 adds ORCID: the iD and the record's name kept while a
+ * reader has ORCID connected, the access token that is not stored, and My
+ * profile, shown only to the reader, whose works the browser loads from
+ * ORCID's public API, with the works OpenAlex links to the iD and the
+ * identifiers of those the reader marks as theirs or not. It ships with the
+ * pull request that adds the ORCID routes and My profile, and this instant
+ * follows the rule above for such a text: it stands at the end of the day
+ * the merge is planned for. If the merge falls after it, move the page's
+ * "Last updated" date, PRIVACY_POLICY_VERSION and this instant to the merge
+ * day before merging, and lower it to the deployment's success time once it
+ * is live.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-15T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
@@ -107,9 +119,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "If you connect Zotero, an encrypted key to your Zotero library is kept with your account until you disconnect.",
-  "Sending a paper gives Zotero its citation and the highlights and notes you made on it, never the AI's highlights.",
-  "Usage analytics records only whether a send to Zotero worked, not which paper.",
+  "If you connect ORCID, your ORCID iD and the name on your ORCID record are kept with your account. ORCID's access token is not stored.",
+  "My profile lists the public works of your ORCID record and is shown only to you. Your browser loads those works from ORCID directly.",
+  "My profile also suggests works OpenAlex links to your iD. Which ones you mark as yours or not is kept with your account until you disconnect.",
 ];
 
 /**
@@ -122,21 +134,21 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since 14 November: connecting Zotero, what a send gives it,
-  // and the usage event about sends.
-  lead: 'If you connect Zotero',
+  // The changes since 15 November: connecting ORCID, what is kept of it, and
+  // My profile.
+  lead: 'If you connect ORCID',
   clauses: [
-    ['If you connect Zotero', /<td>If you connect Zotero: an encrypted access key to your Zotero library/],
-    ['kept with your account until you disconnect', /Disconnecting in <strong>Settings → Profile<\/strong> deletes the key/],
-    ['Sending a paper gives Zotero its citation', /Each send gives Zotero the paper's citation/],
-    ['the highlights and notes you made on it', /the highlights and notes you made on that paper/],
-    ["never the AI's highlights", /Highlights made by the AI are not sent\./],
-    ['Usage analytics', /Usage analytics is enabled by default/],
-    ['only whether a send to Zotero worked, not which paper', /Sending a paper to Zotero records only whether it was sent, not which paper\./],
+    ['If you connect ORCID', /<td>If you connect ORCID: your ORCID iD, the name on your ORCID record/],
+    ['your ORCID iD and the name on your ORCID record are kept with your account', /ORCID then gives PaperTok your iD and the name on your ORCID record, and PaperTok keeps the two with your account/],
+    ["ORCID's access token is not stored", /ORCID also gives an access token, which PaperTok does not store\./],
+    ['My profile lists the public works of your ORCID record and is shown only to you', /My profile lists the public works of your ORCID record and is shown only to you\./],
+    ['Your browser loads those works from ORCID directly', /Your browser loads those works from ORCID's public API directly/],
+    ['My profile also suggests works OpenAlex links to your iD', /My profile suggests works that OpenAlex links to your iD/],
+    ['Which ones you mark as yours or not is kept with your account', /PaperTok keeps the work's identifier \(its DOI, or its OpenAlex id when it has none\) in one of those two lists with your account/],
+    ['until you disconnect', /Disconnecting in <strong>My profile<\/strong> deletes your iD, your name and those two lists/],
   ],
   unsaid: [
-    [/group/i, 'only the personal library is reached'],
-    [/\bPDF\b|full text/i, "Zotero receives the citation and the reader's own highlights, never the paper's file"],
+    [/\bpublic profile\b|anyone|everyone/i, 'My profile is shown only to the reader'],
     [/\bsince \d{1,2} [a-z]+/i, 'the summary says only what changed since the previous version'],
   ],
 };

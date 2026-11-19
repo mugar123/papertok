@@ -177,6 +177,20 @@ for (const method of ['GET', 'POST']) {
   });
 }
 
+test('the ORCID routes refuse an Origin that is not ours and say when no ORCID client is set up', async () => {
+  for (const path of ['/orcid/connect', '/orcid/complete', '/orcid/disconnect']) {
+    const foreign = await worker.fetch(request(path, 'POST', 'https://other.example'), {});
+    assert.equal(foreign.status, 403, path);
+    assert.deepEqual(await foreign.json(), { code: 'ORIGIN_NOT_ALLOWED' });
+
+    const unconfigured = await worker.fetch(request(path, 'POST'), {});
+    assert.equal(unconfigured.status, 503, path);
+    assert.deepEqual(await unconfigured.json(), { code: 'ORCID_NOT_CONFIGURED' });
+    assert.equal(unconfigured.headers.get('cache-control'), 'no-store');
+    assert.equal(unconfigured.headers.get('access-control-allow-origin'), ORIGIN);
+  }
+});
+
 test('unsubscribe PUT still goes through the notification Origin gate', async () => {
   const response = await worker.fetch(request('/notifications/unsubscribe', 'PUT', 'https://other.example'), {});
   assert.equal(response.status, 403);

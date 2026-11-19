@@ -42,6 +42,7 @@ const USER_SUBCOLLECTIONS = Object.freeze([
   'aggregates',
   'zotero',
   'zoteroItems',
+  'orcid',
   'rateLimits',
   'summaries',
   'summaryHistory',

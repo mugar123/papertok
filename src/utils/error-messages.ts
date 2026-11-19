@@ -59,6 +59,13 @@ const ERROR_MESSAGES = {
     ZOTERO_WRITE_FAILED: 'Zotero did not save the paper. Try again.',
     ZOTERO_NOT_CONFIGURED: 'Sending to Zotero is not available right now.',
     ZOTERO_FAILED: 'The paper could not be sent to Zotero. Try again.',
+    ORCID_CONNECTION_EXPIRED: 'This ORCID connection expired or was started from another account. Connect again from My profile.',
+    ORCID_AUTHORIZATION_REFUSED: 'ORCID did not authorize PaperTok. Nothing was connected.',
+    ORCID_RATE_LIMITED: 'ORCID is busy right now. Try again in a minute.',
+    ORCID_UNAVAILABLE: 'ORCID could not be reached. Nothing was connected.',
+    ORCID_UNREACHABLE: 'PaperTok could not be reached. Check your connection and try again.',
+    ORCID_NOT_CONFIGURED: 'Connecting ORCID is not available right now.',
+    ORCID_FAILED: 'Your ORCID connection could not be changed. Try again.',
   },
 };
 

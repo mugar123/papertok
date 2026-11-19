@@ -87,11 +87,12 @@ service cloud.firestore {
 
     // Fields the Worker writes with the service identity after verifying a
     // proof the client cannot show these rules: `institution` is the
-    // university a verified address resolved to (worker/institution-link.js).
+    // university a verified address resolved to (worker/institution-link.js),
+    // and `orcid` the ORCID iD an ORCID sign-in proved (worker/orcid.ts).
     // Tolerated in a merge so the client's own writes keep working once the
     // field exists; never writable, or anyone could award themselves one.
     function serviceUserKeys() {
-      return ['institution'];
+      return ['institution', 'orcid'];
     }
 
     function frozenUserKeys() {
@@ -561,6 +562,31 @@ service cloud.firestore {
           && validNonEmptyString(request.resource.data.title, 1000)
           && validString(request.resource.data.pdfUrl, 2000)
           && request.resource.data.pdfUrl.matches('^https://.+')
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      // The account's decisions about the works OpenAlex attributes to its
+      // ORCID iD (src/services/orcid-work-decisions-service.ts): two lists of
+      // work identifiers, those it added to its publications and those it said
+      // are not its own, and `connectedAt`, the connection they were made for.
+      // Fetched by id only. Every write must name the connection the account
+      // holds now, users/{uid}.orcid.connectedAt as the Worker wrote it, so a
+      // write cannot land after a Disconnect has deleted the document, nor
+      // carry decisions from a tab still showing an earlier connection into
+      // the next one. The Worker deletes it on Disconnect, on a new connection
+      // and with the account, past these rules. The rest of users/{uid}/orcid,
+      // the pending ORCID sign-in, stays closed by the catch-all below.
+      match /orcid/works {
+        allow get: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly(['connectedAt', 'mine', 'notMine', 'updatedAt'])
+          && request.resource.data.connectedAt is string
+          && request.resource.data.connectedAt
+            == get(/databases/$(database)/documents/users/$(userId)).data.get('orcid', {}).get('connectedAt', null)
+          && request.resource.data.mine is list
+          && request.resource.data.mine.size() <= 1000
+          && request.resource.data.notMine is list
+          && request.resource.data.notMine.size() <= 1000
           && request.resource.data.updatedAt == request.time;
       }
 

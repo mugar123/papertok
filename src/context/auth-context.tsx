@@ -17,6 +17,7 @@ interface StoredProfile {
   readingPreferences?: Parameters<typeof normalizeReadingPreferences>[0];
   emailDigestOptIn?: boolean;
   institution?: Parameters<typeof normalizeInstitution>[0];
+  orcid?: unknown;
 }
 export interface AuthContextValue {
   user: AppUser | null;
@@ -35,6 +36,8 @@ export interface AuthContextValue {
   profileLoadError: string | null;
   signInProviders: string[];
   institution: ReturnType<typeof normalizeInstitution>;
+  /** The ORCID iD an ORCID sign-in proved for this account, or null. */
+  orcid: OrcidConnection | null;
   /** A redirect sign-in came back without a session: the sign-in dialog opens again. */
   reopenSignIn: boolean;
   /** `surface` names the place that asked, for analytics (auth-identity-service.ts). */
@@ -44,6 +47,8 @@ export interface AuthContextValue {
   linkInstitution: typeof linkInstitutionAccount;
   completeInstitutionVerification: typeof completeInstitutionVerificationAccount;
   unlinkInstitution: () => Promise<void>;
+  completeOrcidConnection: (code: string, state: string) => Promise<OrcidConnection>;
+  disconnectOrcid: () => Promise<void>;
   signOut: () => Promise<void>;
   completeOnboarding: (preferences: string[]) => Promise<void>;
   settleEmailDigestOptIn: () => Promise<void>;
@@ -79,6 +84,12 @@ import {
   normalizeInstitution,
   unlinkInstitution as unlinkInstitutionAccount,
 } from '../services/institution-service.ts';
+import type { OrcidConnection } from '../services/orcid-connection-service.ts';
+import {
+  completeOrcid,
+  disconnectOrcid as disconnectOrcidAccount,
+  normalizeOrcidConnection,
+} from '../services/orcid-connection-service.ts';
 import {
   DEFAULT_READING_PREFERENCES,
   normalizeReadingPreferences,
@@ -129,6 +140,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // The university a verified address resolved to, written by the Worker
   // (institution-link.js) and read here with the rest of the user document.
   const [institution, setInstitution] = useState<ReturnType<typeof normalizeInstitution>>(null);
+  // The ORCID iD the Worker wrote after an ORCID sign-in (worker/orcid.ts),
+  // read with the rest of the user document like the institution.
+  const [orcid, setOrcid] = useState<OrcidConnection | null>(null);
   const [profileReloadKey, setProfileReloadKey] = useState(0);
   const [reopenSignIn, setReopenSignIn] = useState(false);
 
@@ -183,6 +197,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setEmailDigestPending(false);
       setSignInProviders(providerIdsOf(currentUser));
       setInstitution(null);
+      setOrcid(null);
       pendingInstitutionVerification({ currentUser: () => currentUser });
 
       if (currentUser) {
@@ -213,6 +228,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
           setReadingPreferences(normalizeReadingPreferences(data.readingPreferences));
           setEmailDigestPending(data.emailDigestOptIn === true);
           setInstitution(normalizeInstitution(data.institution));
+          setOrcid(normalizeOrcidConnection(data.orcid));
           // An account that already chose its interests is the authority on
           // them. A guest pick left waiting on this device would only ever
           // seed the NEXT new account here with someone else's areas.
@@ -358,6 +374,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const userId = user?.uid;
     await unlinkInstitutionAccount();
     if (auth.currentUser?.uid === userId) setInstitution(null);
+  }, [user?.uid]);
+
+  // The same for ORCID: the Worker writes the field, and its answer is
+  // applied only while the account that asked is still signed in.
+  const completeOrcidConnection = useCallback(async (code: string, state: string) => {
+    const userId = user?.uid;
+    const connection = await completeOrcid(code, state);
+    if (auth.currentUser?.uid === userId) setOrcid(connection);
+    return connection;
+  }, [user?.uid]);
+
+  const disconnectOrcid = useCallback(async () => {
+    const userId = user?.uid;
+    await disconnectOrcidAccount();
+    if (auth.currentUser?.uid === userId) setOrcid(null);
   }, [user?.uid]);
 
   // `user?.uid` rather than `user`: Firebase re-emits `currentUser` on token
@@ -514,6 +545,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     profileLoadError,
     signInProviders,
     institution,
+    orcid,
     reopenSignIn,
     signInWithGoogle,
     signInWithGitHub,
@@ -521,6 +553,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     linkInstitution,
     completeInstitutionVerification,
     unlinkInstitution,
+    completeOrcidConnection,
+    disconnectOrcid,
     signOut,
     completeOnboarding,
     settleEmailDigestOptIn,
@@ -530,8 +564,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     updateReadingPreferences,
     retryProfileLoad,
   }), [
-    addedPreferences, completeOnboarding, completeInstitutionVerification, deselectedPreferences, emailDigestPending, error, followedAuthors, institution, linkInstitution,
-    linkSignInMethod, loading, onboardingComplete, profileLoadError, readingPreferences,
+    addedPreferences, completeOnboarding, completeInstitutionVerification, completeOrcidConnection, deselectedPreferences, disconnectOrcid, emailDigestPending, error, followedAuthors, institution, linkInstitution,
+    linkSignInMethod, loading, onboardingComplete, orcid, profileLoadError, readingPreferences,
     reopenSignIn, retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, unlinkInstitution, updatePreferences,
     updateReadingPreferences, user, userPreferences,
