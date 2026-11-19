@@ -404,6 +404,7 @@ export function clearFieldsWrite(name: string, fieldPaths: string[]): FirestoreW
   };
 }
 
-export function deleteWrite(name: string): FirestoreWrite {
-  return { delete: name };
+/** Deletes a document; with `updateTime`, only the exact version read, else the commit fails with 409. */
+export function deleteWrite(name: string, { updateTime }: { updateTime?: string } = {}): FirestoreWrite {
+  return { delete: name, ...(updateTime ? { currentDocument: { updateTime } } : {}) };
 }

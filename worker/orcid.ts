@@ -55,7 +55,7 @@ export class OrcidError extends Error {
 
 interface Admin {
   name(segments: string[]): string;
-  getDocument<T extends object>(segments: string[]): Promise<T | null>;
+  getDocument<T extends object>(segments: string[], options: { withMeta: true }): Promise<{ data: T; updateTime?: string } | null>;
   commit(writes: FirestoreWrite[]): Promise<unknown>;
 }
 interface OrcidOptions { admin?: Admin; now?: () => number }
@@ -171,17 +171,30 @@ export async function handleOrcidRequest(request: Request, env: WorkerEnv, origi
 
   if (pathname === '/orcid/complete') {
     const { code, state } = await readBody(request);
-    const pending = await admin.getDocument<LinkDocument>(linkSegments(identity.uid));
-    const age = now - Number(pending?.createdAt);
-    if (!pending?.stateHash || pending.stateHash !== await sha256(state) || !(age >= 0 && age <= PENDING_LIFETIME_MS)) {
+    const pending = await admin.getDocument<LinkDocument>(linkSegments(identity.uid), { withMeta: true });
+    const age = now - Number(pending?.data.createdAt);
+    if (!pending?.updateTime || !pending.data.stateHash || pending.data.stateHash !== await sha256(state)
+      || !(age >= 0 && age <= PENDING_LIFETIME_MS)) {
       throw new OrcidError('ORCID_CONNECTION_EXPIRED', 400);
     }
     const holder = await exchangeCode(env, host, code, redirectUri);
     const orcid: OrcidConnection = { ...holder, host, connectedAt: new Date(now).toISOString() };
     // One commit, so the state cannot be used again once the iD is written,
-    // and the iD starts with no decisions about its works.
-    // No existence precondition: an account that has not finished onboarding may have no user document yet.
-    await admin.commit([mergeWrite(userDocument, { orcid }, { mustExist: false }), deleteWrite(link), deleteWrite(decisions)]);
+    // and the iD starts with no decisions about its works. It deletes only the
+    // version of the pending state read above: a Disconnect or a new Connect
+    // while ORCID was answering changed or deleted it, and then nothing is
+    // written. No existence precondition on the user document: an account
+    // that has not finished onboarding may have none yet.
+    try {
+      await admin.commit([
+        mergeWrite(userDocument, { orcid }, { mustExist: false }),
+        deleteWrite(link, { updateTime: pending.updateTime }),
+        deleteWrite(decisions),
+      ]);
+    } catch (error) {
+      if (error instanceof FirestoreAdminError && error.status === 409) throw new OrcidError('ORCID_CONNECTION_EXPIRED', 400);
+      throw error;
+    }
     return { orcid };
   }
 
