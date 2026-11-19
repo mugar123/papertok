@@ -108,6 +108,7 @@ import {
   saveProfileDriftCheckedAt,
 } from '../utils/user-scoped-storage.ts';
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
+import { recordPmfSurveyPaper } from '../utils/pmf-survey.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount, viewedPaperIds } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { planPreferencesRefresh, scheduleRefresh } from './feed-preferences-refresh.ts';
@@ -2086,6 +2087,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const userId = user?.uid;
     if (timeInSeconds < 1) return;
     markPaperViewed(paper.id, userId);
+    // A second on screen is the use the survey counts; a skip and a paper a
+    // load passes over are not (utils/pmf-survey.ts).
+    recordPmfSurveyPaper({ paperId: paper.id, viewerId: userId, signedInUid: auth.currentUser?.uid });
     
     // ─── BOREDOM RESET: user is engaging, not bored ───
     if (timeInSeconds >= 5) {
