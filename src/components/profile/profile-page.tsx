@@ -1,16 +1,18 @@
 import type { ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { OrcidConnection } from '../../services/orcid-connection-service.ts';
-import type { OrcidCandidate, OrcidListedWork, OrcidPublicationsLoad, OrcidWork } from '../../services/orcid-service.ts';
+import type { Coauthor, OrcidCandidate, OrcidListedWork, OrcidPublicationsLoad, OrcidWork } from '../../services/orcid-service.ts';
 import type { OrcidWorkDecision, OrcidWorkDecisions } from '../../services/orcid-work-decisions-service.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowClockwise, ArrowCounterClockwise, CaretDown, Check, CircleNotch, IdentificationBadge, LinkBreak, LinkSimple, X } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
+import { useFollowing } from '../../context/following-context.tsx';
 import { usePageRestored } from '../../hooks/use-page-restored.ts';
 import { connectOrcid, orcidRecordUrl } from '../../services/orcid-connection-service.ts';
-import { arrangeOrcidWorks, loadOrcidPublications, orcidWorkKeys } from '../../services/orcid-service.ts';
+import { CITING_WORKS_PAGE_SIZE, getWorksCiting, twelveMonthsBefore } from '../../services/open-alex-service.ts';
+import { arrangeOrcidWorks, citedWorkIds, frequentCoauthors, loadOrcidPublications, orcidWorkKeys, othersCitations, readerPapers, readerWorkIds } from '../../services/orcid-service.ts';
 import { readOrcidWorkDecisions, saveOrcidWorkDecision } from '../../services/orcid-work-decisions-service.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
@@ -21,7 +23,9 @@ import ScientificText from '../scientific-text.ts';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogTitle } from '../ui/alert-dialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { toastError } from '../ui/toast.ts';
+import { FollowToggle } from '../ui/follow-toggle.tsx';
+import { actionStart, toastError } from '../ui/toast.ts';
+import { toastFollowRefused } from '../following/follow-refused-toast.ts';
 import '../settings/settings-page.css';
 import './profile-page.css';
 
@@ -81,6 +85,23 @@ const COPY = {
   announceNotMine: (title: string) => `Marked "${title}" as not yours. It no longer appears among the suggestions.`,
   announceBack: (title: string) => `"${title}" is back among the suggestions.`,
   announceRemoved: (title: string) => `Removed "${title}" from your publications.`,
+  citations: 'Papers citing your work',
+  citationsIntro: 'Papers from the last 12 months that cite your publications, newest first, as OpenAlex lists them. Papers you are an author of are left out.',
+  citationsLoading: 'Loading papers citing your work…',
+  citationsLoaded: (count: number) => `${count} ${count === 1 ? 'paper cites' : 'papers cite'} your work.`,
+  citationsFailed: 'The papers citing your work could not be loaded from OpenAlex.',
+  citationsNone: 'OpenAlex lists no papers from the last 12 months that cite these works.',
+  citationsOnlyOwn: 'OpenAlex lists no papers by others from the last 12 months that cite these works.',
+  citationsAllOwnCapped: (total: number) => `The newest ${CITING_WORKS_PAGE_SIZE} of the ${total} papers OpenAlex lists from the last 12 months that cite these works are all your own.`,
+  citationsCapped: (total: number) => `These come from the newest ${CITING_WORKS_PAGE_SIZE} of the ${total} papers OpenAlex lists from the last 12 months that cite these works.`,
+  citationsUnknown: 'Papers citing your work appear here for works OpenAlex knows, and OpenAlex knows none of your publications yet.',
+  cites: 'Cites',
+  citesMore: (count: number) => ` and ${count} more of your works`,
+  coauthors: 'Frequent coauthors',
+  coauthorsIntro: 'The people who share two or more of your publications on OpenAlex, most shared first. Papers with more than 30 authors are not counted.',
+  sharedWorks: (count: number) => `${count} shared works`,
+  follow: (name: string) => `Follow ${name}`,
+  following: (name: string) => `Following ${name}`,
 };
 
 /** ORCID's work type as words: `journal-article` reads "Journal article". */
@@ -163,6 +184,165 @@ function AddedWorkRow({ itemKey, actions }: { itemKey: string; actions: ReactNod
   );
 }
 
+/** Opens a paper of a list row: its paper page, or its DOI in a new tab. */
+function useOpenPaper() {
+  const navigate = useNavigate();
+  return (paper: Paper) => {
+    const path = getPublicPaperPath(paper);
+    if (path) {
+      void navigate(path, { state: { paper } });
+      return;
+    }
+    const doiUrl = safeDoiUrl(paper.doi);
+    if (doiUrl) window.open(doiUrl, '_blank', 'noopener,noreferrer');
+  };
+}
+
+type CitationsState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; citations: ReturnType<typeof othersCitations>; total: number; titles: ReadonlyMap<string, string> };
+
+/**
+ * The newest papers of the last 12 months that cite the reader's works
+ * (`papers`, readerPapers), from one OpenAlex request when the section
+ * mounts and one more for each Try again: a decision made meanwhile does not
+ * ask again. Mounted once the publications are loaded, and gone while they
+ * load again; a late answer after it left is dropped.
+ */
+function CitingPapers({ orcidId, papers }: { orcidId: string; papers: Paper[] }) {
+  const openPaper = useOpenPaper();
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<CitationsState>({ status: 'loading' });
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  // The works as they stand when a request is made, not as each decision changes them.
+  const latestPapers = useRef(papers);
+  useEffect(() => { latestPapers.current = papers; }, [papers]);
+  const [known] = useState(() => citedWorkIds(papers).length > 0);
+
+  useEffect(() => {
+    const current = latestPapers.current;
+    const ids = citedWorkIds(current);
+    if (ids.length === 0) return undefined;
+    let live = true;
+    const readerIds = readerWorkIds(current);
+    const titles = new Map(current.map(paper => [String(paper.id), paper.title ?? COPY.untitled]));
+    getWorksCiting(ids, twelveMonthsBefore(new Date())).then((result) => {
+      if (!live) return;
+      setState({ status: 'ready', citations: othersCitations(result.works, orcidId, readerIds), total: result.total, titles });
+    }, (error: unknown) => {
+      if (!live) return;
+      console.warn('The papers citing the ORCID works could not be loaded', error);
+      setState({ status: 'error' });
+    });
+    return () => { live = false; };
+  }, [orcidId, attempt]);
+
+  const retry = () => {
+    // The button leaves with the message; the heading keeps focus in the section.
+    headingRef.current?.focus();
+    setState({ status: 'loading' });
+    setAttempt(value => value + 1);
+  };
+
+  const shown = state.status === 'ready' ? state.citations : [];
+  const total = state.status === 'ready' ? state.total : 0;
+  const capped = total > CITING_WORKS_PAGE_SIZE;
+  const emptyNote = total === 0 ? COPY.citationsNone : capped ? COPY.citationsAllOwnCapped(total) : COPY.citationsOnlyOwn;
+  const announcement = state.status === 'loading' ? COPY.citationsLoading
+    : state.status === 'ready' ? (shown.length > 0 ? COPY.citationsLoaded(shown.length) : emptyNote) : '';
+
+  return (
+    <section className="settings-section" aria-labelledby="my-profile-citations-heading">
+      <div className="settings-section-heading">
+        <h2 ref={headingRef} id="my-profile-citations-heading" tabIndex={-1}>{COPY.citations}</h2>
+        <p>{COPY.citationsIntro}</p>
+      </div>
+      {known ? (
+        <>
+          {/* As the publications do: one status line from loading to the
+              result, visible while loading and when nothing is listed. A
+              failure is an alert. */}
+          <p className={state.status === 'loading' || (state.status === 'ready' && shown.length === 0) ? 'my-profile-note' : 'visually-hidden'} role="status">{announcement}</p>
+          {state.status === 'error' && (
+            <div className="my-profile-note">
+              <p role="alert">{COPY.citationsFailed}</p>
+              <Button variant="outline" size="sm" onClick={retry}>
+                <ArrowClockwise size={15} aria-hidden="true" />
+                {COPY.retry}
+              </Button>
+            </div>
+          )}
+          {state.status === 'ready' && shown.length > 0 && capped && <p className="my-profile-note">{COPY.citationsCapped(total)}</p>}
+          {state.status === 'ready' && shown.length > 0 && (
+            <div className="settings-list orcid-works" role="list" aria-labelledby="my-profile-citations-heading">
+              {shown.map(({ paper, cites }) => {
+                const first = cites.length > 0 ? state.titles.get(cites[0]) : undefined;
+                return (
+                  <PaperListRow key={paper.id} role="listitem" paper={paper} onOpen={() => openPaper(paper)}>
+                    {(paper.authors?.length ?? 0) > 0 && <ListRowAuthors paper={paper} />}
+                    {first && (
+                      <p className="orcid-cites-line">
+                        {COPY.cites}
+                        {' '}
+                        <ScientificText>{first}</ScientificText>
+                        {cites.length > 1 && COPY.citesMore(cites.length - 1)}
+                      </p>
+                    )}
+                  </PaperListRow>
+                );
+              })}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="my-profile-note">{COPY.citationsUnknown}</p>
+      )}
+    </section>
+  );
+}
+
+/** The reader's frequent coauthors (frequentCoauthors), each with the app's Follow. */
+function FrequentCoauthors({ coauthors }: { coauthors: Coauthor[] }) {
+  const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
+  const entityOf = (coauthor: Coauthor) => ({ type: 'author' as const, id: coauthor.id, displayName: coauthor.name, source: 'openalex' });
+  const follow = (coauthor: Coauthor) => {
+    const entity = entityOf(coauthor);
+    const following = isFollowing(entity);
+    // Said in a toast that waits for any overlay opened before the write settles, as the Explorer's Follow does.
+    const startedAt = actionStart();
+    toggleFollow(entity).catch((error: unknown) => toastFollowRefused(error, { name: coauthor.name, following, startedAt }));
+  };
+  return (
+    <section className="settings-section" aria-labelledby="my-profile-coauthors-heading">
+      <div className="settings-section-heading">
+        <h2 id="my-profile-coauthors-heading">{COPY.coauthors}</h2>
+        <p>{COPY.coauthorsIntro}</p>
+      </div>
+      <div className="settings-list" role="list" aria-labelledby="my-profile-coauthors-heading">
+        {coauthors.map((coauthor) => {
+          const entity = entityOf(coauthor);
+          return (
+            <div key={coauthor.id} className="settings-row settings-row-side" role="listitem">
+              <div className="settings-row-content">
+                <p className="orcid-coauthor-name">{coauthor.name}</p>
+                <p className="orcid-coauthor-count">{COPY.sharedWorks(coauthor.sharedWorks)}</p>
+              </div>
+              <FollowToggle
+                pressed={isFollowing(entity)}
+                disabled={isFollowPending(entity)}
+                onClick={() => follow(coauthor)}
+                followLabel={COPY.follow(coauthor.name)}
+                followingLabel={COPY.following(coauthor.name)}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /**
  * The reader's publications and the works that might also be theirs, read
  * when the page opens and kept only in this component: the works of their
@@ -171,7 +351,7 @@ function AddedWorkRow({ itemKey, actions }: { itemKey: string; actions: ReactNod
  * starts empty and a late answer for the previous one is dropped.
  */
 function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string }) {
-  const navigate = useNavigate();
+  const openPaper = useOpenPaper();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loaded, setLoaded] = useState<OrcidPublicationsLoad | null>(null);
   const [decisions, setDecisions] = useState<OrcidWorkDecisions>({ mine: [], notMine: [] });
@@ -233,16 +413,6 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
     setAttempt(value => value + 1);
   };
 
-  const openPaper = (paper: Paper) => {
-    const path = getPublicPaperPath(paper);
-    if (path) {
-      void navigate(path, { state: { paper } });
-      return;
-    }
-    const doiUrl = safeDoiUrl(paper.doi);
-    if (doiUrl) window.open(doiUrl, '_blank', 'noopener,noreferrer');
-  };
-
   const markRecent = (key: string, row: OrcidWorkDecision | null | undefined) => setRecent((current) => {
     const next = new Map(current);
     if (row) next.set(key, row);
@@ -295,6 +465,13 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
   const suggestions = (arranged?.candidates ?? []).filter(candidate => candidate.decision === null || recent.has(candidate.key));
   const hidden = (arranged?.candidates ?? []).filter(candidate => candidate.decision === 'notMine' && !recent.has(candidate.key));
   const attributed = loaded?.attributed;
+  const papers = useMemo(() => (arranged ? readerPapers(arranged.publications, decisions) : []), [arranged, decisions]);
+  // OpenAlex knows production iDs only: a sandbox iD may name someone else
+  // there, so it gets no citations, coauthors or suggestions.
+  const onOpenAlex = orcid.host === 'orcid.org';
+  const coauthors = useMemo(() => (
+    onOpenAlex && attributed ? frequentCoauthors(papers, { readerAuthorIds: attributed.authorIds, readerName: orcid.name }) : []
+  ), [onOpenAlex, attributed, papers, orcid.name]);
 
   // The load's result, read out once: a decision is read out by its own line
   // below, so the counts here stay as they were when the page loaded.
@@ -434,8 +611,10 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
         )}
       </section>
 
-      {/* OpenAlex knows production iDs only, so a sandbox iD gets no suggestions. */}
-      {status === 'ready' && attributed && orcid.host === 'orcid.org' && (
+      {status === 'ready' && onOpenAlex && <CitingPapers orcidId={orcid.id} papers={papers} />}
+      {status === 'ready' && coauthors.length > 0 && <FrequentCoauthors coauthors={coauthors} />}
+
+      {status === 'ready' && attributed && onOpenAlex && (
         <section className="settings-section" aria-labelledby="my-profile-suggestions-heading">
           <div className="settings-section-heading">
             <h2 ref={suggestionsHeadingRef} id="my-profile-suggestions-heading" tabIndex={-1}>{COPY.suggestions}</h2>

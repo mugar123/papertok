@@ -1,3 +1,5 @@
+import type { Paper } from '../models/paper.ts';
+import type { OrcidListedWork } from './orcid-service.ts';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -6,7 +8,7 @@ import {
   withStubbedFetch,
 } from '../test-support/deadline-harness.ts';
 import { openAlexClient } from './open-alex-client.ts';
-import { arrangeOrcidWorks, extractOrcid, fetchWithTimeout, getOrcidRecord, getOrcidWorks, loadOrcidPublications, ORCID_LISTED_WORKS_MAX } from './orcid-service.ts';
+import { arrangeOrcidWorks, citedWorkIds, extractOrcid, fetchWithTimeout, frequentCoauthors, getOrcidRecord, getOrcidWorks, loadOrcidPublications, ORCID_LISTED_WORKS_MAX, othersCitations, readerPapers } from './orcid-service.ts';
 
 test('extracts a clean ORCID from a bare id, a URL and a checksum ending in X', () => {
   assert.equal(extractOrcid('0000-0002-1825-0097'), '0000-0002-1825-0097');
@@ -309,4 +311,70 @@ test('when the decisions cannot be read the load fails, so nothing already decid
   await assert.rejects(withStubbedFetch(async () => Response.json(WORKS), () => (
     loadOrcidPublications(IDENTIFIER, 'orcid.org', Promise.reject(new Error('offline')))
   )), /offline/);
+});
+
+// Synthetic papers as formatOpenAlexWorkAsPaper makes them: a short work id
+// and authors with their OpenAlex author address.
+const listedPaper = (id: number, year: number, authors: Array<[number, string]> = [], doi: string | null = null) => ({
+  id: `W${id}`, title: `Work ${id}`, year, doi,
+  authors: authors.map(([author, name]) => ({ id: `https://openalex.org/A${author}`, name })),
+}) as Paper;
+const recordRow = (paper: Paper | null): OrcidListedWork => ({
+  kind: 'record', paper, work: { putCode: null, title: paper?.title ?? null, year: paper?.year ?? null, type: null, doi: null, externalIds: [] },
+});
+
+test('the works citations are asked for are the reader\'s papers, newest first, never one marked not theirs, at most 50', () => {
+  const rows: OrcidListedWork[] = [
+    recordRow(listedPaper(1, 2025)),
+    recordRow(null),
+    { kind: 'added', key: 'openalex:W2', paper: listedPaper(2, 2024) },
+    recordRow(listedPaper(3, 2023, [], '10.1000/not-mine')),
+    recordRow(listedPaper(1, 2025)),
+    ...Array.from({ length: 60 }, (_, index) => recordRow(listedPaper(100 + index, 2020))),
+  ];
+  const papers = readerPapers(rows, { mine: ['openalex:W2'], notMine: ['doi:10.1000/not-mine'] });
+  assert.deepEqual(papers.slice(0, 3).map(paper => paper.id), ['W1', 'W2', 'W100']);
+  assert.equal(papers.length, 62);
+  const ids = citedWorkIds(papers);
+  assert.equal(ids.length, 50);
+  assert.deepEqual(ids.slice(0, 3), ['W1', 'W2', 'W100']);
+  assert.ok(!ids.includes('W3'));
+});
+
+test('a citing paper by the reader, or that is one of their works, is left out, and each other one names the works it cites', () => {
+  const citing = (id: number, references: string[], orcids: string[] = []) => ({ paper: listedPaper(id, 2026), references, orcids });
+  const result = othersCitations([
+    citing(501, ['W9', 'W2', 'W1', 'W2']),
+    citing(502, ['W1'], ['0000-0002-1825-0097']),
+    citing(2, ['W1']),
+    citing(503, ['W3'], ['0000-0001-5109-3700']),
+  ], '0000-0002-1825-0097', ['W1', 'W2', 'W3']);
+  assert.deepEqual(result.map(({ paper, cites }) => [paper.id, cites]), [['W501', ['W2', 'W1']], ['W503', ['W3']]]);
+});
+
+test('frequent coauthors share two works or more, leave out the reader and large collaborations, and are ordered and capped', () => {
+  const crowd = Array.from({ length: 31 }, (_, index): [number, string] => [900 + index, `Member ${index}`]);
+  const papers = [
+    listedPaper(1, 2025, [[1, 'Ada Reader'], [2, 'Bea Close'], [3, 'Cy Twice'], [4, 'Dee Once'], [7, 'Pablo Presa']]),
+    listedPaper(2, 2024, [[5, 'Ada Reader'], [2, 'Bea Close'], [3, 'Cy Twice'], [7, 'Pablo Presa']]),
+    listedPaper(3, 2022, [[2, 'Bea Close'], [6, 'Eve Older'], [8, 'Al Older']]),
+    listedPaper(4, 2021, [[6, 'Eve Older'], [8, 'Al Older'], [1, 'Ada Reader']]),
+    listedPaper(5, 2020, crowd),
+    listedPaper(6, 2019, crowd),
+    ...Array.from({ length: 10 }, (_, index) => listedPaper(10 + index, 2010, [[300 + index, `Pair ${index}`], [400, 'Zed Many']])),
+    ...Array.from({ length: 10 }, (_, index) => listedPaper(20 + index, 2010, [[300 + index, `Pair ${index}`]])),
+  ];
+  const result = frequentCoauthors(papers, { readerAuthorIds: ['https://openalex.org/A1', 'A5'], readerName: 'Pablo Presa' });
+  assert.deepEqual(result.map(({ id, name, sharedWorks }) => [id, name, sharedWorks]), [
+    ['A400', 'Zed Many', 10],
+    ['A2', 'Bea Close', 3],
+    ['A3', 'Cy Twice', 2],
+    ['A8', 'Al Older', 2],
+    ['A6', 'Eve Older', 2],
+    ['A300', 'Pair 0', 2],
+    ['A301', 'Pair 1', 2],
+    ['A302', 'Pair 2', 2],
+  ]);
+  // With fewer than eight who share two, one who shares a single work still stays out.
+  assert.deepEqual(frequentCoauthors(papers.slice(0, 4), { readerAuthorIds: ['A1', 'A5'] }).map(coauthor => coauthor.id), ['A2', 'A3', 'A7', 'A8', 'A6']);
 });

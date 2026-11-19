@@ -32,7 +32,10 @@ import {
   getAuthorsByEntity,
   getLocalTopicEntity,
   getWorksByEntity,
+  CITING_WORKS_MAX_CITED,
   getWorksByOrcid,
+  getWorksCiting,
+  twelveMonthsBefore,
   isOpenAlexEnrichmentId,
   normalizeRecentImpactEntityId,
   peekEntity,
@@ -1906,4 +1909,78 @@ test('the attributed works stop at a short page, reject when the first page fail
   } finally {
     console.warn = warn;
   }
+});
+
+// Requests to anything not stubbed fail the test instead of reaching OpenAlex.
+function guardNetwork(t: import('node:test').TestContext) {
+  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) => {
+    throw new Error(`Unstubbed request: ${String(url)}`);
+  });
+}
+
+const authored = (id: number, orcid: string | null) => ({
+  author: { id: `https://openalex.org/A${id}`, display_name: `Author ${id}`, orcid: orcid ? `https://orcid.org/${orcid}` : null },
+});
+
+test('the works of an ORCID iD name the author ids that carry the iD on them', async t => {
+  guardNetwork(t);
+  t.mock.method(openAlexClient, 'fetch', async () => Response.json({ meta: { count: 2 }, results: [
+    { ...lookupWork(1, null, 'One'), authorships: [authored(10, '0000-0002-1825-0097'), authored(11, '0000-0001-5109-3700')] },
+    { ...lookupWork(2, null, 'Two'), authorships: [authored(12, '0000-0002-1825-0097'), authored(13, null)] },
+  ] }));
+  const result = await getWorksByOrcid('0000-0002-1825-0097');
+  assert.deepEqual(result.authorIds, ['A10', 'A12']);
+});
+
+test('twelve months before a day is the same calendar day a year earlier, in local time', () => {
+  assert.equal(twelveMonthsBefore(new Date(2026, 10, 19, 23, 30)), '2025-11-19');
+  assert.equal(twelveMonthsBefore(new Date(2026, 0, 1, 0, 5)), '2025-01-01');
+});
+
+test('the papers citing the reader\'s works come from one request, newest first, with their references and ORCID iDs', async t => {
+  guardNetwork(t);
+  const asked: URLSearchParams[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    asked.push(new URL(url).searchParams);
+    return Response.json({ meta: { count: 31 }, results: [{
+      ...lookupWork(500, '10.1000/citing', 'A citing paper'),
+      authorships: [authored(20, '0000-0001-5109-3700'), authored(21, null)],
+      referenced_works: ['https://openalex.org/W9', 'https://openalex.org/W1'],
+    }] });
+  });
+  const ids = ['W1', 'W2', 'W1', '10.1000/not-an-id', ...Array.from({ length: 60 }, (_, index) => `W${100 + index}`)];
+  const result = await getWorksCiting(ids, '2025-11-19');
+
+  assert.equal(asked.length, 1);
+  const [params] = asked;
+  const cited = ['W1', 'W2', ...Array.from({ length: CITING_WORKS_MAX_CITED - 2 }, (_, index) => `W${100 + index}`)];
+  assert.equal(params.get('filter'), `cites:${cited.join('|')},from_publication_date:2025-11-19`);
+  assert.equal(params.get('sort'), 'publication_date:desc');
+  assert.equal(params.get('per-page'), '20');
+  const select = params.get('select')!.split(',');
+  for (const field of ['id', 'title', 'publication_date', 'authorships', 'referenced_works']) assert.ok(select.includes(field), field);
+
+  assert.equal(result.total, 31);
+  assert.deepEqual(result.works.map(work => [work.paper.id, work.paper.title, work.references, work.orcids]), [
+    ['W500', 'A citing paper', ['W9', 'W1'], ['0000-0001-5109-3700']],
+  ]);
+});
+
+test('the papers citing the reader\'s works are asked once, with no retry, and the failure reaches the page', async t => {
+  guardNetwork(t);
+  let calls = 0;
+  // Below the client's retry loop, so a retry would be counted; its pause is skipped.
+  t.mock.method(openAlexClient, 'fetchOnce', async () => {
+    calls += 1;
+    return new Response('busy', { status: 503 });
+  });
+  t.mock.method(openAlexClient, 'sleep', async () => {});
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    await assert.rejects(getWorksCiting(['W1'], '2025-11-19'));
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(calls, 1);
 });

@@ -40,7 +40,7 @@ import {
   getRecentImpactConfig,
   getRecentImpactPeriod,
 } from '../utils/entity-metadata.ts';
-import { OPENALEX_ENRICHMENT_SELECT, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { OPENALEX_ENRICHMENT_SELECT, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -1704,12 +1704,15 @@ export const ORCID_ATTRIBUTED_WORKS_MAX = 200;
  * first, at most ORCID_ATTRIBUTED_WORKS_MAX of them, a page at a time with no
  * retry. `total` is how many OpenAlex attributes in all. Rejects when the
  * first page does not come; a later page that does not come ends the list
- * there, with `complete: false`. Kept out of the app's response cache, since
- * they describe the reader; the relay's public answer can still come from the
- * browser's HTTP cache for 5 minutes and from the relay's for a day.
+ * there, with `complete: false`. `authorIds` are the OpenAlex author ids
+ * (`A123`) that carry the iD on those works, the reader's own. Kept out of
+ * the app's response cache, since they describe the reader; the relay's
+ * public answer can still come from the browser's HTTP cache for 5 minutes
+ * and from the relay's for a day.
  */
 export async function getWorksByOrcid(orcidId: string) {
   const papers: Paper[] = [];
+  const authorIds = new Set<string>();
   let total = 0;
   for (let page = 1; papers.length < ORCID_ATTRIBUTED_WORKS_MAX; page += 1) {
     const url = `https://api.openalex.org/works?filter=author.orcid:${encodeURIComponent(orcidId)}&sort=publication_date:desc&per-page=${ORCID_WORKS_PAGE_SIZE}&page=${page}`;
@@ -1719,14 +1722,85 @@ export async function getWorksByOrcid(orcidId: string) {
     } catch (error) {
       if (page === 1) throw error;
       console.warn('OpenAlex stopped answering for the works of an ORCID iD', error);
-      return { papers, total, complete: false };
+      return { papers, total, complete: false, authorIds: [...authorIds] };
     }
     const results = Array.isArray(data?.results) ? data.results : [];
     if (page === 1) total = Number(data?.meta?.count) || 0;
     papers.push(...results.map(formatOpenAlexWorkAsPaper));
+    for (const id of results.flatMap(work => authorIdsWithOrcid(work, orcidId))) authorIds.add(id);
     if (results.length < ORCID_WORKS_PAGE_SIZE) break;
   }
-  return { papers: papers.slice(0, ORCID_ATTRIBUTED_WORKS_MAX), total: Math.max(total, papers.length), complete: true };
+  return { papers: papers.slice(0, ORCID_ATTRIBUTED_WORKS_MAX), total: Math.max(total, papers.length), complete: true, authorIds: [...authorIds] };
+}
+
+/** An OpenAlex author id in its short form (`A123`), from the id or its address. */
+export function openAlexAuthorId(value: unknown) {
+  return String(value ?? '').trim().match(/^(?:https?:\/\/openalex\.org\/)?(A\d+)$/i)?.[1].toUpperCase() ?? null;
+}
+
+/** An ORCID iD as OpenAlex writes it (`https://orcid.org/<iD>`), in its bare form. */
+function bareOrcid(value: unknown) {
+  return String(value ?? '').trim().match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i)?.[1].toUpperCase() ?? null;
+}
+
+/** The ORCID iDs of a work's authorships, bare. */
+function authorshipOrcids(work: OpenAlexWork) {
+  return (work.authorships ?? []).map(authorship => bareOrcid(authorship.author?.orcid)).filter((id): id is string => id !== null);
+}
+
+/** The author ids of a work's authorships whose ORCID iD is `orcidId`. */
+function authorIdsWithOrcid(work: OpenAlexWork, orcidId: string) {
+  return (work.authorships ?? []).flatMap((authorship) => {
+    const id = openAlexAuthorId(authorship.author?.id);
+    return id && bareOrcid(authorship.author?.orcid) === orcidId.toUpperCase() ? [id] : [];
+  });
+}
+
+/** How many of the newest papers citing the reader's works My profile asks for. */
+export const CITING_WORKS_PAGE_SIZE = 20;
+/** How many of the reader's works one request names; the relay drops a filter value over 2,000 characters. */
+export const CITING_WORKS_MAX_CITED = 50;
+
+/** `date` as the calendar day twelve months earlier, local time, written `YYYY-MM-DD`. */
+export function twelveMonthsBefore(date: Date) {
+  const day = new Date(date.getFullYear() - 1, date.getMonth(), date.getDate());
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+}
+
+/**
+ * The OpenAlex request for the newest papers published since `since` that
+ * cite any of `workIds` (`W123`, at most CITING_WORKS_MAX_CITED), with the
+ * fields a paper is made from and the reference list each citing work is
+ * matched against.
+ */
+export function citingWorksUrl(workIds: string[], since: string) {
+  const ids = [...new Set(workIds.filter(id => /^W\d+$/.test(id)))].slice(0, CITING_WORKS_MAX_CITED);
+  const select = [...OPENALEX_WORK_SEARCH_FIELDS, 'referenced_works'].join(',');
+  return `https://api.openalex.org/works?filter=cites:${encodeURIComponent(ids.join('|'))},from_publication_date:${since}`
+    + `&sort=publication_date:desc&per-page=${CITING_WORKS_PAGE_SIZE}&select=${select}`;
+}
+
+/** A paper citing the reader's works, with the works it references (`W123`) and its authors' ORCID iDs. */
+export interface CitingWork { paper: Paper; references: string[]; orcids: string[] }
+
+/**
+ * The newest CITING_WORKS_PAGE_SIZE papers published since `since` that cite
+ * any of `workIds`, as one request through the relay with no retry, kept out
+ * of the app's response cache like the works of the iD. `total` is how many
+ * OpenAlex lists in all. Rejects when OpenAlex does not answer.
+ */
+export async function getWorksCiting(workIds: string[], since: string) {
+  const data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(citingWorksUrl(workIds, since), { timeoutMs: 10_000, retries: 0, cacheTtlMs: 0 });
+  const results = Array.isArray(data?.results) ? data.results.filter(work => work?.id) : [];
+  return {
+    works: results.map((work): CitingWork => ({
+      paper: formatOpenAlexWorkAsPaper(work),
+      references: (work.referenced_works ?? []).map(id => String(id).split('/').pop()!.toUpperCase()).filter(id => /^W\d+$/.test(id)),
+      orcids: authorshipOrcids(work),
+    })),
+    total: Math.max(Number(data?.meta?.count) || 0, results.length),
+  };
 }
 
 /**
