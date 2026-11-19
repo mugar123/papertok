@@ -79,7 +79,6 @@ function boot() {
 
 test('a quick startup finishes before the recovery content is revealed', () => {
   const page = boot();
-  assert.equal(page.title.textContent, 'Loading PaperTok');
   assert.equal(page.panel.attributes.get('data-state'), 'pending');
   assert.equal(page.panel.connected, true);
   page.advance(50);
@@ -90,13 +89,14 @@ test('a quick startup finishes before the recovery content is revealed', () => {
   assert.equal(page.pendingTimers(), 0);
 });
 
-test('a startup still pending after half a second reveals loading feedback', () => {
+test('ordinary startup stays pending until the slow-start warning is due', () => {
   const page = boot();
-  page.advance(499);
+  page.advance(500);
+  assert.equal(page.panel.attributes.get('data-state'), 'pending');
+  page.advance(14499);
   assert.equal(page.panel.attributes.get('data-state'), 'pending');
   page.advance(1);
-  assert.equal(page.panel.attributes.get('data-state'), 'loading');
-  assert.equal(page.title.textContent, 'Loading PaperTok');
+  assert.equal(page.panel.attributes.get('data-state'), 'slow');
 });
 
 test('missing startup scripts and styles present an error with a working retry', () => {
@@ -132,7 +132,7 @@ test('unavailable classic scripts, images and icons do not report an application
   page.resourceError('LINK', 'stylesheet');
   page.resourceError('IMG');
   page.resourceError('LINK', 'icon');
-  assert.equal(page.title.textContent, 'Loading PaperTok');
+  assert.equal(page.panel.attributes.get('data-state'), 'pending');
 });
 
 test('a stalled startup offers retry without claiming a known cause', () => {
@@ -146,9 +146,8 @@ test('a stalled startup offers retry without claiming a known cause', () => {
 });
 
 test('a successful or late mount removes recovery and stops monitoring', () => {
-  for (const state of ['normal', 'loading', 'slow', 'failed']) {
+  for (const state of ['normal', 'slow', 'failed']) {
     const page = boot();
-    if (state === 'loading') page.advance(500);
     if (state === 'slow') page.advance(30000);
     if (state === 'failed') page.win.dispatchEvent(new Event('error'));
     page.mount();

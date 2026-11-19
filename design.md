@@ -627,8 +627,8 @@ The startup recovery screen in `index.html` is the one status screen drawn befor
 the app's CSS, fonts and JavaScript load. It has to stand on its own, so it is the
 one documented exception to the No New Hex Rule. It copies the token values it
 uses into local custom properties with the tokens' own names, sets type in system
-fonts and draws Petri inline: thinking while PaperTok loads or is slow, upset
-when it fails. A change to those tokens or to `petri-frame.tsx`,
+fonts and draws Petri inline. The screen stays quiet during normal startup.
+Petri looks thoughtful for a long wait or the native fallback and upset on failure. A change to those tokens or to `petri-frame.tsx`,
 `petri-thinking.tsx` or `petri-upset.tsx` needs the same change there.
 
 ## Do's and Don'ts
