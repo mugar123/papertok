@@ -166,6 +166,7 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   // A custom feed's order as the reader chose it: Newest first or Best match.
   feed_order: new Set(['newest', 'best']),
   zotero_result: new Set(['sent', 'failed']),
+  pmf_disappointment: new Set(['very', 'somewhat', 'not', 'dismissed']),
 });
 
 const FEED_LOAD_DIMENSIONS = { load_type: 'feed_load_type', attempt: 'feed_load_attempt', first_screen: 'boolean', client_release: 'release' };
@@ -262,6 +263,13 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   custom_feed_delete: {},
   custom_feed_open: { feed_order: 'feed_order' },
   zotero_send: { result: 'zotero_result' },
+  // The product-market fit survey (components/nudges/pmf-survey.tsx): that it
+  // opened, then the answer or the dismissal. Fixed labels, a 0 to 10 score and
+  // the product version, never text. `activation_age` tells readers who arrived
+  // in the last days from those who have used PaperTok for weeks, and opened
+  // against answered gives the response rate.
+  pmf_survey_shown: { app_version: 'app_version', activation_age: 'activation_age' },
+  pmf_survey: { disappointment: 'pmf_disappointment', nps: 'nps', app_version: 'app_version', activation_age: 'activation_age' },
 }) satisfies Readonly<Record<string, Record<string, string>>>;
 
 export type ProductAnalyticsEvent = keyof typeof EVENT_PARAMETER_SCHEMAS;
@@ -462,6 +470,9 @@ export function sanitizeProductEventParams(eventName: string | number, params: R
     }
     if (type === 'release' && typeof value === 'string' && /^[a-f0-9]{40}$/i.test(value)) safeParams[key] = value.toLowerCase();
     if (type === 'worker_version' && typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value)) safeParams[key] = value.toLowerCase();
+    if (type === 'app_version' && typeof value === 'string' && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value)) safeParams[key] = value;
+    // A score as chosen, so one out of range is dropped rather than moved to an end.
+    if (type === 'nps' && Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 10) safeParams[key] = value;
     if (type === 'duration' && Number.isFinite(value)) safeParams[key] = Math.min(3_600_000, Math.max(0, Math.round(value as number)));
     if ((type === 'rewrite_error' || type === 'auth_error' || type === 'feed_error') && typeof value === 'string') {
       safeParams[key] = CATEGORIES[type].has(value) ? value : 'other';
@@ -934,6 +945,17 @@ export async function trackAcquisition({
   } catch {
     return false;
   }
+}
+
+/** The survey's two events, with how long ago this browser activated, so cohorts can be told apart. */
+export async function trackPmfSurvey(eventName: 'pmf_survey_shown' | 'pmf_survey', params: Record<string, unknown>, { now = Date.now, track = trackProductEvent }: Omit<TrackingOptions, 'storage'> = {}) {
+  let age: string | undefined;
+  try {
+    age = activationAge(resolveTimestamp(now));
+  } catch {
+    // Storage the browser refuses holds no activation mark; the answer still counts.
+  }
+  return track(eventName, { ...params, ...(age && { activation_age: age }) });
 }
 
 function resolveTimestamp(now: number | (() => number)) {

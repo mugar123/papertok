@@ -19,6 +19,7 @@ const LIST_PAPERS_KEY_PREFIX = 'papertok_listPapers:';
 const OWN_PROFILE_KEY_PREFIX = 'papertok_ownProfile:';
 const ONBOARDING_KEY_PREFIX = 'papertok_onboarding:';
 const CUSTOM_FEED_DISMISSED_KEY_PREFIX = 'papertok_customFeedDismissed:';
+const PMF_SURVEY_KEY_PREFIX = 'papertok_pmfSurvey:';
 // The comments a reporter chose not to see, from when the app had comments.
 // Nothing writes it any more; sign-out still sweeps it so a list left in a
 // browser does not outlive the feature.
@@ -342,6 +343,16 @@ export function getCustomFeedDismissedStorageKey(userId: string | null | undefin
   return `${CUSTOM_FEED_DISMISSED_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
 
+/**
+ * One key per account for the use that makes the survey due: the days and the
+ * papers kept on screen (pmf-survey.ts). The version it was asked for is kept
+ * in a key of its own, which sign-out does not sweep.
+ */
+export function getPmfSurveyStorageKey(userId: string | null | undefined) {
+  if (!userId) return null;
+  return `${PMF_SURVEY_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
 // Written by the follow counters of the removed profile page. Nothing writes
 // it now; sign-out still sweeps it from devices that stored one.
 function getFollowStatsStorageKey(userId: string | null | undefined) {
@@ -386,6 +397,7 @@ export function clearUserScopedStorage(userId: string | undefined, storage?: (Sc
     getOwnProfileStorageKey(userId),
     getOnboardingStorageKey(userId),
     getCustomFeedDismissedStorageKey(userId),
+    getPmfSurveyStorageKey(userId),
     getLocalHiddenStorageKey(userId),
     LEGACY_LOCAL_HIDDEN_KEY,
     `papertok_following_${safeUserId}`,

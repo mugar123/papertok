@@ -21,7 +21,7 @@ const shown = (counts: Record<string, number>) =>
 
 // The bodies the feed's requests send to /store/papers.
 async function bodiesOf(...requests: Parameters<typeof fetchCorpusPage>[0][]) {
-  const bodies: Array<{ categories: string[]; positiveIds: string[]; negativeIds?: string[]; excludedIds?: string[]; groups?: Array<{ categories: string[] }> }> = [];
+  const bodies: Array<{ categories: string[]; positiveIds: string[]; negativeIds?: string[]; excludedIds?: string[]; groups?: Array<{ categories: string[]; positiveIds: string[] }> }> = [];
   for (const request of requests) {
     await fetchCorpusPage(request, {
       apiBase: 'https://papertok-report-api.example',
@@ -363,4 +363,82 @@ test('a full plan leaves room for every rejection and exclusion a request carrie
   const [body] = await bodiesOf(mainCorpusRequest(plan, { page: 0, order: 'recent', negativeIds, excludedIds }));
   assert.equal(body.negativeIds?.length, 24);
   assert.equal(body.excludedIds?.length, 130);
+});
+
+// One area each: eight areas send eight groups.
+const eightAreas = [['quant-ph', 'cond-mat.str-el'], ['cs.RO', 'cs.CR'], ['cs.AI', 'cs.LG'], ['math.AG', 'math.CO'], ['stat.ML', 'stat.ME'], ['econ.EM', 'econ.GN'], ['q-fin.ST', 'q-fin.CP'], ['eess.SP', 'eess.SY']];
+
+// The For You main request of a first page, with every rejection, exclusion
+// and seen paper a reader can carry.
+async function fullMainBody(plan: ReturnType<typeof feedPlanFor>) {
+  const negativeIds = Array.from({ length: 24 }, (_, index) => `openalex:W99${String(index).padStart(8, '0')}`);
+  const excludedIds = Array.from({ length: 200 }, (_, index) => `arxiv:2511.${10000 + index}`);
+  const seen = new Set(Array.from({ length: 2000 }, (_, index) => `arxiv:2510.${10000 + index}`));
+  const [body] = await bodiesOf({ ...mainCorpusRequest(plan, { page: 0, order: 'recent', negativeIds, excludedIds, seen }), notable: 5 });
+  return body;
+}
+
+test('a reader of eight areas with likes in each keeps every rejection and exclusion in the request', async () => {
+  const body = await fullMainBody(feedPlanFor(null, 0, memory({
+    selected: eightAreas.flat(),
+    examples: eightAreas.flatMap(([leaf], area) => [0, 1].map(index => ({ id: `openalex:W4${area}${index}0000000`, category: leaf }))),
+  })));
+  assert.equal(body.groups?.length, 8);
+  assert.equal(body.positiveIds.length, 16);
+  assert.equal(body.negativeIds?.length, 24);
+  assert.equal(body.excludedIds?.length, 200);
+});
+
+test('a reader of seven areas with a like of no area keeps every rejection and exclusion in the request', async () => {
+  const sevenAreas = [['quant-ph', 'cond-mat.str-el'], ['cs.AI', 'cs.LG'], ['math.AG', 'math.CO'], ['stat.ML', 'stat.ME'], ['econ.EM', 'econ.GN'], ['q-fin.ST', 'q-fin.CP'], ['eess.SP', 'eess.SY']];
+  const body = await fullMainBody(feedPlanFor(null, 0, memory({
+    selected: sevenAreas.flat(),
+    examples: [
+      ...sevenAreas.flatMap(([leaf], area) => [0, 1].map(index => ({ id: `openalex:W4${area}${index}0000000`, category: leaf }))),
+      // Stored before examples had a category (profiles from before October 17).
+      { id: 'openalex:W4900000000', category: '' },
+    ],
+  })));
+  assert.equal(body.groups?.length, 7);
+  assert.equal(body.positiveIds.length, 15);
+  assert.equal(body.negativeIds?.length, 24);
+  assert.equal(body.excludedIds?.length, 200);
+});
+
+test('a reader of ten areas sends every like of an area they never picked, and keeps every rejection and exclusion', async () => {
+  const tenAreas = [...eightAreas, ['bio.gen', 'bio.mol'], ['med.gen', 'med.onco']];
+  // DOI-length ids, twice as long as arXiv and OpenAlex ones.
+  const likes = Array.from({ length: 24 }, (_, index) => `10.1000/like.${index}.`.padEnd(40, 'x'));
+  const body = await fullMainBody(feedPlanFor(null, 0, memory({
+    selected: tenAreas.flat(),
+    examples: likes.map(id => ({ id, category: 'chem.anal' })),
+  })));
+  assert.equal(body.groups?.length, 10);
+  assert.deepEqual([...body.positiveIds].sort(), [...likes].sort());
+  assert.equal(body.negativeIds?.length, 24);
+  assert.equal(body.excludedIds?.length, 200);
+});
+
+test('every page of one list ranks by the same likes and rejections when the request is trimmed', async () => {
+  const tenAreas = [...eightAreas, ['bio.gen', 'bio.mol'], ['med.gen', 'med.onco']];
+  const likes = Array.from({ length: 24 }, (_, index) => `10.1000/like.${index}.`.padEnd(40, 'x'));
+  const plan = feedPlanFor(null, 0, memory({ selected: tenAreas.flat(), examples: likes.map(id => ({ id, category: 'chem.anal' })) }));
+  const negativeIds = Array.from({ length: 24 }, (_, index) => `openalex:W99${String(index).padStart(8, '0')}`);
+  const seen = new Set(Array.from({ length: 2000 }, (_, index) => `arxiv:2510.${10000 + index}`));
+  const inputs = (body: Awaited<ReturnType<typeof bodiesOf>>[number]) =>
+    ({ positiveIds: body.positiveIds, negativeIds: body.negativeIds, groups: body.groups?.map(group => group.positiveIds) });
+  // One exclusion a character longer at a time moves the request across the
+  // 43 bytes of a like's copy, which is what the trim drops first, so at some
+  // length the bytes of `continues`, or the one byte of a two-digit page or
+  // `notable`, would drop one more copy.
+  for (let extra = 0; extra < 45; extra += 1) {
+    const excludedIds = Array.from({ length: 200 }, (_, index) => `arxiv:2511.${10000 + index}${index === 0 ? 'v'.repeat(extra) : ''}`);
+    const request = (page: number, notable: number, continues: boolean) =>
+      ({ ...mainCorpusRequest(plan, { page, order: 'recent', negativeIds, excludedIds, seen }), notable, continues });
+    const [first, resumed, next, tenth] = await bodiesOf(request(0, 5, false), request(0, 5, true), request(1, 12, false), request(10, 5, false));
+    assert.ok(first.groups!.every(group => group.positiveIds.length < 24), 'the request is trimmed');
+    assert.deepEqual(inputs(resumed), inputs(first), `a first page that continues the walk, ${extra} characters longer`);
+    assert.deepEqual(inputs(next), inputs(first), `the second page, with a two-digit notable, ${extra} characters longer`);
+    assert.deepEqual(inputs(tenth), inputs(first), `the eleventh page, ${extra} characters longer`);
+  }
 });

@@ -297,6 +297,7 @@ export function modalIsOpen(root: { querySelector(selector: string): unknown }) 
  * render; `cardsShown`, `modalOpen` and `tabVisible` only matter while the
  * dialog is closed (open, it is a modal itself). A hidden tab does not open it:
  * opening records the version as told, and nobody would have seen the notice.
+ * The survey dialog opens and stays open on the same terms.
  */
 export function privacyDialogOpen({ shown, cardsShown, modalOpen, tabVisible, wasOpen }: { shown: boolean; cardsShown: boolean; modalOpen: boolean; tabVisible: boolean; wasOpen: boolean }) {
   return shown && (wasOpen || (cardsShown && !modalOpen && tabVisible));
@@ -325,6 +326,9 @@ export function privacyCardsCover({ dialogOpen, cardsStay }: { dialogOpen: boole
 
 export const PRIVACY_NOTICE_ID = 'privacy-change';
 
+/** The product-market fit survey (utils/pmf-survey.ts), picked like a nudge and shown like the privacy dialog. */
+export const PMF_SURVEY_ID = 'pmf-survey';
+
 /**
  * The picked notice, while it may be on screen. A nudge, once picked on the
  * feed, stays on every route until it is dismissed, as it did before the
@@ -334,11 +338,14 @@ export const PRIVACY_NOTICE_ID = 'privacy-change';
  * longer owed (`privacyOwed`, privacyNoticeStatus on every render) it does not
  * open: shown in another tab, it is settled here too. A dialog already open
  * here (`dialogOpen`, from the previous render) stays until the reader closes
- * it or leaves the feed, although opening it recorded it as told.
+ * it or leaves the feed, although opening it recorded it as told. The survey
+ * dialog follows the same rules, with `surveyDue` (pmfSurveyDue) in place of
+ * `privacyOwed`.
  */
-export function noticeOnScreen({ picked, signedIn, pathname, privacyOwed, dialogOpen = false }: { picked: string | null; signedIn: boolean; pathname: string; privacyOwed: boolean; dialogOpen?: boolean }) {
-  if (picked !== PRIVACY_NOTICE_ID) return picked;
-  return signedIn && isFeedPath(pathname) && (privacyOwed || dialogOpen) ? picked : null;
+export function noticeOnScreen({ picked, signedIn, pathname, privacyOwed, surveyDue = false, dialogOpen = false }: { picked: string | null; signedIn: boolean; pathname: string; privacyOwed: boolean; surveyDue?: boolean; dialogOpen?: boolean }) {
+  if (picked !== PRIVACY_NOTICE_ID && picked !== PMF_SURVEY_ID) return picked;
+  const owed = picked === PRIVACY_NOTICE_ID ? privacyOwed : surveyDue;
+  return signedIn && isFeedPath(pathname) && (owed || dialogOpen) ? picked : null;
 }
 
 /** One of the pending ones, at random, or nothing at all. */
