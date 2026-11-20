@@ -23,10 +23,9 @@ export const ANALYTICS_CONSENT = Object.freeze({
 const ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 const ANALYTICS_ACTIVATION_KEY = 'papertok_analytics_activation_at';
 const ANALYTICS_ACTIVATION_EVENT_KEY = 'papertok_analytics_activation_sent';
-const ANALYTICS_DAY_7_KEY = 'papertok_analytics_day_7_return_sent';
+const WEEK_ONE_RETURN_KEY = 'papertok_analytics_week_one_return';
 const ANALYTICS_ACQUISITION_SESSION_KEY = 'papertok_analytics_acquisition_sent';
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DAY_7_MS = 7 * DAY_MS;
 
 // Every route `app.tsx` declares has to appear here (or be matched by one of
 // the patterns in `normalizeAnalyticsPath`), because anything else is filed
@@ -199,7 +198,6 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   tutorial_complete: { language: 'language' },
   activation: {},
   newsletter_change: { action: 'newsletter_action' },
-  day_7_return: {},
   select_content: { content_type: 'content_type', surface: 'surface', position: 'boundedNumber', method: 'method' },
   // The reader added by the light redesign. Its events (`paper_rewrite` through
   // `paper_highlight`) shipped instrumented and silent before they were
@@ -524,7 +522,8 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
   try {
     storage?.removeItem(ANALYTICS_ACTIVATION_KEY);
     storage?.removeItem(ANALYTICS_ACTIVATION_EVENT_KEY);
-    storage?.removeItem(ANALYTICS_DAY_7_KEY);
+    storage?.removeItem(WEEK_ONE_RETURN_KEY);
+    storage?.removeItem('papertok_analytics_day_7_return_sent');
     getSessionStorage()?.removeItem(ANALYTICS_ACQUISITION_SESSION_KEY);
   } catch {
     // Consent withdrawal still disables collection when storage is unavailable.
@@ -551,8 +550,8 @@ let consentChanges = 0;
  * tab wrote it (for browsers without storage). Turning analytics off and on
  * again leaves the level as it was, but not this value.
  */
-export function analyticsConsentState() {
-  return `${readAnalyticsConsent()}#${storedConsentChanges()}#${consentChanges}`;
+export function analyticsConsentState(storage?: AnalyticsStorage | null) {
+  return `${readAnalyticsConsent(storage)}#${storedConsentChanges(storage)}#${consentChanges}`;
 }
 
 export async function setAnalyticsConsent(value: string) {
@@ -852,7 +851,7 @@ function canSendAnalytics() {
 
 // `true` means PostHog accepted the event into its send queue, which is as much
 // as a batched transport can honestly report. The callers' bookkeeping
-// (`activation`, `day_7_return`, the guest demo) relies on it never being true
+// (`activation`, the guest demo) relies on it never being true
 // for an event that was dropped.
 async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>, stillValid?: () => boolean) {
   if (!canSendAnalytics()) return false;
@@ -983,53 +982,47 @@ function resolveTimestamp(now: number | (() => number)) {
   return Number.isFinite(timestamp) ? timestamp : Date.now();
 }
 
-// Marks whose send is still waiting, in this tab. The first event of a page
-// waits for PostHog to load, and a second call in that window would otherwise
-// pass the stored check and send the mark twice: opening `/` asks on the way in
-// and again after the redirect to `/feed`. Kept in memory, not in storage, so a
-// tab closed mid-send leaves the mark unsent and the next visit tries again.
-const marksInFlight = new Set<string>();
+// Two first-use actions can overlap while PostHog loads. Keep the pending
+// mark in memory so closing the tab mid-send leaves activation retryable.
+let activationInFlight = false;
 
-export async function markActivation({ storage = getBrowserStorage(), now = Date.now, track = trackProductEvent }: TrackingOptions = {}) {
-  if (readAnalyticsConsent(storage) === ANALYTICS_CONSENT.DENIED) return false;
+export async function markActivation({ storage: suppliedStorage, now = Date.now, track = trackProductEvent }: TrackingOptions = {}) {
+  const storage = suppliedStorage === undefined ? getBrowserStorage() : suppliedStorage;
+  if (readAnalyticsConsent(suppliedStorage) === ANALYTICS_CONSENT.DENIED) return false;
 
   try {
     if (storage?.getItem(ANALYTICS_ACTIVATION_EVENT_KEY) === 'true') return false;
-    if (marksInFlight.has(ANALYTICS_ACTIVATION_EVENT_KEY)) return false;
+    if (activationInFlight) return false;
     const timestamp = resolveTimestamp(now);
-    marksInFlight.add(ANALYTICS_ACTIVATION_EVENT_KEY);
+    activationInFlight = true;
     try {
-      const tracked = await track('activation');
-      if (!tracked) return false;
+      const consentState = analyticsConsentState(suppliedStorage);
+      const stillValid = () => analyticsConsentState(suppliedStorage) === consentState;
+      const tracked = await track('activation', {}, stillValid);
+      if (!tracked || !stillValid()) return false;
+      if (storage?.getItem(ANALYTICS_ACTIVATION_EVENT_KEY) === 'true') return false;
       storage?.setItem(ANALYTICS_ACTIVATION_KEY, String(timestamp));
       storage?.setItem(ANALYTICS_ACTIVATION_EVENT_KEY, 'true');
       return true;
     } finally {
-      marksInFlight.delete(ANALYTICS_ACTIVATION_EVENT_KEY);
+      activationInFlight = false;
     }
   } catch {
     return false;
   }
 }
 
-export async function trackDay7Return({ storage = getBrowserStorage(), now = Date.now, track = trackProductEvent }: TrackingOptions = {}) {
-  if (readAnalyticsConsent(storage) === ANALYTICS_CONSENT.DENIED) return false;
-
+export function markWeekOneReturn({ storage: suppliedStorage, now = Date.now }: Pick<TrackingOptions, 'storage' | 'now'> = {}) {
+  const storage = suppliedStorage === undefined ? getBrowserStorage() : suppliedStorage;
+  if (!storage || readAnalyticsConsent(suppliedStorage) === ANALYTICS_CONSENT.DENIED) return false;
   try {
-    if (storage?.getItem(ANALYTICS_DAY_7_KEY) === 'true') return false;
-    if (marksInFlight.has(ANALYTICS_DAY_7_KEY)) return false;
-    const activatedAt = Number(storage?.getItem(ANALYTICS_ACTIVATION_KEY));
+    if (storage.getItem(WEEK_ONE_RETURN_KEY) === 'true') return false;
+    const activatedAt = Number(storage.getItem(ANALYTICS_ACTIVATION_KEY));
     if (!Number.isFinite(activatedAt) || activatedAt <= 0) return false;
-    if (resolveTimestamp(now) - activatedAt < DAY_7_MS) return false;
-    marksInFlight.add(ANALYTICS_DAY_7_KEY);
-    try {
-      const tracked = await track('day_7_return');
-      if (!tracked) return false;
-      storage?.setItem(ANALYTICS_DAY_7_KEY, 'true');
-      return true;
-    } finally {
-      marksInFlight.delete(ANALYTICS_DAY_7_KEY);
-    }
+    const elapsed = resolveTimestamp(now) - activatedAt;
+    if (elapsed < 7 * DAY_MS || elapsed >= 14 * DAY_MS) return false;
+    storage.setItem(WEEK_ONE_RETURN_KEY, 'true');
+    return true;
   } catch {
     return false;
   }

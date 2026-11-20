@@ -151,40 +151,27 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('a reader who saw the survey or weekly saves notice is owed the interest preferences notice', () => {
-  for (const previous of ['2026-11-20.2', '2026-11-20.4']) {
+test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.7');
+  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6']) {
     assert.equal(privacyNoticeStatus({
       user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
       signedIn: true,
       version: PRIVACY_POLICY_VERSION,
       effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
       baseline: PRIVACY_NOTICE_BASELINE_VERSION,
-      account: { uid: 'reader', version: previous },
+      account: { uid: 'reader', version: seen },
       storage: null,
-    }), 'owed');
+    }), 'owed', seen);
   }
-});
-
-test('a reader who saw only the first November 20 notice is owed the survey, profile, saves and preferences updates', () => {
-  assert.equal(privacyNoticeStatus({
-    user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
-    signedIn: true,
-    version: PRIVACY_POLICY_VERSION,
-    effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
-    baseline: PRIVACY_NOTICE_BASELINE_VERSION,
-    account: { uid: 'reader', version: '2026-11-20' },
-    storage: null,
-  }), 'owed');
-  const summary = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(summary, /usage analytics on.*survey.*your account/i);
-  assert.match(summary, /reading level and broad interests when available/i);
-  assert.match(summary, /submitted answers and any role/i);
-  assert.match(summary, /recent citing papers and frequent coauthors, keeps neither list/i);
-  assert.match(summary, /verified email.*save.*by default/i);
-  assert.match(summary, /your account to each paper once per UTC week/i);
-  assert.match(summary, /turn off future counting in Settings → Privacy/i);
-  assert.match(summary, /suggests interests from your publications/i);
-  assert.match(summary, /Essential or Curiosity choices, feed mix and area reading levels/i);
+  const notice = PRIVACY_POLICY_CHANGE.join(' ');
+  assert.match(notice, /Anthropic may process paper text outside the EU for rewrites and explanations/i);
+  assert.match(notice, /Verified-email saves count per account and paper each UTC week/i);
+  assert.match(notice, /opt out in Settings → Privacy/i);
+  assert.match(notice, /analytics on.*surveys link level, broad interests, answers and optional role to accounts/i);
+  assert.match(notice, /Only browsers mark returns 7–13 days after first use.*existing PostHog events/i);
+  assert.match(notice, /Accounts store Essential\/Curiosity priorities, mix and area levels/i);
+  assert.match(notice, /My profile suggests interests and lists citing papers and coauthors but saves neither list/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
