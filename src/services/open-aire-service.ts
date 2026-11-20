@@ -61,7 +61,8 @@ function projectText(value: unknown) {
 }
 
 function projectAmount(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+  // Graph uses 0 when the amount is not reported.
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 /**
@@ -79,7 +80,7 @@ function projectSummary(p: GraphProject) {
     acronym: projectText(p.acronym),
     funder: projectText(funding?.shortName) || projectText(funding?.name) || '',
     fundingStream: projectText(funding?.fundingStream?.description),
-    budget: totalCost ? totalCost : projectAmount(p.granted?.fundedAmount),
+    budget: totalCost ?? projectAmount(p.granted?.fundedAmount),
     currency: currency && /^[A-Z]{3}$/.test(currency) ? currency : undefined,
   };
 }
@@ -279,7 +280,8 @@ export async function getPapersByProject(projectCode: string, page = 1, { funder
 
 async function projectCandidates(url: string, signal: AbortSignal) {
   signal.throwIfAborted();
-  const cached = readSourceCache<{ projects: Project[]; total: number }>(url, CACHE_TTL);
+  const cacheKey = `project-amounts-v2:${url}`;
+  const cached = readSourceCache<{ projects: Project[]; total: number }>(cacheKey, CACHE_TTL);
   if (cached) return cached;
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`OpenAIRE search error: ${response.status}`);
@@ -293,7 +295,7 @@ async function projectCandidates(url: string, signal: AbortSignal) {
   if (results.length && !projects.length) throw new Error('OpenAIRE projects are missing identities or titles');
   if (projects.length < results.length) console.warn(`Skipped ${results.length - projects.length} incomplete OpenAIRE projects`);
   const result = { projects, total };
-  if (projects.length) writeSourceCache(url, result);
+  if (projects.length) writeSourceCache(cacheKey, result);
   return result;
 }
 

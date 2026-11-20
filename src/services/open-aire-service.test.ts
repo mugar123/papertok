@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { writeSourceCache } from '../utils/source-cache.ts';
 import assert from 'node:assert/strict';
 import {
   dribblingFetch,
@@ -213,6 +214,7 @@ test("a bare grant code is asked with its funder's short name, and a currency Gr
     assert.equal(details?.funder, 'SNSF');
     assert.equal(details?.currency, undefined, 'not EUR: SNSF grants are not in euros');
     assert.equal(details?.budget, 90593, 'the funded amount, as the total cost is 0');
+    assert.equal(details?.fundedAmount, 90593);
     assert.equal(details?.acronym, undefined);
     assert.equal(details?.summary, undefined);
     assert.equal(details?.openAccess, false);
@@ -220,6 +222,18 @@ test("a bare grant code is asked with its funder's short name, and a currency Gr
 
     await withStubbedFetch(graphFetch(requests, () => graphResponse([])), () => getProjectDetails('100010'));
     assert.deepEqual([...requests[1].searchParams], [['code', '100010'], ['pageSize', '1']], 'no funder, no empty funder parameter');
+  } finally {
+    CACHE.clear();
+  }
+});
+
+test('Graph unreported amounts stay unknown on project pages', async () => {
+  CACHE.clear();
+  try {
+    const zero = { ...SNSF_PROJECT, granted: { totalCost: 0, fundedAmount: 0, currency: null } };
+    const details = await withStubbedFetch(async () => graphResponse([zero]), () => getProjectDetails(zero.id));
+    assert.equal(details?.budget, undefined);
+    assert.equal(details?.fundedAmount, undefined);
   } finally {
     CACHE.clear();
   }
@@ -572,7 +586,7 @@ test('distinct canonical grants sharing a title stay separate and unknown curren
   assert.equal(projects.length, 2);
   assert.equal(projects[0].budget, 42);
   assert.equal(projects[0].currency, undefined);
-  assert.equal(projects[1].budget, 0);
+  assert.equal(projects[1].budget, undefined);
   assert.equal(projects[1].currency, 'EUR');
 });
 
@@ -589,6 +603,14 @@ function installProjectCache(t: import('node:test').TestContext) {
     else Reflect.deleteProperty(globalThis, 'localStorage');
   });
 }
+
+test('project search ignores cached results from before amount normalization', async t => {
+  installProjectCache(t);
+  const url = `https://api.openaire.eu/graph/v3/projects?${new URLSearchParams({ pageSize: '50', page: '1', search: '"human brain project"' })}`;
+  writeSourceCache(url, { projects: [{ ...hbp, funder: 'EC', budget: 0 }], total: 1 });
+  const result = await withStubbedFetch(async () => graphResponse([{ ...hbp, granted: { totalCost: 0, fundedAmount: 0 } }]), () => searchProjects('Human Brain Project'));
+  assert.equal(result.projects[0].budget, undefined);
+});
 
 test('successful project search survives a later outage through persistent cache, then refreshes after expiry', async t => {
   installProjectCache(t);
