@@ -190,21 +190,27 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
      * Several documents in one round trip. Missing names come back as `null`
      * rather than throwing, matching `getDocument`. Order follows `docs`.
      */
-    async batchGet<T extends object = FirestoreData>(docs: string[][]): Promise<Array<T | null>> {
-      const names = (Array.isArray(docs) ? docs : []).map(segments => documentName(projectId, segments));
+    async batchGet<T extends object = FirestoreData>(docs: string[][], transaction?: string): Promise<Array<T | null>> {
+      const names = (Array.isArray(docs) ? docs : []).map(segments =>
+        documentName(projectId, segments).split('/').map(decodeURIComponent).join('/'),
+      );
       if (names.length === 0) return [];
       const url = `https://firestore.googleapis.com/v1/${documentRoot(projectId)}:batchGet`;
       const response = await authorizedFetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ documents: names }),
+        body: JSON.stringify({ documents: names, transaction }),
       });
       const payload = await response.json<FirestoreRow[] | FirestoreFailure>().catch(() => null);
       if (!response.ok) {
+        const status = (payload as FirestoreFailure | null)?.error?.status || '';
+        if (transaction && status === 'ABORTED') {
+          throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409, status);
+        }
         throw new FirestoreAdminError(
           'FIRESTORE_READ_FAILED',
           502,
-          (payload as FirestoreFailure | null)?.error?.status || '',
+          status,
         );
       }
       const rows = Array.isArray(payload) ? payload : [];
@@ -340,24 +346,44 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
      * below, so a publish either lands whole or not at all — which is the
      * property the client-side batch had and must not lose.
      */
-    async commit(writes: FirestoreWrite[]) {
+    async commit(writes: FirestoreWrite[], transaction?: string) {
       const url = `https://firestore.googleapis.com/v1/${documentRoot(projectId)}:commit`;
       const response = await authorizedFetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ writes }),
+        body: JSON.stringify({ writes, transaction }),
       });
       const payload = await response.json<FirestoreFailure & { commitTime?: string; writeResults?: unknown[] }>().catch((): FirestoreFailure & { commitTime?: string; writeResults?: unknown[] } => ({}));
       if (!response.ok) {
         const status = payload?.error?.status || '';
         // A failed precondition is the caller's problem (already published,
         // or gone), not an outage.
-        if (status === 'FAILED_PRECONDITION' || status === 'NOT_FOUND') {
+      if (status === 'FAILED_PRECONDITION' || status === 'NOT_FOUND' || status === 'ALREADY_EXISTS' || status === 'ABORTED') {
           throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409, status);
         }
         throw new FirestoreAdminError('FIRESTORE_WRITE_FAILED', 502, status);
       }
       return payload;
+    },
+
+    async beginTransaction() {
+      const response = await authorizedFetch(`https://firestore.googleapis.com/v1/${documentRoot(projectId)}:beginTransaction`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      const payload = await response.json<{ transaction?: string }>();
+      if (!response.ok || !payload.transaction) throw new FirestoreAdminError('FIRESTORE_TRANSACTION_FAILED', 502);
+      return payload.transaction;
+    },
+
+    async rollback(transaction: string) {
+      const response = await authorizedFetch(`https://firestore.googleapis.com/v1/${documentRoot(projectId)}:rollback`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ transaction }),
+      });
+      if (!response.ok) throw new FirestoreAdminError('FIRESTORE_ROLLBACK_FAILED', 502);
     },
   };
 }

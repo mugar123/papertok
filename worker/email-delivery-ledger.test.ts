@@ -122,7 +122,7 @@ test('returns duplicate reservations without consuming quota or committing twice
   assert.equal(duplicateCommitted.body.duplicate, true);
   assert.equal(duplicateCommitted.body.status, 'committed');
   assert.equal(duplicateCommitted.body.delivery?.citationThrough, '2026-08-08');
-  assert.deepEqual(duplicateCommitted.body.delivery!.paperKeys, ['doi:10.1/paper']);
+  assert.deepEqual(duplicateCommitted.body.delivery.paperKeys, ['doi:10.1/paper']);
   assert.equal(secondCommit.body.duplicate, true);
   assert.equal(secondCommit.body.committedCount, 1);
 });

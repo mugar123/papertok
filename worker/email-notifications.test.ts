@@ -4376,6 +4376,30 @@ for (const initialStatus of [200, 503]) {
   });
 }
 
+for (const source of ['kv', 'object']) {
+  test(`a next-day followed retry keeps the cutoff of an empty citation lookup in ${source} mode`, async t => {
+    let followsReady = false;
+    let citing: Response = Response.json({ results: [] });
+    const h = citationSchedule(t, {
+      follows: [digestFollow()],
+      citing: () => citing,
+      followed: () => Response.json({ results: followsReady ? [SCHEDULED_WORK] : [] }, { status: followsReady ? 200 : 503 }),
+    });
+    h.env.EMAIL_SUBSCRIPTION_SOURCE = source;
+    assert.equal((await h.run()).failed, 1);
+    followsReady = true;
+    assert.equal((await h.run(Date.parse('2026-07-28T07:00:00Z'))).sent, 1);
+    assert.equal(h.filters.filter(filter => filter.startsWith('cites:')).length, 1);
+
+    citing = Response.json({ results: [
+      citingWork(305, 'Tuesday citation after the failed Monday', '2026-07-28'),
+    ] });
+    assert.equal((await h.run(Date.parse('2026-08-03T07:00:00Z'))).sent, 1);
+    assert.match(h.filters.filter(filter => filter.startsWith('cites:')).at(-1)!, /from_publication_date:2026-07-28,to_publication_date:2026-08-03$/);
+    assert.match(h.emails.at(-1)!.text, /Tuesday citation after the failed Monday/);
+  });
+}
+
 test('an ORCID-only subscription can recover from an unavailable profile read', async t => {
   const h = citationSchedule(t);
   h.setProfileUnavailable(true);

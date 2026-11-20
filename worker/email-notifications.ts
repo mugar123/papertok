@@ -2848,8 +2848,7 @@ function deliveryStatePatch(currentState: DeliveryState, delivery: Delivery, sta
   return {
     lastCheckedAt: sentAt,
     lastSentAt: sentAt,
-    ...(delivery.citationThrough && delivery.citationThrough > (currentState.citationThrough || '')
-      ? { citationThrough: delivery.citationThrough } : {}),
+    ...citationCutoffPatch(currentState, delivery.citationThrough),
     sentPaperKeys,
     heldDigest: null,
     owedCurrentWeek: false,
@@ -3581,6 +3580,11 @@ function mergeSourceReports(target: SourceReport, report?: SourceReportInput) {
   return target;
 }
 
+// A cutoff only moves forward: a later send must not bring back days a lookup already covered.
+function citationCutoffPatch(state: DeliveryState, through: string | undefined) {
+  return through && through > (state.citationThrough || '') ? { citationThrough: through } : {};
+}
+
 async function recordSubscriptionOutcome(env: WorkerEnv, key: string, subscription: Subscription, status: string, at: string, {
   code,
   paperCount = 0,
@@ -3588,9 +3592,11 @@ async function recordSubscriptionOutcome(env: WorkerEnv, key: string, subscripti
   sourceReport,
   heldDigest,
   citationLookupWeek,
-}: StatusOptions & { heldDigest?: DeliveryState['heldDigest']; citationLookupWeek?: string } = {}) {
-  return updateDeliveryState(env, key, subscription, () => ({
+  citationThrough,
+}: StatusOptions & { heldDigest?: DeliveryState['heldDigest']; citationLookupWeek?: string; citationThrough?: string } = {}) {
+  return updateDeliveryState(env, key, subscription, state => ({
     lastCheckedAt: at,
+    ...citationCutoffPatch(state, citationThrough),
     ...(['empty', 'invalid'].includes(status) ? { owedCurrentWeek: false } : {}),
     ...(heldDigest === undefined ? {} : { heldDigest }),
     ...(citationLookupWeek ? { citationLookupWeek } : {}),
@@ -3680,6 +3686,8 @@ async function processLoadedSubscription(
   let citations: DigestCitations | undefined;
   let heldSelectedAt: string | undefined;
   let citationLookupWeek: string | undefined;
+  // Set when this run's lookup finished with nothing to send, so no later send re-reads those days.
+  let citationThrough: string | undefined;
   try {
     const resumed = await resumeScheduledDelivery(subscription, env, {
       now: now.getTime(),
@@ -3754,13 +3762,16 @@ async function processLoadedSubscription(
           if (error instanceof EmailDigestTransientError) return error;
           throw error;
         });
-      if (orcid && citationLookupWeek) citations = await collectDigestCitations(subscription, env, orcid, now.getTime());
+      if (orcid && citationLookupWeek) {
+        citations = await collectDigestCitations(subscription, env, orcid, now.getTime());
+        if (citations && !citations.papers.length) citationThrough = utcDay(now.getTime());
+      }
       if (collected instanceof EmailDigestTransientError && !citations?.papers.length) throw collected;
       attemptedPapers = collected instanceof EmailDigestTransientError ? [] : collected.papers;
       sourceReport = collected.sourceReport;
     }
     if (!attemptedPapers.length && !citations?.papers.length) {
-      await recordSubscriptionOutcome(env, key.name, subscription, 'empty', checkedAt, { sourceReport, heldDigest: null, citationLookupWeek });
+      await recordSubscriptionOutcome(env, key.name, subscription, 'empty', checkedAt, { sourceReport, heldDigest: null, citationLookupWeek, citationThrough });
       return {
         empty: true,
         partial: false,
@@ -3779,7 +3790,7 @@ async function processLoadedSubscription(
     if (delivery.pending) return { skipped: true, sources: compactSourceReport(sourceReport) };
     if (delivery.invalid) {
       const code = 'EMAIL_SUBSCRIPTION_INVALID';
-      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, sourceReport, heldDigest: null, citationLookupWeek });
+      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, sourceReport, heldDigest: null, citationLookupWeek, citationThrough });
       return {
         invalid: true,
         sources: compactSourceReport(sourceReport),
@@ -3787,7 +3798,7 @@ async function processLoadedSubscription(
       };
     }
     if (delivery.cancelled) {
-      if (citationLookupWeek) await updateDeliveryState(env, key.name, subscription, () => ({ citationLookupWeek }));
+      if (citationLookupWeek) await updateDeliveryState(env, key.name, subscription, state => ({ citationLookupWeek, ...citationCutoffPatch(state, citationThrough) }));
       return { skipped: true, sources: compactSourceReport(sourceReport) };
     }
     return persistScheduledDelivery(env, key.name, subscription, delivery, now, heldSelectedAt);
@@ -3807,6 +3818,7 @@ async function processLoadedSubscription(
           code,
           sourceReport,
           citationLookupWeek,
+          citationThrough,
           heldDigest: ['EMAIL_PROVIDER_LIMIT', 'EMAIL_PROVIDER_RATE_LIMIT'].includes(code) && (attemptedPapers?.length || citations)
             ? {
               papers: attemptedPapers || [],
