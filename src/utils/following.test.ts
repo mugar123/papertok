@@ -321,7 +321,7 @@ test('an empty follow list from the cache waits for the server; follows the cach
 });
 
 // Two institutions can share a name (Universidad Nacional in several countries,
-// "Institute of Physics"), and so can two authors. Each has its own OpenAlex id.
+// "Institute of Physics"). Each has its own OpenAlex id.
 test('two institutions with different ids and one name are two follows', () => {
   const first = { type: 'institution' as const, id: 'I111', displayName: 'Institute of Physics', externalIds: { ror: '02f40zc51' } };
   const second = { type: 'institution' as const, id: 'I222', displayName: 'Institute of Physics', externalIds: { ror: '01ggx4157' } };
