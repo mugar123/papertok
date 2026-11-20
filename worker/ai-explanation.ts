@@ -304,9 +304,14 @@ export function activeAIProvider(env: WorkerEnv) {
   return isAnthropicPrimary(env) ? 'anthropic' : isNanPrimary(env) ? 'nan' : 'gemini';
 }
 
+function isGeminiKeyConfigured(key: string | undefined): key is string {
+  return Boolean(key && /^[!-~]+$/.test(key));
+}
+
 export function isAIProviderConfigured(env: WorkerEnv, provider: string) {
   if (provider === 'anthropic') return isAnthropicConfigured(env);
-  return provider === 'nan' ? isNanConfigured(env) : Boolean(env.GEMINI_API_KEY);
+  if (provider === 'nan') return isNanConfigured(env);
+  return isGeminiKeyConfigured(env.GEMINI_API_KEY);
 }
 
 /** A failure of Anthropic's SDK as the error every AI route throws. */
@@ -318,7 +323,8 @@ export function anthropicProviderError(error: unknown) {
 async function checkGeminiHealth(env: WorkerEnv) {
   const provider = 'gemini';
   const model = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
-  if (!env.GEMINI_API_KEY) {
+  const key = env.GEMINI_API_KEY;
+  if (!isGeminiKeyConfigured(key)) {
     return { provider, model, configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
   }
   const controller = new AbortController();
@@ -326,7 +332,7 @@ async function checkGeminiHealth(env: WorkerEnv) {
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}`, {
       signal: controller.signal,
-      headers: { 'x-goog-api-key': env.GEMINI_API_KEY },
+      headers: { 'x-goog-api-key': key },
     });
     const payload = response.ok ? null : await response.json().catch(() => ({}));
     return {

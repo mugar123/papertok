@@ -12,6 +12,10 @@ function normalizeCallerAddress(ip: string) {
   return '';
 }
 
+export function isCallerQuotaSecretConfigured(secret: string | undefined): secret is string {
+  return Boolean(secret && secret.length >= 32);
+}
+
 /**
  * The caller's ledger subject for one window: an HMAC-SHA-256 of `scope` (a
  * namespace and a UTC minute) and the address Cloudflare reports, keyed with
@@ -24,7 +28,7 @@ export async function callerSubject(request: Request, env: WorkerEnv, scope: str
   // forwarding header or a shared fallback identity when it is absent.
   const address = normalizeCallerAddress(request.headers.get('cf-connecting-ip') || '');
   const secret = env.PDF_RATE_LIMIT_SECRET;
-  if (!address || !secret || secret.length < 32) return null;
+  if (!address || !isCallerQuotaSecretConfigured(secret)) return null;
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
   );

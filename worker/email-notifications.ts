@@ -2203,7 +2203,7 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   return { papers, sourceReport };
 }
 
-function configuredEmailProvider(env: WorkerEnv) {
+export function configuredEmailProvider(env: WorkerEnv) {
   return env.RESEND_API_KEY && env.RESEND_FROM_EMAIL ? 'resend' : '';
 }
 
