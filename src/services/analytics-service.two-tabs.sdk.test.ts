@@ -83,6 +83,13 @@ test('a tab where PostHog never loaded turns analytics off, and the tab where it
     .some(value => value.includes(id));
   assert.ok(storedAnywhere(firstId), 'tab A stored its browser identity');
 
+  await tabA.markActivation({ now: 1000, track: async () => true });
+  const returnTime = 1000 + 168 * 3_600_000;
+  inTab(sessionB);
+  assert.equal(tabB.markWeekOneReturn({ now: returnTime }), true);
+  inTab(sessionA);
+  assert.equal(tabA.markWeekOneReturn({ now: returnTime }), false);
+
   inTab(sessionB);
   assert.equal(await tabB.setAnalyticsConsent(tabB.ANALYTICS_CONSENT.DENIED), true);
   assert.equal(storedAnywhere(firstId), false, 'tab B removed the stored identity');

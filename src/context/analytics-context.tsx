@@ -7,7 +7,7 @@ import { useAuth } from './auth-context.tsx';
 import { useAnalyticsConsent } from './privacy-context.tsx';
 import {
   ANALYTICS_CONSENT, normalizeAnalyticsPath,
-  sanitizeVercelEvent, trackAcquisition, trackDay7Return, trackPageView,
+  sanitizeVercelEvent, trackAcquisition, markWeekOneReturn, trackPageView,
 } from '../services/analytics-service.ts';
 
 export default function AnalyticsEffects() {
@@ -44,7 +44,7 @@ export default function AnalyticsEffects() {
 
   useEffect(() => {
     if (authLoading || consent === ANALYTICS_CONSENT.DENIED) return;
-    void trackDay7Return();
+    markWeekOneReturn();
   }, [authLoading, consent, location.pathname]);
 
   return (
