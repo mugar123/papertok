@@ -263,11 +263,23 @@ test('a full positive and followed profile still fits with long rejection IDs an
   assert.ok(body.negativeIds.length < 24);
 });
 
-// The seen filter is 3,200 characters whatever it holds. The exclusions and
-// rejections make room for it, which keeps this request under the 16,384 bytes
-// of a Worker before the 20,480-byte cap. The follows are not trimmed: with many
-// or long ones the filter still takes a request past that Worker's cap, so the
-// Worker is deployed first (worker/README.md).
+test('twenty long followed searches fit the Worker limit with the seen filter and keep their lanes', async () => {
+  const { asked, options } = harness(answered([]));
+  const follows: FollowEntity[] = Array.from({ length: 20 }, (_, index) => ({
+    type: 'topic',
+    canonicalId: `search-${'x'.repeat(470)}-${index}`,
+    displayName: `Search ${index} ${'界'.repeat(470)}`,
+  }));
+  await fetchCorpusPage({ categories: ['cs.CL'], follows, seen: new Set(['2610.00001']), page: 0, pageSize: 15 }, options);
+  const body = asked[0].body as { follows: FollowEntity[]; seen: string };
+  assert.ok(new TextEncoder().encode(JSON.stringify(body)).byteLength <= 20_480);
+  assert.ok(hasSeenPaper(readFeedSeenFilter(body.seen), '2610.00001'));
+  assert.ok(body.follows.length > 0 && body.follows.length < 20);
+  const kept = follows.slice(0, body.follows.length);
+  assert.deepEqual(body.follows.map(follow => follow.canonicalId), kept.map(follow => follow.canonicalId));
+  assert.deepEqual(body.follows.map(followLane), kept.map(followLane));
+});
+
 test('a page asking for notable papers with a full profile keeps the whole seen filter below the request body limit', async () => {
   const { asked, options } = harness(answered([]));
   const ids = Array.from({ length: 24 }, (_, index) => `10.1234/${index}${'a'.repeat(283)}`);
