@@ -152,7 +152,7 @@ test('the in-app notice announces the version this page is dated', () => {
 });
 
 test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
-  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.8');
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.7');
   for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6']) {
     assert.equal(privacyNoticeStatus({
       user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
@@ -165,13 +165,13 @@ test('readers who saw an earlier 20 November notice are owed the cumulative upda
     }), 'owed', seen);
   }
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /Anthropic.*paper text outside the EU.*for rewrites/i);
-  assert.match(notice, /ORCID.*weekly email lists papers citing your work, My profile adds frequent coauthors.*iD goes to OpenAlex/i);
-  assert.match(notice, /Verified-email saves.*each paper to your account once per UTC week.*by default/i);
-  assert.match(notice, /Opt out in Settings → Privacy/i);
-  assert.match(notice, /analytics on.*surveys link known reading level and broad interests to your account/i);
-  assert.match(notice, /submitted answers and optional role/i);
-  assert.match(notice, /Only browsers mark returns 7–13 days after first use.*existing PostHog events/i);
+  assert.match(notice, /Anthropic.*paper text outside the EU.*for explanations and rewrites/i);
+  assert.match(notice, /My profile shows recent citing papers and frequent coauthors/i);
+  assert.match(notice, /weekly email uses your ORCID iD on OpenAlex to find citations to your work/i);
+  assert.match(notice, /Verified-email saves count per paper and account each UTC week by default/i);
+  assert.match(notice, /opt out in Settings → Privacy/i);
+  assert.match(notice, /analytics on.*surveys link accounts to known reading level, broad interests, answers and optional role/i);
+  assert.match(notice, /Browsers mark returns 7–13 days after first use.*existing PostHog events/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
