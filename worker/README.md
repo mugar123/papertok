@@ -488,7 +488,10 @@ The card links the ID to the registry. The timing of registration remains
 unknown.
 These requests use the existing provider budgets. Stored rows gain the fields
 when a listing or enrichment supplies them. The interaction's paper copy
-keeps the fields for Liked and Saved.
+keeps the fields for Liked and Saved. Firestore interaction writes merge a
+key for the selected label into `paper.studyTypes`. Reads apply the same
+precedence to those keys and the legacy `paper.studyType` value. An older
+write that lost a label can recover it when another copy supplies it.
 
 ## Deployment
 

@@ -21,8 +21,16 @@ export function trialRegistrationUrl(value: unknown) {
   return id ? `https://clinicaltrials.gov/study/${id}` : undefined;
 }
 
+export function readStoredStudyType(copy: { studyType?: unknown; studyTypes?: unknown }) {
+  const observed = copy.studyTypes;
+  const labels = observed && typeof observed === 'object'
+    ? Object.entries(observed).filter(([, present]) => present === true).map(([type]) => type)
+    : [];
+  return studyTypeFromIds([copy.studyType, ...labels]);
+}
+
 export function storedPaperEvidence(paper: Pick<Partial<Paper>, 'studyType' | 'trialRegistration' | 'trialRegistrationSource'>) {
-  const studyType = studyTypeFromIds([paper.studyType]);
+  const studyType = readStoredStudyType(paper);
   const trialRegistration = readTrialRegistration(paper.trialRegistration);
   return {
     ...(studyType && { studyType }),

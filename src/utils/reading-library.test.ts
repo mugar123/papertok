@@ -16,6 +16,9 @@ import { hydrateSeededPaper } from './paper-seed.ts';
 import { abstractExcerpt, papersToBibTeX, papersToRIS, serializeLibraryPaper } from './reading-library.ts';
 import { buildSavedPaperPayload } from './saved-paper-payload.ts';
 import { sourceAttribution } from './source-attribution.ts';
+import { libraryAfterRead, loadedAfterInteraction, readInteractionPaper, serializeInteractionPaper } from '../context/library-entry.ts';
+import { mergeFollowingUpdatePapers } from './following-updates.ts';
+import { listPaperFromCopies } from './list-paper-copies.ts';
 import { copyForMergeWrite } from './stored-copy-write.ts';
 
 const works = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as {
@@ -248,6 +251,48 @@ test('a later copy that credits no one takes away the credit an earlier copy sto
   // And a credited text written over an uncredited one is credited.
   const creditedLater = mergeIntoStored(savedAgain, copyForMergeWrite(buildSavedPaperPayload(credited, savedAt)));
   assert.deepEqual(shown(paperLegacyAdapter({ id: card.id, ...creditedLater })), [recovered, 'Abstract:', 'Semantic Scholar'], 'savedPapers document, credited again');
+});
+
+test('liking another review copy keeps the same study type in Firestore and the Library after reload', () => {
+  const card = feedPaper(namedWork('W4233888153'));
+  const meta = { ...card, studyType: 'meta-analysis' as const };
+  const review = { ...card, studyType: 'systematic-review' as const };
+  const empty = { personalLibrary: {}, libraryPapers: {} };
+  for (const [first, second] of [[meta, review], [review, meta]]) {
+    const following = mergeFollowingUpdatePapers([first, second])[0];
+    const before = loadedAfterInteraction({}, card.id, following);
+    const saved = mergeIntoStored({}, { saved: true, paper: copyForMergeWrite(serializeLibraryPaper(first)) });
+    const likedCopy = serializeInteractionPaper(second, { ...empty, libraryPapers: before });
+    const liked = mergeIntoStored(saved, { liked: true, paper: copyForMergeWrite(likedCopy) });
+    const after = loadedAfterInteraction(before, card.id, likedCopy);
+    const stored = paperLegacyAdapter(liked.paper as Partial<Paper>);
+    const libraryCopy = readInteractionPaper(card.id, { paper: liked.paper as Partial<Paper> });
+    const reloaded = libraryAfterRead(empty, empty, {}, { [card.id]: libraryCopy }, false);
+    assert.deepEqual([
+      before[card.id].studyType, after[card.id].studyType, stored.studyType,
+      reloaded.libraryPapers[card.id].studyType, listPaperFromCopies(reloaded.libraryPapers[card.id], {}).studyType,
+    ], ['meta-analysis', 'meta-analysis', 'meta-analysis', 'meta-analysis', 'meta-analysis']);
+  }
+});
+
+test('cold and legacy interaction writes retain the strongest available study type', () => {
+  const card = feedPaper(namedWork('W4233888153'));
+  const meta = { ...card, studyType: 'meta-analysis' as const };
+  const review = { ...card, studyType: 'systematic-review' as const };
+  const empty = { personalLibrary: {}, libraryPapers: {} };
+  const write = (copy: Paper) => copyForMergeWrite(serializeInteractionPaper(copy, empty));
+  const read = (stored: StoredFields) => paperLegacyAdapter({ id: card.id, ...stored }).studyType;
+  for (const [first, second] of [[meta, review], [review, meta]]) {
+    assert.equal(read(mergeIntoStored(write(first), write(second))), 'meta-analysis');
+    assert.equal(read(mergeIntoStored(serializeLibraryPaper(first), write(second))), 'meta-analysis');
+  }
+  const stale = serializeLibraryPaper(review);
+  const known = { ...empty, libraryPapers: { [card.id]: meta } };
+  const refreshed = libraryAfterRead(known, known, {}, { [card.id]: stale }, false);
+  assert.equal(refreshed.libraryPapers[card.id].studyType, 'meta-analysis');
+  const repaired = mergeIntoStored(stale, copyForMergeWrite(serializeInteractionPaper(review, refreshed)));
+  assert.equal(read(repaired), 'meta-analysis');
+  assert.equal(read({ studyTypes: { review: true, 'meta-analysis': false } }), undefined);
 });
 
 test('marking an abstract trial as read clears the previously saved trial source', () => {
