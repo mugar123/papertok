@@ -13,6 +13,7 @@ export interface SourceSummaryInput {
 export interface DeliveryInput {
   kind?: unknown;
   sentAt?: unknown;
+  citationThrough?: unknown;
   paperCount?: unknown;
   paperKeys?: unknown[];
   partial?: unknown;
@@ -26,6 +27,7 @@ export interface DeliveryDraftInput {
   unsubscribeUrl?: unknown;
   /** The version of the reader's subscription the draft was prepared from. */
   subscriptionVersion?: unknown;
+  orcidConnectedAt?: unknown;
   delivery?: DeliveryInput;
 }
 
@@ -130,9 +132,11 @@ function sanitizeDelivery(value: DeliveryInput = {}) {
       .map(key => boundedString(key, 700))
       .filter(Boolean))].slice(-MAX_DELIVERY_PAPER_KEYS)
     : [];
+  const citationThrough = boundedString(value.citationThrough, 40);
   return {
     kind: value.kind === 'verification' ? 'verification' : value.kind === 'test' ? 'test' : 'digest',
     sentAt: boundedString(value.sentAt, 40),
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(citationThrough) ? { citationThrough } : {}),
     paperCount: positiveInteger(value.paperCount),
     paperKeys,
     partial: Boolean(value.partial),
@@ -159,6 +163,7 @@ function sanitizeDraft(value: DeliveryDraftInput = {}) {
     },
     unsubscribeUrl: boundedString(value.unsubscribeUrl, 1_000),
     subscriptionVersion: positiveInteger(value.subscriptionVersion),
+    ...(value.orcidConnectedAt ? { orcidConnectedAt: boundedString(value.orcidConnectedAt, 40) } : {}),
     delivery: sanitizeDelivery(value.delivery),
   };
 }

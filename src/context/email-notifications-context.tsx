@@ -5,8 +5,9 @@ export interface EmailNotificationsContextValue {
   loading: boolean; saving: boolean; testing: boolean; error: unknown;
   health: Awaited<ReturnType<typeof getEmailNotificationHealth>>;
   notificationDataReady: boolean; hasFollows: boolean;
-  /** The digest has something to cover: a follow it lists, or else the reader's chosen categories (ENG-163). */
+  /** The digest can cover follows, chosen categories or citations through ORCID. */
   digestCovered: boolean;
+  hasCitationSource: boolean;
   /** Turning the digest on or sending a test may send the follows in hand: a follow it lists, or the server's own answer that there is none. */
   digestSendReady: boolean;
   /** The app turned the digest off this session because there was nothing left for it to cover. */
@@ -36,6 +37,7 @@ import { digestInterestsToSend, digestProfileInterests, digestShutoffDue, digest
 import { getFollowingSignature } from '../utils/following-updates.ts';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebase.ts';
+import { normalizeOrcidConnection } from '../services/orcid-connection-service.ts';
 
 const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
   enabled: false,
@@ -48,7 +50,7 @@ const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
 };
 
 export function EmailNotificationsProvider({ children }: PropsWithChildren) {
-  const { user, emailDigestPending, settleEmailDigestOptIn, userPreferences } = useAuth();
+  const { user, emailDigestPending, settleEmailDigestOptIn, userPreferences, orcid } = useAuth();
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const userEmail = user?.email || '';
@@ -83,15 +85,19 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // would send categories changed since on another device, or shut the digest
   // off on a list emptied there. The digest listens to the profile itself, like
   // the follows, and trusts only the server's copy.
-  const [liveProfile, setLiveProfile] = useState<{ uid: string; interests: string[]; confirmed: boolean } | null>(null);
+  const [liveProfile, setLiveProfile] = useState<{ uid: string; interests: string[]; hasCitationSource: boolean; confirmed: boolean } | null>(null);
   useEffect(() => {
     if (!userId) return undefined;
     return onSnapshot(doc(db, 'users', userId), { includeMetadataChanges: true }, (snapshot) => {
-      const next = digestProfileInterests(snapshot.data(), snapshot.metadata.fromCache);
+      const data = snapshot.data();
+      const connection = normalizeOrcidConnection(data?.orcid);
+      const hasCitationSource = connection?.host === 'orcid.org' && Boolean(connection.connectedAt);
+      const next = { ...digestProfileInterests(data, snapshot.metadata.fromCache), hasCitationSource };
       // The same answer keeps the same object, so a metadata-only snapshot
       // does not schedule another digest sync.
       setLiveProfile(current => (
         current?.uid === userId && current.confirmed === next.confirmed && current.interests.join() === next.interests.join()
+          && current.hasCitationSource === next.hasCitationSource
           ? current
           : { uid: userId, ...next }
       ));
@@ -105,7 +111,8 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // settings screen shows; nothing unconfirmed is sent.
   const fallbackInterests = useMemo(() => digestProfileInterests({ preferences: userPreferences }, true).interests, [userPreferences]);
   const interests = profileForUser ? profileForUser.interests : fallbackInterests;
-  const digestCovered = hasFollows || interests.length > 0;
+  const hasCitationSource = profileForUser?.hasCitationSource ?? (orcid?.host === 'orcid.org' && Boolean(orcid.connectedAt));
+  const digestCovered = hasFollows || interests.length > 0 || hasCitationSource;
   const interestsConfirmed = profileForUser?.confirmed ?? false;
   const sentInterests = digestInterestsToSend({ interests, interestsConfirmed });
   // An empty follow list read from the cache must not replace the follows the
@@ -299,7 +306,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   }, [digestCovered, digestSendReady, followSignature, followedEntities, followsError, followsLoading, items, language, preferences, previewSignature, sentInterests, updatesLoading, userEmail, userId]);
 
   // Nothing left for the digest to cover with the digest on: no follow it
-  // lists and no chosen category. The Worker refuses an empty subscription and
+  // lists, no chosen category and no production ORCID connection. The Worker refuses an empty subscription and
   // the sync above stops, so the stored one would keep emailing what was last
   // synced (ENG-163). Turn it off through the same save the toggle uses, once,
   // and only when the follows and the profile are the server's own answer.
@@ -342,6 +349,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     health,
     notificationDataReady,
     hasFollows,
+    hasCitationSource,
     digestCovered,
     digestSendReady,
     digestTurnedOff: digestShutoffNoticeShown({
@@ -352,7 +360,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     }),
     savePreferences,
     sendTest,
-  }), [digestCovered, digestSendReady, digestTurnedOffFor, error, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing, userId]);
+  }), [digestCovered, digestSendReady, digestTurnedOffFor, error, hasCitationSource, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing, userId]);
 
   return <EmailNotificationsContext.Provider value={value}>{children}</EmailNotificationsContext.Provider>;
 }

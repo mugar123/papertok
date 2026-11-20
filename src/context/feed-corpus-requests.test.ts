@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { FollowEntity } from '../utils/following.ts';
 import type { CategoryExposure, PositiveExample } from '../utils/interaction-profile.ts';
 import type { InterestMemoryInput } from '../utils/interest-memory.ts';
+import type { InterestSettings } from '../utils/area-preferences.ts';
 import { awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusRequest, waitsAsFirstScreen } from './feed-corpus-requests.ts';
 import { automaticRetry } from './feed-load-failure.ts';
 import { fetchCorpusPage } from '../services/paper-store-service.ts';
@@ -21,7 +22,7 @@ const shown = (counts: Record<string, number>) =>
 
 // The bodies the feed's requests send to /store/papers.
 async function bodiesOf(...requests: Parameters<typeof fetchCorpusPage>[0][]) {
-  const bodies: Array<{ categories: string[]; positiveIds: string[]; negativeIds?: string[]; excludedIds?: string[]; groups?: Array<{ categories: string[]; positiveIds: string[] }> }> = [];
+  const bodies: Array<{ categories: string[]; positiveIds: string[]; negativeIds?: string[]; excludedIds?: string[]; groups?: Parameters<typeof fetchCorpusPage>[0]['groups'] }> = [];
   for (const request of requests) {
     await fetchCorpusPage(request, {
       apiBase: 'https://papertok-report-api.example',
@@ -77,6 +78,59 @@ test("a list's later pages ask by the groups its first page planned", async () =
   // A new list plans again, and so does a page with no plan of this session (a restored snapshot).
   assert.deepEqual(feedPlanFor(plan, 0, atPageOne).groups, replanned);
   assert.deepEqual(feedPlanFor(null, 2, atPageOne).groups, replanned);
+});
+
+test('the feed splits the weights by priority after planning categories and examples', async () => {
+  const input = memory({
+    selected: ['quant-ph', 'econ.EM', 'cs.CR', 'cs.DC'],
+    added: ['cs.DC'],
+    exposure: shown({ 'cs.DC': 10 }),
+    examples: [...examples('quant-ph', 3), ...examples('cs.CR', 3)],
+  });
+  const settings: InterestSettings = { areaPreferences: { cs: { priority: 'curiosity' } } };
+  const plan = feedPlanFor(null, 0, input, settings);
+  const [balanced, later, half, mostlyWork] = await bodiesOf(
+    mainCorpusRequest(plan, shared),
+    mainCorpusRequest(feedPlanFor(plan, 1, input, { ...settings, interestMix: 'half-and-half' }), { ...shared, page: 1 }),
+    mainCorpusRequest(feedPlanFor(plan, 0, input, { ...settings, interestMix: 'half-and-half' }), shared),
+    mainCorpusRequest(feedPlanFor(plan, 0, input, { ...settings, interestMix: 'mostly-work' }), shared),
+  );
+  assert.deepEqual(balanced.groups?.map(({ categories, weight }) => [categories, weight]), [
+    [['quant-ph'], 5],
+    [['econ.EM'], 2.5],
+    [['cs.CR'], 2],
+    [['cs.DC'], 0.5],
+  ]);
+  assert.deepEqual(later.groups, balanced.groups);
+  // Both types have five turns' worth of weight. The cold CS subarea
+  // keeps one fifth of that area's share while it is still learning.
+  assert.deepEqual(half.groups?.map(group => Math.round(group.weight * 100)), [333, 167, 400, 100]);
+  assert.deepEqual(mostlyWork.groups?.map(group => group.weight), [6, 3, 0.8, 0.2]);
+  const original = feedPlanFor(null, 0, input);
+  assert.deepEqual(original.groups.map(group => group.weight), [2, 1, 2, 0.5]);
+  assert.deepEqual(balanced.groups?.map(({ categories, exampleCategories, positiveIds }) => ({ categories, exampleCategories, positiveIds })),
+    original.groups.map(({ categories, exampleCategories, positiveIds }) => ({ categories, exampleCategories, positiveIds })));
+});
+
+test('a priority with no retained groups leaves the retained weights alone', () => {
+  const input = memory({
+    selected: ['quant-ph', 'cs.RO', 'cs.AI', 'math.AG', 'stat.ML', 'econ.EM', 'q-fin.ST', 'eess.SP', 'mech.dyn', 'civil.struct', 'chemeng.process'],
+    examples: examples('quant-ph', 3),
+  });
+  const plan = feedPlanFor(null, 0, input, {
+    interestMix: 'mostly-work',
+    areaPreferences: { chemeng: { priority: 'curiosity' } },
+  });
+  assert.deepEqual(plan.groups.flatMap(group => group.categories), input.selected.slice(0, 10));
+  assert.deepEqual(plan.groups.map(group => group.weight), [2, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+});
+
+test('a list with only curiosity uses its original weights', () => {
+  const plan = feedPlanFor(null, 0, memory({ selected: ['quant-ph', 'econ.EM'], added: ['econ.EM'], examples: examples('quant-ph', 8) }), {
+    interestMix: 'mostly-work',
+    areaPreferences: { physics: { priority: 'curiosity' }, econ: { priority: 'curiosity' } },
+  });
+  assert.deepEqual(plan.groups.map(group => group.weight), [3, 2]);
 });
 
 test('the scoring of a list reads the progress, removed and cold-added subareas its first page planned', () => {

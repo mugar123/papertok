@@ -165,13 +165,14 @@ test('readers who saw an earlier 20 November notice are owed the cumulative upda
     }), 'owed', seen);
   }
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /rewrites and explanations.*Anthropic.*paper text outside the EU/i);
-  assert.match(notice, /My profile.*recent citing papers.*frequent coauthors.*but keeps neither list/i);
-  assert.match(notice, /Verified-email saves.*per account and paper weekly.*opt out/i);
-  assert.match(notice, /Opt out in Settings → Privacy/i);
-  assert.match(notice, /analytics on.*surveys link reading level, broad interests, answers and optional role to accounts/i);
-  assert.match(notice, /Analytics flags sessions with a like, save or read before your profile loads/i);
-  assert.match(notice, /Only browsers mark day 7–13 returns.*existing PostHog events/i);
+  assert.match(notice, /Anthropic.*rewrites\/explanations outside the EU/i);
+  assert.match(notice, /Verified-email saves count per account\/paper\/UTC week.*opt out: Settings→Privacy/i);
+  assert.match(notice, /Analytics ties survey level\/broad interests\/answers\/optional role to accounts/i);
+  assert.match(notice, /Day 7–13 return marks stay local.*PostHog visits/i);
+  assert.match(notice, /Accounts keep Essential\/Curiosity priorities, mix and area levels/i);
+  assert.match(notice, /My profile suggests interests, listing recent citations\/coauthors unsaved/i);
+  assert.match(notice, /flags sessions with likes\/saves\/reads before profile load/i);
+  assert.match(notice, /Weekly citation mail uses ORCID on OpenAlex/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

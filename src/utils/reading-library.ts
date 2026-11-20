@@ -51,6 +51,8 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     arxivId: paper.arxivId || '',
     doi: paper.doi || '',
     journal: paper.journal || paper.venue || '',
+    venueId: paper.venueId || '',
+    sourceName: paper.venueId && paper.sourceName || '',
     pdfUrl: paper.pdfUrl || paper.openAccessPdfUrl || '',
     landingPageUrl: paper.landingPageUrl || paper.url || '',
     // A list shows the retraction the card showed (ENG-84). Only a retraction
