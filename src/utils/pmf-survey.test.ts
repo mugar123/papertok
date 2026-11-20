@@ -5,6 +5,7 @@ import { sanitizeProductEventParams } from '../services/analytics-service.ts';
 import {
   forgetPmfSurveyAsked,
   pmfSurveyDue,
+  pmfSurveyAreas,
   pmfSurveyParams,
   recordPmfSurveyDay,
   recordPmfSurveyPaper,
@@ -41,7 +42,7 @@ const noTrack = () => Promise.resolve(true);
 
 /** The survey opened for the account and was answered or closed. */
 function showSurvey(uid: string, version: string, storage: Storage) {
-  recordPmfSurveyShown({ uid, surveyOpen: true, version, storage, track: noTrack })?.close();
+  recordPmfSurveyShown({ uid, signedInUid: uid, surveyOpen: true, version, storage, track: noTrack })?.close();
 }
 
 test('a reader is asked once PaperTok was opened on three different days, not before', () => {
@@ -187,7 +188,7 @@ test('nobody is asked without an account, with storage blocked or from a garbled
   };
   assert.doesNotThrow(() => recordPmfSurveyDay('reader', new Date(), '0.3.0', blocked));
   assert.doesNotThrow(() => recordPmfSurveyPaper({ paperId: 'W1', viewerId: 'reader', signedInUid: 'reader' }, blocked));
-  assert.doesNotThrow(() => recordPmfSurveyShown({ uid: 'reader', surveyOpen: true, version: '0.3.0', storage: blocked, track: noTrack }));
+  assert.doesNotThrow(() => recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', storage: blocked, track: noTrack }));
   assert.doesNotThrow(() => forgetPmfSurveyAsked('reader', blocked));
   assert.equal(pmfSurveyDue('reader', '0.3.0', blocked), false);
 
@@ -209,12 +210,12 @@ test('opening the survey settles its version and sends one shown event, and noth
     return Promise.resolve(true);
   };
 
-  assert.equal(recordPmfSurveyShown({ uid: 'reader', surveyOpen: false, version: '0.3.0', storage, track }), null);
-  assert.equal(recordPmfSurveyShown({ uid: null, surveyOpen: true, version: '0.3.0', storage, track }), null);
+  assert.equal(recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: false, version: '0.3.0', storage, track }), null);
+  assert.equal(recordPmfSurveyShown({ uid: null, signedInUid: null, surveyOpen: true, version: '0.3.0', storage, track }), null);
   assert.deepEqual(sent, []);
   assert.equal(pmfSurveyDue('reader', '0.3.0', storage), true, 'still due');
 
-  recordPmfSurveyShown({ uid: 'reader', surveyOpen: true, version: '0.3.0', storage, track });
+  recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', storage, track });
   assert.equal(pmfSurveyDue('reader', '0.3.0', storage), false);
   assert.deepEqual(sent, [['pmf_survey_shown', { app_version: '0.3.0' }]]);
 });
@@ -225,10 +226,10 @@ test('an opened survey sends its answer once, and a close nobody answered as a d
     sent.push([eventName, params]);
     return Promise.resolve(true);
   };
-  const open = () => recordPmfSurveyShown({ uid: 'reader', surveyOpen: true, version: '0.3.0', storage: createStorage(), track });
+  const open = () => recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', storage: createStorage(), track });
 
   const answered = open();
-  answered?.answer({ disappointment: 'very', nps: 9 });
+  answered?.answer({ disappointment: 'very', nps: 9, role: null });
   answered?.answer('dismissed');
   answered?.close();
   const left = open();
@@ -246,9 +247,9 @@ test('an opened survey sends its answer once, and a close nobody answered as a d
 test('an answer reaches analytics as fixed labels, the score and the version, and nothing else', () => {
   const sent = (params: Record<string, unknown>) => sanitizeProductEventParams('pmf_survey', params, 'enabled');
 
-  assert.deepEqual(sent(pmfSurveyParams({ disappointment: 'very', nps: 9 }, '0.4.0')), { disappointment: 'very', nps: 9, app_version: '0.4.0' });
-  assert.deepEqual(sent(pmfSurveyParams({ disappointment: 'not', nps: 0 }, '0.4.0')), { disappointment: 'not', nps: 0, app_version: '0.4.0' });
-  assert.deepEqual(sent(pmfSurveyParams({ disappointment: 'somewhat', nps: null }, '0.4.0')), { disappointment: 'somewhat', app_version: '0.4.0' }, 'a skipped score is absent');
+  assert.deepEqual(sent(pmfSurveyParams({ disappointment: 'very', nps: 9, role: null }, '0.4.0')), { disappointment: 'very', nps: 9, app_version: '0.4.0' });
+  assert.deepEqual(sent(pmfSurveyParams({ disappointment: 'not', nps: 0, role: null }, '0.4.0')), { disappointment: 'not', nps: 0, app_version: '0.4.0' });
+  assert.deepEqual(sent(pmfSurveyParams({ disappointment: 'somewhat', nps: null, role: null }, '0.4.0')), { disappointment: 'somewhat', app_version: '0.4.0' }, 'a skipped score is absent');
   assert.deepEqual(sent(pmfSurveyParams('dismissed', '0.4.0')), { disappointment: 'dismissed', app_version: '0.4.0' });
 
   assert.deepEqual(sent({
@@ -279,4 +280,97 @@ test('the papers kept for the first ask are dropped once the survey is shown, an
   assert.deepEqual(keptPapers(), [], 'shown');
   dwellOn('reader', papers(5, 50), storage);
   assert.deepEqual(keptPapers(), [], 'papers on screen after the ask');
+});
+
+test("the broad areas of a reader's interests are their area keys, each once and sorted", () => {
+  assert.deepEqual(pmfSurveyAreas(['cs.LG', 'quant-ph', 'cs.CR', 'hep-th', 'cs.CV', 'q-bio.NC']), ['ai', 'cs', 'physics']);
+  assert.deepEqual(pmfSurveyAreas(['quant-ph', 'not-a-category', 'constructor', 'physics']), ['physics'], 'an id no area holds, an area key itself included, counts for nothing');
+  assert.deepEqual(pmfSurveyAreas([]), []);
+  assert.deepEqual(pmfSurveyAreas(null), []);
+});
+
+test('an answer carries the role chosen, and a dismissal none', () => {
+  const sent = (params: Record<string, unknown>) => sanitizeProductEventParams('pmf_survey', params, 'enabled');
+
+  assert.deepEqual(sent(pmfSurveyParams({ disappointment: 'very', nps: null, role: 'graduate' }, '0.4.0')), { disappointment: 'very', role: 'graduate', app_version: '0.4.0' });
+  assert.deepEqual(sent(pmfSurveyParams({ disappointment: 'not', nps: 3, role: 'other' }, '0.4.0')), { disappointment: 'not', nps: 3, role: 'other', app_version: '0.4.0' });
+  assert.equal(Object.hasOwn(sent({ disappointment: 'very', role: 'astronaut' }), 'role'), false, 'an unknown role is dropped');
+  assert.equal(Object.hasOwn(sent(pmfSurveyParams('dismissed', '0.4.0', { readingLevel: 'beginner' })), 'role'), false);
+});
+
+test('both survey events describe the reader by reading level and broad areas, and leave out what is unknown', () => {
+  const sent: unknown[] = [];
+  const track = (eventName: string, params: Record<string, unknown>) => {
+    sent.push([eventName, sanitizeProductEventParams(eventName, params, 'enabled')]);
+    return Promise.resolve(true);
+  };
+  const open = (reader?: Parameters<typeof recordPmfSurveyShown>[0]['reader']) => recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', reader, storage: createStorage(), track });
+
+  open({ readingLevel: 'researcher', areas: pmfSurveyAreas(['cs.LG', 'quant-ph', 'cs.CV']) })?.answer({ disappointment: 'somewhat', nps: 8, role: 'researcher' });
+  open({ readingLevel: 'beginner', areas: [] })?.close();
+  open({ readingLevel: null, areas: ['bio'] })?.close();
+  open()?.close();
+
+  assert.deepEqual(sent, [
+    ['pmf_survey_shown', { app_version: '0.3.0', reading_level: 'researcher', areas: ['ai', 'physics'] }],
+    ['pmf_survey', { disappointment: 'somewhat', nps: 8, role: 'researcher', app_version: '0.3.0', reading_level: 'researcher', areas: ['ai', 'physics'] }],
+    ['pmf_survey_shown', { app_version: '0.3.0', reading_level: 'beginner' }],
+    ['pmf_survey', { disappointment: 'dismissed', app_version: '0.3.0', reading_level: 'beginner' }],
+    ['pmf_survey_shown', { app_version: '0.3.0', areas: ['bio'] }],
+    ['pmf_survey', { disappointment: 'dismissed', app_version: '0.3.0', areas: ['bio'] }],
+    ['pmf_survey_shown', { app_version: '0.3.0' }],
+    ['pmf_survey', { disappointment: 'dismissed', app_version: '0.3.0' }],
+  ]);
+});
+
+test('the areas reach analytics as known area keys only, each once and sorted, and only at the enabled level', () => {
+  const areas = (value: unknown, consent: 'enabled' | 'denied' = 'enabled') => sanitizeProductEventParams('pmf_survey_shown', { app_version: '0.3.0', areas: value }, consent).areas;
+
+  assert.deepEqual(areas(['physics', 'cs', 'physics', 'bio']), ['bio', 'cs', 'physics']);
+  assert.deepEqual(areas(['cs', 'cs.LG', 'quant-ph', 'Machine learning', 7, null]), ['cs'], 'a subarea id, free text and a non-string are dropped');
+  assert.equal(areas(['cs.LG', 'unknown']), undefined, 'a list with nothing known is not sent');
+  assert.equal(areas('cs'), undefined, 'a single string is not a list');
+  assert.equal(areas(['cs'], 'denied'), undefined);
+  assert.equal(sanitizeProductEventParams('pmf_survey', { disappointment: 'very', reading_level: 'expert' }, 'enabled').reading_level, undefined, 'an unknown reading level is dropped');
+});
+
+test('each event of the survey is sent with the guard it is given, so one that fails it after a switch is dropped', () => {
+  let signedIn = 'reader-a';
+  const sent: unknown[] = [];
+  // A track that honours the guard as the analytics client does, just before capture.
+  const track = async (eventName: string, params: Record<string, unknown>, stillValid?: () => boolean) => {
+    if (stillValid && !stillValid()) return false;
+    sent.push([eventName, params.reading_level]);
+    return true;
+  };
+  const shown = recordPmfSurveyShown({
+    uid: 'reader-a', signedInUid: signedIn, surveyOpen: true, version: '0.3.0', reader: { readingLevel: 'researcher', areas: ['physics'] },
+    storage: createStorage(), track, stillValid: () => signedIn === 'reader-a',
+  });
+  signedIn = 'reader-b';
+  shown?.close();
+  assert.deepEqual(sent, [['pmf_survey_shown', 'researcher']], 'the dismissal after the switch is dropped');
+});
+
+test('an account switch before the opening effect leaves the survey unrecorded', () => {
+  const storage = createStorage();
+  dwellOn('reader-a', papers(20), storage);
+  const sent: unknown[] = [];
+  const signedInUid = 'reader-b';
+  const shown = recordPmfSurveyShown({
+    uid: 'reader-a', signedInUid, surveyOpen: true, version: '0.3.0', storage,
+    reader: { readingLevel: 'researcher', areas: ['physics'] },
+    track: async (eventName, params, stillValid) => {
+      if (stillValid && !stillValid()) return false;
+      sent.push([signedInUid, eventName, params]);
+      return true;
+    },
+    stillValid: () => true,
+  });
+
+  shown?.close();
+
+  assert.deepEqual(sent, []);
+  assert.equal(pmfSurveyDue('reader-a', '0.3.0', storage), true);
+  assert.equal(storage.getItem('papertok_pmfSurveyAsked:reader-b'), null);
 });

@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-20.3';
+export const PRIVACY_POLICY_VERSION = '2026-11-20.4';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -103,11 +103,21 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20.3';
  * day before merging, and lower it to the deployment's success time once it
  * is live.
  *
- * Version 2026-11-20.3 adds the account's author statistics preference and
- * the private contributions collected for future weekly save totals. The
- * timestamp needs to move with the version if the policy ships after this day.
+ * Version 2026-11-20.2 adds the reading level, broad areas of interest and
+ * optional role linked to an account in survey analytics (#526). Since the
+ * first 20 November version, My profile also lists citing papers and frequent
+ * coauthors (#527). The survey text ships with this PR, so its provisional
+ * cutoff is the last whole second of the planned merge day. If the merge slips
+ * past the cutoff, move the date, version and cutoff to the merge day.
+ * Set the cutoff to the deployment's success time once the text is live.
+ *
+ * Version 2026-11-20.4 adds weekly save contributions from verified-email
+ * accounts, the default-on setting and how readers can exclude future saves.
+ * The text ships with #531. Use the end of the planned merge day until the
+ * deployment succeeds, then use its success time. If the merge slips to a
+ * later UTC day, update the page date, version and cutoff before merging.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59.999Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
@@ -123,9 +133,8 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  'If author statistics are enabled for your account, PaperTok keeps one private contribution per paper you save each week.',
-  'You can change whether future saves count in Settings → Privacy.',
-  'Deleting your account removes your contributions for weeks that have yet to close.',
+  'With a verified email, your saves count by default. PaperTok links your account to each paper you save once per UTC week.',
+  'Turn this off in Settings → Privacy to exclude future saves.',
 ];
 
 /**
@@ -138,11 +147,11 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  lead: 'If author statistics are enabled',
+  lead: 'your saves count by default',
   clauses: [
-    ['PaperTok keeps one private contribution per paper you save each week', /PaperTok keeps one private contribution per paper you save each week/],
-    ['You can change whether future saves count in Settings → Privacy', /You can change whether future saves count in Settings → Privacy/],
-    ['Deleting your account removes your contributions for weeks that have yet to close', /Deleting your account removes your contributions for weeks that have yet to close/],
+    ['With a verified email, your saves count by default', /With a verified email, your saves count by default/],
+    ['PaperTok links your account to each paper you save once per UTC week', /PaperTok links your account to each paper you save once per UTC week/],
+    ['Turn this off in Settings → Privacy to exclude future saves', /Turn this off in Settings → Privacy to exclude future saves/],
   ],
   unsaid: [
     [/authors can see|published totals/i, 'this release only collects contributions'],

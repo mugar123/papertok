@@ -405,6 +405,11 @@ test('the survey events say how long ago this browser activated, and nothing whe
   await trackPmfSurvey('pmf_survey_shown', { app_version: '0.3.0' }, { now: 1000, track });
   await markActivation({ now: 1000, track: async () => true });
   await trackPmfSurvey('pmf_survey', { disappointment: 'very', nps: 8, app_version: '0.3.0' }, { now: 1000 + 9 * day, track });
+  // The guard of the account that opened the survey reaches the client untouched.
+  const guard = () => false;
+  let forwarded: unknown;
+  await trackPmfSurvey('pmf_survey', { disappointment: 'dismissed', app_version: '0.3.0' }, { now: 1000, track: async (_name, _params, stillValid) => { forwarded = stillValid; return false; }, stillValid: guard });
+  assert.equal(forwarded, guard);
   assert.deepEqual(events, [
     ['pmf_survey_shown', { app_version: '0.3.0' }],
     ['pmf_survey', { disappointment: 'very', nps: 8, app_version: '0.3.0', activation_age: 'days_7_13' }],

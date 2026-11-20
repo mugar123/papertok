@@ -479,7 +479,7 @@ function AuthorMetricsSetting({ uid }: { uid: string }) {
     }
   }
 
-  const label = "Count my saves in authors' anonymous statistics";
+  const label = "Count my saves in weekly paper totals";
   return (
     <section className="settings-section" aria-labelledby="settings-author-metrics-heading">
       <SectionHeading id="settings-author-metrics-heading" title="Author statistics" />
@@ -488,7 +488,7 @@ function AuthorMetricsSetting({ uid }: { uid: string }) {
           <span className="profile-switch-copy">
             <span className="profile-switch-label">{label}</span>
             <span className="profile-switch-hint" id={hintId}>
-              Applies to future saves from this account once your email is verified.
+              On by default once your email is verified. Turn off to exclude future saves.
             </span>
           </span>
           <Switch

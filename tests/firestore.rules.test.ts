@@ -1257,6 +1257,10 @@ test('verified owners can create immutable save receipts only after launch and b
   await assertFails(setDoc(first, { ...values, savedAt: new Date() }));
   await assertFails(setDoc(first, { ...values, expiresAt: new Date() }));
   await assertSucceeds(setDoc(first, values));
+  const consent = doc(db, 'users', ALICE, 'authorMetricConsent', 'saves');
+  await assertSucceeds(setDoc(consent, { enabled: false, changedAt: serverTimestamp() }));
+  await assertFails(setDoc(second, values));
+  await assertSucceeds(setDoc(consent, { enabled: true, changedAt: serverTimestamp() }));
   await assertSucceeds(setDoc(second, values));
   await assertFails(getDoc(first));
   await assertFails(updateDoc(first, { paperId: 'openalex:W43' }));

@@ -90,6 +90,15 @@ function fixture() {
   return { documents, admin };
 }
 
+test('a verified account with no preference contributes its first save', async () => {
+  const { documents, admin } = fixture();
+  documents.delete(consent);
+  await recordAuthorSave(admin, 'alice', event('openalex:W42'), ['openalex:W42']);
+  assert.deepEqual(documents.get(week), {
+    metric: 'saves', weekStart: '2026-11-23', paperIds: ['openalex:W42'],
+  });
+});
+
 test('simultaneous DOI, arXiv and OpenAlex saves and a later replay contribute once', async () => {
   const { documents, admin } = fixture();
   documents.set(alias('arxiv:2611.12345'), { canonicalId: 'doi:10.1234/example' });
@@ -113,7 +122,7 @@ test('simultaneous DOI, arXiv and OpenAlex saves and a later replay contribute o
   });
 });
 
-test('skips the launch week, old and untrusted timestamps, disabled collection, and accounts without consent', async () => {
+test('skips the launch week, old and untrusted timestamps, disabled collection, and accounts that opted out', async () => {
   const id = 'openalex:W42';
   const path = receiptPath(id);
   const cases: Array<[string, object | null, number]> = [
@@ -126,7 +135,6 @@ test('skips the launch week, old and untrusted timestamps, disabled collection, 
     [config, { enabled: false, launchedAt: new Date('2026-11-20T12:00:00Z') }, monday],
     [account, null, monday],
     [account, { authorMetricsDeleting: true }, monday],
-    [consent, null, monday],
     [consent, { enabled: false }, monday],
     [consent, { enabled: true, changedAt: new Date(monday + 1) }, monday + 1],
     [openAlex, null, monday],
