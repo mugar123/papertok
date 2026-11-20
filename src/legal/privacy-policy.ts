@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-20.2';
+export const PRIVACY_POLICY_VERSION = '2026-11-20.4';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -110,6 +110,12 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20.2';
  * cutoff is the last whole second of the planned merge day. If the merge slips
  * past the cutoff, move the date, version and cutoff to the merge day.
  * Set the cutoff to the deployment's success time once the text is live.
+ *
+ * Version 2026-11-20.4 adds weekly save contributions from verified-email
+ * accounts, the default-on setting and how readers can exclude future saves.
+ * The text ships with #531. Use the end of the planned merge day until the
+ * deployment succeeds, then use its success time. If the merge slips to a
+ * later UTC day, update the page date, version and cutoff before merging.
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
@@ -127,9 +133,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  'Survey events include your reading level and broad areas of interest when available. With usage analytics on, PaperTok links survey events to your account.',
-  'Submitting the survey records your answers, including your role if you chose one.',
-  'My profile also lists recent papers that cite your work and your frequent coauthors. PaperTok keeps neither list.',
+  'With a verified email, your saves count by default and PaperTok links your account to each paper you save once per UTC week. Turn this off in Settings → Privacy to exclude future saves.',
+  'With usage analytics on, PaperTok links survey events to your account, including your reading level and broad areas of interest when available. Submitting the survey records your answers, including your role if you chose one.',
+  'My profile lists recent papers that cite your work and your frequent coauthors. PaperTok keeps neither list.',
 ];
 
 /**
@@ -142,10 +148,13 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  lead: 'your reading level and broad areas of interest',
+  lead: 'your saves count by default',
   clauses: [
-    ['your reading level and broad areas of interest when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
+    ['With a verified email, your saves count by default', /With a verified email, your saves count by default/],
+    ['PaperTok links your account to each paper you save once per UTC week', /PaperTok links your account to each paper you save once per UTC week/],
+    ['Turn this off in Settings → Privacy to exclude future saves', /Turn this off in Settings → Privacy to exclude future saves/],
     ['With usage analytics on, PaperTok links survey events to your account', /With usage analytics on, PaperTok links survey events to your account/],
+    ['your reading level and broad areas of interest when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
     ['Submitting the survey records your answers, including your role if you chose one', /Submitting the survey records your answers, including your role if you chose one/],
     ['recent papers that cite your work', /papers from the last 12 months that cite your publications/],
     ['your frequent coauthors', /coauthors you share two or more of those works with/],
@@ -154,5 +163,6 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   unsaid: [
     [/anonymous/i, 'survey events are linked to the signed-in account'],
     [/required role/i, 'readers can skip the role question'],
+    [/authors can see|published totals/i, 'this release only collects contributions'],
   ],
 };

@@ -151,7 +151,19 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('an existing reader who saw the first 20 November notice is owed the survey notice', () => {
+test('an existing reader who saw the survey notice is owed the weekly saves notice', () => {
+  assert.equal(privacyNoticeStatus({
+    user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
+    signedIn: true,
+    version: PRIVACY_POLICY_VERSION,
+    effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+    baseline: PRIVACY_NOTICE_BASELINE_VERSION,
+    account: { uid: 'reader', version: '2026-11-20.2' },
+    storage: null,
+  }), 'owed');
+});
+
+test('a reader who saw only the first November 20 notice is owed the survey, profile and saves updates', () => {
   assert.equal(privacyNoticeStatus({
     user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
     signedIn: true,
@@ -161,6 +173,14 @@ test('an existing reader who saw the first 20 November notice is owed the survey
     account: { uid: 'reader', version: '2026-11-20' },
     storage: null,
   }), 'owed');
+  const summary = PRIVACY_POLICY_CHANGE.join(' ');
+  assert.match(summary, /usage analytics on.*survey.*your account/i);
+  assert.match(summary, /reading level and broad areas of interest/i);
+  assert.match(summary, /answers.*role if you chose one/i);
+  assert.match(summary, /papers that cite your work and your frequent coauthors/i);
+  assert.match(summary, /verified email.*save.*by default/i);
+  assert.match(summary, /your account to each paper you save once per UTC week/i);
+  assert.match(summary, /Settings → Privacy to exclude future saves/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

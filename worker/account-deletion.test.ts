@@ -82,6 +82,9 @@ function memoryAdmin<Documents extends Record<string, FirestoreData>>(seed: Docu
         if (write.currentDocument?.exists === true && documents[key] == null) {
           throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409, 'NOT_FOUND');
         }
+        if (write.currentDocument?.exists === false && documents[key] != null) {
+          throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409, 'ALREADY_EXISTS');
+        }
         const patch = decodeFields(write.update!.fields);
         if (write.updateMask) {
           const next = { ...(documents[key] || {}) };
@@ -190,6 +193,10 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     [`users/${UID}/interactions/p1`]: { liked: true },
     [`users/${UID}/following/a1`]: { type: 'author' as const },
     [`users/${UID}/savedPapers/p1`]: { title: 'A paper' },
+    [`users/${UID}/authorMetricConsent/saves`]: { enabled: true },
+    [`users/${UID}/authorMetricReceipts/smoke`]: { paperId: 'openalex:W42' },
+    [`users/${UID}/authorMetricWeeks/saves-2026-11-23`]: { metric: 'saves', paperIds: ['openalex:W42'] },
+    'users/another-uid/authorMetricWeeks/saves-2026-11-23': { metric: 'saves', paperIds: ['openalex:W42'] },
     [`users/${UID}/settings/followingUpdates`]: { seenIds: [] },
     [`users/${UID}/profileStash/pins`]: { pinnedLists: [] },
     [`users/${UID}/aggregates/interactions`]: { schemaVersion: 1 },
@@ -214,7 +221,7 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
   try {
     let result;
     // One slice per stage and per seeded collection of the tree.
-    for (let i = 0; i < 13; i += 1) {
+    for (let i = 0; i < 16; i += 1) {
       result = await handleAccountDeletionRequest(deletionRequest(), env, {
         admin,
         fetchImpl: async (url) => {
@@ -227,6 +234,10 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     assert.ok(result);
     assert.equal(result.complete, true);
     assert.equal(result.stage, 'auth');
+    assert.equal(admin.documents[`users/${UID}/authorMetricConsent/saves`], undefined);
+    assert.equal(admin.documents[`users/${UID}/authorMetricReceipts/smoke`], undefined);
+    assert.equal(admin.documents[`users/${UID}/authorMetricWeeks/saves-2026-11-23`], undefined);
+    assert.deepEqual(admin.documents['users/another-uid/authorMetricWeeks/saves-2026-11-23'].paperIds, ['openalex:W42']);
     assert.equal(admin.documents[`papers/${PAPER_KEY}/comments/c1`], undefined);
     assert.equal(admin.documents[`papers/${PAPER_KEY}/comments/c2`].authorUid, 'other');
     assert.equal(admin.documents['reports/r1'], undefined);
