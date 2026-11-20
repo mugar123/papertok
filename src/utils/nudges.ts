@@ -1,4 +1,5 @@
 import { emailServiceState } from './email-health.ts';
+import { PRIVACY_NOTICE_BASELINE_VERSION } from '../legal/privacy-policy.ts';
 
 type NudgeStorage = Pick<Storage, 'getItem' | 'setItem'>;
 /**
@@ -141,9 +142,17 @@ export function recordPrivacyNoticeShown({ uid, dialogOpen, version, storage, sa
   });
 }
 
+/** Copies the version actually seen to the account, including the browser-only baseline. */
+export function syncLocalPrivacyNotice({ uid, storage, saveToAccount }: { uid: string; storage?: NudgeStorage | null; saveToAccount: (uid: string, version: string) => Promise<void> }) {
+  const shown = readPrivacyNoticeAck(uid, storage);
+  if (shown && policyVersionCovers(shown, PRIVACY_NOTICE_BASELINE_VERSION)) return saveToAccount(uid, shown);
+  return undefined;
+}
+
 /**
- * Whether a reader still has to hear about policy `version`; having been shown
- * it or a later version settles that. Only signed-in
+ * Whether a reader still has to hear about policy `version`. Versions through
+ * the baseline are retired for everyone. Until 0.4, a recorded version at or
+ * after the baseline settles later changes too. Only signed-in
  * accounts are told: a guest has no creation date, so a first-time visitor
  * could not be told apart from someone who read the old policy. An account
  * created at or after `effectiveAt` (an ISO instant: when the change went
@@ -151,7 +160,9 @@ export function recordPrivacyNoticeShown({ uid, dialogOpen, version, storage, sa
  * creation time is unknown is told.
  */
 export function privacyNoticeOwed({ version, effectiveAt, acknowledged, accountCreated, signedIn }: { version: string; effectiveAt: string; acknowledged: string | null; accountCreated?: string | null; signedIn: boolean }) {
-  if (!signedIn || policyVersionCovers(acknowledged, version)) return false;
+  if (!signedIn || policyVersionCovers(PRIVACY_NOTICE_BASELINE_VERSION, version)) return false;
+  // Release 0.4 replaces this rule with material-change notices, capped at one per account per day.
+  if (policyVersionCovers(acknowledged, PRIVACY_NOTICE_BASELINE_VERSION)) return false;
   const created = accountCreated ? new Date(accountCreated) : null;
   if (!created || Number.isNaN(created.getTime())) return true;
   return created.getTime() < new Date(effectiveAt).getTime();
@@ -238,7 +249,7 @@ export function accountAnswerPending({ status, uid, failedFor }: { status: 'sett
  * failed or when it belongs to the previous account, nothing is owed, so the
  * dialog never opens on a guess and then has to be taken back.
  */
-export function privacyNoticeStatus({ user, signedIn, version, effectiveAt, baseline, account, storage }: { user: { uid: string; metadata?: { creationTime?: string | null } } | null | undefined; signedIn: boolean; version: string; effectiveAt: string; baseline: string; account: AccountNoticeRecord | null; storage?: NudgeStorage | null }): 'settled' | 'ask-account' | 'owed' {
+export function privacyNoticeStatus({ user, signedIn, version, effectiveAt, account, storage }: { user: { uid: string; metadata?: { creationTime?: string | null } } | null | undefined; signedIn: boolean; version: string; effectiveAt: string; account: AccountNoticeRecord | null; storage?: NudgeStorage | null }): 'settled' | 'ask-account' | 'owed' {
   if (!user) return 'settled';
   const told = (acknowledged: string | null) => !privacyNoticeOwed({
     version,
@@ -247,7 +258,7 @@ export function privacyNoticeStatus({ user, signedIn, version, effectiveAt, base
     accountCreated: user.metadata?.creationTime,
     signedIn,
   });
-  if (told(baseline) || told(readPrivacyNoticeAck(user.uid, storage))) return 'settled';
+  if (told(readPrivacyNoticeAck(user.uid, storage))) return 'settled';
   if (account?.uid !== user.uid) return 'ask-account';
   return told(account.version) ? 'settled' : 'owed';
 }
