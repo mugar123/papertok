@@ -29,6 +29,7 @@ import { usePageRestored } from '../../hooks/use-page-restored.ts';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
+import { readAuthorMetricsConsent, writeAuthorMetricsConsent } from '../../services/author-metrics-service.ts';
 import { emailServiceState } from '../../utils/email-health.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paper-rewrite-service.ts';
 import { CATEGORIES } from '../../data/categories.ts';
@@ -67,7 +68,7 @@ const SETTINGS_PAGES = [
   { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },
   { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
-  { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics', Icon: ShieldCheck },
+  { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics and author statistics', Icon: ShieldCheck },
 ];
 
 const SETTINGS_COPY = {
@@ -417,25 +418,96 @@ function ProfileAccountPage() {
 
 function PrivacyPage() {
   const { consent: analyticsConsent, updateConsent: updateAnalyticsConsent } = useAnalyticsConsent();
+  const { user } = useAuth();
 
   return (
-    <section className="settings-section" aria-labelledby="settings-analytics-heading">
-      <SectionHeading id="settings-analytics-heading" title={copy.usageAnalytics} description={copy.usageAnalyticsDescription} />
+    <>
+      <section className="settings-section" aria-labelledby="settings-analytics-heading">
+        <SectionHeading id="settings-analytics-heading" title={copy.usageAnalytics} description={copy.usageAnalyticsDescription} />
+        <div className="profile-fields">
+          <Label className="profile-switch">
+            <span className="profile-switch-copy">
+              <span className="profile-switch-label">{copy.analyticsToggleLabel}</span>
+              <span className="profile-switch-hint">{copy.analyticsHint}</span>
+            </span>
+            <Switch
+              className="settings-toggle"
+              checked={analyticsConsent !== ANALYTICS_CONSENT.DENIED}
+              aria-label={copy.analyticsToggleLabel}
+              onCheckedChange={checked => { void updateAnalyticsConsent(
+                checked ? ANALYTICS_CONSENT.ENABLED : ANALYTICS_CONSENT.DENIED,
+              ); }}
+            />
+          </Label>
+        </div>
+      </section>
+      {user && <AuthorMetricsSetting key={user.uid} uid={user.uid} />}
+    </>
+  );
+}
+
+function AuthorMetricsSetting({ uid }: { uid: string }) {
+  const hintId = useId();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('Loading your preference…');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    void readAuthorMetricsConsent(uid).then(value => {
+      if (!active) return;
+      setEnabled(value);
+      setStatus('');
+    }, () => {
+      if (active) setStatus('Could not load your preference.');
+    });
+    return () => { active = false; };
+  }, [uid, attempt]);
+
+  async function change(value: boolean) {
+    setSaving(true);
+    setStatus('Saving your preference…');
+    try {
+      await writeAuthorMetricsConsent(uid, value);
+      setEnabled(value);
+      setStatus('Preference saved.');
+    } catch {
+      setStatus('Could not save your preference. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const label = "Count my saves in authors' anonymous statistics";
+  return (
+    <section className="settings-section" aria-labelledby="settings-author-metrics-heading">
+      <SectionHeading id="settings-author-metrics-heading" title="Author statistics" />
       <div className="profile-fields">
         <Label className="profile-switch">
           <span className="profile-switch-copy">
-            <span className="profile-switch-label">{copy.analyticsToggleLabel}</span>
-            <span className="profile-switch-hint">{copy.analyticsHint}</span>
+            <span className="profile-switch-label">{label}</span>
+            <span className="profile-switch-hint" id={hintId}>
+              Applies to future saves from this account once your email is verified.
+            </span>
           </span>
           <Switch
             className="settings-toggle"
-            checked={analyticsConsent !== ANALYTICS_CONSENT.DENIED}
-            aria-label={copy.analyticsToggleLabel}
-            onCheckedChange={checked => { void updateAnalyticsConsent(
-              checked ? ANALYTICS_CONSENT.ENABLED : ANALYTICS_CONSENT.DENIED,
-            ); }}
+            checked={enabled === true}
+            aria-label={label}
+            aria-describedby={hintId}
+            disabled={enabled === null}
+            aria-disabled={saving || undefined}
+            onCheckedChange={value => { if (!saving) void change(value); }}
           />
         </Label>
+        <div role="status">{status}</div>
+        {enabled === null && status.startsWith('Could not') && (
+          <Button variant="outline" onClick={() => {
+            setStatus('Loading your preference…');
+            setAttempt(previous => previous + 1);
+          }}>Try again</Button>
+        )}
       </div>
     </section>
   );

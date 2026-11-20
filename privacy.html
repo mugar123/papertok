@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 20 November 2026.</p>
+      <p class="lp-updated">Last updated 20 November 2026 (revision 3).</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -107,6 +107,11 @@
               <td>Lists, saved papers and highlights</td>
               <td>Your use of the app</td>
               <td>So your library is still there next time</td>
+            </tr>
+            <tr>
+              <td>Your author statistics preference and, when collection is enabled for your account, links between it, the papers you save and the weeks you save them</td>
+              <td>Your choice in Settings and saves you make while signed in with a verified email</td>
+              <td>Preparing weekly save totals for authors</td>
             </tr>
             <tr>
               <td>Plain-words summaries, each with the paper's title, identifier and PDF address, the reading level, the model that wrote it and the date</td>
@@ -222,6 +227,26 @@
         Your profile stores the verified institution,
         not the secondary address. A temporary Firebase proof account is deleted after
         verification where possible; an existing account is preserved.
+      </p>
+
+      <p>
+        If author statistics are enabled for your account, PaperTok keeps one private
+        contribution per paper you save each week. You can change whether future saves
+        count in Settings → Privacy. Deleting your account removes your contributions
+        for weeks that have yet to close.
+      </p>
+      <p>
+        Collection begins on the first Monday after launch and covers weeks from Monday
+        to Sunday in UTC. It counts signed-in accounts with a verified email when
+        PaperTok can verify the paper's identifier. To limit abuse, the server briefly
+        keeps a request count under a hashed account identifier that changes each minute.
+        PaperTok keeps contributions in Firestore. A temporary receipt records the paper
+        and server time after a save succeeds. PaperTok removes the receipt after sending
+        it for counting and schedules automatic deletion if the browser closes first.
+        PaperTok may look up the public paper identifier in OpenAlex. PostHog receives no contributions
+        or counters for author statistics. PaperTok is collecting contributions before
+        making any counts available to authors. When weekly totals become available,
+        closing a week will leave only the total per paper, without account links.
       </p>
 
       <h2>What is public and what is not</h2>

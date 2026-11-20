@@ -5,7 +5,8 @@ import type { OwnList } from '../../utils/own-lists.ts';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { auth, db } from '../../services/firebase.ts';
-import { savedPaperDocRef } from '../../services/saved-paper-store.ts';
+import { writeSavedPaperCopy } from '../../services/saved-paper-store.ts';
+import { submitAuthorSave } from '../../services/author-metrics-service.ts';
 import { collection, getDocs, doc, setDoc, limit, query } from 'firebase/firestore';
 import { isReadTimeout, patientRead } from '../../utils/bounded-read.ts';
 import {
@@ -45,8 +46,6 @@ import useIsPhone from '../../hooks/use-is-phone.ts';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Textarea } from '../ui/textarea.tsx';
-import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
-import { copyForMergeWrite } from '../../utils/stored-copy-write.ts';
 import { pickerUndoToastId } from './picker-undo-toast.ts';
 import {
   ownListsAreFresh,
@@ -190,6 +189,7 @@ export default function SaveToListModal({
   // `saving: false`. The list writes are idempotent, but `toggleReadLater` is
   // a toggle — running it twice puts Read later back where it started.
   const savingRef = useRef(false);
+  const pendingAuthorSave = useRef<{ uid: string; paperId: string } | null>(null);
   const [saveError, setSaveError] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   // app.tsx mounts this window and unmounts it on `onClose`, so the window
@@ -555,11 +555,9 @@ export default function SaveToListModal({
        * pressing Save again redoes only what is missing.
        */
       if (savesPaper) {
-        await setDoc(
-          savedPaperDocRef(user!.uid, paper.id),
-          copyForMergeWrite(buildSavedPaperPayload(paper, new Date().toISOString())),
-          { merge: true },
-        );
+        const uid = user!.uid;
+        await writeSavedPaperCopy(uid, paper, !alreadySaved);
+        if (!alreadySaved) pendingAuthorSave.current = { uid, paperId: paper.id };
         // The aggregate learns of the save only once the document exists.
         // The other order left an orphan whenever this write was refused:
         // "saved" everywhere, a paper in no list, and a Save that could
@@ -574,13 +572,18 @@ export default function SaveToListModal({
       await writeListMembership({ uid: user!.uid, paper, lists: toAdd.map(listById), added: true, language });
       await writeListMembership({ uid: user!.uid, paper, lists: toRemove.map(listById), added: false, language });
 
-      if (readLaterChanged) await toggleReadLater(paper);
+      if (readLaterChanged) await toggleReadLater(paper, pendingReadLater, { throwOnError: true });
       if (metadataChanged) await saveReadingMetadata(paper, { note, tags: finalTags });
       if (unsavesPaper) await unmarkSaved(paper);
 
       const paperDetail = { paper_id: paper.id };
       toAdd.forEach(() => { void trackEvent('save_change', { action: 'add', surface: 'lists', ...paperDetail }); });
       toRemove.forEach(() => { void trackEvent('save_change', { action: 'remove', surface: 'lists', ...paperDetail }); });
+      const pending = pendingAuthorSave.current;
+      if ((pendingReadLater || pendingListIds.size > 0) && pending?.uid === user!.uid && pending.paperId === paper.id) {
+        submitAuthorSave(pending.uid, pending.paperId);
+        pendingAuthorSave.current = null;
+      }
       if (savesPaper) void markActivation();
 
       closeDialog();

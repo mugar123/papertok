@@ -1212,6 +1212,69 @@ test('P19: a passage across paragraphs ends later in the same section, with its 
  * Nothing could have caught that from either side alone. So this checks the
  * two together, on the shapes that actually broke.
  */
+test('only the account can change author metrics consent and only the Worker can access contributions', async () => {
+  const alice = testEnv.authenticatedContext(ALICE, { email_verified: true }).firestore();
+  const bob = testEnv.authenticatedContext(BOB).firestore();
+  const preference = doc(alice, 'users', ALICE, 'authorMetricConsent', 'saves');
+  await assertSucceeds(setDoc(doc(alice, 'users', ALICE), { onboardingComplete: true }));
+  await assertSucceeds(setDoc(preference, { enabled: true, changedAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(preference));
+  await assertFails(setDoc(preference, { enabled: false, changedAt: '2026-11-20' }));
+  await assertFails(setDoc(preference, { enabled: false, changedAt: serverTimestamp(), deleting: false }));
+  await assertFails(getDoc(doc(bob, preference.path)));
+  await assertFails(setDoc(doc(bob, preference.path), { enabled: true, changedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(preference));
+  for (const path of ['authorMetricConfig/saves', 'authorMetricAliases/sample', `users/${ALICE}/authorMetricWeeks/saves-2026-11-23`]) {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), path), { enabled: true });
+    });
+    await assertFails(getDoc(doc(alice, path)));
+    await assertFails(setDoc(doc(alice, path), { enabled: false }));
+    await assertFails(deleteDoc(doc(alice, path)));
+  }
+});
+
+test('verified owners can create immutable save receipts only after launch and before their account deletion', async () => {
+  const db = testEnv.authenticatedContext(ALICE, { email_verified: true }).firestore();
+  const path = `users/${ALICE}/authorMetricReceipts`;
+  const values = { paperId: 'openalex:W42', savedAt: serverTimestamp(), expiresAt: new Date(Date.now() + 5 * 60_000) };
+  const first = doc(db, path, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  const second = doc(db, path, 'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee');
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE), { onboardingComplete: true }));
+  const saved = doc(db, 'users', ALICE, 'savedPapers', 'openalex:W42');
+  await assertSucceeds(setDoc(saved, { title: 'A paper', savedAt: '2026-01-01T00:00:00Z' }));
+  await assertFails(updateDoc(saved, { savedAt: new Date('2026-01-02T00:00:00Z') }));
+  await assertSucceeds(updateDoc(saved, { savedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(saved, { title: 'Updated title' }));
+  await assertFails(setDoc(first, values));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'authorMetricConfig', 'saves'), { enabled: true, launchedAt: new Date() });
+  });
+  await assertFails(setDoc(first, values));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'authorMetricConfig', 'saves'), { enabled: true, launchedAt: new Date('2026-01-01') });
+  });
+  await assertFails(setDoc(first, { ...values, savedAt: new Date() }));
+  await assertFails(setDoc(first, { ...values, expiresAt: new Date() }));
+  await assertSucceeds(setDoc(first, values));
+  await assertSucceeds(setDoc(second, values));
+  await assertFails(getDoc(first));
+  await assertFails(updateDoc(first, { paperId: 'openalex:W43' }));
+  const unverified = testEnv.authenticatedContext(ALICE, { email_verified: false }).firestore();
+  await assertFails(setDoc(doc(unverified, path, 'cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee'), values));
+  const bob = testEnv.authenticatedContext(BOB, { email_verified: true }).firestore();
+  await assertFails(deleteDoc(doc(bob, first.path)));
+  await assertSucceeds(deleteDoc(first));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'users', ALICE), { authorMetricsDeleting: true });
+  });
+  await assertFails(setDoc(first, values));
+  await assertFails(deleteDoc(doc(db, 'users', ALICE)));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'authorMetricConsent', 'saves'), {
+    enabled: true, changedAt: serverTimestamp(),
+  }));
+});
+
 test('savedPapers accepts what buildSavedPaperPayload sends, for a paper missing everything optional', async () => {
   const db = asAlice();
   const savedAt = new Date().toISOString();
