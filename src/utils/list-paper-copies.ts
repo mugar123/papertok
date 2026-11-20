@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import { knownCitationCount, paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withPublicationEvidenceOf, withRetractionOf } from '../models/paper.ts';
+import { knownCitationCount, paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withJournalOf, withPublicationEvidenceOf, withRetractionOf } from '../models/paper.ts';
 import { mergedPaperEvidence } from '../models/paper-evidence.ts';
 
 /**
@@ -65,7 +65,7 @@ const filledFrom = (copy: Partial<Paper>, other: Partial<Paper> | undefined) => 
 export function listPaperFromCopies(libraryCopy: Partial<Paper>, otherCopy: Partial<Paper>): Partial<Paper> {
   const merged = {
     ...libraryCopy,
-    ...filledFrom(otherCopy, libraryCopy),
+    ...withJournalOf(filledFrom(otherCopy, libraryCopy), libraryCopy),
     ...mergedPaperEvidence(libraryCopy, otherCopy),
     doi: libraryCopy.doi || otherCopy.doi,
     arxivId: libraryCopy.arxivId || otherCopy.arxivId,
@@ -101,7 +101,10 @@ export function listPaper(
   loadedCopy: Partial<Paper> | undefined,
 ) {
   const otherCopy = fetchedCopy ? filledFrom(fetchedCopy, loadedCopy) : loadedCopy;
-  if (!entryCopy) return otherCopy && withPublicationEvidenceOf(otherCopy, loadedCopy);
+  if (!entryCopy) {
+    if (!otherCopy || !loadedCopy) return otherCopy;
+    return withJournalOf(withPublicationEvidenceOf(otherCopy, loadedCopy), loadedCopy);
+  }
   return otherCopy ? listPaperFromCopies(withPublicationEvidenceOf(entryCopy, loadedCopy), otherCopy) : entryCopy;
 }
 
@@ -120,9 +123,11 @@ export function mergeListPaperCopies(
   const next = { ...current };
   Object.entries(loaded).forEach(([paperId, paper]) => {
     const known = next[paperId];
-    next[paperId] = source === 'saved' || !known
+    const merged = source === 'saved' || !known
       ? withPublicationEvidenceOf(filledFrom(paper, known), known)
       : withPublicationEvidenceOf(filledFrom(known, paper), paper);
+    const interaction = source === 'interaction' ? paper : known;
+    next[paperId] = interaction ? withJournalOf(merged, interaction) : merged;
   });
   return next;
 }

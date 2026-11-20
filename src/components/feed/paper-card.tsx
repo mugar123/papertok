@@ -542,7 +542,7 @@ const PaperCard = memo(function PaperCard({
   // played over a card that had already stopped moving.
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
-  const { institution, user, readingPreferences } = useAuth();
+  const { institution, user, readingPreferences, interestSettings } = useAuth();
   const { language, locale } = useLanguage();
   const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(user?.uid));
   const { trackEvent } = useAnalyticsConsent();
@@ -1645,7 +1645,14 @@ const PaperCard = memo(function PaperCard({
   } : paper, [paper, resolvedOpenCopy]);
   const canRequestRewrite = canRewritePaper(readablePaper);
   const rewriteHint = canRequestRewrite && !publicMode && user && isCardVisible
-    ? rewriteUseHint(navigator.onLine ? quota : null, Boolean(getCachedRewrite(readablePaper, readingPreferences?.aiExplanationLevel ?? 'university')), locale)
+    ? rewriteUseHint({
+      paper: readablePaper,
+      interestSettings,
+      globalLevel: readingPreferences.aiExplanationLevel,
+      isCached: level => Boolean(getCachedRewrite(readablePaper, level)),
+      quota: navigator.onLine ? quota : null,
+      locale,
+    })
     : '';
 
   // Never the library link: it only opens for readers at that institution.
