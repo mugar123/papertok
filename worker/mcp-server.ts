@@ -6,8 +6,8 @@ import type { UpstreamError } from './provider-runtime.ts';
 import { isPlaceholderAuthorName, restsOnArxivDoi } from '../src/services/paper-builder.ts';
 import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
 import { usableOpenAlexConcepts } from '../src/utils/open-alex-concepts.ts';
-import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, getArxivIdFromWork, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
-import { getPaperIdentity } from '../src/utils/public-navigation.ts';
+import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { getPaperIdentity, normalizeArxivId, normalizeDoi } from '../src/utils/public-navigation.ts';
 import { OPENALEX_VENUE_SOURCE_TYPES } from '../src/utils/publication-status.ts';
 import { handleAgentArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
@@ -96,7 +96,7 @@ const TOOLS = [
   {
     name: 'get_paper',
     title: 'Get a paper',
-    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two). If pacing refuses the lookup or the arXiv relay fails, the tool asks OpenAlex. If the relay returns an unreadable feed or an Atom error entry, the tool returns UPSTREAM_UNAVAILABLE without a fallback. Other identifiers are looked up on OpenAlex. When OpenAlex does not return the paper either, the error is arXiv's, and a refusal by the pacing is PROVIDER_RATE_LIMITED with retryAfterSeconds. An OpenAlex answer has an openalex:W… id. Categories are arXiv categories when available, otherwise OpenAlex concept names or topic names. Recent search taxonomy at the same edge can supplement the lookup. taxonomySources identifies the provider of categories, concepts and topics when present. A successful OpenAlex fallback includes a top-level fallback with from, to and the arXiv error code. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
+    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two). If pacing refuses the lookup or the arXiv relay fails, the tool asks OpenAlex. If the relay returns an unreadable feed or an Atom error entry, the tool returns UPSTREAM_UNAVAILABLE without a fallback. Other identifiers are looked up on OpenAlex. When OpenAlex does not return the paper either, the error is arXiv's, and a refusal by the pacing is PROVIDER_RATE_LIMITED with retryAfterSeconds. An OpenAlex answer has an openalex:W… id. Categories are arXiv categories when available, otherwise OpenAlex concept names or topic names. Cached OpenAlex subjects require an OpenAlex work id in the detail response. Cached arXiv categories require its arXiv id. A DOI alone cannot recover either taxonomy. taxonomySources identifies the provider of categories, concepts and topics when present. A successful OpenAlex fallback includes a top-level fallback with from, to and the arXiv error code. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
     inputSchema: { type: 'object', properties: { id: PAPER_ID_SCHEMA }, required: ['id'], additionalProperties: false },
     annotations: READ_ONLY,
   },
@@ -366,127 +366,95 @@ function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstr
   return { ...relayed, ...(Object.keys(taxonomySources).length > 0 && { taxonomySources }) };
 }
 
-type SearchTaxonomy = Pick<Partial<Paper>, 'categories' | 'primaryCategory' | 'arxivId' | 'concepts' | 'topics' | 'primaryTopic'>;
-
-function taxonomyIdentity(paper: Partial<Paper>) {
-  return {
-    openalex: getPaperIdentity('openalex', paper.id || ''),
-    arxiv: getPaperIdentity('arxiv', paper.arxivId || '').replace(/v\d+$/, ''),
-    pmid: getPaperIdentity('pmid', paper.pmid || ''),
-    doi: getPaperIdentity('doi', paper.doi || ''),
-  };
-}
-
-type TaxonomyIdentity = ReturnType<typeof taxonomyIdentity>;
 type TaxonomySource = 'openalex' | 'arxiv';
+type SearchTaxonomy = Pick<Partial<Paper>, 'categories' | 'primaryCategory' | 'concepts' | 'topics' | 'primaryTopic'>;
 
-// A DOI can be an alias for either of two different provider records.
-function sameTaxonomyRecord(left: TaxonomyIdentity, right: TaxonomyIdentity) {
-  let matched = false;
-  for (const kind of ['openalex', 'arxiv', 'pmid', 'doi'] as const) {
-    if (!left[kind] || !right[kind]) continue;
-    if (left[kind] !== right[kind]) return false;
-    matched = true;
-  }
-  return matched;
+function taxonomyKey(source: TaxonomySource, recordId: string | undefined, caller: Request) {
+  if (!recordId) return undefined;
+  const identity = getPaperIdentity(source, recordId);
+  const id = source === 'arxiv' ? identity.replace(/v\d+$/, '') : identity;
+  return id ? new URL(`/mcp/taxonomy/v3/${encodeURIComponent(id)}`, caller.url).href : undefined;
 }
 
-function combinedIdentity(original: TaxonomyIdentity, matched: TaxonomyIdentity): TaxonomyIdentity {
-  return {
-    openalex: original.openalex || matched.openalex,
-    arxiv: original.arxiv || matched.arxiv,
-    pmid: original.pmid || matched.pmid,
-    doi: original.doi || matched.doi,
-  };
-}
-
-// A merged search can hide two distinct works behind one DOI. Exclude any
-// alias the original records disagree about from cache keys and crosslinks.
-function ambiguousTaxonomyAliases(records: Array<Partial<Paper> | null>) {
-  const seen = new Map<string, TaxonomyIdentity>();
-  const ambiguous = new Set<string>();
-  for (const record of records) {
-    if (!record) continue;
-    const identity = taxonomyIdentity(record);
-    for (const alias of Object.values(identity).filter(Boolean)) {
-      const previous = seen.get(alias);
-      if (previous && !sameTaxonomyRecord(previous, identity)) ambiguous.add(alias);
-      else seen.set(alias, previous ? combinedIdentity(previous, identity) : identity);
-    }
-  }
-  return ambiguous;
-}
-
-const TAXONOMY_CACHE_HEADERS = { 'cache-control': 'public, max-age=600' };
-
-function taxonomyKey(caller: Request, source: TaxonomySource | 'ambiguous', alias: string) {
-  return new URL(`/mcp/taxonomy/v2/${source}/${encodeURIComponent(alias)}`, caller.url).href;
-}
-
-async function rememberTaxonomy(record: Partial<Paper>, ambiguous: Set<string>, caller: Request) {
+async function rememberTaxonomy(record: Partial<Paper>, caller: Request) {
   const source = record.sources?.primary;
   if (source !== 'openalex' && source !== 'arxiv') return;
-  const identity = taxonomyIdentity(record);
-  if (!identity[source]) return;
+  const key = taxonomyKey(source, source === 'arxiv' ? record.arxivId : record.id, caller);
+  if (!key) return;
   const taxonomy: SearchTaxonomy = source === 'arxiv'
-    ? { arxivId: record.arxivId, primaryCategory: record.primaryCategory, categories: record.categories }
+    ? { primaryCategory: record.primaryCategory, categories: record.categories }
     : { concepts: record.concepts, topics: record.topics, primaryTopic: record.primaryTopic };
   if (!taxonomy.primaryCategory && !taxonomy.concepts?.length && !taxonomy.topics?.length && !taxonomy.primaryTopic) return;
-
   try {
-    const aliases = Object.values(identity).filter(id => id && !ambiguous.has(id));
-    await Promise.all(aliases.map(alias => caches.default.put(taxonomyKey(caller, source, alias),
-      Response.json({ identity, taxonomy }, { headers: TAXONOMY_CACHE_HEADERS }))));
+    await caches.default.put(key, Response.json(taxonomy, { headers: { 'cache-control': 'public, max-age=600' } }));
   } catch {
     // A failed edge write leaves the provider lookup usable.
   }
 }
 
-async function cachedTaxonomy(identity: TaxonomyIdentity, source: TaxonomySource, caller: Request) {
-  for (const alias of Object.values(identity).filter(Boolean)) {
-    try {
-      const hit = await caches.default.match(taxonomyKey(caller, source, alias));
-      if (!hit || await caches.default.match(taxonomyKey(caller, 'ambiguous', alias))) continue;
-      const entry = await hit.json<{ identity: TaxonomyIdentity; taxonomy: SearchTaxonomy }>();
-      if (sameTaxonomyRecord(identity, entry.identity)) return entry;
-    } catch {
-      // The search record may be unavailable at this edge.
+async function cachedTaxonomy(source: TaxonomySource, id: string | undefined, caller: Request) {
+  const key = taxonomyKey(source, id, caller);
+  if (!key) return undefined;
+  try {
+    const hit = await caches.default.match(key);
+    return await hit?.json<SearchTaxonomy>();
+  } catch {
+    return undefined;
+  }
+}
+
+async function detailPaper(paper: Paper, explicitArxivId: string | undefined, caller: Request) {
+  const [arxiv, openalex] = await Promise.all([
+    cachedTaxonomy('arxiv', explicitArxivId, caller),
+    cachedTaxonomy('openalex', paper.id, caller),
+  ]);
+  const concepts = paper.concepts?.length ? paper.concepts : openalex?.concepts;
+  const topics = paper.topics?.length ? paper.topics : openalex?.topics;
+  const openAlexNames = subjectNames(concepts, topics);
+  const categories = arxiv?.categories ?? openAlexNames;
+  const detail = publicPaper({
+    ...paper, concepts, topics, categories, allCategories: categories,
+    keywords: openAlexNames,
+    primaryTopic: paper.primaryTopic ?? openalex?.primaryTopic,
+    primaryCategory: paper.primaryCategory || arxiv?.primaryCategory,
+  }, PAPER_BOUNDS);
+  // Review status above depends on the sources of the publication evidence.
+  // A taxonomy contribution adds no evidence of peer review.
+  if (arxiv) detail.sources = { ...paper.sources, enrichedBy: ['arxiv'] };
+  return { paper: detail };
+}
+
+// A publisher DOI or another site's URL can contain an arXiv-looking substring.
+function arxivIdOnWork(work: OpenAlexWork) {
+  const direct = normalizeArxivId(work.ids?.arxiv);
+  if (direct) return direct.replace(/v\d+$/, '');
+  for (const location of [work.primary_location, ...(work.locations || [])]) {
+    for (const url of [location?.landing_page_url, location?.pdf_url, location?.id]) {
+      if (typeof url !== 'string' || !/^https?:\/\/(?:export\.)?arxiv\.org\/(?:abs|pdf)\//i.test(url)) continue;
+      const id = normalizeArxivId(url.split(/[?#]/, 1)[0]);
+      if (id) return id.replace(/v\d+$/, '');
     }
   }
   return undefined;
 }
 
-async function detailPaper(paper: Paper, caller: Request) {
-  const identity = taxonomyIdentity(paper);
-  const primary = paper.sources.primary === 'arxiv' ? 'arxiv' : 'openalex';
-  const own = await cachedTaxonomy(identity, primary, caller);
-  // The provider's earlier record can identify a preprint or work omitted in
-  // detail. Check those identifiers too before accepting the other source.
-  const other = await cachedTaxonomy(own ? combinedIdentity(identity, own.identity) : identity,
-    primary === 'arxiv' ? 'openalex' : 'arxiv', caller);
-  const arxiv = (primary === 'arxiv' ? undefined : other)?.taxonomy;
-  const openalex = (primary === 'openalex' ? own : other)?.taxonomy;
-  const concepts = paper.concepts?.length ? paper.concepts : openalex?.concepts;
-  const topics = paper.topics?.length ? paper.topics : openalex?.topics;
-  const openAlexNames = subjectNames(concepts, topics);
-  const categories = arxiv?.categories ?? (paper.primaryCategory ? paper.categories : openAlexNames);
-  const detail = publicPaper({
-    ...paper, concepts, topics, categories, allCategories: categories,
-    keywords: paper.primaryCategory ? paper.keywords : openAlexNames,
-    primaryTopic: paper.primaryTopic ?? openalex?.primaryTopic,
-    primaryCategory: paper.primaryCategory || arxiv?.primaryCategory,
-    arxivId: paper.arxivId || arxiv?.arxivId,
-  }, PAPER_BOUNDS);
-  // Review status above depends on the sources of the publication evidence.
-  // A taxonomy contribution adds no evidence of peer review.
-  const enrichment = paper.sources.primary === 'arxiv' ? openalex && 'openalex' : arxiv && 'arxiv';
-  if (enrichment) detail.sources = { ...paper.sources, enrichedBy: [enrichment] };
-  return { paper: detail };
+// An arXiv DOI identifies the preprint for display and fallback matching.
+function arxivIdInDoi(work: OpenAlexWork) {
+  const prefix = '10.48550/arxiv.';
+  for (const value of [work.doi, work.ids?.doi]) {
+    const doi = normalizeDoi(value);
+    if (!doi.startsWith(prefix)) continue;
+    const suffix = doi.slice(prefix.length);
+    if (suffix && normalizeArxivId(suffix) === suffix) return suffix.replace(/v\d+$/, '');
+  }
+  return undefined;
 }
 
 // Search and detail receive the same provider taxonomy. Keep the subject ID
 // even when its display name is missing; a name alone cannot identify a topic.
-function openAlexTaxonomy(work: OpenAlexWork) {
+function openAlexIdentityAndTaxonomy(work: OpenAlexWork, explicitArxivId: string | undefined) {
+  const id = getPaperIdentity('openalex', work.id || '');
+  if (!id) throw new ToolFailure({ code: 'UPSTREAM_UNAVAILABLE' });
   const validTopic = (topic: OpenAlexWork['primary_topic']) =>
     typeof topic?.id === 'string' && /^(?:https:\/\/openalex\.org\/)?T\d+$/i.test(topic.id);
   const topics = Array.isArray(work.topics) ? work.topics.filter(validTopic) : [];
@@ -494,7 +462,7 @@ function openAlexTaxonomy(work: OpenAlexWork) {
     typeof concept?.id === 'string' && /^(?:https:\/\/openalex\.org\/)?C\d+$/i.test(concept.id)) : [];
   const usable = usableOpenAlexConcepts(concepts);
   const categories = subjectNames(usable, topics);
-  return { topics, primaryTopic: validTopic(work.primary_topic) ? work.primary_topic : undefined,
+  return { id, arxivId: explicitArxivId ?? arxivIdInDoi(work), topics, primaryTopic: validTopic(work.primary_topic) ? work.primary_topic : undefined,
     concepts: usable, categories, keywords: categories, allCategories: categories };
 }
 
@@ -520,7 +488,7 @@ async function searchOpenAlex(query: string, since: string, caller: Request, env
   if (!Array.isArray(results)) throw new ToolFailure({ code: 'UPSTREAM_UNAVAILABLE' });
   return results.map(work => {
     const paper = mapOpenAlexWork(work);
-    return paper && { ...paper, ...openAlexTaxonomy(work) };
+    return paper && { ...paper, ...openAlexIdentityAndTaxonomy(work, arxivIdOnWork(work)) };
   });
 }
 
@@ -581,16 +549,11 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
     papers.push(paper);
     bytes += size;
   }
-  const ambiguous = ambiguousTaxonomyAliases([...works, ...preprints]);
-  // Older and concurrent searches may have cached this alias before the
-  // collision became known. A separate marker also covers those entries.
-  await Promise.all([...ambiguous].map(alias => caches.default.put(taxonomyKey(caller, 'ambiguous', alias),
-    new Response('ambiguous', { headers: TAXONOMY_CACHE_HEADERS })).catch(() => undefined)));
   await Promise.all(ranked.slice(0, papers.length).map(async paper => {
     const work = works.find(record => record?.id === paper.id);
     const preprint = preprints.find(record => record && record.id === paper.arxivId);
-    if (work) await rememberTaxonomy(work, ambiguous, caller);
-    if (preprint) await rememberTaxonomy(preprint, ambiguous, caller);
+    if (work) await rememberTaxonomy(work, caller);
+    if (preprint) await rememberTaxonomy(preprint, caller);
   }));
   const left = ranked.length - papers.length;
   return { query, papers, unavailable, ...(left > 0 ? { omitted: { papers: left } } : {}) };
@@ -613,12 +576,13 @@ function getPaperArguments(args: Arguments) {
 // platform holds a copy and is no venue, so the paper keeps neither field and
 // the client cannot cite the repository as the journal.
 function openAlexPaper(work: OpenAlexWork, caller: Request) {
-  const { journal, publisher, ...paper } = formatOpenAlexWorkAsPaper(work, true);
+  const { journal, publisher, ...paper } = formatOpenAlexWorkAsPaper(work);
   const venue = OPENALEX_VENUE_SOURCE_TYPES.has(String(work.primary_location?.source?.type || ''));
+  const explicitArxivId = arxivIdOnWork(work);
   return detailPaper({
-    ...paper, ...(venue ? { journal, publisher } : {}), id: `openalex:${paper.id}`,
-    ...openAlexTaxonomy(work),
-  }, caller);
+    ...paper, ...(venue ? { journal, publisher } : {}),
+    ...openAlexIdentityAndTaxonomy(work, explicitArxivId),
+  }, explicitArxivId, caller);
 }
 
 // arXiv refuses an agent whenever the beat's current seat is taken, by a
@@ -645,7 +609,7 @@ async function getArxivPaper(arxivId: string, caller: Request, env: WorkerEnv) {
     }, caller, env)
       .then(response => response.json<{ results?: OpenAlexWork[] }>())
       // The paper's `arxivId` is read off the work, so it has to be this one.
-      .then(({ results = [] }) => results.find(found => getArxivIdFromWork(found).toLowerCase() === arxivId))
+      .then(({ results = [] }) => results.find(found => (arxivIdOnWork(found) ?? arxivIdInDoi(found)) === arxivId))
       .catch((failure: unknown) => {
         recordFailure('get_paper', sourceFailure('openalex', failure));
         return undefined;
@@ -656,7 +620,7 @@ async function getArxivPaper(arxivId: string, caller: Request, env: WorkerEnv) {
     return { ...await openAlexPaper(work, caller), fallback: { from: 'arxiv', to: 'openalex', code: error.details.code } };
   }
   if (!papers[0]) throw new ToolFailure({ code: 'NOT_FOUND' });
-  return detailPaper(papers[0], caller);
+  return { paper: publicPaper(papers[0], PAPER_BOUNDS) };
 }
 
 async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: Request, env: WorkerEnv) {

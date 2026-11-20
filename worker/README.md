@@ -1669,11 +1669,14 @@ Both paper tools include `taxonomySources` when they return categories, concepts
 topics. Its keys name those fields and its values are `arxiv` or `openalex`.
 OpenAlex subjects retain their provider IDs. A search can return arXiv categories
 alongside OpenAlex concepts and topics for the same paper. For ten minutes the
-edge can reuse those classifications on a detail lookup when at least one
-identifier matches and all identifiers present in both records agree. It compares
-OpenAlex work IDs, versionless arXiv IDs, PMIDs and normalized DOIs. Two
-OpenAlex works with different IDs keep separate classifications even if they
-share a DOI.
+edge can reuse OpenAlex concepts and topics when the detail lookup returns
+the same OpenAlex work ID. Cached arXiv categories require the same versionless
+arXiv ID. DOI and PMID lookups use the IDs on the returned OpenAlex work.
+Direct arXiv detail can therefore omit OpenAlex subjects seen in search, and
+DOI detail can omit arXiv categories when OpenAlex supplies no arXiv ID.
+A canonical arXiv DOI can identify the preprint for display and fallback matching.
+Reading its cached categories requires an explicit arXiv ID or arXiv location
+on the detail record. A DOI alone never authorizes cached enrichment.
 Only taxonomy and its public paper identifiers enter this cache. A cache miss
 or eviction leaves detail with the evidence from its own provider response.
 The lookup makes the same provider requests either way.
