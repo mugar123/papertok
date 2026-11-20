@@ -1743,16 +1743,22 @@ function bareOrcid(value: unknown) {
   return String(value ?? '').trim().match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i)?.[1].toUpperCase() ?? null;
 }
 
-/** The ORCID iDs of a work's authorships, bare. */
-function authorshipOrcids(work: OpenAlexWork) {
-  return (work.authorships ?? []).map(authorship => bareOrcid(authorship.author?.orcid)).filter((id): id is string => id !== null);
+/** The ORCID iDs of an authorship's author, bare: the one OpenAlex set and the ones it observed for them. */
+function authorOrcids(author: NonNullable<OpenAlexWork['authorships']>[number]['author']) {
+  const observed = Array.isArray(author?.observed_orcids) ? author.observed_orcids : [];
+  return [author?.orcid, ...observed].map(bareOrcid).filter((id): id is string => id !== null);
 }
 
-/** The author ids of a work's authorships whose ORCID iD is `orcidId`. */
+/** The ORCID iDs of a work's authorships, bare. */
+function authorshipOrcids(work: OpenAlexWork) {
+  return (work.authorships ?? []).flatMap(authorship => authorOrcids(authorship.author));
+}
+
+/** The author ids of a work's authorships that carry the ORCID iD `orcidId`. */
 function authorIdsWithOrcid(work: OpenAlexWork, orcidId: string) {
   return (work.authorships ?? []).flatMap((authorship) => {
     const id = openAlexAuthorId(authorship.author?.id);
-    return id && bareOrcid(authorship.author?.orcid) === orcidId.toUpperCase() ? [id] : [];
+    return id && authorOrcids(authorship.author).includes(orcidId.toUpperCase()) ? [id] : [];
   });
 }
 
