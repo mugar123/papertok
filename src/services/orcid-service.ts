@@ -445,7 +445,9 @@ export function arrangeOrcidWorks(loaded: OrcidPublicationsLoad, decisions: Orci
 /**
  * The papers of the reader's publications (`arrangeOrcidWorks`), in their
  * order, newest first, each once: the record's works OpenAlex describes and
- * the works the reader added, never one they marked "Not mine".
+ * the works the reader added, never one they marked "Not mine". A journal
+ * article and its preprint, which OpenAlex keeps as two works under one arXiv
+ * paper, are both kept: each has citations of its own.
  */
 export function readerPapers(publications: OrcidListedWork[], decisions: OrcidWorkDecisions) {
   const notMine = new Set(decisions.notMine);
@@ -454,8 +456,9 @@ export function readerPapers(publications: OrcidListedWork[], decisions: OrcidWo
   for (const { paper } of publications) {
     if (!paper) continue;
     const keys = orcidWorkKeys(paper);
-    if (keys.some(key => notMine.has(key)) || keys.some(key => seen.has(key))) continue;
-    keys.forEach(key => seen.add(key));
+    const names = keys.filter(key => !key.startsWith('arxiv:'));
+    if (keys.some(key => notMine.has(key)) || names.some(key => seen.has(key))) continue;
+    names.forEach(key => seen.add(key));
     papers.push(paper);
   }
   return papers;
@@ -509,34 +512,45 @@ export interface Coauthor { id: string; name: string; sharedWorks: number; lates
  * known by an OpenAlex author id: those sharing COAUTHORS_MIN_SHARED works or
  * more, by shared works, then the most recent shared year, then name, at most
  * COAUTHORS_SHOWN. A paper of more than COAUTHORS_MAX_AUTHORS authors is
- * skipped. The reader is left out: their author ids (`readerAuthorIds`, the
- * ids that carry their iD on OpenAlex), and an author with exactly their name
- * when it is known (`readerName`), for a work OpenAlex files under another id
- * of theirs. With no author id known, an author on every counted paper is
- * taken for the reader too, once there are two counted papers or more.
+ * skipped, and so is a version of a paper already counted: a work sharing a
+ * DOI, OpenAlex id or arXiv paper with an earlier one. The reader is left out:
+ * their author ids (`readerAuthorIds`, the ids that carry their iD on
+ * OpenAlex), and an author with exactly their name when it is known
+ * (`readerName`), for a work OpenAlex files under another id of theirs. Until
+ * one of those finds them, an author on every counted paper is taken for the
+ * reader too, once there are two counted papers or more.
  */
 export function frequentCoauthors(papers: Paper[], { readerAuthorIds, readerName = null }: { readerAuthorIds: string[]; readerName?: string | null }) {
   const reader = new Set(readerAuthorIds.map(openAlexAuthorId).filter((id): id is string => id !== null));
   const found = new Map<string, { name: string; works: Set<number>; latestYear: number | null }>();
+  const seen = new Set<string>();
   let counted = 0;
+  let foundByName = false;
   papers.forEach((paper, index) => {
     const authors = Array.isArray(paper.authors) ? paper.authors : [];
-    if (authors.length > COAUTHORS_MAX_AUTHORS) return;
+    const keys = orcidWorkKeys(paper);
+    if (authors.length > COAUTHORS_MAX_AUTHORS || keys.some(key => seen.has(key))) return;
+    keys.forEach(key => seen.add(key));
     counted += 1;
     for (const author of authors) {
       if (typeof author === 'string') continue;
       const id = openAlexAuthorId(author.id);
-      if (!id || reader.has(id) || sameFullName(readerName, author.name)) continue;
+      if (!id || reader.has(id)) continue;
+      if (sameFullName(readerName, author.name)) {
+        foundByName = true;
+        continue;
+      }
       const entry = found.get(id) ?? { name: cleanText(author.name), works: new Set<number>(), latestYear: null };
       entry.works.add(index);
       if (paper.year && (entry.latestYear === null || paper.year > entry.latestYear)) entry.latestYear = paper.year;
       found.set(id, entry);
     }
   });
+  const unresolved = reader.size === 0 && !foundByName && counted >= 2;
   return [...found]
     .map(([id, { name, works, latestYear }]): Coauthor => ({ id, name, sharedWorks: works.size, latestYear }))
     .filter(coauthor => coauthor.sharedWorks >= COAUTHORS_MIN_SHARED && coauthor.name)
-    .filter(coauthor => reader.size > 0 || counted < 2 || coauthor.sharedWorks < counted)
+    .filter(coauthor => !unresolved || coauthor.sharedWorks < counted)
     .sort((a, b) => b.sharedWorks - a.sharedWorks || (b.latestYear ?? -Infinity) - (a.latestYear ?? -Infinity) || a.name.localeCompare(b.name))
     .slice(0, COAUTHORS_SHOWN);
 }

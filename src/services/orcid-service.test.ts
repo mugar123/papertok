@@ -388,7 +388,7 @@ test('with no author id of the reader known, only their full name or a place on 
     listedPaper(2, 2024, [[1, 'María García'], [2, 'M. Garcia'], [3, 'Tess Often']]),
     listedPaper(3, 2023, [[11, 'Maria Garcia'], [3, 'Tess Often']]),
   ];
-  assert.deepEqual(ids(split, 'maria GARCIA'), ['A2']);
+  assert.deepEqual(ids(split, 'maria GARCIA'), ['A3', 'A2']);
   // With the reader's ids known, a coauthor on every paper stays.
   assert.deepEqual(frequentCoauthors(split, { readerAuthorIds: ['A1', 'A11'] }).map(coauthor => coauthor.id), ['A3', 'A2']);
   // A private or differently spelled name: whoever is on every paper is the reader.
@@ -399,6 +399,31 @@ test('with no author id of the reader known, only their full name or a place on 
   ];
   assert.deepEqual(ids(one, null), ['A2', 'A3']);
   assert.deepEqual(ids(one, 'Maria G. Garcia'), ['A2', 'A3']);
+});
+
+test('a work listed as both a journal article and its preprint is two works to cite and to leave out, and one to count coauthors from', () => {
+  const version = (id: number, year: number, doi: string, authors: Array<[number, string]>) => ({ ...listedPaper(id, year, authors, doi), arxivId: '2401.00001' }) as Paper;
+  const ada: [number, string] = [1, 'Ada Reader'];
+  const rows: OrcidListedWork[] = [
+    recordRow(version(1, 2025, '10.1000/journal', [ada, [2, 'Bea Close'], [3, 'Cy Once']])),
+    recordRow(version(2, 2024, '10.1000/preprint', [ada, [2, 'Bea Close'], [3, 'Cy Once']])),
+    recordRow(listedPaper(4, 2023, [ada, [2, 'Bea Close']])),
+  ];
+  const papers = readerPapers(rows, { mine: [], notMine: [] });
+  assert.deepEqual(citedWorkIds(papers), ['W1', 'W2', 'W4']);
+  assert.deepEqual(frequentCoauthors(papers, { readerAuthorIds: ['A1'] }).map(({ id, sharedWorks }) => [id, sharedWorks]), [['A2', 2]]);
+});
+
+test('once the reader is found by name, an author on every paper is a coauthor, not the reader', () => {
+  const papers = [
+    listedPaper(1, 2025, [[1, 'Ada Reader'], [2, 'Bea Close']]),
+    listedPaper(2, 2024, [[1, 'Ada Reader'], [2, 'Bea Close']]),
+  ];
+  const ids = (readerName: string | null) => frequentCoauthors(papers, { readerAuthorIds: [], readerName }).map(coauthor => coauthor.id);
+  assert.deepEqual(ids('Ada Reader'), ['A2']);
+  // No name found: an author on every paper is taken for the reader, and so is the other one.
+  assert.deepEqual(ids('Someone Else'), []);
+  assert.deepEqual(ids(null), []);
 });
 
 test('the citations section tells works OpenAlex does not know from works whose details did not load', () => {
