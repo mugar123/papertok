@@ -9,6 +9,7 @@ import { useFeed } from '../../context/feed-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
 import { ANALYTICS_CONSENT, trackPmfSurvey } from '../../services/analytics-service.ts';
+import { analyticsSessionContext } from '../../services/analytics-session.ts';
 import { readAccountPrivacyNotice, saveAccountPrivacyNotice } from '../../services/privacy-notice-service.ts';
 import {
   NUDGE_DWELL_MS,
@@ -38,6 +39,7 @@ import {
 } from '../../utils/nudges.ts';
 import { pmfSurveyAreas, pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
 import { setCardsCovered } from '../../utils/visible-time.ts';
+import { pinAnalyticsContext } from '../pdf/viewer-outcome.ts';
 import NudgePanel from './nudge-panel.tsx';
 import PmfSurvey from './pmf-survey.tsx';
 import PrivacyNotice from './privacy-notice.tsx';
@@ -278,27 +280,22 @@ export default function NudgeHost() {
   // Both of its events describe the reader as they were when it opened: their
   // reading level and the broad areas of their interests. A change to either
   // while it is open does not reopen it.
-  // Its events go out only while the account that opened it is still the one
-  // signed in: a switch to another account closes it, and that dismissal,
-  // which the SDK may capture after the new account is identified, would
-  // otherwise land under the new account with the first one's reader fields.
-  // The account is kept in a layout effect, so it is current before any
-  // passive cleanup of the same commit runs.
+  // Its events go out only while the consent and account it opened under
+  // still hold, read from Firebase when each is sent (analyticsSessionContext,
+  // as the reader's time does): a switch to another account remounts this
+  // host and closes the survey, and that dismissal, which the SDK may capture
+  // after the new account is identified, is dropped rather than filed under
+  // the new account with the first one's reader fields.
   const shownSurvey = useRef<PmfSurveyShown | null>(null);
-  const signedInUid = useRef(uid);
-  useLayoutEffect(() => {
-    signedInUid.current = uid;
-  }, [uid]);
   const surveyReader = useEffectEvent(() => ({ readingLevel: readingPreferences.aiExplanationLevel, areas: pmfSurveyAreas(userPreferences) }));
   useEffect(() => {
-    const opener = uid;
     const shown = recordPmfSurveyShown({
       uid,
       surveyOpen,
       version: APP_VERSION,
       reader: surveyReader(),
       track: (eventName, params, stillValid) => trackPmfSurvey(eventName, params, { stillValid }),
-      stillValid: () => signedInUid.current === opener,
+      stillValid: pinAnalyticsContext(analyticsSessionContext),
     });
     shownSurvey.current = shown;
     return () => shown?.close();

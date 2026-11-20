@@ -334,7 +334,7 @@ test('the areas reach analytics as known area keys only, each once and sorted, a
   assert.equal(sanitizeProductEventParams('pmf_survey', { disappointment: 'very', reading_level: 'expert' }, 'enabled').reading_level, undefined, 'an unknown reading level is dropped');
 });
 
-test('an event of the survey is sent only while the account that opened it is still signed in', () => {
+test('each event of the survey is sent with the guard it is given, so one that fails it after a switch is dropped', () => {
   let signedIn = 'reader-a';
   const sent: unknown[] = [];
   // A track that honours the guard as the analytics client does, just before capture.
