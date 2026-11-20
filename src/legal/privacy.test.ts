@@ -165,13 +165,13 @@ test('readers who saw an earlier 20 November notice are owed the cumulative upda
     }), 'owed', seen);
   }
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /Anthropic.*paper text outside the EU/i);
-  assert.match(notice, /My profile.*recent citing papers.*frequent coauthors.*and stores neither list/i);
+  assert.match(notice, /rewrites and explanations.*Anthropic.*paper text outside the EU/i);
+  assert.match(notice, /My profile.*recent citing papers.*frequent coauthors.*but keeps neither list/i);
   assert.match(notice, /Verified-email saves.*each paper to your account once per UTC week.*by default/i);
-  assert.match(notice, /Omit future saves in Settings → Privacy/i);
-  assert.match(notice, /analytics on.*surveys link available reading level and broad interests to your account/i);
-  assert.match(notice, /answers and optional role on submission/i);
-  assert.match(notice, /Only your browser marks returns 7–13 days after first use.*existing PostHog first-use and visit events/i);
+  assert.match(notice, /Opt out in Settings → Privacy/i);
+  assert.match(notice, /analytics on.*surveys link known reading level and broad interests to your account/i);
+  assert.match(notice, /submitted answers and optional role/i);
+  assert.match(notice, /Only browsers mark returns 7–13 days after first use.*existing PostHog first-use and visit events/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
