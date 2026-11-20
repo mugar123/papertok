@@ -1668,10 +1668,10 @@ test("an ADS record listed alone keeps the categories of a row the eprint or ADS
     const paper = JSON.parse(json) as Paper;
     return [paper.primaryCategory, paper.categories, paper.allCategories];
   };
-  for (const first of [eprint, ads]) {
+  for (const [first, list] of [[eprint, ['econ.EM', 'q-fin.ST']], [ads, ['econ.EM', 'Econometrics']]] as const) {
     const name = first.sources.primary;
-    const before = categories((await journalRowAfter(t, [[first]])).json);
-    assert.deepEqual(categories((await journalRowAfter(t, [[first], [ads]])).json), before, name);
+    assert.deepEqual(categories((await journalRowAfter(t, [[first]])).json), ['econ.EM', list, list], `${name} alone`);
+    assert.deepEqual(categories((await journalRowAfter(t, [[first], [ads]])).json), ['econ.EM', list, list], `${name}, then ADS`);
   }
 });
 
