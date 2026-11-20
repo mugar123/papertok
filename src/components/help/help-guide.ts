@@ -5,6 +5,7 @@ import {
   ArrowSquareOut,
   BookmarkSimple,
   ClockCounterClockwise,
+  Compass,
   DotsThree,
   DownloadSimple,
   Eye,
@@ -38,16 +39,18 @@ import {
   X,
 } from '@phosphor-icons/react';
 import { MAX_ACCOUNT_ENTITIES, MAX_ACCOUNT_KEYWORDS, MAX_CUSTOM_FEEDS, MAX_FEED_INGREDIENTS } from '../../utils/custom-feeds.ts';
+import { INTEREST_MIXES } from '../../utils/area-preferences.ts';
 import { MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 import type { AIUses } from '../../services/paper-rewrite-service.ts';
 
 /**
- * What the Worker allows each account to change in public lists per day, as
- * wrangler.toml sets it (PUBLIC_LIST_USER_DAILY_LIMIT). No route sends it to
- * the client, so help-guide.test.ts compares it with the file. The AI limit
- * is not copied: the Worker sends it with the count (`AIUses.dailyLimit`), and
- * the page shows that.
+ * What the Worker allows each account per day, as wrangler.toml sets it:
+ * AI_DAILY_USER_LIMIT and PUBLIC_LIST_USER_DAILY_LIMIT. A visitor has no
+ * account to ask the Worker about, so the page states both, and
+ * help-guide.test.ts compares them with the file. A signed-in reader also sees
+ * their own count, which the Worker sends (`AIUses.dailyLimit`).
  */
+export const AI_USES_PER_DAY = 10;
 export const LIST_PUBLISHES_PER_DAY = 60;
 
 /**
@@ -56,8 +59,9 @@ export const LIST_PUBLISHES_PER_DAY = 60;
  * - `ai`: one AI use every time.
  * - `ai-new`: one AI use, unless that version is already written (it then opens free).
  * - `publish`: one of the day's public-list changes (publish, update, stop sharing).
+ * - `publish-if-public`: nothing on a private list, one public-list change on a public one.
  */
-export type HelpAllowance = 'free' | 'ai' | 'ai-new' | 'publish';
+export type HelpAllowance = 'free' | 'ai' | 'ai-new' | 'publish' | 'publish-if-public';
 
 /** `zotero` is the Z the viewer draws; Phosphor has no mark for it. */
 type HelpIcon = Icon | 'zotero';
@@ -98,7 +102,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     intro: 'A card is one paper in your feed. On a phone the buttons sit at the foot of the card and in the column on its right edge.',
     entries: [
       entry('read', 'Read article', FileText,
-        'Opens the paper. The label changes with the copy PaperTok found: Read full text, Read open version, Via followed by your university’s name, or Source. A PDF opens in PaperTok’s viewer; other copies open in a new tab.'),
+        'Opens the paper. Through your university’s library, the publisher’s version opens in a new tab. Otherwise a PDF PaperTok can show, or full text it finds for the paper, opens in PaperTok’s viewer; failing that, the arXiv, publisher or DOI page opens in a new tab. The label says what was found: Read full text, Read open version, Via followed by your university’s name, or Source.'),
       entry('plain-words', 'Read in plain words', Sparkle,
         'Opens the reader, where AI rewrites the paper’s full text in plainer language at your level. It shows only on papers whose full text can be read, and reads “Simple” on a narrow phone. The first rewrite of a paper at a level spends one AI use. A version already written opens free, and the line under the button says so or shows how many uses you have left.',
         { allowance: 'ai-new', needsAccount: true }),
@@ -108,8 +112,8 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Likes the paper. The heart fills in; press again to undo. Likes teach your For you feed what you want to see, and liked papers are listed under Favorites in My lists.',
         { needsAccount: true }),
       entry('save', 'Save', BookmarkSimple,
-        'Saves the paper to Read later at once and offers Add to list in a message. Press again to take it out of Read later and every list; the message offers Undo. On a touch screen, holding the button for half a second opens the list picker instead.',
-        { needsAccount: true }),
+        `Saves the paper to Read later at once and offers Add to list in a message. Press again to take it out of Read later and every list; the message offers Undo. On a touch screen, holding the button for half a second opens the list picker instead. Taking the paper out of a public list, or adding it to one from the picker, updates that list’s public copy, and each update counts toward ${LIST_PUBLISHES_PER_DAY} public-list changes a day. Read later is never public.`,
+        { allowance: 'publish-if-public', needsAccount: true }),
       entry('connections', 'Connections', Graph,
         'Shows the paper’s citation map when one is available. On a wide screen the map takes the abstract’s place until you press the button again. On a phone it opens as a sheet.',
         { needsAccount: true }),
@@ -122,8 +126,8 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
   },
   {
     id: 'card-text',
-    title: 'Text on a card you can press',
-    intro: 'These have no icon. Each one is a link or button made of words.',
+    title: 'Words on a paper card',
+    intro: 'These have no icon. Each one is a link or button made of words, except the study-type label, which only informs.',
     entries: [
       entry('field', 'Field name above the title', undefined,
         'Opens that field or topic in the explorer, with its papers and authors.'),
@@ -133,6 +137,10 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Expands the abstract on the card, or opens it in a sheet on a touch screen. Tapping the abstract does the same.'),
       entry('authors', 'The author initials', undefined,
         'Press the row of initials to list every author: on a computer the list unfolds under the initials, on a phone it opens as a sheet. Each name opens that author in the explorer.'),
+      entry('study-type', 'Study-type label', undefined,
+        'Randomized controlled trial, Systematic review, Meta-analysis or Practice guideline, in the line above the title when the paper’s record says so. It is information only: not a button and not a link.'),
+      entry('trial-number', 'Trial registration number (NCT…)', undefined,
+        'Shows in the same line when the paper has a ClinicalTrials.gov number. It is a link: it opens that study on ClinicalTrials.gov in a new tab.'),
       entry('citations', 'Citation count labelled “on Scopus”', undefined,
         'Links to the paper’s record on Scopus in a new tab. A plain count without “on Scopus” is not a link.'),
     ],
@@ -171,7 +179,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Shows under a reused summary. Writes a new version and replaces the saved one. Spends one AI use. If the new one stops early, the old one stays.',
         { allowance: 'ai', needsAccount: true }),
       entry('retry', 'Try again', ArrowClockwise,
-        'Shows when a rewrite failed or stopped early. Asks for the rewrite again and spends one AI use, unless a saved version turns up. A rewrite that fails because of the service gives its AI use back.',
+        'Shows when a rewrite failed or stopped early. Asks for the rewrite again and spends one AI use, unless a saved version turns up. The use is given back when the service is busy or unavailable, when the paper’s file cannot be downloaded, or when the provider’s own daily limit is reached. It is not given back after a timeout or an empty or unusable answer, or when you close the reader mid-rewrite.',
         { allowance: 'ai-new', needsAccount: true }),
       entry('annotations', 'Annotations', NotePencil,
         'Opens or closes the notes panel: your highlights and notes, and the AI’s explanations on a tab of their own.',
@@ -267,11 +275,12 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
   {
     id: 'lists',
     title: 'Lists',
-    intro: 'The save picker and the My lists page. Favorites (your likes), Read later and Reading history fill in as you like, save and read. Lists you make can hold notes and tags. Changing a public list also updates its public copy, which counts toward the daily limit.',
+    intro: 'The save picker and the My lists page. Favorites (your likes), Read later and Reading history fill in as you like, save and read. Lists you make can hold notes and tags. Changing a public list also updates its public copy, which counts toward the daily limit; the stamp “Counts if a list is public” marks those controls.',
     signedInOnly: true,
     entries: [
       entry('new-list', 'New list', Plus,
-        'Makes a list with a name, an icon and a colour.'),
+        `Makes a list with a name, an icon and Private or Public. Choosing Public publishes the list at once, which counts toward ${LIST_PUBLISHES_PER_DAY} public-list changes a day; a private list counts for nothing.`,
+        { allowance: 'publish-if-public' }),
       entry('export', 'Export', DownloadSimple,
         'Downloads the open list’s citations as BibTeX (.bib) or RIS (.ris).'),
       entry('publish', 'Publish & share', GlobeHemisphereWest,
@@ -281,17 +290,31 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Makes the list private again. Its public link stops working.',
         { allowance: 'publish' }),
       entry('edit-list', 'Edit list', PencilSimple,
-        'Changes the list’s name, icon and colour. Counts toward the daily limit only on a public list.',
-        { allowance: 'publish' }),
+        'Changes the list’s name, icon and colour. On a public list it updates the public copy, which counts toward the daily limit.',
+        { allowance: 'publish-if-public' }),
       entry('delete-list', 'Delete list', Trash,
         'Deletes the list after you confirm. The papers stay saved. A public list is stopped from sharing first, which counts toward the daily limit.',
-        { allowance: 'publish' }),
+        { allowance: 'publish-if-public' }),
       entry('edit-note', 'Edit note and tags', PencilSimple,
-        'On a paper in a list. Adds a note and tags. Counts toward the daily limit only on a public list.',
-        { allowance: 'publish' }),
+        'On a paper in a list. Adds a note and tags. On a public list it updates the public copy, which counts toward the daily limit.',
+        { allowance: 'publish-if-public' }),
       entry('remove-paper', 'Remove from list', Trash,
-        'Takes the paper out of this list. Counts toward the daily limit only on a public list.',
-        { allowance: 'publish' }),
+        'Takes the paper out of this list. On a public list it updates the public copy, which counts toward the daily limit.',
+        { allowance: 'publish-if-public' }),
+    ],
+  },
+  {
+    id: 'interests',
+    title: 'Interests: areas, Priority and Feed mix',
+    intro: 'Chosen on the welcome page and, once you have an account, in Settings under Discovery, Edit interests. They shape For you and nothing else, and they cost nothing.',
+    entries: [
+      entry('area-priority', 'Priority', Compass,
+        'A choice for each area you pick: Essential, the default, for the areas of your work, or Curiosity for areas you only want a taste of. It decides which of the two groups For you counts an area in.'),
+      entry('feed-mix', 'Feed mix', Compass,
+        `Shows once you have chosen areas of both kinds. It sets how For you divides its weight between Essential and Curiosity areas: ${Object.values(INTEREST_MIXES).map(({ label, essential }) => `${label}, ${essential} to ${100 - essential}`).join('; ')}. Balanced is the default.`),
+      entry('area-level', 'Read in plain words (per area)', Compass,
+        'In Edit interests only. A level for one area, or Use my default. It replaces your default level for papers in that area.',
+        { needsAccount: true }),
     ],
   },
   {
@@ -313,7 +336,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('edit-feeds', 'Edit feeds', PencilSimple,
         'Discovery page. Lists your feeds in tab order with Edit, Move up, Move down and Delete for each.'),
       entry('edit-interests', 'Edit interests', PencilSimple,
-        'Discovery page. Chooses the subjects that train your feed, and can set a plain-words level for an area, which replaces your default for papers in it.'),
+        'Discovery page. Chooses the subjects that train your feed, and for each area its Priority and plain-words level, and the Feed mix. The Interests section describes them.'),
       entry('default-level', 'Default AI level', Sparkle,
         'Reading & AI page. Sets the level Read in plain words starts at, unless the paper’s area has its own level. The same page lists the summaries you have read.'),
       entry('email-updates', 'Configure email updates', GearSix,
@@ -353,7 +376,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
 ];
 
 /** The page's opening paragraph: the allowance and the controls that spend it. */
-export const HELP_OVERVIEW = 'AI uses are limited for each account, and the count resets once a day. Five things spend one: reading a paper in plain words for the first time at a level, choosing a level that paper has not been written at, Try again after a failed rewrite, Write it again, and Explain this to me. Everything else on this page spends no AI use.';
+export const HELP_OVERVIEW = `Each account has ${AI_USES_PER_DAY} AI uses a day, renewing at 00:00 UTC. Without an account there is no AI. Five things spend one: reading a paper in plain words for the first time at a level, choosing a level that paper has not been written at, Try again after a failed rewrite, Write it again, and Explain this to me. Everything else on this page spends no AI use.`;
 
 /** What each stamp on a row means, for the legend at the top of the page. */
 export const HELP_ALLOWANCE_RULES: Record<HelpAllowance, string> = {
@@ -361,6 +384,7 @@ export const HELP_ALLOWANCE_RULES: Record<HelpAllowance, string> = {
   ai: 'Spends one AI use every time.',
   'ai-new': 'Spends one AI use the first time. A version already written opens free.',
   publish: `Counts toward ${LIST_PUBLISHES_PER_DAY} public-list changes a day.`,
+  'publish-if-public': `Free on a private list. On a public list it counts toward ${LIST_PUBLISHES_PER_DAY} public-list changes a day.`,
 };
 
 /** The stamp on a row: short, and never the only way the cost is said. */
@@ -368,7 +392,8 @@ export function allowanceLabel(allowance: HelpAllowance) {
   if (allowance === 'free') return 'Free';
   if (allowance === 'ai') return 'Uses 1 AI use';
   if (allowance === 'ai-new') return 'Uses 1 AI use unless saved';
-  return 'Daily sharing limit';
+  if (allowance === 'publish') return 'Daily sharing limit';
+  return 'Counts if a list is public';
 }
 
 /**

@@ -176,7 +176,7 @@ test('names the routes that reach analytics through the static list', () => {
   assert.equal(normalizeAnalyticsPath('/profile'), '/profile');
   assert.equal(normalizeAnalyticsPath('/settings/profile'), '/settings/profile');
   assert.equal(normalizeAnalyticsPath('/settings/feeds'), '/settings/feeds');
-  assert.equal(normalizeAnalyticsPath('/settings/help'), '/settings/help');
+  assert.equal(normalizeAnalyticsPath('/help'), '/help');
   assert.equal(normalizeAnalyticsPath('/recent'), '/recent');
   assert.equal(normalizeAnalyticsPath('/report'), '/report');
 });

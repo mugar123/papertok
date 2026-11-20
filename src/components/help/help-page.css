@@ -2,6 +2,24 @@
    own glyph in a tile beside each one. Text controls and gestures have no
    glyph, so their rows take the whole width. */
 
+.help-back {
+  margin-bottom: var(--space-4);
+}
+
+.help-content > :first-child {
+  margin-top: 0;
+}
+
+/* The section's sign-in requirement, under its intro. */
+.settings-section-heading .help-section-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  color: var(--text-secondary);
+}
+
 /* The headings take focus from the section links, below the fixed bar. */
 .help-heading {
   scroll-margin-top: calc(var(--nav-total) + var(--space-4));
@@ -51,7 +69,8 @@
 
 /* A long stamp wraps, so its lines need room. */
 .settings-list .help-row .help-stamps .settings-status,
-.help-legend .settings-status {
+.help-legend .settings-status,
+.help-section-note .settings-status {
   padding-block: 2px;
   line-height: 1.3;
 }

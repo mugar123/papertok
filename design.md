@@ -452,15 +452,18 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   `Delete` buttons, each named for its feed. These buttons do what the tab's
   menu does, so no command needs a right click or a long press. A move at an
   end is disabled, and a saved move is announced with the feed's new position.
-- **Settings › Help** (`settings/help-page.tsx`, its words in `help-guide.ts`),
-  the last page of the Settings menu: what each button and gesture does, in
-  sections of ruled rows. A row with a glyph puts it in a 40px tile beside the
-  control's name, which is the row's heading, so the tile is decoration. A row
-  with no glyph (text controls, gestures) takes the whole width. Under each
-  sentence two mono stamps say what the control spends (amber for an AI use or
-  a list publish, neutral for nothing) and whether it needs an account. The
-  page opens with a legend of the stamps and links to its sections; a link moves
-  focus to that section's heading.
+- **Help** (`help/help-page.tsx`, its words in `help-guide.ts`) at `/help`: what
+  each button and gesture does, in the Settings layout. It is a public page: a
+  visitor reaches it from the Help icon in the welcome's bar, a signed-in reader
+  from the last entry of the Settings menu. It is set in sections of ruled rows. A row with a
+  glyph puts it in a 40px tile beside the control's name, which is the row's
+  heading, so the tile is decoration. A row with no glyph (text controls,
+  gestures) takes the whole width. Under each sentence two mono stamps say what
+  the control spends (amber for an AI use or a public-list change, neutral for
+  nothing) and whether it needs an account. A section whose controls are all
+  behind sign-in says so once under its intro instead. The page opens with a
+  legend of the stamps and links to its sections; a link moves focus to that
+  section's heading.
 
 ### Inputs / Fields
 - **Style:** a hairline frame on paper, near-square.
