@@ -74,7 +74,7 @@ export interface HelpEntry {
   icon?: HelpIcon;
   what: string;
   allowance: HelpAllowance;
-  /** Whether a signed-out visitor is asked to sign in when they use it. */
+  /** Whether a signed-out visitor is asked to sign in when they use it, or cannot reach it at all. */
   needsAccount: boolean;
 }
 
@@ -268,7 +268,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Searches the papers or authors on this page. The Papers and Authors buttons beside it choose which list; Authors is there only on pages that have authors to list.',
         { needsAccount: true }),
       entry('filters', 'Filters', Funnel,
-        'Opens a panel with three filters and a sort order. The filters are Area, Published (Any time, Last year or Last 5 years) and Peer-reviewed only. Each filter that is on shows as a chip below the search box; press a chip to remove that filter. On a screen wider than 768px the Filters button also counts them, as in Filters · 2; on a narrower one the button is a funnel icon that turns active instead. In the panel, Reset clears the three filters and closes the panel, and the Show … papers button closes it with them kept. Sort by, Most cited or Most recent, is set in the same panel but is not a filter: it has no chip, it is not counted, and Reset leaves it as it is.',
+        'Opens a panel with three filters and a sort order. The filters are Area, Published (Any time, Last year or Last 5 years) and Peer-reviewed only. Each filter that is on shows as a chip below the search box; press a chip to remove that filter. On a screen wider than 768px the Filters button also counts them, as in Filters · 2; on one 768px wide or narrower the button is a funnel icon that turns active instead. In the panel, Reset clears the three filters and closes the panel, and the Show … papers button closes it with them kept. Sort by, Most cited or Most recent, is set in the same panel but is not a filter: it has no chip, it is not counted, and Reset leaves it as it is.',
         { needsAccount: true }),
     ],
   },
