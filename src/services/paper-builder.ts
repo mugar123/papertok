@@ -1,3 +1,4 @@
+import { givesArxivCategories } from './arxiv-records.ts';
 import { hasUsableAIAbstract } from '../utils/ai-explanation-access.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { isJournalArticleSource, listedDois } from '../utils/publication-status.ts';
@@ -567,7 +568,7 @@ export class PaperBuilder {
     // categories ("Mutual information" for 2605.02209, which arXiv files under
     // cs.AI); they stay in `concepts`. A record without an arXiv primary, such
     // as the abstract recovery, changes no category.
-    if (enrichmentData.sources?.primary === 'arxiv' && enrichmentData.primaryCategory) {
+    if (givesArxivCategories(enrichmentData)) {
       merged.primaryCategory = enrichmentData.primaryCategory;
       merged.categories = enrichmentData.categories;
       merged.allCategories = enrichmentData.allCategories || enrichmentData.categories;

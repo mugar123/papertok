@@ -16,7 +16,7 @@ import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 import { entityLane, servedFollows } from '../src/utils/follow-lanes.ts';
 import { FOLLOWED_JOURNAL_WORK_TYPES } from '../src/utils/following.ts';
-import { ARXIV_FEED_AREAS, isArxivCategory } from '../src/services/arxiv-records.ts';
+import { ARXIV_FEED_AREAS, givesArxivCategories, isArxivCategory } from '../src/services/arxiv-records.ts';
 import { MAX_LIMIT as LEDGER_MAX_LIMIT, reserveRequestQuota } from './request-quota-ledger.ts';
 import { isKeywordLane } from './keyword-lanes.ts';
 
@@ -396,7 +396,6 @@ interface WorkRow { id: number; paper: string; kept_until: string }
 interface Group { paper: Paper; lanes: Set<string>; keys: Set<string>; arxivCategories: boolean }
 
 // The records `merge` takes categories from.
-const givesArxivCategories = (paper: Paper) => paper.sources?.primary === 'arxiv' && Boolean(paper.primaryCategory);
 
 // A new row's number comes from its paper id, so two writers filing the same
 // paper at once (a like looked up by two requests, a followed lane's run beside
