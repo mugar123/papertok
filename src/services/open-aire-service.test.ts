@@ -232,8 +232,9 @@ test('Graph unreported amounts stay unknown on project pages', async () => {
   try {
     const zero = { ...SNSF_PROJECT, granted: { totalCost: 0, fundedAmount: 0, currency: null } };
     const details = await withStubbedFetch(async () => graphResponse([zero]), () => getProjectDetails(zero.id));
-    assert.equal(details?.budget, undefined);
-    assert.equal(details?.fundedAmount, undefined);
+    assert.ok(details);
+    assert.equal(details.budget, undefined);
+    assert.equal(details.fundedAmount, undefined);
   } finally {
     CACHE.clear();
   }
