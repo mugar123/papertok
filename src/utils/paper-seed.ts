@@ -1,3 +1,4 @@
+import { givesArxivCategories } from '../services/arxiv-records.ts';
 import type { Paper } from '../models/paper.ts';
 
 import { withPublicationEvidenceOf } from '../models/paper.ts';
@@ -86,7 +87,7 @@ export function hydrateSeededPaper(seed: Partial<Paper> | null | undefined, hydr
   const fresh = <K extends keyof Paper>(field: K) => (present(hydrated[field]) ? hydrated[field] : seed[field]);
   // Native arXiv metadata can replace a concept-only copy. An OpenAlex fallback
   // cannot replace known native categories; keep the category lists together.
-  const classification = hydrated.sources?.primary === 'arxiv' && hydrated.primaryCategory
+  const classification = givesArxivCategories(hydrated)
     && getArxivArchiveArea(hydrated.primaryCategory)
     ? hydrated
     : present(seed.categories) || present(seed.primaryCategory) ? seed : hydrated;
