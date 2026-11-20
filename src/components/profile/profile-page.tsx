@@ -221,8 +221,8 @@ function CitingPapers({ orcidId, papers, lookupFailed }: { orcidId: string; pape
   // The works as they stand when a request is made, not as each decision changes them.
   const latestPapers = useRef(papers);
   useEffect(() => { latestPapers.current = papers; }, [papers]);
-  // Whether the mount asked; what the works allow now can change with a decision.
-  const [requested] = useState(() => citedWorkIds(papers).length > 0);
+  // Whether the section asks: decided at mount, and ended by a retry that finds no work left to ask about.
+  const [requested, setRequested] = useState(() => citedWorkIds(papers).length > 0);
   const cited = citedWorksState(papers, lookupFailed);
 
   useEffect(() => {
@@ -246,6 +246,12 @@ function CitingPapers({ orcidId, papers, lookupFailed }: { orcidId: string; pape
   const retry = () => {
     // The button leaves with the message; the heading keeps focus in the section.
     headingRef.current?.focus();
+    // The reader may have removed their last work since the failure; with none
+    // left there is nothing to ask for, and the section says why instead.
+    if (citedWorkIds(latestPapers.current).length === 0) {
+      setRequested(false);
+      return;
+    }
     setState({ status: 'loading' });
     setAttempt(value => value + 1);
   };
@@ -301,7 +307,7 @@ function CitingPapers({ orcidId, papers, lookupFailed }: { orcidId: string; pape
           )}
         </>
       ) : (
-        <p className="my-profile-note">
+        <p className="my-profile-note" role="status">
           {cited === 'known' ? COPY.citationsNextVisit : cited === 'failed' ? COPY.citationsDetailsFailed : COPY.citationsUnknown}
         </p>
       )}
