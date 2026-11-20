@@ -1091,6 +1091,15 @@ button.pc-topics-pop-item:focus-visible {
   height: min(100%, 860px);
 }
 
+.pc-rewrite-hint {
+  color: var(--text-secondary);
+  flex-basis: 100%;
+}
+
+.pc-rewrite-hint:empty {
+  position: absolute;
+}
+
 .pc-action-bar {
   display: flex;
   align-items: center;

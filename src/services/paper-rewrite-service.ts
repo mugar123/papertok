@@ -52,8 +52,16 @@ const rewriteCache = new Map<string, RewriteResult>();
 // previous one cannot land in the memory the next one reads.
 let rewriteCacheAccount = 0;
 
-export type AIUses = { remainingUses: number; dailyLimit: number | null; unlimited?: boolean };
-const lastAIUses = new Map<string, AIUses>();
+export type AIUses = { remainingUses: number; dailyLimit: number | null; unlimited?: boolean; resetAt?: string };
+const lastAIUses = new Map<string, { version: number; uses: AIUses | null }>();
+
+let quotaSequence = 0;
+const quotaChanges = new EventTarget();
+
+export function subscribeAIUses(listener: () => void) {
+  quotaChanges.addEventListener('change', listener);
+  return () => quotaChanges.removeEventListener('change', listener);
+}
 
 /**
  * Forgets the rewrites and uses counts held in memory. They are the signed-in
@@ -62,6 +70,7 @@ const lastAIUses = new Map<string, AIUses>();
 export function clearRewriteCache() {
   rewriteCache.clear();
   lastAIUses.clear();
+  quotaChanges.dispatchEvent(new Event('change'));
   rewriteCacheAccount += 1;
 }
 
@@ -134,19 +143,19 @@ export function getRewritablePdfUrl(paper: RewritePaperInput | null | undefined)
  * Returns `null` rather than throwing: a reader that cannot show the count is
  * still a working reader, and this must never be the thing that breaks it.
  */
-export async function fetchRemainingAIUses({ signal }: { signal?: AbortSignal } = {}) {
+async function fetchRemainingAIUses({ signal }: { signal?: AbortSignal } = {}) {
   const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
   if (!apiBase) return null;
   try {
     const response = await authenticatedWorkerFetch(`${apiBase}/ai/quota`, { method: 'GET', signal });
     if (!response.ok) return null;
-    const payload = await response.json() as { remainingUses?: unknown; dailyLimit?: unknown; unlimited?: unknown };
-    const remainingUses = Number(payload?.remainingUses);
-    const dailyLimit = Number(payload?.dailyLimit);
-    if (!Number.isFinite(remainingUses) || !Number.isFinite(dailyLimit)) return null;
+    const { remainingUses, dailyLimit, unlimited, resetAt } = await response.json() as Partial<AIUses>;
+    if (typeof remainingUses !== 'number' || !Number.isSafeInteger(remainingUses) || remainingUses < 0
+      || typeof dailyLimit !== 'number' || !Number.isSafeInteger(dailyLimit) || dailyLimit < remainingUses
+      || typeof resetAt !== 'string' || !Number.isFinite(Date.parse(resetAt))) return null;
     // An exempt account has a ceiling too — the global one — but showing it as
     // "993/1000 today" would be a true sentence nobody reads as "no limit".
-    return { remainingUses, dailyLimit, unlimited: payload?.unlimited === true };
+    return { remainingUses, dailyLimit, unlimited: unlimited === true, resetAt };
   } catch {
     return null;
   }
@@ -158,24 +167,71 @@ export async function fetchRemainingAIUses({ signal }: { signal?: AbortSignal } 
  * pill instead of growing it a round trip later. The reader still asks again.
  */
 export function lastKnownAIUses(uid: string | null | undefined) {
-  return (uid && lastAIUses.get(uid)) || null;
+  return (uid && lastAIUses.get(uid)?.uses) || null;
 }
 
-export function rememberAIUses(uid: string, uses: AIUses) {
-  lastAIUses.set(uid, uses);
+export function rememberAIUses(uid: string, uses: AIUses | null) {
+  lastAIUses.set(uid, { version: ++quotaSequence, uses });
+  quotaChanges.dispatchEvent(new Event('change'));
 }
 
-/**
- * Asks once per account and tab, ahead of the first reader. An answer that
- * lands after the account changed carried whichever token was current, so it
- * is dropped.
- */
-export function primeAIUses(uid: string) {
-  if (lastKnownAIUses(uid)) return;
+export function beginAIUsesRead(uid: string) {
   const account = rewriteCacheAccount;
-  void fetchRemainingAIUses().then(uses => {
-    if (uses && account === rewriteCacheAccount && !lastKnownAIUses(uid)) rememberAIUses(uid, uses);
-  });
+  const started = ++quotaSequence;
+  return (fresh: AIUses | null) => {
+    if (account !== rewriteCacheAccount) return;
+    const current = lastAIUses.get(uid);
+    if (!current || current.version < started) {
+      // Confirming the same count supersedes older reads, but a later read
+      // can still report a refund. A changed count invalidates both.
+      const version = current?.uses?.remainingUses === fresh?.remainingUses ? started : ++quotaSequence;
+      lastAIUses.set(uid, { version, uses: fresh });
+      quotaChanges.dispatchEvent(new Event('change'));
+    } else if (current?.uses && !current.uses.resetAt && fresh) {
+      // Filling in metadata leaves reads of the current count valid.
+      current.uses = { ...fresh, remainingUses: current.uses.remainingUses };
+      quotaChanges.dispatchEvent(new Event('change'));
+    }
+  };
+}
+
+/** Records the count a use reported, for every card and reader that shows it. */
+export function noteAIUsesLeft(uid: string, remainingUses: number) {
+  const current = lastKnownAIUses(uid);
+  rememberAIUses(uid, { ...current, dailyLimit: current?.dailyLimit ?? null, remainingUses });
+}
+
+export async function refreshAIUses(uid: string, signal: AbortSignal) {
+  const settle = beginAIUsesRead(uid);
+  const fresh = await fetchRemainingAIUses({ signal });
+  if (signal.aborted || !navigator.onLine) return;
+  settle(fresh);
+}
+
+export function primeAIUses(uid: string) {
+  let controller: AbortController;
+  let timer: ReturnType<typeof setTimeout>;
+  function refresh() {
+    controller?.abort();
+    clearTimeout(timer);
+    controller = new AbortController();
+    const { signal } = controller;
+    rememberAIUses(uid, null);
+    const midnight = new Date();
+    midnight.setUTCHours(24, 0, 0, 0);
+    timer = setTimeout(refresh, midnight.getTime() - Date.now() + 1);
+    if (!navigator.onLine) return;
+    void refreshAIUses(uid, signal);
+  }
+  refresh();
+  window.addEventListener('online', refresh);
+  window.addEventListener('offline', refresh);
+  return () => {
+    controller.abort();
+    clearTimeout(timer);
+    window.removeEventListener('online', refresh);
+    window.removeEventListener('offline', refresh);
+  };
 }
 
 export function canRewritePaper(paper: RewritePaperInput | null | undefined) {
@@ -347,7 +403,9 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
       const meta = { level, language: rewriteLanguage, model: saved.model, sourceBasis: saved.sourceBasis };
       onMeta?.({ ...meta, cached: true, remainingUses: null });
       saved.sections.forEach((section, index) => onSection?.(section, index));
-      return { meta, sections: saved.sections, incomplete: false };
+      const result = { meta, sections: saved.sections, incomplete: false };
+      if (cacheAccount === rewriteCacheAccount) rewriteCache.set(cacheKey, result);
+      return result;
     }
   }
 

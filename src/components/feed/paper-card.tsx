@@ -45,7 +45,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense, Fragment } from 'react';
+import { useSyncExternalStore, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -132,7 +132,8 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
+import { rewriteUseHint } from './rewrite-use-hint.ts';
+import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
@@ -533,8 +534,9 @@ const PaperCard = memo(function PaperCard({
   // played over a card that had already stopped moving.
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
-  const { institution, user } = useAuth();
-  const { language } = useLanguage();
+  const { institution, user, readingPreferences } = useAuth();
+  const { language, locale } = useLanguage();
+  const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(user?.uid));
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
   // (hooks/use-stable-navigate.ts says what it cost).
@@ -1634,6 +1636,10 @@ const PaperCard = memo(function PaperCard({
     openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
   } : paper, [paper, resolvedOpenCopy]);
   const canRequestRewrite = canRewritePaper(readablePaper);
+  const rewriteHint = canRequestRewrite && !publicMode && user && isCardVisible
+    ? rewriteUseHint(navigator.onLine ? quota : null, Boolean(getCachedRewrite(readablePaper, readingPreferences?.aiExplanationLevel ?? 'university')), locale)
+    : '';
+
   // Never the library link: it only opens for readers at that institution.
   const bestAvailableUrl = safeExternalUrl(resolvedOpenCopy?.pdfUrl)
     || safeExternalUrl(resolvedOpenCopy?.landingPageUrl)
@@ -2317,7 +2323,7 @@ const PaperCard = memo(function PaperCard({
               <Button
                 variant="brand"
                 className="pc-action-simple"
-                aria-describedby={publicMode ? rewriteHintId : undefined}
+                aria-describedby={publicMode || rewriteHint ? rewriteHintId : undefined}
                 onClick={(event) => {
                   event.stopPropagation();
                   if (publicMode) {
@@ -2354,6 +2360,9 @@ const PaperCard = memo(function PaperCard({
             )}
             {publisherAction}
           </div>
+          {canRequestRewrite && !publicMode && (
+            <small id={rewriteHintId} className="pc-rewrite-hint" role="status">{rewriteHint}</small>
+          )}
 
         </div>
         </div>
