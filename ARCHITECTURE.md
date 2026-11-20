@@ -124,6 +124,51 @@ flowchart TD
   browser callers; this diagram shows the main application boundaries, not
   every outbound request.
 
+## Week-1 retention
+
+Pablo must paste this query into a PostHog SQL insight and save it as a table.
+Each person belongs to the UTC week (Monday through Sunday) of their first
+observed `activation` across the available event history. A person returns
+if an `acquisition_view` occurs at least 168 hours and less than 336 hours
+after that activation. Both events use PostHog's resolved person identity.
+
+The table covers the eight most recent calendar weeks for which even the last
+activation has had 336 hours to return. An empty cohort has zero counts and
+a blank percentage. The total divides all returning people by all activated
+people across the eight weeks. The browser's local return flag is independent
+of this calculation.
+
+```sql
+WITH people AS (
+    SELECT person_id,
+           minIf(timestamp, event = 'activation') AS activated_at,
+           groupArrayIf(timestamp, event = 'acquisition_view') AS visits
+    FROM events
+    WHERE event = 'activation'
+       OR (event = 'acquisition_view' AND timestamp >= now() - INTERVAL 11 WEEK)
+    GROUP BY person_id
+    HAVING countIf(event = 'activation') > 0
+), weeks AS (
+    SELECT subtractWeeks(toMonday(toTimeZone(now(), 'UTC')),
+                         arrayJoin([3, 4, 5, 6, 7, 8, 9, 10])) AS week_start
+), counts AS (
+    SELECT toMonday(toTimeZone(activated_at, 'UTC')) AS cohort,
+           count() AS activated,
+           countIf(arrayExists(t -> t >= activated_at + INTERVAL 168 HOUR
+                                AND t < activated_at + INTERVAL 336 HOUR, visits)) AS returned
+    FROM people
+    GROUP BY cohort
+)
+SELECT arrayJoin([toString(w.week_start), 'Total']) AS cohort_week,
+       sum(coalesce(c.activated, 0)) AS activated_people,
+       sum(coalesce(c.returned, 0)) AS returning_people,
+       round(100.0 * returning_people / nullIf(activated_people, 0), 2) AS retention_pct
+FROM weeks AS w
+LEFT JOIN counts AS c ON c.cohort = w.week_start
+GROUP BY cohort_week
+ORDER BY cohort_week
+```
+
 ## Papers from retrieval to display
 
 ```mermaid
