@@ -96,7 +96,7 @@ export default function HelpPage() {
           ))}
           <div>
             <dt><span className="settings-status">Account needed</span></dt>
-            <dd>Works only when signed in. A signed-out visitor who presses it is asked to sign in.</dd>
+            <dd>Works only when signed in. Where a signed-out visitor can see the control, pressing it asks them to sign in.</dd>
           </div>
         </dl>
         <nav aria-label="Help sections">

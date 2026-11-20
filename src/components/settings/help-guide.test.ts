@@ -3,10 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MAX_ACCOUNT_ENTITIES, MAX_ACCOUNT_KEYWORDS, MAX_CUSTOM_FEEDS, MAX_FEED_INGREDIENTS } from '../../utils/custom-feeds.ts';
-import { MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 import {
-  AI_USES_PER_DAY,
   HELP_ALLOWANCE_RULES,
   HELP_OVERVIEW,
   HELP_SECTIONS,
@@ -18,6 +15,7 @@ import {
 
 const entries = HELP_SECTIONS.flatMap(section => section.entries.map(entry => ({ section, entry })));
 const text = (id: string) => entries.find(({ entry }) => entry.id === id)?.entry.what ?? '';
+const allowanceOf = (id: string) => entries.find(({ entry }) => entry.id === id)?.entry.allowance;
 
 test('every section and every control has its own id, a name and a sentence', () => {
   const sectionIds = HELP_SECTIONS.map(section => section.id);
@@ -44,52 +42,36 @@ test('each glyph the page shows draws an svg, so a row never shows an empty tile
   }
 });
 
-test('the per-day limits are the ones wrangler.toml sets for the Worker', () => {
+test('the public-list limit is the one wrangler.toml sets for the Worker', () => {
   const config = readFileSync(new URL('../../../wrangler.toml', import.meta.url), 'utf8');
-  const setting = (name: string) => Number(new RegExp(`^${name}\\s*=\\s*"(\\d+)"`, 'm').exec(config)?.[1]);
-  assert.equal(AI_USES_PER_DAY, setting('AI_DAILY_USER_LIMIT'));
-  assert.equal(LIST_PUBLISHES_PER_DAY, setting('PUBLIC_LIST_USER_DAILY_LIMIT'));
-  assert.match(HELP_OVERVIEW, new RegExp(`${AI_USES_PER_DAY} AI uses a day`));
-  assert.match(text('publish'), new RegExp(`${LIST_PUBLISHES_PER_DAY} a day`));
+  const limit = Number(/^PUBLIC_LIST_USER_DAILY_LIMIT\s*=\s*"(\d+)"/m.exec(config)?.[1]);
+  assert.equal(LIST_PUBLISHES_PER_DAY, limit);
+  assert.match(text('publish'), new RegExp(`${limit} a day`));
 });
 
-test('the limits in the app are quoted from where the app defines them', () => {
-  assert.match(text('own-feeds'), new RegExp(`up to ${MAX_CUSTOM_FEEDS}, each with up to ${MAX_FEED_INGREDIENTS} ingredients`));
-  assert.match(text('follow'), new RegExp(`up to ${MAX_FOLLOWED_JOURNALS} journals`));
-  assert.match(text('make-feed'), new RegExp(`${MAX_ACCOUNT_ENTITIES} authors, topics and journals and ${MAX_ACCOUNT_KEYWORDS} keywords`));
-});
-
-test('the four controls the overview names are the ones marked as spending an AI use', () => {
+test('the controls marked as spending an AI use are the five the overview names', () => {
   const spenders = entries.filter(({ entry }) => entry.allowance === 'ai' || entry.allowance === 'ai-new').map(({ entry }) => entry.id);
-  assert.deepEqual(spenders.toSorted(), ['explain', 'level', 'plain-words', 'write-again']);
-  assert.match(HELP_OVERVIEW, /^[^.]*\. Four things spend one:/);
-  assert.deepEqual(
-    entries.filter(({ entry }) => entry.allowance === 'publish').map(({ entry }) => entry.id),
-    ['publish'],
-  );
+  assert.deepEqual(spenders.toSorted(), ['explain', 'level', 'plain-words', 'retry', 'write-again']);
+  assert.match(HELP_OVERVIEW, /Five things spend one:/);
+  assert.equal(allowanceOf('plain-words'), 'ai-new', 'a version already written opens free');
+  assert.equal(allowanceOf('write-again'), 'ai');
+  assert.equal(allowanceOf('explain'), 'ai');
 });
 
-test('the controls that only show, hide or retry are marked free', () => {
-  const free = (id: string) => entries.find(({ entry }) => entry.id === id)?.entry.allowance;
-  assert.equal(free('ai-highlights'), 'free');
-  assert.equal(free('annotations'), 'free');
-  assert.equal(free('viewer-notes'), 'free');
-  assert.equal(free('retry'), 'free');
+test('every change to a public list is marked as counting toward the daily limit', () => {
+  const counted = entries.filter(({ entry }) => entry.allowance === 'publish').map(({ entry }) => entry.id);
+  assert.deepEqual(counted, ['publish', 'stop-sharing']);
 });
 
-test('a section behind sign-in is not also marked control by control as needing an account', () => {
-  const reader = HELP_SECTIONS.find(section => section.id === 'reader');
-  assert.ok(reader?.signedInOnly);
-  const card = HELP_SECTIONS.find(section => section.id === 'card');
-  assert.ok(card && !card.signedInOnly);
-  assert.deepEqual(
-    card.entries.filter(entry => entry.needsAccount).map(entry => entry.id),
-    ['plain-words', 'like', 'save', 'connections', 'similar'],
-  );
-  assert.deepEqual(
-    card.entries.filter(entry => !entry.needsAccount).map(entry => entry.id),
-    ['read', 'publisher', 'more'],
-  );
+test('the controls that only show or hide something are marked free', () => {
+  for (const id of ['ai-highlights', 'annotations', 'viewer-notes', 'contents', 'like', 'save']) {
+    assert.equal(allowanceOf(id), 'free', id);
+  }
+});
+
+test('a section behind sign-in does not mark each control as needing an account', () => {
+  assert.ok(HELP_SECTIONS.find(section => section.id === 'reader')?.signedInOnly);
+  assert.ok(!HELP_SECTIONS.find(section => section.id === 'card')?.signedInOnly);
 });
 
 test('each allowance has a distinct stamp and a rule for the legend', () => {

@@ -42,11 +42,12 @@ import { MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 import type { AIUses } from '../../services/paper-rewrite-service.ts';
 
 /**
- * What the Worker allows per account per day, as wrangler.toml sets it:
- * AI_DAILY_USER_LIMIT and PUBLIC_LIST_USER_DAILY_LIMIT. The client cannot read
- * either, so help-guide.test.ts compares these two with the file.
+ * What the Worker allows each account to change in public lists per day, as
+ * wrangler.toml sets it (PUBLIC_LIST_USER_DAILY_LIMIT). No route sends it to
+ * the client, so help-guide.test.ts compares it with the file. The AI limit
+ * is not copied: the Worker sends it with the count (`AIUses.dailyLimit`), and
+ * the page shows that.
  */
-export const AI_USES_PER_DAY = 10;
 export const LIST_PUBLISHES_PER_DAY = 60;
 
 /**
@@ -54,7 +55,7 @@ export const LIST_PUBLISHES_PER_DAY = 60;
  * - `free`: nothing.
  * - `ai`: one AI use every time.
  * - `ai-new`: one AI use, unless that version is already written (it then opens free).
- * - `publish`: one of the day's list publishes.
+ * - `publish`: one of the day's public-list changes (publish, update, stop sharing).
  */
 export type HelpAllowance = 'free' | 'ai' | 'ai-new' | 'publish';
 
@@ -63,7 +64,7 @@ type HelpIcon = Icon | 'zotero';
 
 export interface HelpEntry {
   id: string;
-  /** What the control is called on screen. */
+  /** What the control is called, as its accessible name. */
   name: string;
   /** The glyph on the control. Entries without one are text or gestures. */
   icon?: HelpIcon;
@@ -102,7 +103,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Opens the reader, where AI rewrites the paper’s full text in plainer language at your level. It shows only on papers whose full text can be read, and reads “Simple” on a narrow phone. The first rewrite of a paper at a level spends one AI use. A version already written opens free, and the line under the button says so or shows how many uses you have left.',
         { allowance: 'ai-new', needsAccount: true }),
       entry('publisher', 'Publisher’s page', ArrowSquareOut,
-        'Shows on a card with no abstract when the paper has a DOI. Opens the publisher’s page in a new tab. Where the row is narrow it shows only the arrow.'),
+        'Shows on a card with no abstract when the paper has a DOI. Opens the publisher’s page in a new tab. Next to Read in plain words it shows only the arrow.'),
       entry('like', 'Like', Heart,
         'Likes the paper. The heart fills in; press again to undo. Likes teach your For you feed what you want to see, and liked papers are listed under Favorites in My lists.',
         { needsAccount: true }),
@@ -126,10 +127,10 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     entries: [
       entry('field', 'Field name above the title', undefined,
         'Opens that field or topic in the explorer, with its papers and authors.'),
-      entry('title', 'The title (phone only)', undefined,
-        'On a phone, opens the abstract sheet, which shows the whole title and abstract.'),
+      entry('title', 'The title (touch screens)', undefined,
+        'On a phone or other touch screen, opens the abstract sheet, which shows the whole title and abstract.'),
       entry('abstract', 'Read full abstract / Show less', undefined,
-        'Expands the abstract on the card, or opens it in a sheet on a phone. Tapping the abstract does the same.'),
+        'Expands the abstract on the card, or opens it in a sheet on a touch screen. Tapping the abstract does the same.'),
       entry('authors', 'The author initials', undefined,
         'Press the row of initials to list every author: on a computer the list unfolds under the initials, on a phone it opens as a sheet. Each name opens that author in the explorer.'),
       entry('citations', 'Citation count labelled “on Scopus”', undefined,
@@ -154,7 +155,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('ris', 'Export RIS', DownloadSimple,
         'Downloads the paper’s citation as a .ris file for Zotero, EndNote and Mendeley.'),
       entry('copy-link', 'Copy link', LinkSimple,
-        'Copies the paper’s PaperTok link. Below it, X, Reddit, LinkedIn, WhatsApp and Instagram share it; Instagram copies the link for you to paste.'),
+        'Copies the paper’s link: its PaperTok page when it has one, otherwise the source’s page. Below it, X, Reddit, LinkedIn, WhatsApp and Instagram share it; Instagram copies the link for you to paste.'),
     ],
   },
   {
@@ -164,14 +165,14 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     signedInOnly: true,
     entries: [
       entry('level', 'Level', Plant,
-        'Beginner, University or Researcher. The button shows the icon of the current level: a plant, a graduation cap or a flask. Your starting level is set in Settings under Reading & AI. Choosing a level this paper has not been written at spends one AI use; a level already written opens free. The level cannot be changed while a rewrite is being written.',
+        'Beginner, University or Researcher. The button shows the icon of the current level: a plant, a graduation cap or a flask. The starting level is the one set for the paper’s area in Edit interests, else your default in Settings under Reading & AI. Choosing a level this paper has not been written at spends one AI use; a level already written opens free. The level cannot be changed while a rewrite is being written.',
         { allowance: 'ai-new', needsAccount: true }),
       entry('write-again', 'Write it again', ArrowClockwise,
         'Shows under a reused summary. Writes a new version and replaces the saved one. Spends one AI use. If the new one stops early, the old one stays.',
         { allowance: 'ai', needsAccount: true }),
       entry('retry', 'Try again', ArrowClockwise,
-        'Shows when a rewrite failed or stopped early. A rewrite that fails because of the service gives its AI use back.',
-        { needsAccount: true }),
+        'Shows when a rewrite failed or stopped early. Writes it again and spends one AI use, unless a saved version turns up. A rewrite that fails because of the service gives its AI use back.',
+        { allowance: 'ai-new', needsAccount: true }),
       entry('annotations', 'Annotations', NotePencil,
         'Opens or closes the notes panel: your highlights and notes, and the AI’s explanations on a tab of their own.',
         { needsAccount: true }),
@@ -205,7 +206,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('viewer-abstract', 'Abstract', Eye,
         'Shows or hides the abstract above the text. The icon is an eye while the abstract is shown and a struck-through eye while it is hidden.'),
       entry('viewer-notes', 'Notes', NotePencil,
-        'Opens the panel of your highlights and notes, with a count. Select text in the paper to add one.',
+        'Opens the panel of your highlights and notes, with a count. Shows while the text is shown. Select text in the paper to add one.',
         { needsAccount: true }),
       entry('show-text', 'Show text / Show PDF', TextAlignLeft,
         'Switches between the paper’s text, set for reading, and the PDF pages. The icon shows the view you will get: lines of text, or a PDF page.'),
@@ -216,6 +217,8 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Opens the PDF or the source page in a new browser tab.'),
       entry('viewer-more', 'More actions', DotsThree,
         'The same menu as on the card.'),
+      entry('viewer-close', 'Close paper', X,
+        'Closes the viewer and returns to the card.'),
     ],
   },
   {
@@ -272,14 +275,15 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('export', 'Export', DownloadSimple,
         'Downloads the open list’s citations as BibTeX (.bib) or RIS (.ris).'),
       entry('publish', 'Publish & share', GlobeHemisphereWest,
-        `Makes the list public: anyone with the link can read it. Each publish counts toward ${LIST_PUBLISHES_PER_DAY} a day per account.`,
+        `Makes the list public: anyone with the link can read it. Publishing, updating a public list and stopping sharing each count toward ${LIST_PUBLISHES_PER_DAY} a day per account.`,
         { allowance: 'publish' }),
       entry('stop-sharing', 'Stop sharing', LinkBreak,
-        'Makes the list private again. Its public link stops working.'),
+        'Makes the list private again. Its public link stops working.',
+        { allowance: 'publish' }),
       entry('edit-list', 'Edit list', PencilSimple,
         'Changes the list’s name, icon and colour.'),
       entry('delete-list', 'Delete list', Trash,
-        'Deletes the list after you confirm. The papers stay saved.'),
+        'Deletes the list after you confirm. The papers stay saved. A public list is stopped from sharing first, which counts toward the daily limit.'),
       entry('edit-note', 'Edit note and tags', PencilSimple,
         'On a paper in a list. Adds a note and tags.'),
       entry('remove-paper', 'Remove from list', Trash,
@@ -305,7 +309,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('edit-feeds', 'Edit feeds', PencilSimple,
         'Discovery page. Lists your feeds in tab order with Edit, Move up, Move down and Delete for each.'),
       entry('edit-interests', 'Edit interests', PencilSimple,
-        'Discovery page. Chooses the subjects that train your feed.'),
+        'Discovery page. Chooses the subjects that train your feed, and can set a plain-words level for an area, which replaces your default for papers in it.'),
       entry('default-level', 'Default AI level', Sparkle,
         'Reading & AI page. Sets the level Read in plain words starts at. The same page lists the summaries you have read.'),
       entry('email-updates', 'Configure email updates', GearSix,
@@ -322,7 +326,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     intro: 'Every gesture has a button or key that does the same, so none is required.',
     entries: [
       entry('double-tap', 'Double-tap the card', undefined,
-        'Likes the paper, the same as the heart. Two quick taps on the card itself; the connections map ignores them.',
+        'Likes the paper, the same as the heart, but never takes a like back: use the heart for that. Two quick taps on the card itself; the connections map ignores them.',
         { needsAccount: true }),
       entry('hold-save', 'Hold Save', undefined,
         'On a touch screen, half a second on Save opens the list picker. A mouse click saves at once.',
@@ -345,14 +349,14 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
 ];
 
 /** The page's opening paragraph: the allowance and the controls that spend it. */
-export const HELP_OVERVIEW = `Each account has ${AI_USES_PER_DAY} AI uses a day, and the count resets once a day. Four things spend one: reading a paper in plain words for the first time at a level, choosing a level that paper has not been written at, Write it again, and Explain this to me. Everything else on this page spends no AI use.`;
+export const HELP_OVERVIEW = 'AI uses are limited for each account, and the count resets once a day. Five things spend one: reading a paper in plain words for the first time at a level, choosing a level that paper has not been written at, Try again after a failed rewrite, Write it again, and Explain this to me. Everything else on this page spends no AI use.';
 
 /** What each stamp on a row means, for the legend at the top of the page. */
 export const HELP_ALLOWANCE_RULES: Record<HelpAllowance, string> = {
   free: 'Uses no allowance. Press it as often as you like.',
   ai: 'Spends one AI use every time.',
   'ai-new': 'Spends one AI use the first time. A version already written opens free.',
-  publish: `Counts toward ${LIST_PUBLISHES_PER_DAY} list publishes a day.`,
+  publish: `Counts toward ${LIST_PUBLISHES_PER_DAY} public-list changes a day.`,
 };
 
 /** The stamp on a row: short, and never the only way the cost is said. */
@@ -360,7 +364,7 @@ export function allowanceLabel(allowance: HelpAllowance) {
   if (allowance === 'free') return 'Free';
   if (allowance === 'ai') return 'Uses 1 AI use';
   if (allowance === 'ai-new') return 'Uses 1 AI use unless saved';
-  return 'Counts toward the daily publish limit';
+  return 'Daily sharing limit';
 }
 
 /**
