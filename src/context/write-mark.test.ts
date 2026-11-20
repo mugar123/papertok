@@ -839,6 +839,7 @@ function readLaterPaper(initial: Record<string, LibraryEntry> = {
 
 const readLaterRemoval = { afterWrite: true, throwOnError: true };
 const saveButton = { throwOnError: true };
+const galaxiesTopic = { id: 'T1', display_name: 'Galaxies' };
 
 test('an accepted Read later removal stays when a Save tap sent meanwhile is refused', async () => {
   const paper = readLaterPaper();
@@ -857,12 +858,12 @@ test('an accepted Read later removal keeps the topic and the note\'s edit time w
   const removed = paper.toggle(false, readLaterRemoval);
   // keepLateTopics completes the copy, then a note is saved from the row's Edit.
   const { p1 } = paper.state.library;
-  paper.setLibrary({ p1: { ...p1, paper: { ...p1.paper, primaryTopic: 'Galaxies' } } });
+  paper.setLibrary({ p1: { ...p1, paper: { ...p1.paper, primaryTopic: galaxiesTopic } } });
   paper.setLibrary({ p1: { ...paper.state.library.p1, note: 'read the appendix', updatedAt: 'T9' } });
   paper.answers[0].accept();
   await removed;
   assert.equal(paper.state.library.p1.readLater, false);
-  assert.equal(paper.state.library.p1.paper.primaryTopic, 'Galaxies');
+  assert.equal(paper.state.library.p1.paper.primaryTopic?.display_name, 'Galaxies');
   assert.equal(paper.state.library.p1.updatedAt, 'T9');
   assert.equal(paper.state.library.p1.note, 'read the appendix');
 });
@@ -871,10 +872,10 @@ test('an accepted Read later removal stamps its edit time when only the paper co
   const paper = readLaterPaper();
   const removed = paper.toggle(false, readLaterRemoval);
   const { p1 } = paper.state.library;
-  paper.setLibrary({ p1: { ...p1, paper: { ...p1.paper, primaryTopic: 'Galaxies' } } });
+  paper.setLibrary({ p1: { ...p1, paper: { ...p1.paper, primaryTopic: galaxiesTopic } } });
   paper.answers[0].accept();
   await removed;
-  assert.equal(paper.state.library.p1.paper.primaryTopic, 'Galaxies');
+  assert.equal(paper.state.library.p1.paper.primaryTopic?.display_name, 'Galaxies');
   assert.equal(paper.state.library.p1.updatedAt, 'T1');
 });
 
