@@ -14,6 +14,7 @@ import {
   LinkBreak,
   LinkSimple,
   PencilSimple,
+  Question,
   ShieldCheck,
   Sparkle,
   Trash,
@@ -62,13 +63,16 @@ import './settings-page.css';
 /**
  * The settings pages, one route each: a page carries one subject, so there is
  * no scroll position to track and nothing to spy on. Order is the rail's.
+ * Help is the last entry but not a settings page: `to` sends it to /help,
+ * which a visitor without an account can open too.
  */
-const SETTINGS_PAGES = [
+const SETTINGS_PAGES: { slug: string; label: string; summary: string; Icon: Icon; to?: string }[] = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
   { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },
   { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics and author statistics', Icon: ShieldCheck },
+  { slug: 'help', label: 'Help', summary: 'What each button and gesture does', Icon: Question, to: '/help' },
 ];
 
 const SETTINGS_COPY = {
@@ -730,8 +734,8 @@ export default function SettingsPage({ page = 'profile' }) {
                   {SETTINGS_PAGES.map(entry => (
                     <li key={entry.slug}>
                       <NavLink
-                        to={`/settings/${entry.slug}`}
-                        replace
+                        to={entry.to ?? `/settings/${entry.slug}`}
+                        replace={!entry.to}
                         className={({ isActive }) => (isActive ? 'is-active' : '')}
                         onClick={() => setPagesOpen(false)}
                       >
@@ -757,8 +761,8 @@ export default function SettingsPage({ page = 'profile' }) {
               {SETTINGS_PAGES.map(entry => (
                 <NavLink
                   key={entry.slug}
-                  to={`/settings/${entry.slug}`}
-                  replace
+                  to={entry.to ?? `/settings/${entry.slug}`}
+                  replace={!entry.to}
                   className={({ isActive }) => (isActive ? 'is-active' : '')}
                 >
                   {/* Filled on the page you are on: the shape changes, not

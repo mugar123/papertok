@@ -11,6 +11,7 @@ const LABELS: Record<string, string> = {
   '/profile': 'My profile',
   '/following': 'Following',
   '/search': 'Search',
+  '/help': 'Help',
   // Each settings page titles itself "<page> · Settings" (settings-page.tsx),
   // so the announcement calls the page what the page calls itself.
   '/settings': 'Settings',

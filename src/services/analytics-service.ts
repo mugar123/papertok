@@ -60,6 +60,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/report',
   '/research',
   '/search',
+  '/help',
   '/settings',
   '/settings/discovery',
   '/settings/feeds',

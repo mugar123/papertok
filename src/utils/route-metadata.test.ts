@@ -9,6 +9,8 @@ test('titles the main authenticated routes', () => {
   assert.equal(routeTitle('/recent'), 'Most recent | PaperTok')
   assert.equal(routeLabel('/recent'), 'Most recent')
   assert.equal(routeTitle('/search'), 'Search | PaperTok')
+  assert.equal(routeTitle('/help'), 'Help | PaperTok')
+  assert.equal(routeLabel('/help'), 'Help')
 })
 
 test('normalizes trailing slashes', () => {

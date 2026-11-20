@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import type { ReadingLevel } from '../../utils/user-settings.ts';
 
 import { useEffect, useId, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowRight,
@@ -9,6 +10,7 @@ import {
   CaretDown,
   CaretUp,
   Heart,
+  Question,
   SignIn,
   Sparkle,
   UserPlus,
@@ -443,6 +445,12 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
               account button, so the bar's Sign in starts on the next screen.
               On the landing it wears the theme switch's halftone beside it. */}
           <PrivacyPopover className={`gw-bar-button${onLanding ? ' btn-halftone' : ''}`} />
+          {/* Help is a public page: a visitor can read what each button does,
+              and what needs an account, before signing in. A new tab, because
+              the answers chosen so far live only in this page's state. */}
+          <Link to="/help" target="_blank" rel="noopener noreferrer" className={`gw-bar-button${onLanding ? ' btn-halftone' : ''}`} aria-label="Help (opens in a new tab)" title="Help (opens in a new tab)">
+            <Question size={17} aria-hidden="true" />
+          </Link>
           {!onLanding && (
             <button type="button" className="gw-sign-in" onClick={onSignIn}>
               <SignIn size={15} aria-hidden="true" />
