@@ -151,36 +151,28 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('an existing reader who saw the survey notice is owed the weekly saves notice', () => {
-  assert.equal(privacyNoticeStatus({
-    user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
-    signedIn: true,
-    version: PRIVACY_POLICY_VERSION,
-    effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
-    baseline: PRIVACY_NOTICE_BASELINE_VERSION,
-    account: { uid: 'reader', version: '2026-11-20.2' },
-    storage: null,
-  }), 'owed');
-});
-
-test('a reader who saw only the first November 20 notice is owed the survey, profile and saves updates', () => {
-  assert.equal(privacyNoticeStatus({
-    user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
-    signedIn: true,
-    version: PRIVACY_POLICY_VERSION,
-    effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
-    baseline: PRIVACY_NOTICE_BASELINE_VERSION,
-    account: { uid: 'reader', version: '2026-11-20' },
-    storage: null,
-  }), 'owed');
+test('readers who saw an earlier November 20 notice are owed the cumulative revision 5 notice', () => {
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.5');
+  for (const version of ['2026-11-20', '2026-11-20.2', '2026-11-20.4']) {
+    assert.equal(privacyNoticeStatus({
+      user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
+      signedIn: true,
+      version: PRIVACY_POLICY_VERSION,
+      effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+      baseline: PRIVACY_NOTICE_BASELINE_VERSION,
+      account: { uid: 'reader', version },
+      storage: null,
+    }), 'owed', version);
+  }
   const summary = PRIVACY_POLICY_CHANGE.join(' ');
+  assert.match(summary, /Anthropic.*Claude.*explains and rewrites.*outside the EU/i);
   assert.match(summary, /usage analytics on.*survey.*your account/i);
-  assert.match(summary, /reading level and broad areas of interest/i);
-  assert.match(summary, /answers.*role if you chose one/i);
-  assert.match(summary, /papers that cite your work and your frequent coauthors/i);
-  assert.match(summary, /verified email.*save.*by default/i);
-  assert.match(summary, /your account to each paper you save once per UTC week/i);
-  assert.match(summary, /Settings → Privacy to exclude future saves/i);
+  assert.match(summary, /reading level and broad interests when available/i);
+  assert.match(summary, /answers.*optional role/i);
+  assert.match(summary, /My profile.*papers citing your work.*frequent coauthors.*without storing either list/i);
+  assert.match(summary, /verified email.*saves count by default/i);
+  assert.match(summary, /your account to each saved paper once per UTC week/i);
+  assert.match(summary, /omit future saves in Settings → Privacy/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

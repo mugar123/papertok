@@ -19,9 +19,17 @@ import { readBoundedBytes } from './bounded-body.ts';
 import { peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
 import {
+  anthropicFailure,
+  anthropicModel,
+  createAnthropicClient,
+  isAnthropicConfigured,
+  isAnthropicPrimary,
+} from './anthropic-client.ts';
+import {
   NAN_API_BASE_URL,
   classifyNanError,
   isNanConfigured,
+  isNanPrimary,
   nanHeaders,
   nanModel,
 } from './nan-client.ts';
@@ -291,6 +299,22 @@ export function nanProviderError(response: Response, payload: AIProviderPayload 
   return new AIExplanationError(code, status, code, quota);
 }
 
+/** The provider `AI_PROVIDER` names for the routes, defaulting to Gemini as every older env assumed. */
+export function activeAIProvider(env: WorkerEnv) {
+  return isAnthropicPrimary(env) ? 'anthropic' : isNanPrimary(env) ? 'nan' : 'gemini';
+}
+
+export function isAIProviderConfigured(env: WorkerEnv, provider: string) {
+  if (provider === 'anthropic') return isAnthropicConfigured(env);
+  return provider === 'nan' ? isNanConfigured(env) : Boolean(env.GEMINI_API_KEY);
+}
+
+/** A failure of Anthropic's SDK as the error every AI route throws. */
+export function anthropicProviderError(error: unknown) {
+  const { code, status, retryAfter } = anthropicFailure(error);
+  return new AIExplanationError(code, status, code, code === 'AI_BUSY' ? getProviderRetry(null, retryAfter) : null);
+}
+
 async function checkGeminiHealth(env: WorkerEnv) {
   const provider = 'gemini';
   const model = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
@@ -360,7 +384,31 @@ async function checkNanHealth(env: WorkerEnv) {
   }
 }
 
-const HEALTH_CHECKS: Partial<Record<string, typeof checkGeminiHealth | typeof checkNanHealth>> = {
+/** The configured model has to be one the key can use, not merely a key that authenticates. */
+async function checkAnthropicHealth(env: WorkerEnv) {
+  const provider = 'anthropic';
+  const model = anthropicModel(env);
+  if (!isAnthropicConfigured(env)) {
+    return { provider, model, configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
+  }
+  // The SDK's `timeout` ends when the headers arrive, so a body that stalls
+  // after them would hold the health check open. The deadline runs until the
+  // read is over.
+  const deadline = new AbortController();
+  const timeout = setTimeout(() => deadline.abort(), 8_000);
+  try {
+    await createAnthropicClient(env).models.retrieve(model, null, { signal: deadline.signal });
+    return { provider, model, configured: true, available: true, code: null };
+  } catch (error) {
+    const code = deadline.signal.aborted ? 'AI_TIMEOUT' : anthropicFailure(error).code;
+    return { provider, model, configured: true, available: false, code };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+const HEALTH_CHECKS: Partial<Record<string, typeof checkGeminiHealth | typeof checkNanHealth | typeof checkAnthropicHealth>> = {
+  anthropic: checkAnthropicHealth,
   gemini: checkGeminiHealth,
   nan: checkNanHealth,
 };

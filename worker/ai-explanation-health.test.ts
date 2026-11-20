@@ -80,3 +80,62 @@ test('/health/ai reports a NaN outage even while the retired fallback secrets ar
   assert.equal('fallback' in health, false);
   assert.equal(calls.length, 1);
 });
+
+test('/health/ai checks that the Anthropic key can use the configured model', async () => {
+  const calls = stubFetch({
+    'api.anthropic.com/v1/models/claude-opus-5-5': () => json({ type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5' }),
+    'api.anthropic.com/v1/models/claude-opus-9': () => json({ type: 'error', error: { type: 'not_found_error', message: 'model: claude-opus-9' } }, 404),
+  });
+
+  const healthy = await checkAIProviderHealth({ AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test-key' });
+  assert.deepEqual(healthy, { provider: 'anthropic', model: 'claude-opus-5-5', configured: true, available: true, code: null });
+  assert.equal(calls.length, 1);
+
+  // A model name Anthropic does not serve: the key works, every route would fail.
+  const misnamed = await checkAIProviderHealth({ AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test-key', ANTHROPIC_MODEL: 'claude-opus-9' });
+  assert.equal(misnamed.available, false);
+  assert.equal(misnamed.code, 'AI_NOT_CONFIGURED');
+
+  const keyless = await checkAIProviderHealth({ AI_PROVIDER: 'anthropic' });
+  assert.equal(keyless.configured, false);
+  assert.equal(keyless.code, 'AI_NOT_CONFIGURED');
+  // No key, no request.
+  assert.equal(calls.length, 2);
+});
+
+test('/health/ai gives up on an Anthropic body that stalls after its headers', { timeout: 5_000 }, async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  let sentHeaders!: () => void;
+  const reached = new Promise<void>(resolve => { sentHeaders = resolve; });
+  globalThis.fetch = async (_input, init = {}) => {
+    // The SDK's own timeout is over once the headers are in; only our deadline
+    // can end the read of a body that never completes.
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"type":"mod'));
+        init.signal!.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+      },
+    });
+    sentHeaders();
+    return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  const check = checkAIProviderHealth({ AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test-key' });
+  await reached;
+  context.mock.timers.tick(8_000);
+  const health = await check;
+
+  assert.equal(health.available, false);
+  assert.equal(health.code, 'AI_TIMEOUT');
+});
+
+test('/health/ai reports an Anthropic outage as busy, not as a missing key', async () => {
+  stubFetch({
+    'api.anthropic.com/v1/models': () => json({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }, 529),
+  });
+
+  const health = await checkAIProviderHealth({ AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test-key' });
+  assert.equal(health.configured, true);
+  assert.equal(health.available, false);
+  assert.equal(health.code, 'AI_BUSY');
+});

@@ -77,7 +77,7 @@ export async function extractPaperText(env: TextExtractionEnv, bytes: Uint8Array
   } catch {
     return failed('conversion_failed');
   } finally {
-    clearTimeout(timer!);
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
