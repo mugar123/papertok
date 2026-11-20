@@ -166,9 +166,9 @@ test('readers who saw an earlier November 20 notice are owed the cumulative revi
   }
   const summary = PRIVACY_POLICY_CHANGE.join(' ');
   assert.match(summary, /Anthropic.*Claude.*explains and rewrites.*outside the EU/i);
-  assert.match(summary, /verified email.*saves count by default.*your account to each saved paper/i);
-  assert.match(summary, /usage analytics on.*survey events link your account.*reading level.*optional role/i);
-  assert.match(summary, /connect ORCID.*weekly email.*cite your work.*iD.*OpenAlex.*My profile.*frequent coauthors/i);
+  assert.match(summary, /verified email.*saves count by default.*your account to each saved paper once per UTC week.*omit future saves in Settings → Privacy/i);
+  assert.match(summary, /usage analytics on.*survey events link your account.*reading level and broad interests.*submissions record your optional role/i);
+  assert.match(summary, /connect ORCID.*weekly email.*My profile.*papers citing your work.*iD goes to OpenAlex/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

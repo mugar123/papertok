@@ -3790,7 +3790,7 @@ async function processLoadedSubscription(
     if (delivery.pending) return { skipped: true, sources: compactSourceReport(sourceReport) };
     if (delivery.invalid) {
       const code = 'EMAIL_SUBSCRIPTION_INVALID';
-      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, sourceReport, heldDigest: null, citationLookupWeek, citationThrough });
+      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, sourceReport, heldDigest: null, citationLookupWeek });
       return {
         invalid: true,
         sources: compactSourceReport(sourceReport),
