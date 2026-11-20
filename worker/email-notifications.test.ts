@@ -4202,7 +4202,8 @@ function citationSchedule(t: TestContext, {
   follows = [] as Follow[],
   maxPapers = 5,
   lastSentAt = '2026-07-20T07:00:00.000Z',
-  citing = () => Response.json({ results: [
+  followed = () => Response.json({ results: [SCHEDULED_WORK] }),
+  citing = (): Response | Promise<Response> => Response.json({ results: [
     citingWork(201, 'Old citation', '2026-07-20'),
     citingWork(202, 'Third newest citation', '2026-07-23'),
     citingWork(203, 'Primary iD self citation', '2026-07-27', { orcid: CITATION_ORCID }),
@@ -4256,7 +4257,7 @@ function citationSchedule(t: TestContext, {
       { id: 'https://openalex.org/W13' },
     ] });
     if (filter.startsWith('cites:')) return citing();
-    return Response.json({ results: filter.includes('author.id:A1') ? [SCHEDULED_WORK] : [] });
+    return filter.includes('author.id:A1') ? followed() : Response.json({ results: [] });
   });
   return {
     env, emails, filters,
@@ -4351,10 +4352,29 @@ test('a citing-works failure leaves the followed edition intact and spends no re
 test('a timed-out citation lookup cannot be repeated by a later window that week', async t => {
   const h = citationSchedule(t, { citing: () => { throw new DOMException('Provider timed out', 'TimeoutError'); } });
   assert.equal((await h.run()).empty, 1);
-  assert.equal((await h.run(Date.parse('2026-07-27T11:00:00Z'))).empty, 1);
+  assert.equal((await h.run(Date.parse('2026-07-27T11:00:00Z'))).skipped, 1);
   assert.equal(h.filters.length, 2);
   assert.deepEqual(h.emails, []);
 });
+
+for (const initialStatus of [200, 503]) {
+  test(`followed papers can retry after a completed citation lookup and a followed source returned ${initialStatus}`, async t => {
+    let followsReady = false;
+    const h = citationSchedule(t, {
+      follows: [digestFollow()],
+      citing: () => Response.json({ results: [] }),
+      followed: () => Response.json({ results: followsReady ? [SCHEDULED_WORK] : [] }, { status: followsReady ? 200 : initialStatus }),
+    });
+    const initial = await h.run();
+    const retryAt = initialStatus === 200 ? '2026-07-27T11:00:00Z' : '2026-07-27T07:40:00Z';
+    assert.equal(initialStatus === 200 ? initial.empty : initial.failureCodes.EMAIL_DIGEST_SOURCES_UNAVAILABLE, 1);
+    followsReady = true;
+    assert.equal((await h.run(Date.parse(retryAt))).sent, 1);
+    assert.equal(h.filters.filter(filter => filter.startsWith('cites:')).length, 1);
+    assert.match(h.emails[0].text, /A paper published before the outage/);
+    assert.doesNotMatch(h.emails[0].text, /CITED YOUR WORK/);
+  });
+}
 
 test('an ORCID-only subscription can recover from an unavailable profile read', async t => {
   const h = citationSchedule(t);
@@ -4381,6 +4401,66 @@ test('a held citation-only digest can send the next day without a second lookup'
   assert.equal((await h.run(Date.parse('2026-07-28T07:20:00Z'))).sent, 1);
   assert.equal(h.filters.length, 2);
   assert.match(h.emails[1].text, /CITED YOUR WORK/);
+});
+
+test('a late citation digest leaves the delivery day for the next lookup', async t => {
+  let rejectSend = true;
+  const h = citationSchedule(t, {
+    citing: () => Response.json({ results: [
+      citingWork(301, 'Monday citation', '2026-07-27'),
+      citingWork(302, 'Tuesday citation', '2026-07-28'),
+    ] }),
+    send: () => rejectSend
+      ? Response.json({ name: 'daily_quota_exceeded' }, { status: 429 })
+      : Response.json({ id: 'citation-digest' }, { status: 201 }),
+  });
+  assert.equal((await h.run()).failed, 1);
+  rejectSend = false;
+  assert.equal((await h.run(Date.parse('2026-07-28T07:00:00Z'))).sent, 1);
+  assert.match(h.emails[1].text, /Monday citation/);
+  assert.equal((await h.state())?.lastSentAt, '2026-07-28T07:00:00.000Z');
+
+  const nextWeek = await h.run(Date.parse('2026-08-03T07:00:00Z'));
+  assert.equal(h.filters[3], 'cites:W14|W11,from_publication_date:2026-07-28,to_publication_date:2026-08-03');
+  assert.equal(nextWeek.sent, 1);
+  assert.match(h.emails[2].text, /Tuesday citation/);
+  assert.doesNotMatch(h.emails[2].text, /Monday citation/);
+});
+
+for (const source of ['kv', 'object']) {
+  test(`concurrent cron runs leave the active citation edition alone in ${source} mode`, async t => {
+    let start!: () => void;
+    const started = new Promise<void>(resolve => { start = resolve; });
+    let finish!: (response: Response) => void;
+    const citationResponse = new Promise<Response>(resolve => { finish = resolve; });
+    const h = citationSchedule(t, { citing: () => {
+      start();
+      return citationResponse;
+    } });
+    h.env.EMAIL_SUBSCRIPTION_SOURCE = source;
+    const first = h.run();
+    await started;
+    try {
+      const contenders = await Promise.all([h.run(), h.run()]);
+      assert.deepEqual(contenders.map(outcome => outcome.skipped), [1, 1]);
+    } finally {
+      finish(Response.json({ results: [citingWork(303, 'External citation', '2026-07-27')] }));
+      await first;
+    }
+    assert.equal((await first).sent, 1);
+    await h.run(Date.parse('2026-07-27T11:00:00Z'));
+    assert.equal(h.filters.length, 2);
+    assert.equal(h.emails.length, 1);
+    assert.match(h.emails[0].text, /External citation/);
+  });
+}
+
+test('an empty authorship list cannot establish an external citation', async t => {
+  const h = citationSchedule(t, { citing: () => Response.json({ results: [
+    { ...citingWork(304, 'Unverified citation', '2026-07-27'), authorships: [] },
+  ] }) });
+  assert.equal((await h.run()).sent, 0);
+  assert.deepEqual(h.emails, []);
 });
 
 test('a changed ORCID keeps an uncertain citation delivery in the ledger without resending it', async t => {

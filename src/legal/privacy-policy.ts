@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-20.2';
+export const PRIVACY_POLICY_VERSION = '2026-11-20.6';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -110,6 +110,9 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20.2';
  * cutoff is the last whole second of the planned merge day. If the merge slips
  * past the cutoff, move the date, version and cutoff to the merge day.
  * Set the cutoff to the deployment's success time once the text is live.
+ *
+ * Version 2026-11-20.6 covers the optional use of ORCID and OpenAlex to
+ * find citing papers for the weekly email (#529).
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
@@ -127,9 +130,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
+  'If you connect ORCID, the weekly email can list new papers that cite your work. PaperTok sends your iD and the OpenAlex work identifiers it checks to OpenAlex.',
   'Survey events include your reading level and broad areas of interest when available. With usage analytics on, PaperTok links survey events to your account.',
-  'Submitting the survey records your answers, including your role if you chose one.',
-  'My profile also lists recent papers that cite your work and your frequent coauthors. PaperTok keeps neither list.',
+  'Submitting the survey records your answers, including your role if you chose one. My profile also lists recent papers that cite your work and your frequent coauthors.',
 ];
 
 /**
@@ -142,14 +145,15 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  lead: 'your reading level and broad areas of interest',
+  lead: 'the weekly email',
   clauses: [
+    ['the weekly email can list new papers that cite your work', /the weekly email can also list new papers that cite your work/],
+    ['PaperTok sends your iD and the OpenAlex work identifiers it checks to OpenAlex', /PaperTok sends your iD and the OpenAlex work identifiers it checks to OpenAlex/],
     ['your reading level and broad areas of interest when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
     ['With usage analytics on, PaperTok links survey events to your account', /With usage analytics on, PaperTok links survey events to your account/],
     ['Submitting the survey records your answers, including your role if you chose one', /Submitting the survey records your answers, including your role if you chose one/],
     ['recent papers that cite your work', /papers from the last 12 months that cite your publications/],
     ['your frequent coauthors', /coauthors you share two or more of those works with/],
-    ['PaperTok keeps neither list', /PaperTok keeps neither list/],
   ],
   unsaid: [
     [/anonymous/i, 'survey events are linked to the signed-in account'],

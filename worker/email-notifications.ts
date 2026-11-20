@@ -31,6 +31,8 @@ export interface SourceReport extends SourceCounts {
 }
 interface DeliveryState {
   lastCheckedAt?: string; lastSentAt?: string; lastTestAt?: string; sentPaperKeys?: string[];
+  citationThrough?: string;
+  citationLookupWeek?: string;
   lastDelivery?: Partial<ReturnType<typeof lastDeliveryStatus>>;
   lastTestDelivery?: Partial<ReturnType<typeof lastDeliveryStatus>>;
   heldDigest?: { papers: DigestPaper[]; citations?: DigestCitations; sourceReport: SourceReportInput; selectedAt: string; selectionKey: string } | null;
@@ -918,6 +920,8 @@ function publicSubscription(subscription: Subscription | null, email: string) {
 const DELIVERY_STATE_FIELDS: Array<keyof DeliveryState> = [
   'lastCheckedAt',
   'lastSentAt',
+  'citationThrough',
+  'citationLookupWeek',
   'lastTestAt',
   'sentPaperKeys',
   'lastDelivery',
@@ -1978,16 +1982,9 @@ function citedWorkIds(works: OpenAlexWork[], mine: Set<string>, notMine: Set<str
     .filter(id => !notMine.has(`openalex:${id.toLowerCase()}`));
 }
 
-async function collectDigestCitations(subscription: Subscription, env: WorkerEnv, orcid: DigestOrcid, now: number, weekStart: number): Promise<DigestCitations | undefined> {
+async function collectDigestCitations(subscription: Subscription, env: WorkerEnv, orcid: DigestOrcid, now: number): Promise<DigestCitations | undefined> {
   try {
     const uid = subscription.uid!;
-    const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
-      periodKey: `email-citations:week:${utcDay(weekStart)}`,
-      subject: uid, subjectLimit: 1, globalLimit: 1, globalAmount: 0,
-      expiresAt: weekStart + WEEK_MS,
-    });
-    if (!quota.accepted) return;
-
     const decisions = await digestFirestore(env).getDocument<{ connectedAt?: string; mine?: string[]; notMine?: string[] }>(['users', uid, 'orcid', 'works']);
     const current = decisions?.connectedAt === orcid.connectedAt ? decisions : null;
     const mine = new Set(Array.isArray(current?.mine)
@@ -2015,9 +2012,8 @@ async function collectDigestCitations(subscription: Subscription, env: WorkerEnv
     const ownedIds = new Set(citedWorkIds(attributed, mine, notMine, resolved));
     if (!ownedIds.size) return;
 
-    const lastSent = Date.parse(subscription.lastSentAt || '');
-    // OpenAlex gives a publication date, with no time to compare on the day of the send.
-    const since = utcDay(Number.isFinite(lastSent) ? lastSent + DAY_MS : now - WEEK_MS);
+    const previousCutoff = Date.parse(subscription.citationThrough || subscription.lastSentAt || '');
+    const since = utcDay(Number.isFinite(previousCutoff) ? previousCutoff + DAY_MS : now - WEEK_MS);
     const today = utcDay(now);
     if (since > today) return;
     const citingUrl = openAlexCitingWorksUrl([...ownedIds].slice(0, MAX_CITED_WORKS), env);
@@ -2036,13 +2032,13 @@ async function collectDigestCitations(subscription: Subscription, env: WorkerEnv
     const papers = mergePapers((await fetchWorks(citingUrl))
       .filter(work => work.publication_date && work.publication_date >= since && work.publication_date <= today
         && !readerOwnsWork(work)
-        && !work.is_authors_truncated && Array.isArray(work.authorships)
+        && !work.is_authors_truncated && Array.isArray(work.authorships) && work.authorships.length > 0
         && !work.authorships.some(({ author }) => belongsToReader(author?.orcid)
           || (Array.isArray(author?.observed_orcids) && author.observed_orcids.some(belongsToReader))))
       .map(work => mapOpenAlexPaper(work, null)))
       .filter(paper => !paperIdentityKeys(paper).some(key => sentKeys.has(key)))
       .slice(0, MAX_CITING_PAPERS);
-    if (papers.length) return { connectedAt: orcid.connectedAt, papers };
+    return { connectedAt: orcid.connectedAt, papers };
   } catch {
     // Citations are optional when Firestore, the ledger or OpenAlex is unavailable.
   }
@@ -2852,6 +2848,8 @@ function deliveryStatePatch(currentState: DeliveryState, delivery: Delivery, sta
   return {
     lastCheckedAt: sentAt,
     lastSentAt: sentAt,
+    ...(delivery.citationThrough && delivery.citationThrough > (currentState.citationThrough || '')
+      ? { citationThrough: delivery.citationThrough } : {}),
     sentPaperKeys,
     heldDigest: null,
     owedCurrentWeek: false,
@@ -2895,10 +2893,11 @@ function buildDeliveryDraft(subscription: Subscription, papers: DigestPaper[], e
     content: renderDigest(subscription, papers, unsubscribeUrl, test, { now: editionAt, citations: citations?.papers }),
     unsubscribeUrl,
     subscriptionVersion: subscription.version ?? 0,
-    ...(citations ? { orcidConnectedAt: citations.connectedAt } : {}),
+    ...(citations?.papers.length ? { orcidConnectedAt: citations.connectedAt } : {}),
     delivery: {
       kind: test ? 'test' : 'digest',
       sentAt: new Date(now).toISOString(),
+      ...(citations ? { citationThrough: utcDay(editionAt) } : {}),
       paperCount: papers.length + (citations?.papers.length || 0),
       paperKeys: test ? [] : [...papers, ...(citations?.papers || [])].flatMap(paperIdentityKeys),
       partial: sourceReport.failed > 0,
@@ -3062,12 +3061,12 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
     const citingKeys = new Set(unsent.flatMap(paperIdentityKeys));
     const hasDistinctStory = selected.some(paper => !paperIdentityKeys(paper).some(key => citingKeys.has(key)));
     const citingPapers = unsent.slice(0, maximum - Number(hasDistinctStory));
-    citations = citingPapers.length ? { ...citations, papers: citingPapers } : undefined;
+    citations = { ...citations, papers: citingPapers };
   }
   const citationKeys = new Set(citations?.papers.flatMap(paperIdentityKeys));
   const currentPapers = selected.filter(paper => !paperIdentityKeys(paper).some(key => citationKeys.has(key)))
     .slice(0, maximum - (citations?.papers.length || 0));
-  if (!test && !currentPapers.length && !citations) {
+  if (!test && !currentPapers.length && !citations?.papers.length) {
     return { cancelled: true, reconciled: true };
   }
   const draft = buildDeliveryDraft(latest, currentPapers, env, {
@@ -3588,11 +3587,13 @@ async function recordSubscriptionOutcome(env: WorkerEnv, key: string, subscripti
   partial = false,
   sourceReport,
   heldDigest,
-}: StatusOptions & { heldDigest?: DeliveryState['heldDigest'] } = {}) {
+  citationLookupWeek,
+}: StatusOptions & { heldDigest?: DeliveryState['heldDigest']; citationLookupWeek?: string } = {}) {
   return updateDeliveryState(env, key, subscription, () => ({
     lastCheckedAt: at,
     ...(['empty', 'invalid'].includes(status) ? { owedCurrentWeek: false } : {}),
     ...(heldDigest === undefined ? {} : { heldDigest }),
+    ...(citationLookupWeek ? { citationLookupWeek } : {}),
     lastDelivery: lastDeliveryStatus(status, at, {
       code,
       paperCount,
@@ -3678,6 +3679,7 @@ async function processLoadedSubscription(
   let attemptedPapers: DigestPaper[] | undefined;
   let citations: DigestCitations | undefined;
   let heldSelectedAt: string | undefined;
+  let citationLookupWeek: string | undefined;
   try {
     const resumed = await resumeScheduledDelivery(subscription, env, {
       now: now.getTime(),
@@ -3735,18 +3737,30 @@ async function processLoadedSubscription(
       sourceReport = mergeSourceReports(createSourceReport(), held.sourceReport);
       heldSelectedAt = held.selectedAt;
     } else {
+      const week = utcDay(weekStart);
+      if (orcid && subscription.citationLookupWeek === week && !hasStandardSource) return { skipped: true };
+      if (orcid && subscription.citationLookupWeek !== week) {
+        const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+          periodKey: `email-citations:week:${week}`,
+          subject: subscription.uid!, subjectLimit: 1, globalLimit: 1, globalAmount: 0,
+          expiresAt: weekStart + WEEK_MS,
+        }).catch(() => null);
+        // The owner of the weekly reservation can still be selecting or sending this edition.
+        if (quota?.scope === 'user') return { skipped: true };
+        if (quota?.accepted) citationLookupWeek = week;
+      }
       const collected = await collectDigestPapers(subscription, env, { now: now.getTime(), openAlexRequests })
         .catch((error: unknown) => {
           if (error instanceof EmailDigestTransientError) return error;
           throw error;
         });
-      if (orcid) citations = await collectDigestCitations(subscription, env, orcid, now.getTime(), weekStart);
-      if (collected instanceof EmailDigestTransientError && !citations) throw collected;
+      if (orcid && citationLookupWeek) citations = await collectDigestCitations(subscription, env, orcid, now.getTime());
+      if (collected instanceof EmailDigestTransientError && !citations?.papers.length) throw collected;
       attemptedPapers = collected instanceof EmailDigestTransientError ? [] : collected.papers;
       sourceReport = collected.sourceReport;
     }
-    if (!attemptedPapers.length && !citations) {
-      await recordSubscriptionOutcome(env, key.name, subscription, 'empty', checkedAt, { sourceReport, heldDigest: null });
+    if (!attemptedPapers.length && !citations?.papers.length) {
+      await recordSubscriptionOutcome(env, key.name, subscription, 'empty', checkedAt, { sourceReport, heldDigest: null, citationLookupWeek });
       return {
         empty: true,
         partial: false,
@@ -3765,14 +3779,17 @@ async function processLoadedSubscription(
     if (delivery.pending) return { skipped: true, sources: compactSourceReport(sourceReport) };
     if (delivery.invalid) {
       const code = 'EMAIL_SUBSCRIPTION_INVALID';
-      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, sourceReport, heldDigest: null });
+      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, sourceReport, heldDigest: null, citationLookupWeek });
       return {
         invalid: true,
         sources: compactSourceReport(sourceReport),
         failureCodes: failureCodeCounts(sourceReport, code),
       };
     }
-    if (delivery.cancelled) return { skipped: true, sources: compactSourceReport(sourceReport) };
+    if (delivery.cancelled) {
+      if (citationLookupWeek) await updateDeliveryState(env, key.name, subscription, () => ({ citationLookupWeek }));
+      return { skipped: true, sources: compactSourceReport(sourceReport) };
+    }
     return persistScheduledDelivery(env, key.name, subscription, delivery, now, heldSelectedAt);
   } catch (error) {
     captureWorkerException(error, 'schedule');
@@ -3789,6 +3806,7 @@ async function processLoadedSubscription(
         {
           code,
           sourceReport,
+          citationLookupWeek,
           heldDigest: ['EMAIL_PROVIDER_LIMIT', 'EMAIL_PROVIDER_RATE_LIMIT'].includes(code) && (attemptedPapers?.length || citations)
             ? {
               papers: attemptedPapers || [],
