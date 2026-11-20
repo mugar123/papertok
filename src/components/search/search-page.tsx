@@ -937,7 +937,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
                       />
                     )}
                   >
-                    {(project.funder || project.budget! > 0) && (
+                    {(project.funder || project.budget !== undefined) && (
                       <p className="list-row-byline">
                         {projectByline(project.funder, project.budget, project.currency, locale)}
                       </p>
