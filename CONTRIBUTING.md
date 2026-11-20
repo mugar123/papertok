@@ -87,7 +87,7 @@ types. Enums, value namespaces and parameter properties are rejected. Node does
 not execute `.tsx`, so behavior that needs a test lives in a `.ts` module the
 test imports. Wiring that only exists in React (what a provider does with its
 failures, what a route element redirects to) is tested by rendering the app's
-own code in jsdom: `src/test-support/dom/` loads the `.tsx` modules through
+own code in jsdom: `tests/dom/` loads the `.tsx` modules through
 Vite's module runner, stands in for `services/firebase.ts` and for the Worker's
 `fetch`, and `renderFeed` and `renderApp` mount the provider tree and the whole
 app. Tests are still `.test.ts` files that call `createElement`, and still run

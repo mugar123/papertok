@@ -2,8 +2,8 @@ import './dom-environment.ts';
 import { createElement, useEffect, type Context, type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { cleanup, render } from '@testing-library/react';
-import type { writeFeedSnapshot as WriteFeedSnapshot } from '../../context/feed-snapshot.ts';
-import type { Paper } from '../../models/paper.ts';
+import type { writeFeedSnapshot as WriteFeedSnapshot } from '../../src/context/feed-snapshot.ts';
+import type { Paper } from '../../src/models/paper.ts';
 import { startAppModules } from './app-modules.ts';
 import { stubWorker } from './worker-stub.ts';
 

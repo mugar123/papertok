@@ -14,7 +14,7 @@ import type { FirebaseStub } from './firebase-stub.ts';
  * code run (see `renderApp`).
  */
 
-const root = fileURLToPath(new URL('../../../', import.meta.url));
+const root = fileURLToPath(new URL('../../', import.meta.url));
 const FIREBASE_STUB = fileURLToPath(new URL('./firebase-stub.ts', import.meta.url)).replaceAll('\\', '/');
 const WORKER_ORIGIN = 'https://api.papertok.app';
 

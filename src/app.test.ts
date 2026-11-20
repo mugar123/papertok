@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { renderApp } from './test-support/dom/render-app.ts';
+import { renderApp } from '../tests/dom/render-app.ts';
 import { waitFor } from '@testing-library/react';
 
 // ENG-44: a paper's page moved from /public/paper/:key to /paper/:key. Visits

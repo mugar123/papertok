@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Paper } from '../models/paper.ts';
-import { renderFeed, waitFor } from '../test-support/dom/render-feed.ts';
+import { renderFeed, waitFor } from '../../tests/dom/render-feed.ts';
 
 // ENG-116: a failed feed load owes one `app_error`, sent when the failed
 // attempt is on the reader's screen. The pure steps are in
