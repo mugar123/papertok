@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import { knownCitationCount, paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withRetractionOf } from '../models/paper.ts';
+import { knownCitationCount, paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withJournalOf, withRetractionOf } from '../models/paper.ts';
 
 /**
  * `copy` with `other`'s authors when `other`, a copy of the same paper, lists
@@ -64,7 +64,7 @@ const filledFrom = (copy: Partial<Paper>, other: Partial<Paper> | undefined) => 
 export function listPaperFromCopies(libraryCopy: Partial<Paper>, otherCopy: Partial<Paper>): Partial<Paper> {
   const merged = {
     ...libraryCopy,
-    ...filledFrom(otherCopy, libraryCopy),
+    ...withJournalOf(filledFrom(otherCopy, libraryCopy), libraryCopy),
     doi: libraryCopy.doi || otherCopy.doi,
     arxivId: libraryCopy.arxivId || otherCopy.arxivId,
     openUrl: libraryCopy.openUrl || otherCopy.openUrl,
@@ -99,7 +99,10 @@ export function listPaper(
   loadedCopy: Partial<Paper> | undefined,
 ) {
   const otherCopy = fetchedCopy ? filledFrom(fetchedCopy, loadedCopy) : loadedCopy;
-  if (!entryCopy) return otherCopy && withRetractionOf(otherCopy, loadedCopy);
+  if (!entryCopy) {
+    if (!otherCopy || !loadedCopy) return otherCopy;
+    return withJournalOf(withRetractionOf(otherCopy, loadedCopy), loadedCopy);
+  }
   return otherCopy ? listPaperFromCopies(withRetractionOf(entryCopy, loadedCopy), otherCopy) : entryCopy;
 }
 
@@ -118,9 +121,11 @@ export function mergeListPaperCopies(
   const next = { ...current };
   Object.entries(loaded).forEach(([paperId, paper]) => {
     const known = next[paperId];
-    next[paperId] = source === 'saved' || !known
+    const merged = source === 'saved' || !known
       ? withRetractionOf(filledFrom(paper, known), known)
       : withRetractionOf(filledFrom(known, paper), paper);
+    const interaction = source === 'interaction' ? paper : known;
+    next[paperId] = interaction ? withJournalOf(merged, interaction) : merged;
   });
   return next;
 }
