@@ -23,9 +23,11 @@ import { buildSavedPaperPayload } from '../src/utils/saved-paper-payload.ts';
 import { paperLegacyAdapter, storedClassification } from '../src/models/paper.ts';
 import { areaLabelForPaper } from '../src/utils/area-accent.ts';
 import { serializeLibraryPaper } from '../src/utils/reading-library.ts';
+import { journalExplorerLink } from '../src/utils/explorer-paths.ts';
 import { copyForMergeWrite } from '../src/utils/stored-copy-write.ts';
 import { LIST_COLORS } from '../src/utils/list-colors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
+import { CATEGORIES } from '../src/data/category-taxonomy.ts';
 import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
@@ -93,6 +95,33 @@ async function reset() {
 const asAlice = () => testEnv.authenticatedContext(ALICE).firestore();
 const asBob = () => testEnv.authenticatedContext(BOB).firestore();
 const asGuest = () => testEnv.unauthenticatedContext().firestore();
+
+test('only the account owner can store a valid mix and per-area preferences', async () => {
+  await reset();
+  const ref = doc(asAlice(), 'users', ALICE);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.AI', 'quant-ph'] }));
+  const allAreas = Object.fromEntries(Object.keys(CATEGORIES).map(area => [area, { priority: 'curiosity', level: 'university' }]));
+  await assertSucceeds(updateDoc(ref, { interestMix: 'mostly-work', areaPreferences: allAreas }));
+  await assertSucceeds(updateDoc(ref, { interestMix: 'balanced', areaPreferences: { ai: { level: 'beginner' }, physics: { priority: 'essential' } } }));
+  await assertSucceeds(updateDoc(ref, { interestMix: 'half-and-half', areaPreferences: { ai: { level: 'researcher' } } }));
+  assert.deepEqual((await getDoc(ref)).data()?.areaPreferences, { ai: { level: 'researcher' } });
+  for (const invalid of [
+    { interestMix: '90/10' },
+    { interestMix: 90 },
+    { areaPreferences: [] },
+    { areaPreferences: { 'cs.AI': { priority: 'essential' } } },
+    { areaPreferences: { bio: ['curiosity'] } },
+    { areaPreferences: { ai: { priority: 'work' } } },
+    { areaPreferences: { econ: { level: 'default' } } },
+    { areaPreferences: { math: { level: null } } },
+    { areaPreferences: { 'q-fin': { level: 'researcher', extra: true } } },
+  ]) {
+    await assertFails(updateDoc(ref, invalid));
+  }
+  await assertFails(updateDoc(doc(asBob(), 'users', ALICE), { interestMix: 'balanced' }));
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE)));
+  await assertSucceeds(updateDoc(ref, { areaPreferences: {}, interestMix: deleteField() }));
+});
 
 // =========================================================================
 // Reading
@@ -1341,6 +1370,28 @@ test('savedPapers accepts the abstract source buildSavedPaperPayload sends, and 
     await assertFails(setDoc(ref, { ...valid, abstractSource }))
       .catch((error: Error) => assert.fail(`${String(abstractSource)} was accepted: ${error.message}`));
   }
+});
+
+test('the reader opens a saved journal by id and still reads older copies without one', async () => {
+  await reset();
+  const id = 'openalex:W7000000001';
+  const interaction = doc(asAlice(), 'users', ALICE, 'interactions', id);
+  const legacy = { id, title: 'Monetary policy', journal: 'Am Econ Rev' };
+  await assertSucceeds(setDoc(interaction, { saved: true, paper: legacy }));
+  const older = paperLegacyAdapter((await getDoc(interaction)).data()!.paper);
+  assert.equal(older.journal, 'Am Econ Rev');
+  assert.equal(journalExplorerLink(older), null);
+
+  const paper = serializeLibraryPaper({ ...legacy, venueId: 'S23254222', sourceName: 'American Economic Review' });
+  await assertSucceeds(setDoc(interaction, { saved: true, paper: copyForMergeWrite(paper) }, { merge: true }));
+  const saved = paperLegacyAdapter((await getDoc(interaction)).data()!.paper);
+  assert.deepEqual(journalExplorerLink(saved), { name: 'American Economic Review', path: '/explorer/source/S23254222' });
+
+  const revised = serializeLibraryPaper({ ...legacy, journal: 'Another journal' });
+  await assertSucceeds(setDoc(interaction, { paper: copyForMergeWrite(revised) }, { merge: true }));
+  const updated = paperLegacyAdapter((await getDoc(interaction)).data()!.paper);
+  assert.equal(updated.journal, 'Another journal');
+  assert.equal(journalExplorerLink(updated), null);
 });
 
 // ENG-109: every write of a saved paper, and of an interaction's copy, merges

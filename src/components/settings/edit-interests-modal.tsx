@@ -3,6 +3,8 @@ import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import { CATEGORIES } from '../../data/categories.ts';
+import { areasForInterests, type InterestSettings } from '../../utils/area-preferences.ts';
+import { AreaPreferenceFields, InterestMixField } from '../onboarding/area-preference-fields.tsx';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { Button } from '../ui/button.tsx';
@@ -31,8 +33,9 @@ export default function EditInterestsModal({ isOpen, onClose, suggested, onSaved
   onSaved?: () => void;
   finalFocus?: () => HTMLElement | null;
 }) {
-  const { userPreferences, updatePreferences } = useAuth();
+  const { userPreferences, interestSettings, updatePreferences } = useAuth();
   const [selected, setSelected] = useState(new Set<string>());
+  const [settings, setSettings] = useState<InterestSettings>({});
   const [isSaving, setIsSaving] = useState(false);
   const [activeArea, setActiveArea] = useState(() => Object.keys(CATEGORIES)[0]);
   const isPhone = useIsPhone();
@@ -43,6 +46,7 @@ export default function EditInterestsModal({ isOpen, onClose, suggested, onSaved
     setInitialized(ready);
     if (ready) {
       setSelected(new Set([...userPreferences, ...(suggested ?? [])]));
+      setSettings(interestSettings);
       const firstArea = Object.keys(CATEGORIES).find(areaKey => (
         Object.keys(CATEGORIES[areaKey].subcategories).some(id => (suggested ?? userPreferences).includes(id))
       ));
@@ -87,7 +91,7 @@ export default function EditInterestsModal({ isOpen, onClose, suggested, onSaved
     const savingVisit = visit.current;
     setIsSaving(true);
     try {
-      const refusal = await saveSelectedInterests(selected, updatePreferences);
+      const refusal = await saveSelectedInterests(selected, ids => updatePreferences(ids, settings));
       if (refusal) {
         toast.error(refusal, { id: 'eim-error' });
         return;
@@ -105,6 +109,7 @@ export default function EditInterestsModal({ isOpen, onClose, suggested, onSaved
   };
 
   const counted = (areaKey: string) => Object.keys(CATEGORIES[areaKey].subcategories).filter(k => selected.has(k)).length;
+  const selectedAreas = areasForInterests(selected);
 
   /** One field's topics, with its count and its Select all. */
   const fieldTopics = (areaKey: string) => {
@@ -125,6 +130,9 @@ export default function EditInterestsModal({ isOpen, onClose, suggested, onSaved
             {allSelected ? 'Deselect all' : 'Select all'}
           </Button>
         </div>
+        {selectedAreas.includes(areaKey) && (
+          <AreaPreferenceFields area={areaKey} name={area.label} settings={settings} onChange={setSettings} showReadingLevel />
+        )}
         <div className="eim-subcats">
           {Object.entries(area.subcategories).map(([subKey, sub]) => {
             const isSelected = selected.has(subKey);
@@ -147,6 +155,7 @@ export default function EditInterestsModal({ isOpen, onClose, suggested, onSaved
 
   const footer = (
     <div className="eim-footer">
+      <InterestMixField areas={selectedAreas} settings={settings} onChange={setSettings} />
       <span className="eim-selected-count">
         {`${selected.size} selected ${selected.size === 1 ? 'interest' : 'interests'}`}
       </span>

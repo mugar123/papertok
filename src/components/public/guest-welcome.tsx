@@ -23,6 +23,7 @@ import { CollisionNote, PreparingNote, ProviderSpinner } from './provider-sign-i
 import Petri from '../onboarding/petri.tsx';
 import PetriStamp from '../onboarding/petri-stamp.tsx';
 import { normalizeGuestAreas, normalizeGuestTopics, saveGuestInterests } from '../../utils/guest-interests.ts';
+import type { InterestSettings } from '../../utils/area-preferences.ts';
 import { institutionDomainOf } from '../../utils/institution-domain.ts';
 import { DigestPreview, LibraryPreview, WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport, WelcomeUniversityChoice } from './guest-welcome-preferences.tsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from './welcome-shell.tsx';
@@ -323,6 +324,7 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   const waiting = readiness !== 'ready';
   const preparingId = useId();
   const [selected, setSelected] = useState(() => new Set<string>());
+  const [interestSettings, setInterestSettings] = useState<InterestSettings>({});
   const [selectedTopics, setSelectedTopics] = useState(() => new Set<string>());
   const [expandedAreas, setExpandedAreas] = useState(() => new Set<string>());
   const toggleExpanded = (key: string) => setExpandedAreas((previous) => {
@@ -378,7 +380,7 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   const finish = () => {
     if (selected.size === 0) return;
     const areas = normalizeGuestAreas(Array.from(selected));
-    saveGuestInterests({ areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas), readingLevel, emailDigest, institutionEmail });
+    saveGuestInterests({ areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas), readingLevel, emailDigest, institutionEmail, ...interestSettings });
     onSignIn?.();
   };
 
@@ -533,7 +535,7 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
       )}
       {step === 'support' && <WelcomeProjectSupport />}
 
-      {isTopics && <AreaPicker selected={selected} onToggle={toggleArea} label={copy.topics.areasLabel} />}
+      {isTopics && <AreaPicker selected={selected} onToggle={toggleArea} label={copy.topics.areasLabel} settings={interestSettings} onSettingsChange={setInterestSettings} />}
 
       {isSubtopics && (
         <SubtopicsPicker
