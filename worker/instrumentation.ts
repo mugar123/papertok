@@ -28,6 +28,7 @@ export class EmailSubscriptionStore extends DurableObject<WorkerEnv> {
     this.store = new SubscriptionStore(ctx);
   }
   fetch(request: Request) { return trackErrors(this.env, this.ctx, 'durable_object', () => this.store.fetch(request)); }
+  alarm() { return trackErrors(this.env, this.ctx, 'durable_object', () => this.store.alarm()); }
 }
 
 export class RequestQuotaLedger extends DurableObject<WorkerEnv> {

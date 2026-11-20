@@ -152,8 +152,8 @@ test('the in-app notice announces the version this page is dated', () => {
 });
 
 test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
-  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.9');
-  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6', '2026-11-20.7', '2026-11-20.8']) {
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.10');
+  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6', '2026-11-20.7', '2026-11-20.8', '2026-11-20.9']) {
     assert.equal(privacyNoticeStatus({
       user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
       signedIn: true,
@@ -165,14 +165,14 @@ test('readers who saw an earlier 20 November notice are owed the cumulative upda
     }), 'owed', seen);
   }
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /Anthropic.*rewrites\/explanations outside the EU/i);
-  assert.match(notice, /Verified-email saves count per account\/paper\/UTC week.*opt out: Settings→Privacy/i);
-  assert.match(notice, /Analytics ties survey level\/broad interests\/answers\/optional role to accounts/i);
-  assert.match(notice, /Day 7–13 return marks stay local.*PostHog visits/i);
-  assert.match(notice, /Accounts keep Essential\/Curiosity priorities, mix and area levels/i);
-  assert.match(notice, /My profile suggests interests, listing recent citations\/coauthors unsaved/i);
-  assert.match(notice, /flags sessions with likes\/saves\/reads before profile load/i);
-  assert.match(notice, /Weekly citation mail uses ORCID on OpenAlex/i);
+  assert.match(notice, /opt-in digest reminders.*last signed-in visit hour.*30 days.*opt-out, unsubscribe or account deletion/i);
+  assert.match(notice, /Anthropic can rewrite\/explain outside the EU/i);
+  assert.match(notice, /Verified-email saves count by account\/paper\/UTC week.*off in Privacy/i);
+  assert.match(notice, /PostHog links surveys and likes\/saves\/reads before profile load to accounts/i);
+  assert.match(notice, /counts visits.*local day 7–13 mark/i);
+  assert.match(notice, /keep Essential\/Curiosity, mix and area levels/i);
+  assert.match(notice, /interest ideas and unsaved citations\/coauthors in My profile/i);
+  assert.match(notice, /ORCID on OpenAlex for weekly citations/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

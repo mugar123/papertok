@@ -12,6 +12,7 @@ export interface EmailNotificationsContextValue {
   digestSendReady: boolean;
   /** The app turned the digest off this session because there was nothing left for it to cover. */
   digestTurnedOff: boolean;
+  reactivation: ReturnType<typeof useDigestReactivation>;
   savePreferences: (preferences: NotificationPreferences) => Promise<Required<NotificationPreferences>>;
   sendTest: (preferences?: NotificationPreferences) => Promise<Awaited<ReturnType<typeof sendEmailNotificationTest>>>;
 }
@@ -38,6 +39,7 @@ import { getFollowingSignature } from '../utils/following-updates.ts';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebase.ts';
 import { normalizeOrcidConnection } from '../services/orcid-connection-service.ts';
+import { useDigestReactivation } from '../hooks/use-digest-reactivation.ts';
 
 const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
   enabled: false,
@@ -72,6 +74,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   });
   const loadedForUser = useRef<string | null>(null);
   const userId = user?.uid || null;
+  const reactivation = useDigestReactivation(userId, !loading && preferences.enabled, user?.emailVerified === true);
   const followSignature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
   const previewSignature = useMemo(() => items.slice(0, 20).map(item => item.updateKey || item.id || item.doi).join('|'), [items]);
   const notificationDataReady = !followsLoading && !followsError;
@@ -352,6 +355,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     hasCitationSource,
     digestCovered,
     digestSendReady,
+    reactivation,
     digestTurnedOff: digestShutoffNoticeShown({
       turnedOffFor: digestTurnedOffFor,
       userId,
@@ -360,7 +364,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     }),
     savePreferences,
     sendTest,
-  }), [digestCovered, digestSendReady, digestTurnedOffFor, error, hasCitationSource, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing, userId]);
+  }), [digestCovered, digestSendReady, digestTurnedOffFor, error, hasCitationSource, hasFollows, health, loading, localizedPreferences, notificationDataReady, reactivation, savePreferences, saving, sendTest, testing, userId]);
 
   return <EmailNotificationsContext.Provider value={value}>{children}</EmailNotificationsContext.Provider>;
 }

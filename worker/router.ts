@@ -18,6 +18,7 @@ import { isNanConfigured } from './nan-client.ts';
 import {
   EmailNotificationError,
   handleEmailNotificationRequest,
+  handleEmailReactivationRequest,
   handleEmailUnsubscribe,
 } from './email-notifications.ts';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
@@ -278,7 +279,10 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   if (url.pathname.startsWith('/notifications/')) {
     if (origin && !allowedOrigins(env).has(origin)) return json({ code: 'EMAIL_ORIGIN_NOT_ALLOWED' }, 403);
     try {
-      const payload = await handleEmailNotificationRequest(request, env, url.pathname);
+      const handler = url.pathname === '/notifications/reactivation' || url.pathname === '/notifications/visit'
+        ? handleEmailReactivationRequest
+        : handleEmailNotificationRequest;
+      const payload = await handler(request, env, url.pathname);
       return json(payload, 200, {
         ...corsHeaders(origin, env),
         'cache-control': 'private, no-store',
