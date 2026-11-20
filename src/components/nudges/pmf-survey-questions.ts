@@ -1,7 +1,7 @@
 import { createElement as h, useId } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import type { PmfDisappointment } from '../../utils/pmf-survey.ts';
+import type { PmfDisappointment, PmfRole } from '../../utils/pmf-survey.ts';
 
 const COPY = {
   disappointment: 'How would you feel if you could no longer use PaperTok?',
@@ -14,6 +14,14 @@ const COPY = {
   optional: '(optional)',
   low: 'Not at all likely',
   high: 'Extremely likely',
+  role: 'Which best describes you?',
+  roles: [
+    ['undergraduate', 'Undergraduate student'],
+    ['graduate', 'Graduate student'],
+    ['researcher', 'Researcher or faculty'],
+    ['industry', 'Industry professional'],
+    ['other', 'Other'],
+  ] as const satisfies readonly (readonly [PmfRole, string])[],
 };
 
 const SCORES = Array.from({ length: 11 }, (_, score) => score);
@@ -26,10 +34,15 @@ function isScore(value: unknown): value is number {
   return typeof value === 'number' && SCORES.includes(value);
 }
 
+function isRole(value: unknown): value is PmfRole {
+  return COPY.roles.some(([role]) => role === value);
+}
+
 /**
- * The survey's two questions, each a radio group named by its question: how
- * the reader would feel without PaperTok, then how likely they are to
- * recommend it from 0 to 10, which may be left unanswered. Every choice is a
+ * The survey's questions, each a radio group named by its question: how the
+ * reader would feel without PaperTok, then how likely they are to recommend it
+ * from 0 to 10 and which role best describes them, both of which may be left
+ * unanswered. Every choice is a
  * native button in a Base UI radio group, as in the feed window's order
  * (custom-feeds/feed-dialog.tsx): Tab reaches each question once and the arrow
  * keys move between its choices. The ends of the scale describe 0 and 10.
@@ -37,14 +50,16 @@ function isScore(value: unknown): value is number {
  * Written without JSX, on the Base UI parts rather than ui/radio-group.tsx, so
  * its tests can render it under Node. Its styles are in pmf-survey.css.
  */
-export default function PmfSurveyQuestions({ disappointment, nps, onDisappointmentChange, onNpsChange }: {
+export default function PmfSurveyQuestions({ disappointment, nps, role, onDisappointmentChange, onNpsChange, onRoleChange }: {
   disappointment: PmfDisappointment | null;
   nps: number | null;
+  role: PmfRole | null;
   onDisappointmentChange: (value: PmfDisappointment) => void;
   onNpsChange: (value: number) => void;
+  onRoleChange: (value: PmfRole) => void;
 }) {
   const id = useId();
-  const ids = { disappointment: `${id}-disappointment`, recommend: `${id}-recommend`, low: `${id}-low`, high: `${id}-high` };
+  const ids = { disappointment: `${id}-disappointment`, recommend: `${id}-recommend`, low: `${id}-low`, high: `${id}-high`, role: `${id}-role` };
   const describedBy = (score: number) => (score === 0 ? ids.low : score === 10 ? ids.high : undefined);
 
   return h('div', { className: 'pmf-survey-questions' },
@@ -80,5 +95,19 @@ export default function PmfSurveyQuestions({ disappointment, nps, onDisappointme
       // onto two rows; the description of 0 and 10 does not repeat it.
       h('div', { className: 'pmf-survey-scale-ends' },
         h('span', { id: ids.low }, h('span', { 'aria-hidden': true }, '0: '), COPY.low),
-        h('span', { id: ids.high }, h('span', { 'aria-hidden': true }, '10: '), COPY.high))));
+        h('span', { id: ids.high }, h('span', { 'aria-hidden': true }, '10: '), COPY.high))),
+    h('div', { className: 'pmf-survey-question' },
+      h('p', { id: ids.role, className: 'pmf-survey-question-text' },
+        COPY.role, ' ', h('span', { className: 'pmf-survey-optional' }, COPY.optional)),
+      h(RadioGroup, {
+        className: 'pmf-survey-roles',
+        'aria-labelledby': ids.role,
+        value: role,
+        onValueChange: (value: unknown) => { if (isRole(value)) onRoleChange(value); },
+      }, COPY.roles.map(([value, label]) => h(Radio.Root, {
+        key: value,
+        value,
+        nativeButton: true,
+        render: h('button', { type: 'button', className: 'pmf-survey-role' }),
+      }, label)))));
 }

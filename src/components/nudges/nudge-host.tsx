@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { EnvelopeSimple } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -9,6 +9,8 @@ import { useFeed } from '../../context/feed-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
 import { ANALYTICS_CONSENT, trackPmfSurvey } from '../../services/analytics-service.ts';
+import { analyticsSessionContext } from '../../services/analytics-session.ts';
+import { auth } from '../../services/firebase.ts';
 import { readAccountPrivacyNotice, saveAccountPrivacyNotice } from '../../services/privacy-notice-service.ts';
 import {
   NUDGE_DWELL_MS,
@@ -36,8 +38,9 @@ import {
   type AccountNoticeRecord,
   type VisitNotices,
 } from '../../utils/nudges.ts';
-import { pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
+import { pmfSurveyAreas, pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
 import { setCardsCovered } from '../../utils/visible-time.ts';
+import { pinAnalyticsContext } from '../pdf/viewer-outcome.ts';
 import NudgePanel from './nudge-panel.tsx';
 import PmfSurvey from './pmf-survey.tsx';
 import PrivacyNotice from './privacy-notice.tsx';
@@ -120,7 +123,7 @@ function subscribeToTabVisibility(onChange: () => void) {
 }
 
 export default function NudgeHost() {
-  const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth();
+  const { user, loading: authLoading, onboardingComplete, profileLoadError, userPreferences, readingPreferences } = useAuth();
   const { health, loading: emailLoading } = useEmailNotifications();
   const location = useLocation();
   const navigate = useNavigate();
@@ -275,9 +278,24 @@ export default function NudgeHost() {
   // The survey's version counts as asked once it is on screen, as the privacy
   // notice's counts as told. When it closes without an answer from the dialog,
   // because the reader left the feed (Back included), that is its dismissal.
+  // Both of its events describe the reader as they were when it opened: their
+  // reading level and the broad areas of their interests. A change to either
+  // while it is open does not reopen it.
+  // Firebase can switch accounts before this effect runs with the prior
+  // profile. Verify the account at opening, then let analytics recheck the
+  // pinned account and consent when it captures either event.
   const shownSurvey = useRef<PmfSurveyShown | null>(null);
+  const surveyReader = useEffectEvent(() => ({ readingLevel: readingPreferences.aiExplanationLevel, areas: pmfSurveyAreas(userPreferences) }));
   useEffect(() => {
-    const shown = recordPmfSurveyShown({ uid, surveyOpen, version: APP_VERSION, track: trackPmfSurvey });
+    const shown = recordPmfSurveyShown({
+      uid,
+      surveyOpen,
+      version: APP_VERSION,
+      reader: surveyReader(),
+      track: (eventName, params, stillValid) => trackPmfSurvey(eventName, params, { stillValid }),
+      signedInUid: auth.currentUser?.uid,
+      stillValid: pinAnalyticsContext(analyticsSessionContext),
+    });
     shownSurvey.current = shown;
     return () => shown?.close();
   }, [uid, surveyOpen]);
