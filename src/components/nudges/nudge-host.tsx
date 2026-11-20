@@ -7,7 +7,7 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
-import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
+import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
 import { ANALYTICS_CONSENT, trackPmfSurvey } from '../../services/analytics-service.ts';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
 import { auth } from '../../services/firebase.ts';
@@ -33,6 +33,7 @@ import {
   readingMinutePassed,
   recordPrivacyNoticeShown,
   rememberNudgeDismissal,
+  syncLocalPrivacyNotice,
   visitChoiceGates,
   visitReaderReady,
   type AccountNoticeRecord,
@@ -153,6 +154,19 @@ export default function NudgeHost() {
   // The uid whose read failed in this visit, so the visit stops waiting for it.
   const [accountReadFailedFor, setAccountReadFailedFor] = useState<string | null>(null);
   const uid = user?.uid;
+  const noticeSyncAttemptedFor = useRef<string | null>(null);
+
+  // The account transaction checks its own version. Keep this off the dialog's
+  // decision path and leave failed attempts for the next visit.
+  useEffect(() => {
+    if (!signedIn || !uid || noticeSyncAttemptedFor.current === uid) return;
+    const sync = syncLocalPrivacyNotice({ uid, saveToAccount: saveAccountPrivacyNotice });
+    if (!sync) return;
+    noticeSyncAttemptedFor.current = uid;
+    void sync.catch((error: unknown) => {
+      console.warn('Could not sync the browser privacy notice record to the account', error);
+    });
+  }, [signedIn, uid]);
 
   // A tab kept open overnight, as an installed app often is, counts the day it
   // is used on again.
@@ -184,7 +198,6 @@ export default function NudgeHost() {
       signedIn,
       version: PRIVACY_POLICY_VERSION,
       effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
-      baseline: PRIVACY_NOTICE_BASELINE_VERSION,
       account: accountNotice,
     }),
     () => 'settled' as const,
