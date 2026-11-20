@@ -4,7 +4,7 @@ import type { Paper } from '../models/paper.ts';
 import { deleteField } from 'firebase/firestore';
 
 type SourceField = 'abstractSource' | 'trialRegistrationSource';
-type StoredCopy = Pick<Partial<Paper>, 'summary' | 'trialRegistration' | SourceField>;
+type StoredCopy = Pick<Partial<Paper>, 'summary' | 'studyType' | 'trialRegistration' | SourceField>;
 
 /**
  * A stored copy of a paper as a write sends it: the interaction's `paper` map
@@ -16,11 +16,13 @@ type StoredCopy = Pick<Partial<Paper>, 'summary' | 'trialRegistration' | SourceF
  * an earlier copy's credit would name its source under the new text. A copy
  * that writes no text leaves the stored text, and its credit, as they are.
  */
-export function copyForMergeWrite<T extends StoredCopy>(copy: T): Omit<T, SourceField> & {
+export function copyForMergeWrite<T extends StoredCopy>(copy: T): Omit<T, SourceField | 'studyType'> & {
   [K in SourceField]?: T[K] | FieldValue;
-} {
+} & { studyTypes?: Partial<Record<NonNullable<Paper['studyType']>, true>> } {
+  const { studyType, ...fields } = copy;
   return {
-    ...copy,
+    ...fields,
+    ...(studyType && { studyTypes: { [studyType]: true } }),
     ...(copy.summary !== undefined && !copy.abstractSource && { abstractSource: deleteField() }),
     ...(copy.trialRegistration !== undefined && !copy.trialRegistrationSource && { trialRegistrationSource: deleteField() }),
   };
