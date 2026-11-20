@@ -2399,6 +2399,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         });
       },
       undo: options?.throwOnError ? () => {
+        // A profile load or sign-out may have emptied the library: nothing to
+        // put back. The ref has caught up by the time a network refusal lands.
+        if (!personalLibraryRef.current[paper.id]) return false;
         setPersonalLibrary(change.undo);
         recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: Boolean(previous?.readLater) });
       } : undefined,

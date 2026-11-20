@@ -811,6 +811,8 @@ function readLaterPaper() {
         state.library = { ...state.library, p1: { ...state.library.p1, ...stamp, readLater: nextValue } };
       },
       undo: () => {
+        // As FeedContext: an entry the screen no longer holds has nothing to put back.
+        if (!state.library.p1) return false;
         state.library = restoreReadLater(state.library, 'p1', previous, { paper: storedPaper, updatedAt });
       },
       write: () => new Promise<void>((accept, refuse) => {
@@ -826,7 +828,7 @@ function readLaterPaper() {
       isOn: () => Boolean(state.library.p1?.readLater),
     }).catch(() => { reported.push(options.afterWrite ? 'removal' : 'save'); });
   };
-  return { state, answers, reported, toggle };
+  return { state, answers, reported, toggle, toggleChanges: changes };
 }
 
 const readLaterRemoval = { afterWrite: true, throwOnError: true };
@@ -907,6 +909,24 @@ test('a refused Read later removal leaves the newer accepted change on screen', 
   await Promise.all([off, on]);
   assert.equal(paper.state.library.p1.readLater, true);
   assert.equal(paper.state.library.p1.updatedAt, 'T3', 'stamped by the last change');
+});
+
+// ENG-171: the save dialog takes a paper off Read later (`throwOnError`, so a
+// refusal is undone), a profile load empties the library while that waits, and
+// Firestore refuses it. The undo finds no entry to put back, so it moves
+// nothing and must not count as a move: the next Save has to show.
+test('a Save after a refused Read later removal that a profile load emptied meanwhile shows', async () => {
+  const paper = readLaterPaper();
+  const removed = paper.toggle(false, saveButton);
+  paper.state.library = {};
+  paper.toggleChanges.screenReplaced();
+  paper.answers[0].refuse();
+  await silenced(() => removed);
+  assert.deepEqual(paper.state.library, {}, 'nothing to put back');
+  const saved = paper.toggle(true, saveButton);
+  paper.answers[1].accept();
+  await saved;
+  assert.equal(paper.state.library.p1?.readLater, true);
 });
 
 test('a like accepted before React draws it is shown once', async () => {
