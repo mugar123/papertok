@@ -23,6 +23,7 @@ import { buildSavedPaperPayload } from '../src/utils/saved-paper-payload.ts';
 import { paperLegacyAdapter, storedClassification } from '../src/models/paper.ts';
 import { areaLabelForPaper } from '../src/utils/area-accent.ts';
 import { serializeLibraryPaper } from '../src/utils/reading-library.ts';
+import { journalExplorerLink } from '../src/utils/explorer-paths.ts';
 import { copyForMergeWrite } from '../src/utils/stored-copy-write.ts';
 import { LIST_COLORS } from '../src/utils/list-colors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
@@ -1341,6 +1342,28 @@ test('savedPapers accepts the abstract source buildSavedPaperPayload sends, and 
     await assertFails(setDoc(ref, { ...valid, abstractSource }))
       .catch((error: Error) => assert.fail(`${String(abstractSource)} was accepted: ${error.message}`));
   }
+});
+
+test('the reader opens a saved journal by id and still reads older copies without one', async () => {
+  await reset();
+  const id = 'openalex:W7000000001';
+  const interaction = doc(asAlice(), 'users', ALICE, 'interactions', id);
+  const legacy = { id, title: 'Monetary policy', journal: 'Am Econ Rev' };
+  await assertSucceeds(setDoc(interaction, { saved: true, paper: legacy }));
+  const older = paperLegacyAdapter((await getDoc(interaction)).data()!.paper);
+  assert.equal(older.journal, 'Am Econ Rev');
+  assert.equal(journalExplorerLink(older), null);
+
+  const paper = serializeLibraryPaper({ ...legacy, venueId: 'S23254222', sourceName: 'American Economic Review' });
+  await assertSucceeds(setDoc(interaction, { saved: true, paper: copyForMergeWrite(paper) }, { merge: true }));
+  const saved = paperLegacyAdapter((await getDoc(interaction)).data()!.paper);
+  assert.deepEqual(journalExplorerLink(saved), { name: 'American Economic Review', path: '/explorer/source/S23254222' });
+
+  const revised = serializeLibraryPaper({ ...legacy, journal: 'Another journal' });
+  await assertSucceeds(setDoc(interaction, { paper: copyForMergeWrite(revised) }, { merge: true }));
+  const updated = paperLegacyAdapter((await getDoc(interaction)).data()!.paper);
+  assert.equal(updated.journal, 'Another journal');
+  assert.equal(journalExplorerLink(updated), null);
 });
 
 // ENG-109: every write of a saved paper, and of an interaction's copy, merges

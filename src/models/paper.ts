@@ -472,6 +472,8 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
     arxivId: arxivId || undefined,
     doi: doi || undefined,
     journal: journal || undefined,
+    venueId: legacyPaper.venueId || undefined,
+    sourceName: legacyPaper.venueId && legacyPaper.sourceName || undefined,
     year,
     publicationType: legacyPaper.publicationType || 'preprint',
     publicationStatus: legacyPaper.publicationStatus || 'preprint',
