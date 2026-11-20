@@ -1918,8 +1918,11 @@ function guardNetwork(t: import('node:test').TestContext) {
   });
 }
 
-const authored = (id: number, orcid: string | null) => ({
-  author: { id: `https://openalex.org/A${id}`, display_name: `Author ${id}`, orcid: orcid ? `https://orcid.org/${orcid}` : null },
+const authored = (id: number, orcid: string | null, observed: string[] = []) => ({
+  author: {
+    id: `https://openalex.org/A${id}`, display_name: `Author ${id}`, orcid: orcid ? `https://orcid.org/${orcid}` : null,
+    observed_orcids: observed.map(value => `https://orcid.org/${value}`),
+  },
 });
 
 test('the works of an ORCID iD name the author ids that carry the iD on them', async t => {
@@ -1930,6 +1933,18 @@ test('the works of an ORCID iD name the author ids that carry the iD on them', a
   ] }));
   const result = await getWorksByOrcid('0000-0002-1825-0097');
   assert.deepEqual(result.authorIds, ['A10', 'A12']);
+});
+
+test('an ORCID iD OpenAlex observed for an author, not set as theirs, still names that author as the reader', async t => {
+  guardNetwork(t);
+  t.mock.method(openAlexClient, 'fetch', async () => Response.json({ meta: { count: 1 }, results: [
+    { ...lookupWork(1, null, 'One'), authorships: [
+      authored(10, '0000-0002-1825-0097'),
+      authored(14, null, ['0000-0001-5109-3700', '0000-0002-1825-0097']),
+      authored(15, null, ['0000-0001-5109-3700']),
+    ] },
+  ] }));
+  assert.deepEqual((await getWorksByOrcid('0000-0002-1825-0097')).authorIds, ['A10', 'A14']);
 });
 
 test('twelve months before a day is the same calendar day a year earlier, in local time', () => {
@@ -1964,6 +1979,16 @@ test('the papers citing the reader\'s works come from one request, newest first,
   assert.deepEqual(result.works.map(work => [work.paper.id, work.paper.title, work.references, work.orcids]), [
     ['W500', 'A citing paper', ['W9', 'W1'], ['0000-0001-5109-3700']],
   ]);
+});
+
+test('a citing paper lists the ORCID iDs OpenAlex observed for its authors as well as the ones set', async t => {
+  guardNetwork(t);
+  t.mock.method(openAlexClient, 'fetch', async () => Response.json({ meta: { count: 1 }, results: [{
+    ...lookupWork(500, '10.1000/citing', 'A citing paper'),
+    authorships: [authored(20, '0000-0001-5109-3700'), authored(21, null, ['0000-0002-1825-0097']), authored(22, null)],
+  }] }));
+  const result = await getWorksCiting(['W1'], '2025-11-19');
+  assert.deepEqual(result.works[0].orcids, ['0000-0001-5109-3700', '0000-0002-1825-0097']);
 });
 
 test('the papers citing the reader\'s works are asked once, with no retry, and the failure reaches the page', async t => {

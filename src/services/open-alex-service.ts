@@ -1641,12 +1641,13 @@ function doiChunks(dois: string[]) {
 }
 
 type WorkLookupOptions = {
+  includeTopics?: boolean;
   /** Told the identifiers of each chunk OpenAlex did not answer; the chunks that answered are still returned. */
   onRequestFailed?: (ids: string[], error: unknown) => void;
 };
 
 /** Asks for the works of each chunk in turn, keeping every chunk that answers. */
-async function fetchWorkChunks(chunks: string[][], filterFor: (chunk: string[]) => string, { onRequestFailed }: WorkLookupOptions) {
+async function fetchWorkChunks(chunks: string[][], filterFor: (chunk: string[]) => string, { onRequestFailed, includeTopics }: WorkLookupOptions) {
   const results: OpenAlexWork[] = [];
   for (const chunk of chunks) {
     const url = `https://api.openalex.org/works?filter=${filterFor(chunk)}&per-page=50`;
@@ -1662,7 +1663,7 @@ async function fetchWorkChunks(chunks: string[][], filterFor: (chunk: string[]) 
       else console.error('OpenAlex works lookup failed', err);
     }
   }
-  return results.map(work => formatOpenAlexWorkAsPaper(work));
+  return results.map(work => formatOpenAlexWorkAsPaper(work, includeTopics));
 }
 
 /**
@@ -1726,7 +1727,7 @@ export async function getWorksByOrcid(orcidId: string) {
     }
     const results = Array.isArray(data?.results) ? data.results : [];
     if (page === 1) total = Number(data?.meta?.count) || 0;
-    papers.push(...results.map(formatOpenAlexWorkAsPaper));
+    papers.push(...results.map(work => formatOpenAlexWorkAsPaper(work, true)));
     for (const id of results.flatMap(work => authorIdsWithOrcid(work, orcidId))) authorIds.add(id);
     if (results.length < ORCID_WORKS_PAGE_SIZE) break;
   }
@@ -1743,16 +1744,22 @@ function bareOrcid(value: unknown) {
   return String(value ?? '').trim().match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i)?.[1].toUpperCase() ?? null;
 }
 
-/** The ORCID iDs of a work's authorships, bare. */
-function authorshipOrcids(work: OpenAlexWork) {
-  return (work.authorships ?? []).map(authorship => bareOrcid(authorship.author?.orcid)).filter((id): id is string => id !== null);
+/** The ORCID iDs of an authorship's author, bare: the one OpenAlex set and the ones it observed for them. */
+function authorOrcids(author: NonNullable<OpenAlexWork['authorships']>[number]['author']) {
+  const observed = Array.isArray(author?.observed_orcids) ? author.observed_orcids : [];
+  return [author?.orcid, ...observed].map(bareOrcid).filter((id): id is string => id !== null);
 }
 
-/** The author ids of a work's authorships whose ORCID iD is `orcidId`. */
+/** The ORCID iDs of a work's authorships, bare. */
+function authorshipOrcids(work: OpenAlexWork) {
+  return (work.authorships ?? []).flatMap(authorship => authorOrcids(authorship.author));
+}
+
+/** The author ids of a work's authorships that carry the ORCID iD `orcidId`. */
 function authorIdsWithOrcid(work: OpenAlexWork, orcidId: string) {
   return (work.authorships ?? []).flatMap((authorship) => {
     const id = openAlexAuthorId(authorship.author?.id);
-    return id && bareOrcid(authorship.author?.orcid) === orcidId.toUpperCase() ? [id] : [];
+    return id && authorOrcids(authorship.author).includes(orcidId.toUpperCase()) ? [id] : [];
   });
 }
 
@@ -1810,7 +1817,7 @@ export async function getWorksCiting(workIds: string[], since: string) {
  * that, and are all the page ever reads.
  */
 export function slimWorksPage(data: OpenAlexPage<OpenAlexWork> | null) {
-  const papers = Array.isArray(data?.results) ? data.results.map(formatOpenAlexWorkAsPaper).filter(Boolean) : [];
+  const papers = Array.isArray(data?.results) ? data.results.map(work => formatOpenAlexWorkAsPaper(work)).filter(Boolean) : [];
   return { papers, total: data?.meta?.count || 0 };
 }
 

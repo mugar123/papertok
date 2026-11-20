@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchesAuthorName } from './author-name-match.ts';
+import { matchesAuthorName, sameFullName } from './author-name-match.ts';
 
 test('the same person written two ways still matches', () => {
   assert.ok(matchesAuthorName('Nicolás Cuello', 'Nicolas Cuello'), 'accents are not a difference');
@@ -64,4 +64,16 @@ test('two different people do not match', () => {
   assert.equal(matchesAuthorName('Ada Lovelace', ''), false);
   assert.equal(matchesAuthorName('', 'Ada Lovelace'), false);
   assert.equal(matchesAuthorName('Ada Lovelace', undefined), false);
+});
+
+test('a full name is compared by the letters of any script, ignoring case, accents, dots and hyphens', () => {
+  assert.equal(sameFullName('Иван Иванов', 'Иван Иванов'), true);
+  assert.equal(sameFullName('иван ИВАНОВ', 'Иван Иванов'), true);
+  assert.equal(sameFullName('Ιωάννης Παπαδόπουλος', 'ιωαννης παπαδοπουλος'), true);
+  assert.equal(sameFullName('Иван Иванов', 'Иван Петров'), false);
+  assert.equal(sameFullName('María García', 'maria  GARCIA'), true);
+  assert.equal(sameFullName('M. Garcia', 'Maria Garcia'), false);
+  // A vowel sign is part of the name: it does not fold into the bare letters.
+  assert.equal(sameFullName('राम शर्मा', 'रम शर्मा'), false);
+  assert.equal(sameFullName('Иванов', 'Иванов'), false, 'a name of one word matches nothing');
 });

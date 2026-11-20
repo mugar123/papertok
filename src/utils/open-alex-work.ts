@@ -301,7 +301,7 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
 }
 
 /** A work as the paper the public paper page and the Explorer show, built through `PaperBuilder`. */
-export function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
+export function formatOpenAlexWorkAsPaper(work: OpenAlexWork, includeTopics = false): Paper {
   // OpenAlex dates a work as a calendar day. The year is read from that text:
   // as a Date it is midnight UTC, still the previous year west of Greenwich on
   // 1 January, which is where OpenAlex files a work known only by its year.
@@ -354,5 +354,6 @@ export function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     // same paper in the feed, which arrives with an arXiv category, rendered in
     // its own. `areaAccentForPaper` reads it when there is no arXiv id to go on.
     primaryTopic: work.primary_topic || null,
+    topics: includeTopics ? work.topics : undefined,
   });
 }
