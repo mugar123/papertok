@@ -278,10 +278,28 @@ export default function NudgeHost() {
   // Both of its events describe the reader as they were when it opened: their
   // reading level and the broad areas of their interests. A change to either
   // while it is open does not reopen it.
+  // Its events go out only while the account that opened it is still the one
+  // signed in: a switch to another account closes it, and that dismissal,
+  // which the SDK may capture after the new account is identified, would
+  // otherwise land under the new account with the first one's reader fields.
+  // The account is kept in a layout effect, so it is current before any
+  // passive cleanup of the same commit runs.
   const shownSurvey = useRef<PmfSurveyShown | null>(null);
+  const signedInUid = useRef(uid);
+  useLayoutEffect(() => {
+    signedInUid.current = uid;
+  }, [uid]);
   const surveyReader = useEffectEvent(() => ({ readingLevel: readingPreferences.aiExplanationLevel, areas: pmfSurveyAreas(userPreferences) }));
   useEffect(() => {
-    const shown = recordPmfSurveyShown({ uid, surveyOpen, version: APP_VERSION, reader: surveyReader(), track: trackPmfSurvey });
+    const opener = uid;
+    const shown = recordPmfSurveyShown({
+      uid,
+      surveyOpen,
+      version: APP_VERSION,
+      reader: surveyReader(),
+      track: (eventName, params, stillValid) => trackPmfSurvey(eventName, params, { stillValid }),
+      stillValid: () => signedInUid.current === opener,
+    });
     shownSurvey.current = shown;
     return () => shown?.close();
   }, [uid, surveyOpen]);

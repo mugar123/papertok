@@ -6,7 +6,7 @@ import { sanitizeExceptionProperties } from '../utils/error-telemetry.ts';
 type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
 type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
-interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: (eventName: ProductAnalyticsEvent, params?: Record<string, unknown>) => Promise<unknown> }
+interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: (eventName: ProductAnalyticsEvent, params?: Record<string, unknown>, stillValid?: () => boolean) => Promise<unknown> }
 
 // Vercel counts page views; PostHog measures repeat product use with a
 // persistent browser identifier, linked to the account on sign-in. Both
@@ -967,14 +967,14 @@ export async function trackAcquisition({
 }
 
 /** The survey's two events, with how long ago this browser activated, so cohorts can be told apart. */
-export async function trackPmfSurvey(eventName: 'pmf_survey_shown' | 'pmf_survey', params: Record<string, unknown>, { now = Date.now, track = trackProductEvent }: Omit<TrackingOptions, 'storage'> = {}) {
+export async function trackPmfSurvey(eventName: 'pmf_survey_shown' | 'pmf_survey', params: Record<string, unknown>, { now = Date.now, track = trackProductEvent, stillValid }: Omit<TrackingOptions, 'storage'> & { stillValid?: () => boolean } = {}) {
   let age: string | undefined;
   try {
     age = activationAge(resolveTimestamp(now));
   } catch {
     // Storage the browser refuses holds no activation mark; the answer still counts.
   }
-  return track(eventName, { ...params, ...(age && { activation_age: age }) });
+  return track(eventName, { ...params, ...(age && { activation_age: age }) }, stillValid);
 }
 
 function resolveTimestamp(now: number | (() => number)) {

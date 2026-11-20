@@ -212,7 +212,7 @@ export function pmfSurveyParams(answer: PmfSurveyAnswer, version: string, reader
   };
 }
 
-type SurveyTrack = (eventName: 'pmf_survey_shown' | 'pmf_survey', params: Record<string, unknown>) => Promise<unknown>;
+type SurveyTrack = (eventName: 'pmf_survey_shown' | 'pmf_survey', params: Record<string, unknown>, stillValid?: () => boolean) => Promise<unknown>;
 
 /** The survey while it is open: one answer, or the dismissal, is sent for it. */
 export interface PmfSurveyShown {
@@ -228,9 +228,12 @@ export interface PmfSurveyShown {
  * the one `pmf_survey` event of that opening: the answer the dialog hands
  * over, or a dismissal when it closes without one. Both events describe
  * `reader` as it was when the survey opened. Nothing is recorded before it
- * opens or without an account.
+ * opens or without an account. `stillValid` says whether the account that
+ * opened it is still the signed-in one; each event is sent with it, so a
+ * dismissal that lands after a switch to another account is dropped rather
+ * than filed under that account with the first one's reader fields.
  */
-export function recordPmfSurveyShown({ uid, surveyOpen, version, reader, storage, track }: { uid: string | null | undefined; surveyOpen: boolean; version: string; reader?: PmfSurveyReader; storage?: SurveyStorage | null; track: SurveyTrack }): PmfSurveyShown | null {
+export function recordPmfSurveyShown({ uid, surveyOpen, version, reader, storage, track, stillValid }: { uid: string | null | undefined; surveyOpen: boolean; version: string; reader?: PmfSurveyReader; storage?: SurveyStorage | null; track: SurveyTrack; stillValid?: () => boolean }): PmfSurveyShown | null {
   if (!surveyOpen || !uid) return null;
   // The newest version asked is kept: a tab still running an earlier one does
   // not write its version over it.
@@ -243,12 +246,12 @@ export function recordPmfSurveyShown({ uid, surveyOpen, version, reader, storage
   }
   // Only the first ask reads the papers; the ones kept for it go now.
   writeUsage(uid, target, record => (record.papers.length ? { ...record, papers: [] } : null));
-  void track('pmf_survey_shown', { app_version: version, ...readerParams(reader) });
+  void track('pmf_survey_shown', { app_version: version, ...readerParams(reader) }, stillValid);
   let sent = false;
   const send = (answer: PmfSurveyAnswer) => {
     if (sent) return;
     sent = true;
-    void track('pmf_survey', pmfSurveyParams(answer, version, reader));
+    void track('pmf_survey', pmfSurveyParams(answer, version, reader), stillValid);
   };
   return { answer: send, close: () => send('dismissed') };
 }

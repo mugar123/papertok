@@ -333,3 +333,21 @@ test('the areas reach analytics as known area keys only, each once and sorted, a
   assert.equal(areas(['cs'], 'denied'), undefined);
   assert.equal(sanitizeProductEventParams('pmf_survey', { disappointment: 'very', reading_level: 'expert' }, 'enabled').reading_level, undefined, 'an unknown reading level is dropped');
 });
+
+test('an event of the survey is sent only while the account that opened it is still signed in', () => {
+  let signedIn = 'reader-a';
+  const sent: unknown[] = [];
+  // A track that honours the guard as the analytics client does, just before capture.
+  const track = async (eventName: string, params: Record<string, unknown>, stillValid?: () => boolean) => {
+    if (stillValid && !stillValid()) return false;
+    sent.push([eventName, params.reading_level]);
+    return true;
+  };
+  const shown = recordPmfSurveyShown({
+    uid: 'reader-a', surveyOpen: true, version: '0.3.0', reader: { readingLevel: 'researcher', areas: ['physics'] },
+    storage: createStorage(), track, stillValid: () => signedIn === 'reader-a',
+  });
+  signedIn = 'reader-b';
+  shown?.close();
+  assert.deepEqual(sent, [['pmf_survey_shown', 'researcher']], 'the dismissal after the switch is dropped');
+});
