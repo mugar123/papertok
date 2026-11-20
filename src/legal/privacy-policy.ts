@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-20.6';
+export const PRIVACY_POLICY_VERSION = '2026-11-20.9';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -137,8 +137,8 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
   'For rewrites and explanations, Anthropic may process paper text outside the EU. My profile lists recent citing papers and frequent coauthors but keeps neither list.',
-  'Verified-email saves link each paper to your account once per UTC week by default. Opt out in Settings → Privacy.',
-  'With analytics on, surveys link known reading level and broad interests to your account, and submitted answers and optional role. Only browsers mark returns 7–13 days after first use, counted via existing PostHog first-use and visit events.',
+  'Verified-email saves count per account and paper weekly (UTC, opt out in Settings → Privacy). Analytics flags sessions with a like, save or read before your profile loads.',
+  'With analytics on, surveys link reading level, broad interests, answers and optional role to accounts. Only browsers mark day 7–13 returns, using existing PostHog events.',
 ];
 
 /**
@@ -159,13 +159,14 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['frequent coauthors', /coauthors you share two or more of those works with/],
     ['but keeps neither list', /PaperTok keeps neither list/],
     ['Verified-email saves', /With a verified email, your saves count by default/],
-    ['link each paper to your account once per UTC week', /PaperTok links your account to each paper you save once per UTC week/],
-    ['Opt out in Settings → Privacy', /Turn this off in Settings → Privacy to exclude future saves/],
+    ['count per account and paper weekly', /PaperTok links your account to each paper you save once per UTC week/],
+    ['opt out in Settings → Privacy', /Turn this off in Settings → Privacy to exclude future saves/],
+    ['Analytics flags sessions with a like, save or read before your profile loads', /records once per session if you like, save or read a paper while signed in before your recommendation profile loads/],
     ['With analytics on, surveys link', /With usage analytics on, PaperTok links survey events to your account/],
-    ['known reading level and broad interests', /events include your reading level and broad areas of interest, such as Physics, when available/],
-    ['submitted answers and optional role', /Submitting the survey records your answers, including your role if you chose one/],
-    ['Only browsers mark returns 7–13 days after first use', /Only your browser keeps the mark for a return 7 to 13 days after your first real use/],
-    ['existing PostHog first-use and visit events', /using the first-use and visit events already sent to PostHog/],
+    ['reading level, broad interests', /events include your reading level and broad areas of interest, such as Physics, when available/],
+    ['answers and optional role', /Submitting the survey records your answers, including your role if you chose one/],
+    ['Only browsers mark day 7–13 returns', /Only your browser keeps the mark for a return 7 to 13 days after your first real use/],
+    ['existing PostHog events', /using the first-use and visit events already sent to PostHog/],
   ],
   unsaid: [
     [/anonymous/i, 'survey events are linked to the signed-in account'],

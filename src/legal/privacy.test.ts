@@ -152,8 +152,8 @@ test('the in-app notice announces the version this page is dated', () => {
 });
 
 test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
-  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.6');
-  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5']) {
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.9');
+  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6', '2026-11-20.7', '2026-11-20.8']) {
     assert.equal(privacyNoticeStatus({
       user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
       signedIn: true,
@@ -167,11 +167,11 @@ test('readers who saw an earlier 20 November notice are owed the cumulative upda
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
   assert.match(notice, /rewrites and explanations.*Anthropic.*paper text outside the EU/i);
   assert.match(notice, /My profile.*recent citing papers.*frequent coauthors.*but keeps neither list/i);
-  assert.match(notice, /Verified-email saves.*each paper to your account once per UTC week.*by default/i);
+  assert.match(notice, /Verified-email saves.*per account and paper weekly.*opt out/i);
   assert.match(notice, /Opt out in Settings → Privacy/i);
-  assert.match(notice, /analytics on.*surveys link known reading level and broad interests to your account/i);
-  assert.match(notice, /submitted answers and optional role/i);
-  assert.match(notice, /Only browsers mark returns 7–13 days after first use.*existing PostHog first-use and visit events/i);
+  assert.match(notice, /analytics on.*surveys link reading level, broad interests, answers and optional role to accounts/i);
+  assert.match(notice, /Analytics flags sessions with a like, save or read before your profile loads/i);
+  assert.match(notice, /Only browsers mark day 7–13 returns.*existing PostHog events/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

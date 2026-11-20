@@ -84,6 +84,7 @@ import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayou
 import { FeedContext } from './contexts.ts';
 import { db } from '../services/firebase.ts';
 import { getDoc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
+import { trackBeforeProfileLoad } from '../services/analytics-service.ts';
 import { useAnalyticsConsent } from './privacy-context.tsx';
 import { useAuth } from './auth-context.tsx';
 import { auth } from '../services/firebase.ts';
@@ -435,6 +436,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
     recordInteractionEvent(interactionProfile.current, profileEvent(event, paper));
     profileSignals.current = readProfileSignals(interactionProfile.current);
+    void trackBeforeProfileLoad(event, interactionProfileHydrated.current, () => auth.currentUser?.uid === userId);
     if (!interactionProfileHydrated.current) return;
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
   }, [user?.uid]);
@@ -2047,7 +2049,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // A Reading history removal answered after this must leave the mark on,
     // and this mark stays even if its own write is refused. A tap before React
     // draws a refused unmark's undo finds the read already told.
-    const moves = markChangeLog.stand(`${userId}:read:${paper.id}`, true, readPaperIdsRef.current.has(paper.id));
+    const key = markKey(userId, 'read', paper.id);
+    const restores = markChangeLog.takesBack(key, true);
+    const moves = markChangeLog.stand(key, true, readPaperIdsRef.current.has(paper.id));
     // Built from the queued state, not the ref: an answered Reading history
     // removal may have queued its move before React drew it.
     setReadPaperIds((ids) => new Set(ids).add(paper.id));
@@ -2064,6 +2068,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         recordProfileEvent({
           paperId: paper.id,
           kind: 'read',
+          restores,
           category: paper.primaryCategory,
           timestamp: readAt,
         });
@@ -2364,7 +2369,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         readAt: deleteField(),
       }),
       onUnmarked: () => recordProfileEvent({ paperId, kind: 'unread' }),
-      onRestored: () => recordProfileEvent({ paperId, kind: 'read' }),
+      onRestored: () => recordProfileEvent({ paperId, kind: 'read', restores: true }),
       throwOnError: options?.throwOnError,
       afterWrite: options?.afterWrite,
       stillSignedIn: () => auth.currentUser?.uid === userId,
