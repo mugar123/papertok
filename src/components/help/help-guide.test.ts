@@ -111,14 +111,21 @@ test('Filters keeps the sort order apart from the three filters that get chips a
   const filters = text('filters');
   assert.match(filters, /three filters and a sort order/);
   assert.match(filters, /Reset clears the three filters and closes the panel/);
+  assert.match(filters, /On a screen wider than 768px the Filters button also counts them/);
   assert.match(filters, /Sort by, Most cited or Most recent, is set in the same panel but is not a filter: it has no chip, it is not counted, and Reset leaves it as it is/);
 });
 
 test('the Settings section says how to reach Settings from an account and that a visitor has none', () => {
   const settings = HELP_SECTIONS.find(section => section.id === 'settings');
   assert.ok(settings?.signedInOnly);
-  assert.match(settings.intro, /^Reached from the account menu: your picture, at the right end of the top bar\. Only an account has Settings; a visitor does not\./);
+  assert.match(settings.intro, /^Reached from the account menu: your picture or initial, at the right end of the top bar. Only an account has Settings; a visitor does not\./);
   assert.doesNotMatch(settings.intro, /beside this one/);
+});
+
+test('the gestures that exist only in the signed-in feed and its bar say they need an account', () => {
+  for (const id of ['swipe-tabs', 'pull-refresh', 'arrow-keys', 'tab-menu', 'search-key']) {
+    assert.equal(entries.find(({ entry }) => entry.id === id)?.entry.needsAccount, true, id);
+  }
 });
 
 test('the trial number is a link and the study-type label is information only', () => {
