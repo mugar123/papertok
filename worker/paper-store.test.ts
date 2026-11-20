@@ -628,6 +628,37 @@ test('a row stored before merges kept review evidence does not read reviewed on 
   }
 });
 
+// ENG-165: the row shows the journal article's type, but its review answer
+// still reads the type its records give it. One batch makes a row of the
+// article, NASA ADS's non-refereed record of it and OpenAlex's record of the
+// eprint listing the journal copy; merged into the stored arXiv row, that
+// batch's row must carry the eprint's reopening, and OpenAlex's record of the
+// journal DOI without a source then leaves the answer unknown. Synthetic
+// records shaped as the mappers return them.
+test("a batch's row that shows the article's type still reopens the stored row's review answer as its eprint record does", async () => {
+  const { env, db } = corpus();
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  const title = 'Bank capital and the transmission of monetary policy';
+  const journalLocation: OpenAlexLocation = { is_published: true, landing_page_url: `https://doi.org/${journalDoi}`, source: { id: 'https://openalex.org/S111', display_name: 'Journal of International Economics', type: 'journal' } };
+  const arxivLocation: OpenAlexLocation = { is_published: false, landing_page_url: 'https://arxiv.org/abs/2610.00007', source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' } };
+  const work = (id: string, doi: string, type: string, locations: OpenAlexLocation[]) => mapOpenAlexWork({
+    id: `https://openalex.org/${id}`, doi: `https://doi.org/${doi}`, title, type, publication_date: '2026-10-12',
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }], primary_location: locations[0], locations,
+  })!;
+  const notRefereed = mapAdsPaper({
+    bibcode: '2026JIntE.160j3900E', title: [title], author: ['Economist, Ana'], doi: [journalDoi], identifier: ['arXiv:2610.00007'],
+    property: ['ARTICLE', 'OPENACCESS'], doctype: 'article', pub: 'Journal of International Economics', pubdate: '2026-10-12', year: '2026', abstract: 'Bank capital.',
+  })!;
+  const arxivListing = arxivRecordPaper({ arxivId: '2610.00007', title, abstract: 'Bank capital.', authors: ['Ana Economist'], categories: ['econ.GN'], doi: null, journalRef: null, comments: null, published: '2026-10-12T12:00:00.000Z', updated: '2026-10-12T12:00:00.000Z' });
+  const stored = () => rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)) as Paper);
+  await ingestPapers(env, [{ paper: arxivListing, lanes: [] }], { now: NOW });
+  await ingestPapers(env, [work('W502', journalDoi, 'article', [journalLocation, arxivLocation]), notRefereed, work('W503', '10.48550/arXiv.2610.00007', 'preprint', [arxivLocation, journalLocation])]
+    .map(paper => ({ paper, lanes: [] })), { now: NOW });
+  assert.deepEqual(stored().map(paper => [paper.publicationType, paper.peerReviewed]), [['article', true]]);
+  await ingestPapers(env, [{ paper: work('W507', journalDoi, 'article', [{ ...journalLocation, source: null }, arxivLocation]), lanes: [] }], { now: NOW });
+  assert.deepEqual(stored().map(paper => [paper.publicationType, paper.peerReviewed]), [['article', undefined]]);
+});
+
 test('a paper published before the corpus window is not filed, unless its lane keeps listings', async () => {
   const { env, db } = corpus();
   const old = { ...arxivRecord, id: '2401.00001', arxivId: '2401.00001', title: 'An older paper', published: '2024-01-10T00:00:00.000Z' };

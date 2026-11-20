@@ -173,13 +173,23 @@ export function openAlexPeerReviewed(work: OpenAlexStatusFields): boolean | unde
 export const OPENALEX_NOT_LISTED_SERIES_FILTER = [...WORKING_PAPER_SOURCE_IDS].map(id => `primary_location.source.id:!${id}`).join(',');
 
 /**
+ * Whether an OpenAlex source can be the primary source of a journal article:
+ * a `journal` that counts as a venue, so neither a listed working-paper
+ * series nor one named like a series. Another location's venue does not make
+ * such a source one.
+ */
+export function isJournalArticleSource(source: OpenAlexLocation['source']) {
+  return source?.type === 'journal' && isVenue({ source });
+}
+
+/**
  * An OpenAlex `article` whose own primary source is a journal, and that
  * `openAlexPeerReviewed` calls reviewed: OpenAlex's record of the journal
  * version, never a preprint, a report or a listed series.
  */
 export function openAlexIsJournalArticle(work: OpenAlexStatusFields) {
-  return openAlexType(work) === 'article' && work?.primary_location?.source?.type === 'journal'
-    && isVenue(work.primary_location) && openAlexPeerReviewed(work) === true;
+  return openAlexType(work) === 'article' && isJournalArticleSource(work?.primary_location?.source)
+    && openAlexPeerReviewed(work) === true;
 }
 
 /**

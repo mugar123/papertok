@@ -1,6 +1,10 @@
 import type { Paper } from '../models/paper.ts';
 
-import { withJournalOf, withPublicationEvidenceOf } from '../models/paper.ts';
+import type { InteractionDocumentData } from '../utils/interaction-profile.ts';
+
+import { readStoredClassification, withJournalOf, withPublicationEvidenceOf } from '../models/paper.ts';
+import { readStoredStudyType, studyTypeFromIds } from '../models/paper-evidence.ts';
+import { copyOfRecordWithoutCopy, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 
 // A like or save may settle after a read, note or Read later change has replaced the entry's paper.
@@ -172,4 +176,18 @@ export function libraryCopyOf(library: Record<string, LibraryEntry>, papers: Rec
   const entryCopy = library[paperId]?.paper;
   const loaded = papers[paperId];
   return loaded && entryCopy ? withJournalOf(withPublicationEvidenceOf(loaded, entryCopy), entryCopy) : loaded ?? entryCopy;
+}
+
+export function serializeInteractionPaper(paper: Paper, state: LibraryState) {
+  const studyType = studyTypeFromIds([
+    paper.studyType, state.personalLibrary[paper.id]?.paper.studyType, state.libraryPapers[paper.id]?.studyType,
+  ]);
+  return serializeLibraryPaper({ ...paper, studyType });
+}
+
+export function readInteractionPaper(id: string, record: InteractionDocumentData) {
+  const copy = record.paper;
+  return copy
+    ? { ...copy, studyType: readStoredStudyType(copy), ...readStoredClassification({ ...copy, id }) }
+    : copyOfRecordWithoutCopy(id, record);
 }

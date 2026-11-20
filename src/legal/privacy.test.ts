@@ -10,8 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { privacyNoticeStatus } from '../utils/nudges.ts';
-import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
+import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -127,11 +126,11 @@ test('the page says figure lookups count against the caller address like the oth
   assert.match(html, /The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule/);
 });
 
-test('the page promises the in-app announcement to signed-in accounts and says how it is remembered', () => {
+test('the page describes who sees the once-per-account announcement until 0.4', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // Guests and accounts created at or after the effective time are not told (nudges.ts privacyNoticeOwed).
-  assert.match(html, /the change will be announced in the application to signed-in accounts created before the change took effect/);
-  assert.match(html, /your account remembers that version, so the same announcement does not come back on this or another device/);
+  assert.match(html, /Until PaperTok 0\.4, you will see the current announcement in the app if you sign in to an account created before the change took effect and have no record of seeing an announcement from 7 November 2026 or later/);
+  assert.match(html, /Once your account has that record, later changes will appear here without another announcement on any device/);
   // PRIVACY_NOTICE_BASELINE_VERSION (src/legal/privacy-policy.ts) settles 2026-11-07 for every account.
   assert.match(html, /The announcement of the 7 November 2026 change is no longer shown, including to accounts that had not seen it/);
   // users/{uid}/settings/privacyNotice (src/services/privacy-notice-service.ts) is listed with the account's data.
@@ -151,19 +150,7 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
-  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.10');
-  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6', '2026-11-20.7', '2026-11-20.8', '2026-11-20.9']) {
-    assert.equal(privacyNoticeStatus({
-      user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
-      signedIn: true,
-      version: PRIVACY_POLICY_VERSION,
-      effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
-      baseline: PRIVACY_NOTICE_BASELINE_VERSION,
-      account: { uid: 'reader', version: seen },
-      storage: null,
-    }), 'owed', seen);
-  }
+test('the current notice summarizes the 20 November policy changes', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
   assert.match(notice, /opt-in digest reminders.*last signed-in visit hour.*30 days.*opt-out, unsubscribe or account deletion/i);
   assert.match(notice, /Anthropic can rewrite\/explain outside the EU/i);
@@ -225,6 +212,6 @@ test('the page lists the notice key among what the browser keeps and what remove
   // deleteConfirmedAccount (components/settings) removes the key in the browser the account is deleted from.
   assert.match(storage, /Clearing the site's data removes the copy, and so does deleting the account from Settings in this browser/);
   const changes = html.match(/<h2>Changes<\/h2>.*?<\/p>/)?.[0] ?? '';
-  assert.match(changes, /Once the announcement has been shown, your account remembers that version[^.]*however you closed it/);
+  assert.match(changes, /Once the announcement is shown, your account remembers that version however you close it/);
   assert.doesNotMatch(changes, /Hide for now/);
 });

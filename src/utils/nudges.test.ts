@@ -8,7 +8,6 @@ import {
   PRIVACY_NOTICE_ID,
   VISIT_START,
   accountAnswerPending,
-  adoptAccountNotice,
   answerPrivacyNotice,
   chooseVisitNotice,
   emailNudgeProblem,
@@ -17,6 +16,7 @@ import {
   heldAccountNotice,
   loadAccountNotice,
   noticeOnScreen,
+  policyVersionCovers,
   pickNudge,
   pickVisitNotice,
   privacyCardsCover,
@@ -147,29 +147,21 @@ test('los tiempos son los acordados', () => {
   assert.equal(NUDGE_DWELL_MS, 60_000, 'un minuto leyendo antes de pedir nada');
 });
 
-test('a reader who has not been shown this policy version is owed the notice', () => {
-  const version = '2026-10-22';
-  const effectiveAt = '2026-10-22T05:00:00Z';
+test('an older account without a qualifying record is owed the notice', () => {
+  const version = '2026-11-20.9';
+  const effectiveAt = '2026-11-20T05:00:00Z';
   assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: null, signedIn: true }), true, 'an account with no creation date');
   assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: null, signedIn: false }), false, 'a guest cannot be told apart from a first-time visitor');
-  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-20', signedIn: true }), true, 'shown an earlier version');
-  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-10-22', signedIn: true }), false, 'shown this one');
-  assert.equal(
-    privacyNoticeOwed({ version: '2026-10-22.2', effectiveAt, acknowledged: '2026-10-22', signedIn: true }),
-    true,
-    'a second change on the same day is news to whoever was shown the first',
-  );
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: '2026-11-06', signedIn: true }), true, 'a record before the baseline');
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: 'garbage', signedIn: true }), true, 'an invalid record');
 });
 
-test('being shown a later version settles an earlier one, and a suffix sorts as a number', () => {
-  const owed = (version: string, acknowledged: string | null) => privacyNoticeOwed({ version, effectiveAt: '2026-10-25T05:00:00Z', acknowledged, signedIn: true });
-  assert.equal(owed('2026-10-25', '2026-11-05'), false, 'a tab on an older bundle');
-  assert.equal(owed('2026-10-25.2', '2026-10-26'), false, 'a later day covers an earlier day with a suffix');
-  assert.equal(owed('2026-10-25.2', '2026-10-25.10'), false, '.10 is after .2');
-  assert.equal(owed('2026-10-25.10', '2026-10-25.2'), true, '.2 is before .10');
-  assert.equal(owed('2026-10-25.2', '2026-10-25'), true, 'no suffix is before .2');
-  assert.equal(owed('2026-10-25', '2026-10-25.2'), false, '.2 covers the day itself');
-  assert.equal(owed('2026-10-25', 'garbage'), true, 'a stored value that is no version covers nothing');
+test('policy versions sort by day and then by numeric revision', () => {
+  assert.equal(policyVersionCovers('2026-10-26', '2026-10-25.10'), true);
+  assert.equal(policyVersionCovers('2026-10-25.10', '2026-10-25.2'), true);
+  assert.equal(policyVersionCovers('2026-10-25.2', '2026-10-25.10'), false);
+  assert.equal(policyVersionCovers('2026-10-25', '2026-10-25.2'), false);
+  assert.equal(policyVersionCovers('garbage', '2026-10-25'), false);
 });
 
 test('a tab on an older bundle does not overwrite a newer version already shown', () => {
@@ -189,24 +181,19 @@ test('a tab on an older bundle does not overwrite a newer version already shown'
 });
 
 test('an account opened at or after the moment of the change is not told about it', () => {
-  const version = '2026-10-22';
-  const effectiveAt = '2026-10-22T05:00:00Z';
+  const version = '2026-11-20';
+  const effectiveAt = '2026-11-20T05:00:00Z';
   const owed = (accountCreated: string | null) => privacyNoticeOwed({ version, effectiveAt, acknowledged: null, accountCreated, signedIn: true });
-  assert.equal(owed('Tue, 20 Oct 2026 09:00:00 GMT'), true);
-  assert.equal(owed('Wed, 21 Oct 2026 23:59:00 GMT'), true, 'the day before is an account that read the old policy');
-  assert.equal(owed('Thu, 22 Oct 2026 04:59:59 GMT'), true, 'the same day but before the change went live read the old policy');
-  assert.equal(owed('2026-10-22T04:59:59.999Z'), true, 'a millisecond before');
-  assert.equal(owed('Thu, 22 Oct 2026 05:00:00 GMT'), false, 'the instant it took effect started under it');
-  assert.equal(owed('Thu, 22 Oct 2026 08:00:00 GMT'), false, 'later that day started under it');
-  assert.equal(owed('Thu, 22 Oct 2026 06:30:00 +0200'), true, 'an offset is read as the instant it names: 04:30Z');
-  assert.equal(owed('Thu, 22 Oct 2026 07:00:00 +0200'), false, 'an offset is read as the instant it names: 05:00Z');
+  assert.equal(owed('Wed, 18 Nov 2026 09:00:00 GMT'), true);
+  assert.equal(owed('Thu, 19 Nov 2026 23:59:00 GMT'), true, 'the day before is an account that read the old policy');
+  assert.equal(owed('Fri, 20 Nov 2026 04:59:59 GMT'), true, 'the same day but before the change went live read the old policy');
+  assert.equal(owed('2026-11-20T04:59:59.999Z'), true, 'a millisecond before');
+  assert.equal(owed('Fri, 20 Nov 2026 05:00:00 GMT'), false, 'the instant it took effect started under it');
+  assert.equal(owed('Fri, 20 Nov 2026 08:00:00 GMT'), false, 'later that day started under it');
+  assert.equal(owed('Fri, 20 Nov 2026 06:30:00 +0200'), true, 'an offset is read as the instant it names: 04:30Z');
+  assert.equal(owed('Fri, 20 Nov 2026 07:00:00 +0200'), false, 'an offset is read as the instant it names: 05:00Z');
   assert.equal(owed('not a date'), true, 'an unknown start is told');
   assert.equal(owed(null), true, 'a missing start is told');
-  assert.equal(
-    privacyNoticeOwed({ version: '2026-11-05', effectiveAt: '2026-11-05T05:00:00Z', acknowledged: '2026-10-22', accountCreated: 'Fri, 23 Oct 2026 08:00:00 GMT', signedIn: true }),
-    true,
-    'and is told about the next change',
-  );
 });
 
 test('an account created after an earlier change on the same UTC day is still told of a later one', () => {
@@ -509,7 +496,7 @@ const createdBefore = (uid: string, offsetMs = -24 * HOUR, effectiveAt = NEXT_EF
 interface NoticeFacts { user: NoticeUser; storage?: NoticeStorage; account?: AccountNoticeRecord | null; signedIn?: boolean; version?: string; effectiveAt?: string }
 
 const statusOf = ({ user, storage = fakeStorage(), account = null, signedIn = true, version = NEXT_VERSION, effectiveAt = NEXT_EFFECTIVE_AT }: NoticeFacts) =>
-  privacyNoticeStatus({ user, signedIn, version, effectiveAt, baseline: PRIVACY_NOTICE_BASELINE_VERSION, account, storage });
+  privacyNoticeStatus({ user, signedIn, version, effectiveAt, account, storage });
 
 // A visit's arrival on /feed with no other dialog open, from the parts NudgeHost calls in this order. The
 // reader then closes the dialog (Got it, the X, Escape, a press outside, Back or closing the tab), which
@@ -556,7 +543,19 @@ test('the 2026-11-07 notice is shown to no account any more, on any browser, wit
   assert.equal(statusOf({ user: reader, version: `${version}.2`, effectiveAt }), 'ask-account', 'a second change that day is not covered');
 });
 
-test('a later version waits for the account record, opens once, and the record keeps it shut on every other browser', () => {
+test('an earlier notice record settles later revisions in this browser or on the account', () => {
+  const user = createdBefore('reader-a');
+  for (const version of ['2026-11-20.9', '2026-11-20.10']) {
+    for (const seen of ['2026-11-20', '2026-11-20.5']) {
+      const storage = fakeStorage();
+      rememberPrivacyNotice(user.uid, seen, storage);
+      assert.equal(statusOf({ user, version, storage }), 'settled', `local record ${seen} covers ${version}`);
+      assert.equal(statusOf({ user, version, storage: brokenStorage(), account: { uid: user.uid, version: seen } }), 'settled', `account record ${seen} covers ${version}`);
+    }
+  }
+});
+
+test('a first notice waits for the account record and opens once across sign-ins and devices', async () => {
   const reader = createdBefore('reader-a');
   const phone = fakeStorage();
   const pending = arrive({ user: reader, storage: phone });
@@ -564,27 +563,35 @@ test('a later version waits for the account record, opens once, and the record k
   assert.equal(pending.dialogOpen, false, 'and nothing opens before it answers, so nothing has to be taken back');
   assert.equal(phone.map.size, 0, 'nothing is recorded before it opens');
 
-  const account = { uid: reader.uid, version: PRIVACY_NOTICE_BASELINE_VERSION };
+  const account = await loadAccountNotice({ uid: reader.uid, read: () => Promise.resolve(null), signal: new AbortController().signal, storage: phone });
+  assert.deepStrictEqual(account, { uid: reader.uid, version: null });
   assert.equal(arrive({ user: reader, storage: phone, account, cardsShown: false }).dialogOpen, false, 'a feed without cards yet');
   assert.equal(arrive({ user: reader, storage: phone, account, tabVisible: false }).dialogOpen, false, 'a tab in the background');
   assert.equal(phone.map.size, 0, 'neither records anything');
 
   const first = arrive({ user: reader, storage: phone, account });
-  assert.equal(first.status, 'owed', 'the account was shown only the baseline');
+  assert.equal(first.status, 'owed', 'the account has no record');
   assert.equal(first.dialogOpen, true);
   assert.deepEqual(first.saved, [[reader.uid, NEXT_VERSION]], 'recorded in the account as it opens');
   assert.equal(readPrivacyNoticeAck(reader.uid, phone), NEXT_VERSION, 'and in this browser');
-  assert.equal(arrive({ user: reader, storage: phone }).status, 'settled', 'a reload is settled by this browser, without asking the account');
+  assert.equal(arrive({ user: null, signedIn: false, storage: phone }).dialogOpen, false, 'signed out');
+  const signedBackIn = arrive({ user: reader, storage: phone });
+  assert.equal(signedBackIn.status, 'settled', 'signing back in uses the browser copy without asking the account');
+  assert.equal(signedBackIn.dialogOpen, false);
 
   const laptop = fakeStorage();
-  const elsewhere = arrive({ user: reader, storage: laptop, account: adoptAccountNotice(reader.uid, NEXT_VERSION, laptop) });
+  const laptopRead = await loadAccountNotice({
+    uid: reader.uid,
+    read: uid => Promise.resolve(first.saved.find(([savedUid]) => savedUid === uid)?.[1] ?? null),
+    signal: new AbortController().signal,
+    storage: laptop,
+  });
+  assert.deepStrictEqual(laptopRead, { uid: reader.uid, version: NEXT_VERSION });
+  const elsewhere = arrive({ user: reader, storage: laptop, account: laptopRead });
+  assert.equal(elsewhere.status, 'settled');
   assert.equal(elsewhere.dialogOpen, false, 'another browser or device reads the account and stays shut');
   assert.deepEqual(elsewhere.saved, [], 'and writes nothing to it');
   assert.equal(arrive({ user: reader, storage: laptop }).status, 'settled', 'it keeps the answer, so its next visit does not ask again');
-  const empty = fakeStorage();
-  assert.equal(statusOf({ user: reader, storage: empty, account: adoptAccountNotice(reader.uid, null, empty) }), 'owed', 'an account with no record');
-  assert.equal(empty.map.size, 0, 'leaves nothing in this browser until the dialog opens');
-  assert.equal(arrive({ user: reader, storage: fakeStorage(), version: `${NEXT_VERSION}.2`, account: { uid: reader.uid, version: NEXT_VERSION } }).status, 'owed', 'the version after it is still told');
   assert.equal(arrive({ user: createdBefore('reader-b'), storage: phone, account: { uid: 'reader-b', version: null } }).dialogOpen, true, 'another account on the same browser is told too');
 });
 
@@ -686,7 +693,9 @@ test('the account is asked once: a failed read is reported and gives nothing to 
   const failed = await loadAccountNotice({ uid: 'reader-c', read: () => Promise.reject(new Error('unavailable')), signal: live(), storage });
   assert.equal(failed, 'failed', 'a failed read is no record at all, not an empty one');
   assert.equal(warn.mock.callCount(), 1, 'and it is reported');
-  assert.equal(arrive({ user: createdBefore('reader-c'), storage }).dialogOpen, false, 'so the dialog stays shut until the next visit asks again');
+  const deferred = arrive({ user: createdBefore('reader-c'), storage });
+  assert.equal(deferred.status, 'ask-account');
+  assert.equal(deferred.dialogOpen, false, 'the dialog stays shut until the next visit asks again');
 
   // The reader signs out or switches account while the read is out: NudgeHost aborts it.
   const controller = new AbortController();
@@ -714,7 +723,7 @@ test('with storage blocked the account record decides, and a failed save is repo
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(warn.mock.callCount(), 1, 'reported, not thrown');
   assert.equal(statusOf({ user: reader, storage }), 'settled', "this browser's copy still settles it here");
-  assert.equal(statusOf({ user: reader, account: { uid: reader.uid, version: PRIVACY_NOTICE_BASELINE_VERSION } }), 'owed', 'another browser, whose account record lacks it, tells it once more');
+  assert.equal(statusOf({ user: reader, account: { uid: reader.uid, version: null } }), 'owed', 'another browser, whose account record lacks it, tells it once more');
   assert.doesNotThrow(() => recordPrivacyNoticeShown({ uid: reader.uid, dialogOpen: true, version: NEXT_VERSION, storage: brokenStorage(), saveToAccount: () => Promise.resolve() }));
 });
 
@@ -801,7 +810,8 @@ test("who is told is decided from the account, its creation time, this browser's
   assert.equal(status(createdAt(-HOUR), { signedIn: false }), 'settled', 'not signed in');
   assert.equal(status(createdAt(-HOUR), { recorded: NEXT_VERSION }), 'settled', 'the account was shown it');
   assert.equal(status(createdAt(-HOUR), { recorded: '2027-01-05' }), 'settled', 'the account was shown a later version on a newer bundle');
-  assert.equal(status(createdAt(-HOUR), { recorded: PRIVACY_NOTICE_BASELINE_VERSION }), 'owed', 'shown only an earlier one');
+  assert.equal(status(createdAt(-HOUR), { recorded: PRIVACY_NOTICE_BASELINE_VERSION }), 'settled', 'a record at the baseline counts');
+  assert.equal(status(createdAt(-HOUR), { recorded: '2026-11-06' }), 'owed', 'a record before the baseline does not count');
   assert.equal(status(createdAt(-HOUR), { recorded: 'garbage' }), 'owed', 'a record that is no version covers nothing');
   const storage = fakeStorage();
   rememberPrivacyNotice('a', NEXT_VERSION, storage);

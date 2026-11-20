@@ -60,9 +60,19 @@ function stopCheck(input: HookInput) {
   const files = changedFiles(root);
   if (files.length === 0) return 0;
   if (!existsSync(resolve(root, 'worker-configuration.d.ts'))) {
-    spawnSync('npx', ['--no-install', 'wrangler', 'types'], { cwd: root, stdio: 'ignore' });
+    const types = spawnSync(process.platform === 'win32' ? process.execPath : 'npx', process.platform === 'win32'
+      ? [resolve(root, 'node_modules/wrangler/bin/wrangler.js'), 'types']
+      : ['--no-install', 'wrangler', 'types'], { cwd: root, encoding: 'utf8' });
+    if (types.status !== 0 || types.error) {
+      const reason = types.error?.message ?? (types.status === null ? `signal ${types.signal}` : `exit code ${types.status}`);
+      process.stderr.write(`Wrangler could not generate Worker types (${reason}). Run \`npm ci\` and retry.\n${types.stdout ?? ''}${types.stderr ?? ''}`);
+      return 2;
+    }
   }
-  const lint = spawnSync('npx', ['--no-install', 'eslint', '--flag', 'unstable_native_nodejs_ts_config', '--no-warn-ignored', ...files], {
+  const lint = spawnSync(process.platform === 'win32' ? process.execPath : 'npx', [
+    ...(process.platform === 'win32' ? [resolve(root, 'node_modules/eslint/bin/eslint.js')] : ['--no-install', 'eslint']),
+    '--flag', 'unstable_native_nodejs_ts_config', '--no-warn-ignored', ...files,
+  ], {
     cwd: root,
     encoding: 'utf8',
   });

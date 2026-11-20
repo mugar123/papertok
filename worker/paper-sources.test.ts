@@ -1696,6 +1696,77 @@ test("a working-paper row whose abstract arXiv recovered shows its journal artic
   );
 });
 
+// ENG-165: the topics, primary topic and type of the row are the journal
+// article's, whichever record arrives first and however often the working
+// paper is listed again. Synthetic topics: the article's T10999 and the
+// working paper's T20001, as in the example of the ENG-133 review (PR #365).
+const econTopic = (id: string, name: string) => ({
+  id: `https://openalex.org/${id}`,
+  display_name: name,
+  subfield: { id: 'https://openalex.org/subfields/2002', display_name: 'Economics and Econometrics' },
+  field: { id: 'https://openalex.org/fields/20', display_name: 'Economics, Econometrics and Finance' },
+  domain: { id: 'https://openalex.org/domains/2', display_name: 'Social Sciences' },
+});
+const ARTICLE_TOPIC = econTopic('T10999', 'Asset pricing models');
+const WORKING_PAPER_TOPIC = econTopic('T20001', 'Financial econometrics');
+const classificationOf = (json: string) => {
+  const paper = JSON.parse(json) as Paper;
+  return [paper.primaryTopic?.id, paper.topics?.map(topic => topic.id), paper.publicationType, paper.peerReviewed, paper.doi];
+};
+
+test("a journal article's topics, primary topic and type are its row's in every order: one batch, separate nights, or the working paper listed again", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const workingPaper = mapOpenAlexWork({ ...gmmWorkingPaperWork, primary_topic: WORKING_PAPER_TOPIC, topics: [WORKING_PAPER_TOPIC] })!;
+  const article = mapOpenAlexWork({ ...gmmArticle, primary_topic: ARTICLE_TOPIC, topics: [ARTICLE_TOPIC] })!;
+  const expected = [ARTICLE_TOPIC.id, [ARTICLE_TOPIC.id], 'article', true, JBES_DOI];
+  for (const [name, nights] of [
+    ['working paper, then article, one batch', [[workingPaper, article]]],
+    ['article, then working paper, one batch', [[article, workingPaper]]],
+    ['working paper, then article, two nights', [[workingPaper], [article]]],
+    ['article, then working paper, two nights', [[article], [workingPaper]]],
+    ['working paper, article, working paper, three nights', [[workingPaper], [article], [workingPaper]]],
+    ['article and working paper in one batch, then the working paper again', [[article, workingPaper], [workingPaper]]],
+    ['working paper and article in one batch, then the working paper again', [[workingPaper, article], [workingPaper]]],
+  ] as const) {
+    const row = await journalRowAfter(t, nights.map(night => [...night]));
+    assert.deepEqual(classificationOf(row.json), expected, name);
+  }
+});
+
+// A row merged before ENG-165 can show the working paper's topics and type.
+// Nothing rewrites it: the article's next listing does, and the working paper
+// listed after that leaves the article's.
+test("a stored row that shows its working paper's topics and type takes the article's when the article is listed again, and keeps them", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const workingPaper = mapOpenAlexWork({ ...gmmWorkingPaperWork, primary_topic: WORKING_PAPER_TOPIC, topics: [WORKING_PAPER_TOPIC] })!;
+  const article = mapOpenAlexWork({ ...gmmArticle, primary_topic: ARTICLE_TOPIC, topics: [ARTICLE_TOPIC] })!;
+  // The row as an earlier Worker stored [article, working paper] in one batch.
+  const storedBefore = (night: number, db: ReturnType<typeof testD1>['db']) => {
+    if (night !== 0) return;
+    const row = JSON.parse(String((db.prepare('SELECT paper FROM works').all()[0] as { paper: string }).paper)) as Paper;
+    const sources = { ...row.sources };
+    delete sources.journalRecordDoi;
+    db.prepare('UPDATE works SET paper = ?').run(JSON.stringify({ ...row, primaryTopic: WORKING_PAPER_TOPIC, topics: [WORKING_PAPER_TOPIC], publicationType: 'report', sources }));
+  };
+  const row = await journalRowAfter(t, [[article, workingPaper], [workingPaper], [article], [workingPaper]], storedBefore);
+  assert.deepEqual(classificationOf(row.json), [ARTICLE_TOPIC.id, [ARTICLE_TOPIC.id], 'article', true, JBES_DOI]);
+});
+
+// A batch merges its records of one paper into one row first, which replaces
+// nothing in a row the article leads; OpenAlex's own record of the article in
+// the batch still does, whatever else the batch lists beside it.
+test("OpenAlex retyping the article as an editorial reaches its stored row from a batch that also lists its working paper", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const workingPaper = mapOpenAlexWork({ ...gmmWorkingPaperWork, primary_topic: WORKING_PAPER_TOPIC, topics: [WORKING_PAPER_TOPIC] })!;
+  const article = mapOpenAlexWork({ ...gmmArticle, primary_topic: ARTICLE_TOPIC, topics: [ARTICLE_TOPIC] })!;
+  const editorialTopic = econTopic('T50001', 'Economic policy commentary');
+  const editorial = mapOpenAlexWork({ ...gmmArticle, type: 'editorial', primary_topic: editorialTopic, topics: [editorialTopic] })!;
+  for (const batch of [[editorial, workingPaper], [workingPaper, editorial]]) {
+    const row = await journalRowAfter(t, [[article, workingPaper], batch]);
+    assert.deepEqual(classificationOf(row.json), [editorialTopic.id, [editorialTopic.id], 'editorial', true, JBES_DOI], batch.map(paper => paper.id).join(', '));
+  }
+});
+
 test('a stored working-paper row upgraded once is not written again when the same records are listed again', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
   const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
@@ -2715,6 +2786,48 @@ test("a notable lane's listing does not renew a paper without an abstract, so th
     'openalex:W2107743791': new Date(next).toISOString(),
     'openalex:W1000000004': enriched,
   });
+});
+
+// ENG-165: a notable lane can list a journal article and its working paper
+// together every week, and each listing renews the row's enrichment date, so
+// the refresh never asks OpenAlex for the article. The listing's own record of
+// the article must bring OpenAlex's new topic to the row the week it changes.
+// Synthetic records under q-fin.GN's topic ids
+// (open-alex-leaf-topics.generated.ts); OpenAlex types the FEDS series, a
+// listed working-paper series, as a `journal`.
+test("a notable lane that lists an article and its working paper every week gives their row the article's new topic the first week it changes", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-21T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const qfinTopic = (id: string) => ({ id: `https://openalex.org/${id}`, display_name: `Topic ${id}` });
+  const article = { ...gmmArticle, publication_date: '2025-10-14', publication_year: 2025, primary_topic: qfinTopic('T10047'), topics: [qfinTopic('T10047')] };
+  const fedsLocation = { is_published: true, landing_page_url: 'https://doi.org/10.17016/feds.2025.165', source: { id: 'https://openalex.org/S4210212089', display_name: 'Finance and Economics Discussion Series', type: 'journal', is_core: true } };
+  const workingPaper = { ...article, id: 'https://openalex.org/W7220000165', doi: 'https://doi.org/10.17016/feds.2025.165', primary_location: fedsLocation, locations: [fedsLocation] };
+  let listedArticle = article;
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' && listedYear(url) === 2025
+    ? { results: [workingPaper, listedArticle] }
+    : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const lane = { source: 'openalex-notable', lane: 'notable:q-fin.GN' } as const;
+  const shown = () => {
+    const rows = db.prepare('SELECT paper FROM works').all() as Array<{ paper: string }>;
+    return rows.map(row => JSON.parse(row.paper) as Paper).map(paper => [paper.primaryTopic?.id, paper.publicationType, paper.peerReviewed]);
+  };
+  await harvestLane(store, lane, first);
+  await enrichPending(store, 50, first);
+  assert.deepEqual(shown(), [['https://openalex.org/T10047', 'article', true]]);
+
+  listedArticle = { ...article, primary_topic: qfinTopic('T10127'), topics: [qfinTopic('T10127')] };
+  const weeks = [];
+  for (let week = 1; week <= 6; week++) {
+    const now = first + week * 7 * DAY;
+    t.mock.timers.setTime(now);
+    await harvestLane(store, lane, now);
+    await enrichPending(store, 50, now);
+    weeks.push(shown());
+  }
+  assert.deepEqual(weeks, Array.from({ length: 6 }, () => [['https://openalex.org/T10127', 'article', true]]));
 });
 
 test("a notable lane's listing does not renew a paper with a PubMed id, so the refresh reads PubMed's retraction from Europe PMC", async t => {

@@ -1,7 +1,8 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import { db } from './firebase.ts';
 import { patientRead } from '../utils/bounded-read.ts';
 import { documentIsFromServer } from '../utils/cache-authority.ts';
+import { policyVersionCovers } from '../utils/nudges.ts';
 
 /**
  * The account's own record of the newest privacy policy version whose change
@@ -39,5 +40,11 @@ export async function readAccountPrivacyNotice(uid: string, signal: AbortSignal)
 
 /** Records `version` as shown to the account. */
 export async function saveAccountPrivacyNotice(uid: string, version: string) {
-  await setDoc(privacyNoticeDoc(uid), privacyNoticeRecord(version), { merge: true });
+  const ref = privacyNoticeDoc(uid);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const shown: unknown = snapshot.get('shownVersion');
+    if (typeof shown === 'string' && policyVersionCovers(shown, version)) return;
+    transaction.set(ref, privacyNoticeRecord(version));
+  });
 }
