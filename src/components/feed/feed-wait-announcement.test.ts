@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import type { Paper } from '../../models/paper.ts';
+import { PAGE_SIZE } from '../../context/feed-pagination.ts';
 import { renderFeed, waitFor } from '../../../tests/dom/render-feed.ts';
+import { act } from '@testing-library/react';
 
 // ENG-177: a wait is announced once. The status regions' words are pure
 // steps in feed-loading-state.test.ts; these tests render the feed screen, so
@@ -19,7 +21,8 @@ const card: Paper = {
 
 // The feed screen's status region, and the one at the end of its cards.
 const STATUS_REGIONS = ':is(.feed-wrapper, .feed-empty) > span[role="status"], .feed-snap-item--tail [role="status"]';
-// Longer than the status region's settle delay in feed-container.tsx.
+// Longer than the status region's settle delay in feed-container.tsx, and
+// shorter than a refresh's shortest spin.
 const SETTLED_MS = 500;
 // Longer than a refresh's shortest spin (refreshFeed in feed-context.tsx), so
 // the refresh ends with its load.
@@ -69,17 +72,40 @@ function tryAgainButton() {
 
 /**
  * The reader presses Try again from the keyboard. The new load waits, or with
- * `papers` the store answers it as soon as it asks.
+ * `papers` the store answers it as soon as it asks. `until` waits for the
+ * focus to reach the veil's heading: whileHeld when the test holds the clock.
  */
-async function pressTryAgain(view: Awaited<ReturnType<typeof renderFeed>>, papers?: Paper[]) {
+async function pressTryAgain(view: Awaited<ReturnType<typeof renderFeed>>, papers?: Paper[], until: (check: () => void) => Promise<unknown> = waitFor) {
   const button = tryAgainButton();
   if (papers) view.corpus.answer({ papers, more: false });
   else view.corpus.wait();
   button.focus();
   const reader = listen();
   button.click();
-  await waitFor(() => assert.equal(reader.heard()[0], 'focus: Searching for discoveries...'));
+  await until(() => assert.equal(reader.heard()[0], 'focus: Searching for discoveries...'));
   return reader;
+}
+
+/**
+ * waitFor for a test that holds the clock (mock.timers): waitFor itself
+ * settles on a setTimeout, which never fires while the clock is held. Each
+ * turn runs the timers due now, never one that waits for the clock to move.
+ * The 8-second limit is read from Date, which the test does not hold.
+ */
+async function whileHeld(check: () => void) {
+  const deadline = Date.now() + 8000;
+  for (;;) {
+    await act(async () => {
+      mock.timers.tick(0);
+      await new Promise(resolve => { setImmediate(resolve); });
+    });
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (Date.now() > deadline) throw error;
+    }
+  }
 }
 
 test('after Try again, the focused heading says the wait and the status region does not repeat it', async () => {
@@ -132,17 +158,31 @@ test('papers that end that wait before the region settles do not let it announce
     await view.corpus.requested();
     view.corpus.refuse(503, 'AUTH_UNAVAILABLE');
     await waitFor(() => assert.equal(view.appErrors().length, 2), { timeout: 8000 });
+    // From the feed screen's mount the test holds setTimeout's clock, so the
+    // status region settles, and the refresh stops spinning, only when the
+    // test moves it, however slow the run. React's scheduler runs on
+    // setImmediate and jsdom's animation frames on setInterval, which the
+    // test does not hold, so the screen still renders and the veil leaves.
+    mock.timers.enable({ apis: ['setTimeout'] });
     view.showContainer();
 
-    // The veil leaves with the papers, while the refresh still spins. This
-    // covers the late write only when the papers land before the region
-    // settles; on a slower run the heading still holds the focus then, the
-    // case the previous test covers.
-    reader = await pressTryAgain(view, [card]);
-    await waitFor(() => assert.deepEqual(reader?.statuses(), ['status: Papers updated']), { timeout: 8000 });
-    await pause(SETTLED_MS);
-    assert.deepEqual(reader.statuses(), ['status: Papers updated']);
+    // A full first page. After a shorter one the feed asks for the next
+    // pages by itself (feed-context.tsx), and with the clock held those loads
+    // would still run when the refresh ends, which the tail then announces.
+    const page = Array.from({ length: PAGE_SIZE }, (_, index) => ({ ...card, id: `arxiv:2401.${String(index + 1).padStart(5, '0')}` }));
+    // The veil leaves with the papers, while the refresh still spins, and
+    // the focus moves from its heading to the card.
+    reader = await pressTryAgain(view, page, whileHeld);
+    await whileHeld(() => assert.ok(document.activeElement?.closest('.feed-snap-item'), 'The focus is on the card.'));
+    // The region settles after the papers, while the refresh still spins,
+    // and leaves unsaid the wait the heading said.
+    await act(async () => { mock.timers.tick(SETTLED_MS); });
+    assert.deepEqual(reader.statuses(), []);
+    // The refresh ends, and its result is spoken.
+    await act(async () => { mock.timers.tick(REFRESH_SPIN_MS); });
+    await whileHeld(() => assert.deepEqual(reader?.statuses(), ['status: Papers updated']));
   } finally {
+    mock.timers.reset();
     reader?.stop();
     await view.stop();
   }
