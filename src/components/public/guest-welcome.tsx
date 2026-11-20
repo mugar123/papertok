@@ -446,8 +446,9 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
               On the landing it wears the theme switch's halftone beside it. */}
           <PrivacyPopover className={`gw-bar-button${onLanding ? ' btn-halftone' : ''}`} />
           {/* Help is a public page: a visitor can read what each button does,
-              and what needs an account, before signing in. */}
-          <Link to="/help" className={`gw-bar-button${onLanding ? ' btn-halftone' : ''}`} aria-label="Help" title="Help">
+              and what needs an account, before signing in. A new tab, because
+              the answers chosen so far live only in this page's state. */}
+          <Link to="/help" target="_blank" rel="noopener noreferrer" className={`gw-bar-button${onLanding ? ' btn-halftone' : ''}`} aria-label="Help (opens in a new tab)" title="Help (opens in a new tab)">
             <Question size={17} aria-hidden="true" />
           </Link>
           {!onLanding && (

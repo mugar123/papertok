@@ -86,7 +86,10 @@ function HelpSectionView({ section }: { section: HelpSection }) {
  * help-guide.ts; this draws them in the Settings layout.
  */
 export default function HelpPage() {
-  const { user } = useAuth();
+  const { user, loading, onboardingComplete, profileLoadError } = useAuth();
+  // The navbar (app.tsx `showNavbar`) takes the top of the page; without it the
+  // page starts at its own top.
+  const hasNavbar = Boolean(user) && !loading && onboardingComplete && !profileLoadError;
   const { locale } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -100,7 +103,7 @@ export default function HelpPage() {
   const usesLine = aiUsesLine(uses, locale);
 
   return (
-    <main className="settings-page help-page">
+    <main className={`settings-page help-page${hasNavbar ? '' : ' help-page--bare'}`}>
       <div className="settings-shell">
         <Button variant="ghost" size="icon" className="help-back" onClick={goBack} aria-label="Back" title="Back">
           <ArrowLeft size={18} aria-hidden="true" />

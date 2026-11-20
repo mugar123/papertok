@@ -63,7 +63,7 @@ test('the controls marked as spending an AI use are the five the overview names'
   assert.equal(allowanceOf('explain'), 'ai');
 });
 
-test('the refund is promised only for the failures the Worker gives a use back for', () => {
+test('the retry row lists the failures that give the use back and the ones that do not', () => {
   const refund = text('retry');
   assert.match(refund, /busy or unavailable/);
   assert.match(refund, /cannot be downloaded/);
@@ -76,25 +76,29 @@ test('publishing and stopping to share always count toward the daily limit', () 
   assert.deepEqual(idsWith('publish'), ['publish', 'stop-sharing']);
 });
 
-test('every control that can change a public list says it counts only when the list is public', () => {
-  assert.deepEqual(idsWith('publish-if-public').toSorted(), ['delete-list', 'edit-list', 'edit-note', 'new-list', 'remove-paper', 'save']);
+test('every control that can change a public list says it counts only when the list is public, and a note edit does not', () => {
+  assert.deepEqual(idsWith('publish-if-public').toSorted(), ['delete-list', 'edit-list', 'hold-save', 'new-list', 'remove-paper', 'save']);
   assert.match(text('save'), /Taking the paper out of a public list, or adding it to one from the picker, updates that list’s public copy/);
   assert.match(text('save'), new RegExp(`${LIST_PUBLISHES_PER_DAY} public-list changes a day`));
   assert.match(text('new-list'), /Choosing Public publishes the list at once, which counts/);
   assert.match(HELP_ALLOWANCE_RULES['publish-if-public'], /^Free on a private list\./);
+  assert.equal(allowanceOf('edit-note'), 'free', 'notes and tags are not in a public list’s copy');
+  assert.match(text('delete-list'), /cannot be deleted until it resets/);
 });
 
-test('Read article says the viewer also opens on full text without a PDF, and when a new tab opens', () => {
+test('Read article says the viewer opens on a PDF it can show or on full text, and when a new tab opens', () => {
   const read = text('read');
   assert.match(read, /full text it finds for the paper, opens in PaperTok’s viewer/);
   assert.match(read, /university’s library, the publisher’s version opens in a new tab/);
-  assert.match(read, /arXiv, publisher or DOI page opens in a new tab/);
+  assert.match(read, /an arXiv PDF, for example\), or full text it finds for the paper, opens in PaperTok’s viewer/);
+  assert.match(read, /publisher’s or DOI page opens in a new tab/);
 });
 
 test('the Interests section describes Priority, Feed mix and the per-area level with the mixes the app has', () => {
   const section = HELP_SECTIONS.find(candidate => candidate.id === 'interests');
   assert.ok(section && !section.signedInOnly, 'a visitor chooses areas on the welcome page');
   assert.deepEqual(section.entries.map(entry => entry.id), ['area-priority', 'feed-mix', 'area-level']);
+  assert.match(section.intro, /For you and Most recent/);
   assert.match(text('area-priority'), /Essential, the default, .* or Curiosity/);
   assert.match(text('feed-mix'), /Mostly work, 90 to 10; Balanced, 75 to 25; Half and half, 50 to 50/);
   assert.match(text('feed-mix'), /Shows once you have chosen areas of both kinds/);

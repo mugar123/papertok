@@ -34,11 +34,12 @@ test('a visitor without an account sees the Help page at /help, with every accou
   }
 });
 
-test('the welcome page has a Help link a visitor can reach', async () => {
+test('the welcome page has a Help link a visitor can reach, opening in a new tab so the answers so far are kept', async () => {
   const app = await renderApp('/onboarding');
   try {
-    const link = await screen.findByRole('link', { name: 'Help' });
+    const link = await screen.findByRole('link', { name: 'Help (opens in a new tab)' });
     assert.equal(link.getAttribute('href'), '/help');
+    assert.equal(link.getAttribute('target'), '_blank');
   } finally {
     await app.stop();
   }

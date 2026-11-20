@@ -2,6 +2,10 @@
    own glyph in a tile beside each one. Text controls and gestures have no
    glyph, so their rows take the whole width. */
 
+.settings-page.help-page--bare {
+  padding-top: var(--space-6);
+}
+
 .help-back {
   margin-bottom: var(--space-4);
 }

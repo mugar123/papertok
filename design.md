@@ -453,7 +453,8 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   menu does, so no command needs a right click or a long press. A move at an
   end is disabled, and a saved move is announced with the feed's new position.
 - **Help** (`help/help-page.tsx`, its words in `help-guide.ts`) at `/help`: what
-  each button and gesture does, in the Settings layout. It is a public page: a
+  each button and gesture does, in the Settings page's style, with the section
+  links in place of its menu. It is a public page: a
   visitor reaches it from the Help icon in the welcome's bar, a signed-in reader
   from the last entry of the Settings menu. It is set in sections of ruled rows. A row with a
   glyph puts it in a 40px tile beside the control's name, which is the row's
