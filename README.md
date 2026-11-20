@@ -126,8 +126,9 @@ help distinguish them. Lists can be private or published with a link you can sha
 Export paper or list references as **BibTeX** or **RIS** for reference managers such as
 Zotero, EndNote and Mendeley. To keep up between visits, opt in to the **weekly email
 update** in Settings → Notifications. It is prepared on Mondays from the authors, topics,
-institutions and projects you follow; journals are not included yet, and sending limits
-can delay delivery.
+institutions and projects you follow, or the subjects you chose. If you connect ORCID,
+the email can also show new papers that cite your work. Sending limits can delay
+delivery. [Weekly email setup and behavior](worker/README.md#email-digest-subscription-deploy).
 
 ### Use your university library
 

@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emailFollowsNotice } from './email-follows-notice.ts';
 
+test('the email settings explain citation updates when an ORCID reader follows nothing', () => {
+  assert.match(emailFollowsNotice([], false, false, true)!.body, /papers that cite your work/);
+});
+
 const journal = { type: 'journal' as const, canonicalId: 'S23254222', displayName: 'American Economic Review' };
 const author = { type: 'author' as const, canonicalId: 'A10', displayName: 'Ana Economist' };
 

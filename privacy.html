@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 20 November 2026 (revision 7).</p>
+      <p class="lp-updated">Last updated 20 November 2026 (revision 8).</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -136,7 +136,7 @@
             <tr>
               <td>If you connect ORCID: your ORCID iD, the name on your ORCID record and when you connected it, and the identifiers of the suggested works you marked as yours or as not yours</td>
               <td>ORCID, when you sign in there to connect it; you, when you mark a suggested work</td>
-              <td>Showing your iD on My profile and listing there, only to you, the public works of your ORCID record and the works you added</td>
+              <td>Showing your iD and works on your private My profile page and finding new papers that cite your work if you enable email updates</td>
             </tr>
             <tr>
               <td>Comments and content reports from earlier versions of PaperTok</td>
@@ -329,19 +329,28 @@
       <p>
         If you turn them on, PaperTok emails you what is new from the authors, topics,
         institutions and projects you follow, or, while you follow none of them, the
-        notable new papers in the subjects you chose. For that
-        it stores your email address, your sending preferences, what you follow, the
+        notable new papers in the subjects you chose. If you connect your ORCID
+        iD, the weekly email can also list new papers that cite your work, even if you
+        follow nothing. PaperTok sends your iD and the OpenAlex work identifiers it
+        checks to OpenAlex. It uses the works OpenAlex links to your iD and your current
+        “This is mine” and “Not mine” decisions. PaperTok
+        stores your email address, your sending preferences, what you follow, the
         identifiers of the subjects you chose and an unsubscribe
         identifier in <strong>Cloudflare Workers KV</strong> or, as it moves, in a
         <strong>Cloudflare Durable Object</strong> of your account, and
         your account identifier and that unsubscribe identifier in
         <strong>Cloudflare Workers KV</strong>. If a sending limit delays
         an edition, PaperTok also stores its selected papers, abstracts and reasons
-        they matched your follows or subjects. That selection is removed after delivery, a
+        they matched your follows or subjects, along with any selected citing papers and
+        the time you connected ORCID. That selection is removed after delivery, a
         change to your follows or a later edition that is processed; otherwise its delivery record
-        expires after 120 days. <strong>Resend</strong> sends
+        expires after 120 days. That record also keeps the last publication date a
+        citation lookup covered and the week of the latest lookup, so a late email or a
+        retry does not skip papers. <strong>Resend</strong> sends
         the emails. To limit test emails, Cloudflare counts them under a hashed account
-        identifier that it keeps for up to three days.
+        identifier that it keeps for up to three days. To limit citation lookups, Cloudflare
+        counts one lookup per week under a hashed account identifier that expires at the
+        end of that UTC week.
       </p>
       <p>
         The legal basis is your consent, and you can withdraw it whenever you like: every

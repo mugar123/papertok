@@ -99,6 +99,7 @@ test('returns duplicate reservations without consuming quota or committing twice
     reservationId: 'digest:user-a',
     delivery: {
       sentAt: '2026-08-09T07:00:00.000Z',
+      citationThrough: '2026-08-08',
       paperCount: 1,
       paperKeys: ['doi:10.1/paper'],
     },
@@ -120,7 +121,8 @@ test('returns duplicate reservations without consuming quota or committing twice
   assert.equal(committed.body.committedCount, 1);
   assert.equal(duplicateCommitted.body.duplicate, true);
   assert.equal(duplicateCommitted.body.status, 'committed');
-  assert.deepEqual(duplicateCommitted.body.delivery!.paperKeys, ['doi:10.1/paper']);
+  assert.equal(duplicateCommitted.body.delivery?.citationThrough, '2026-08-08');
+  assert.deepEqual(duplicateCommitted.body.delivery.paperKeys, ['doi:10.1/paper']);
   assert.equal(secondCommit.body.duplicate, true);
   assert.equal(secondCommit.body.committedCount, 1);
 });
