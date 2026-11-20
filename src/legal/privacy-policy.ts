@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-20.4';
+export const PRIVACY_POLICY_VERSION = '2026-11-20.7';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -116,6 +116,12 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20.4';
  * The text ships with #531. Use the end of the planned merge day until the
  * deployment succeeds, then use its success time. If the merge slips to a
  * later UTC day, update the page date, version and cutoff before merging.
+ *
+ * Version 2026-11-20.7 adds the interest priorities, mix and per-area reading
+ * levels kept with the account, and describes the browser copy and the guest
+ * choices waiting for sign-in. The notice covers changes since the first
+ * 20 November version, including survey analytics, My profile and weekly
+ * author saves. Its cutoff is the end of the planned merge day.
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
@@ -133,9 +139,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  'With a verified email, your saves count by default and PaperTok links your account to each paper you save once per UTC week. Turn this off in Settings → Privacy to exclude future saves.',
-  'With usage analytics on, PaperTok links survey events to your account, including your reading level and broad areas of interest when available. Submitting the survey records your answers, including your role if you chose one.',
-  'My profile lists recent papers that cite your work and your frequent coauthors. PaperTok keeps neither list.',
+  'Your account stores Essential or Curiosity choices, feed mix and area reading levels.',
+  'With a verified email, saves count by default and link your account to each paper once per UTC week. Turn off future counting in Settings → Privacy.',
+  'With usage analytics on, survey events link your account to your reading level and broad interests when available, plus your submitted answers and any role. My profile shows recent citing papers and frequent coauthors, keeps neither list and suggests interests from your publications.',
 ];
 
 /**
@@ -148,19 +154,23 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  lead: 'your saves count by default',
+  lead: 'Essential or Curiosity choices',
   clauses: [
-    ['With a verified email, your saves count by default', /With a verified email, your saves count by default/],
-    ['PaperTok links your account to each paper you save once per UTC week', /PaperTok links your account to each paper you save once per UTC week/],
-    ['Turn this off in Settings → Privacy to exclude future saves', /Turn this off in Settings → Privacy to exclude future saves/],
-    ['With usage analytics on, PaperTok links survey events to your account', /With usage analytics on, PaperTok links survey events to your account/],
-    ['your reading level and broad areas of interest when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
-    ['Submitting the survey records your answers, including your role if you chose one', /Submitting the survey records your answers, including your role if you chose one/],
-    ['recent papers that cite your work', /papers from the last 12 months that cite your publications/],
-    ['your frequent coauthors', /coauthors you share two or more of those works with/],
-    ['PaperTok keeps neither list', /PaperTok keeps neither list/],
+    ['Essential or Curiosity choices, feed mix and area reading levels', /Your Essential or Curiosity choices, feed mix and reading levels by area/],
+    ['Your account stores', /This data is stored in <strong>Google Firestore<\/strong>/],
+    ['With a verified email, saves count by default', /With a verified email, your saves count by default/],
+    ['link your account to each paper once per UTC week', /PaperTok links your account to each paper you save once per UTC week/],
+    ['Turn off future counting in Settings → Privacy', /Turn this off in Settings → Privacy to exclude future saves/],
+    ['With usage analytics on, survey events link your account', /With usage analytics on, PaperTok links survey events to your account/],
+    ['your reading level and broad interests when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
+    ['your submitted answers and any role', /Submitting the survey records your answers, including your role if you chose one/],
+    ['recent citing papers', /papers from the last 12 months that cite your publications/],
+    ['frequent coauthors', /coauthors you share two or more of those works with/],
+    ['keeps neither list', /PaperTok keeps neither list/],
+    ['suggests interests from your publications', /suggests feed interests from the topics of your loaded publications/],
   ],
   unsaid: [
+    [/sent to analytics/i, 'the new preferences are not analytics fields'],
     [/anonymous/i, 'survey events are linked to the signed-in account'],
     [/required role/i, 'readers can skip the role question'],
     [/authors can see|published totals/i, 'this release only collects contributions'],

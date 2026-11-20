@@ -47,6 +47,7 @@ import {
 import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.ts';
 import { HIGHLIGHT_MIN_QUOTE_LENGTH, buildRangeAnchor, buildSelectionAnchor } from '../../utils/text-highlights.ts';
 import { useAuth } from '../../context/auth-context.tsx';
+import { resolveReadingLevel } from '../../utils/area-preferences.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
 import { documentVisibility } from '../pdf/viewer-outcome.ts';
@@ -370,7 +371,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
 }
 
 export default function PaperReader({ paper, onClose, originRect = null, closeRef = null, initialLevel }: PaperReaderProps) {
-  const { user, readingPreferences } = useAuth();
+  const { user, readingPreferences, interestSettings } = useAuth();
   const uid = user?.uid;
   const { trackEvent, consent } = useAnalyticsConsent();
   const prefersReducedMotion = useReducedMotion();
@@ -381,7 +382,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // own copy of it.
   const paragraphHintId = useId();
 
-  const [level, setLevel] = useState(() => initialLevel ?? readingPreferences?.aiExplanationLevel ?? 'university');
+  const [level, setLevel] = useState(() => resolveReadingLevel(paper, interestSettings, initialLevel, readingPreferences.aiExplanationLevel));
   const [sections, setSections] = useState<Array<RewriteSection & { reveal?: boolean }>>([]);
   const [meta, setMeta] = useState<ClientRewriteMeta | null>(null);
   const [status, setStatus] = useState('idle');
