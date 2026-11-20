@@ -393,3 +393,14 @@ test('two institutions or authors with different ids in one namespace stay two f
   // And different ids in a shared namespace beat a shared name even where another namespace has no answer.
   assert.equal(followsEntity(bothIds, { type: 'institution', id: 'I2', displayName: 'University of Oxford' }), false);
 });
+
+test('a control with an OpenAlex id and a ROR id meets a follow by whichever id agrees', () => {
+  const byOpenAlex = createFollowEntity({ type: 'institution', id: 'I1', displayName: 'Institute of Physics' })!;
+  const byRor = createFollowEntity({ type: 'institution', id: '02f40zc51', displayName: 'Institute of Physics' })!;
+  const control = { type: 'institution' as const, id: 'I2', displayName: 'Institute of Physics', externalIds: { ror: '02f40zc51' } };
+
+  assert.equal(followsEntity([byOpenAlex], control), false, 'a different OpenAlex id is a different institution');
+  assert.equal(followsEntity([byRor], control), true);
+  const toggled = planFollowToggle([byOpenAlex, byRor], createFollowEntity(control)!, { list: 'listed' });
+  assert.deepEqual(toggled.next.map(follow => follow.canonicalId), ['I1'], 'only the follow that agrees is removed');
+});
