@@ -26,6 +26,7 @@ import { INSTITUTION_PATHS, InstitutionLinkError, handleInstitutionLinkRequest }
 import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAccess } from './institution-access.ts';
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
 import { ZOTERO_PATHS, ZoteroError, handleZoteroRequest } from './zotero.ts';
+import { ORCID_PATHS, OrcidError, handleOrcidRequest } from './orcid.ts';
 import { isServiceAccountConfigured } from './firebase-service-account.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { handleOpenAlex } from './openalex-api.ts';
@@ -328,6 +329,24 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
         ...(error instanceof ZoteroError && error.retryAfter ? { 'retry-after': error.retryAfter } : {}),
+      });
+    }
+  }
+  if (ORCID_PATHS.has(url.pathname)) {
+    // The OAuth redirect address is derived from this Origin, so it must be one of ours.
+    if (!origin || !allowedOrigins(env).has(origin)) {
+      return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
+    }
+    try {
+      return json(await handleOrcidRequest(request, env, origin), 200, { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' });
+    } catch (error) {
+      captureWorkerException(error);
+      const known = error instanceof OrcidError || error instanceof WorkerAuthError;
+      if (!known) console.error('ORCID request failed', error);
+      return json({ code: known ? error.code : 'ORCID_FAILED' }, known ? error.status : 502, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+        ...(error instanceof OrcidError && error.retryAfter ? { 'retry-after': error.retryAfter } : {}),
       });
     }
   }

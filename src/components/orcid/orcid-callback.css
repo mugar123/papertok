@@ -1,0 +1,14 @@
+/* The page ORCID returns to (orcid-callback.tsx), laid out as Zotero's is. */
+.orcid-callback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-primary);
+}
+
+.orcid-callback-state {
+  width: min(520px, 100%);
+  overflow-wrap: anywhere;
+}

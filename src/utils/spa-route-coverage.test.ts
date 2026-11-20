@@ -47,3 +47,10 @@ test('Zotero returns the browser to an address the app answers', async () => {
   assert.ok(!matches('/zotero'));
   assert.ok(!matches('/zotero/callback/extra'));
 });
+
+test('ORCID returns the browser to an address the app answers', async () => {
+  const matches = await spaMatcher();
+  assert.ok(matches('/orcid/callback'));
+  assert.ok(!matches('/orcid'));
+  assert.ok(!matches('/orcid/callback/extra'));
+});

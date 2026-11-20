@@ -29,6 +29,7 @@ import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
 import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
+import { orcidWorkDecisionWrite } from '../src/services/orcid-work-decisions-service.ts';
 import { PRIVACY_POLICY_VERSION } from '../src/legal/privacy-policy.ts';
 import {
   deleteDoc,
@@ -489,6 +490,107 @@ test('a client cannot award itself an institution', async () => {
   await assertFails(setDoc(ref, { onboardingComplete: true, institution: INSTITUTION }));
   await assertSucceeds(setDoc(ref, { onboardingComplete: true }));
   await assertFails(setDoc(ref, { institution: INSTITUTION }, { merge: true }));
+});
+
+// The ORCID iD an ORCID sign-in proved (worker/orcid.ts) is frozen the same way.
+const ORCID = {
+  id: '0000-0002-1825-0097',
+  name: 'Josiah Carberry',
+  host: 'orcid.org',
+  connectedAt: '2026-11-18T10:00:00.000Z',
+};
+
+test('a connected ORCID iD survives the owner\'s own writes and cannot be edited or dropped', async () => {
+  await reset();
+  await seedLegacyUserDoc({ orcid: ORCID });
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.LG'] }, { merge: true }));
+  await assertFails(setDoc(ref, { orcid: { ...ORCID, id: '0000-0001-5109-3700' } }, { merge: true }));
+  await assertFails(updateDoc(ref, { 'orcid.name': 'Someone Else' }));
+  await assertFails(updateDoc(ref, { orcid: deleteField() }));
+});
+
+test('a client cannot connect an ORCID iD itself', async () => {
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  await assertFails(setDoc(ref, { onboardingComplete: true, orcid: ORCID }));
+  await assertSucceeds(setDoc(ref, { onboardingComplete: true }));
+  await assertFails(setDoc(ref, { orcid: ORCID }, { merge: true }));
+});
+
+test('the pending ORCID connection is closed to its own account', async () => {
+  // Only a hash of the state is kept there, and only the Worker reads it.
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE, 'orcid', 'link'), { stateHash: 'abc', createdAt: 1 });
+  });
+  const db = asAlice();
+  await assertFails(getDoc(doc(db, 'users', ALICE, 'orcid', 'link')));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'orcid', 'link'), { stateHash: 'mine', createdAt: 2 }));
+});
+
+// What the account said about the works OpenAlex attributes to its iD
+// (src/services/orcid-work-decisions-service.ts), written as the app writes it.
+test('an account with an ORCID iD keeps its own decisions about the works attributed to it', async () => {
+  await reset();
+  await seedLegacyUserDoc({ orcid: ORCID });
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'orcid', 'works');
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['openalex:W2'], 'notMine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['openalex:W3'], 'mine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['openalex:W3'], null), { merge: true }));
+  const stored = await assertSucceeds(getDoc(ref));
+  assert.deepEqual(stored.get('mine'), ['doi:10.1000/a']);
+  assert.deepEqual(stored.get('notMine'), ['openalex:W2']);
+
+  // Nobody else reads or writes them, and the collection is not listed.
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'orcid', 'works')));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'orcid', 'works'), orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/b'], 'mine'), { merge: true }));
+  await assertFails(getDocs(collection(db, 'users', ALICE, 'orcid')));
+  // Only the two lists of identifiers and the server's time.
+  await assertFails(setDoc(ref, { ...orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/c'], 'mine'), title: 'A paper' }, { merge: true }));
+  const connectedAt = ORCID.connectedAt;
+  await assertFails(setDoc(ref, { connectedAt, mine: [], notMine: [], updatedAt: new Date(0) }));
+  await assertFails(setDoc(ref, { connectedAt, mine: 'doi:10.1000/a', notMine: [], updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(ref, {
+    connectedAt, mine: Array.from({ length: 1001 }, (_, index) => `doi:10.1000/${index}`), notMine: [], updatedAt: serverTimestamp(),
+  }));
+});
+
+test('no decision about attributed works is kept without a connected ORCID iD', async () => {
+  // Disconnect clears the iD before it deletes the decisions, so a write that
+  // crosses it is refused rather than left behind.
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'orcid', 'works');
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  await seedLegacyUserDoc();
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
+});
+
+test('a decision counts only for the ORCID connection the account holds now', async () => {
+  // After a switch from one iD to another, a tab still showing the first
+  // cannot add its works to the second, whose decisions start empty.
+  await reset();
+  const next = { ...ORCID, id: '0000-0001-5109-3700', connectedAt: '2026-11-18T11:00:00.000Z' };
+  await seedLegacyUserDoc({ orcid: next });
+  const ref = doc(asAlice(), 'users', ALICE, 'orcid', 'works');
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(null, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  // A first write that names no connection is refused too. (A later merge without the field
+  // keeps the stored one, which is the current connection's; the client always sends it.)
+  const unbound: Record<string, unknown> = orcidWorkDecisionWrite(next.connectedAt, ['doi:10.1000/a'], 'mine');
+  delete unbound.connectedAt;
+  await assertFails(setDoc(ref, unbound, { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(next.connectedAt, ['doi:10.1000/b'], 'mine'), { merge: true }));
+  // Nor can a later write move the document back to the earlier connection.
+  await assertFails(updateDoc(ref, { mine: ['doi:10.1000/a'], updatedAt: serverTimestamp(), connectedAt: ORCID.connectedAt }));
+  const stored = await assertSucceeds(getDoc(ref));
+  assert.deepEqual(stored.get('mine'), ['doi:10.1000/b']);
+  assert.equal(stored.get('connectedAt'), next.connectedAt);
 });
 
 // =========================================================================
