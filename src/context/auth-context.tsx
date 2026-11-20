@@ -471,11 +471,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const added = nextAdded(userPreferences ?? [], newPreferences, addedPreferences, deselectedPreferences);
       setDeselectedPreferences(deselected);
       setAddedPreferences(added);
-      await setDoc(doc(db, 'users', userId), {
-        preferences: newPreferences,
-        deselectedPreferences: deselected,
-        addedPreferences: added
-      }, { merge: true });
+      try {
+        await setDoc(doc(db, 'users', userId), {
+          preferences: newPreferences,
+          deselectedPreferences: deselected,
+          addedPreferences: added
+        }, { merge: true });
+      } catch (error) {
+        // A later edit or account switch owns the state if it has replaced this write.
+        setUserPreferences(current => current === newPreferences ? userPreferences : current);
+        setDeselectedPreferences(current => current === deselected ? deselectedPreferences : current);
+        setAddedPreferences(current => current === added ? addedPreferences : current);
+        throw error;
+      }
       saveStoredOnboarding(userId, { complete: true, preferences: newPreferences });
     }
   }, [addedPreferences, deselectedPreferences, user?.uid, userPreferences]);

@@ -27,6 +27,7 @@ import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { actionStart, toastError } from '../ui/toast.ts';
 import { toastFollowRefused } from '../following/follow-refused-toast.ts';
 import '../settings/settings-page.css';
+import PublicationAreas from './publication-areas.tsx';
 import './profile-page.css';
 
 const COPY = {
@@ -627,6 +628,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
         )}
       </section>
 
+      {status === 'ready' && <PublicationAreas papers={papers} decisionPending={saving.size > 0} publicationsHeading={headingRef} />}
       {status === 'ready' && onOpenAlex && <CitingPapers orcidId={orcid.id} papers={papers} lookupFailed={loaded?.details === 'failed' || Boolean(attributed?.failed)} />}
       {status === 'ready' && coauthors.length > 0 && <FrequentCoauthors coauthors={coauthors} />}
 

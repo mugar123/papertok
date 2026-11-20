@@ -1,6 +1,9 @@
-import { collection, doc } from 'firebase/firestore';
+import type { Paper } from '../models/paper.ts';
+import { collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from './firebase.ts';
 import { encodeFirestoreDocId } from '../utils/firestore-doc-id.ts';
+import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
+import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
 
 export function savedPapersRef(userId: string) {
   return collection(db, 'users', userId, 'savedPapers');
@@ -13,4 +16,9 @@ export function savedPapersRef(userId: string) {
  */
 export function savedPaperDocRef(userId: string, paperId: string) {
   return doc(savedPapersRef(userId), encodeFirestoreDocId(paperId));
+}
+
+export function writeSavedPaperCopy(uid: string, paper: Paper, newSave: boolean) {
+  const payload = buildSavedPaperPayload(paper, newSave ? serverTimestamp() : undefined);
+  return setDoc(savedPaperDocRef(uid, paper.id), copyForMergeWrite(payload), { merge: true });
 }

@@ -47,8 +47,9 @@ const text = (value: unknown, max: number|undefined) => {
  * `savedAt` is the caller's, so this stays pure and its tests do not have to
  * freeze the clock.
  */
-export function buildSavedPaperPayload<T>(paper: Partial<Paper> | null | undefined, savedAt: T) {
-  const payload: Partial<Paper> & { savedAt: T } = { savedAt };
+export function buildSavedPaperPayload<T>(paper: Partial<Paper> | null | undefined, savedAt?: T) {
+  const payload: Partial<Paper> & { savedAt?: T } = {};
+  if (savedAt !== undefined) payload.savedAt = savedAt;
 
   /**
    * `title` is the one field the rules REQUIRE, with no absent-or-null escape,
