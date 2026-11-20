@@ -247,7 +247,7 @@ async function settlesWithin(work: Promise<unknown>, ms: number) {
       new Promise<false>(resolve => { timer = setTimeout(resolve, ms, false); }),
     ]);
   } finally {
-    clearTimeout(timer!);
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
