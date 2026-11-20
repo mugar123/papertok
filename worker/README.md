@@ -522,6 +522,16 @@ npm run worker:deploy:dry-run
 npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health then names this commit
 ```
 
+After every Worker deploy, run `node scripts/production-smoke.ts` from the
+repository root and confirm the reported version tag matches the deployed
+commit. The script checks Worker health, AI provider availability, ORCID's
+sign-in challenge, public MCP search, guest paper discovery and the website.
+It makes one AI health request and limits MCP search to OpenAlex.
+
+GitHub Actions runs the same script daily and on manual dispatch. A failed run
+opens or updates **Production smoke check failing** with the failed probes.
+The next successful run closes that issue.
+
 ### Email digest subscription deploy
 
 Moving the digest subscription from KV into one Durable Object per reader (ENG-163) ships in two deploys, because KV reads can be stale and a Worker from before this change deletes KV on an unsubscribe without telling the object. `EMAIL_SUBSCRIPTION_SOURCE` in `wrangler.toml` picks the phase. Deploy each phase in one step with `npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)"`, never as a gradual rollout.
