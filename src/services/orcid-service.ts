@@ -61,10 +61,12 @@ export interface OrcidPublication { work: OrcidWork; paper: Paper | null }
 import type { Paper } from '../models/paper.ts';
 import type { OrcidHost } from '../utils/orcid-id.ts';
 import type { OrcidWorkDecision, OrcidWorkDecisions } from './orcid-work-decisions-service.ts';
+import type { CitingWork } from './open-alex-service.ts';
 import { withRequestDeadline } from '../utils/request-deadline.ts';
 import { isValidOrcidId } from '../utils/orcid-id.ts';
+import { sameFullName } from '../utils/author-name-match.ts';
 import { canonicalArxivIdOf, canonicalDoiOf } from '../utils/paper-canonical-key.ts';
-import { fetchPapersByDois, fetchPapersByOpenAlexIds, getWorksByOrcid } from './open-alex-service.ts';
+import { CITING_WORKS_MAX_CITED, fetchPapersByDois, fetchPapersByOpenAlexIds, getWorksByOrcid, openAlexAuthorId } from './open-alex-service.ts';
 
 /**
  * One deadline covering the headers and the body. This used to clear its own
@@ -342,11 +344,11 @@ export async function loadOrcidPublications(orcidId: string, host: OrcidHost, de
   const [works, attributed, decisions] = await Promise.all([
     getOrcidWorks(orcidId, host),
     // OpenAlex knows production iDs only: a sandbox iD may name someone else there.
-    (host === 'orcid.org' ? getWorksByOrcid(orcidId) : Promise.resolve({ papers: [] as Paper[], total: 0, complete: true })).then(
+    (host === 'orcid.org' ? getWorksByOrcid(orcidId) : Promise.resolve({ papers: [] as Paper[], total: 0, complete: true, authorIds: [] as string[] })).then(
       result => ({ ...result, failed: false }),
       (error: unknown) => {
         console.warn('OpenAlex did not list the works of the ORCID iD', error);
-        return { papers: [] as Paper[], total: 0, complete: false, failed: true };
+        return { papers: [] as Paper[], total: 0, complete: false, failed: true, authorIds: [] as string[] };
       },
     ),
     decisionsRead,
@@ -438,4 +440,103 @@ export function arrangeOrcidWorks(loaded: OrcidPublicationsLoad, decisions: Orci
     ...added,
   ].sort((a, b) => yearOf(b) - yearOf(a));
   return { publications, candidates };
+}
+
+/**
+ * The papers of the reader's publications (`arrangeOrcidWorks`), in their
+ * order, newest first, each once: the record's works OpenAlex describes and
+ * the works the reader added, never one they marked "Not mine".
+ */
+export function readerPapers(publications: OrcidListedWork[], decisions: OrcidWorkDecisions) {
+  const notMine = new Set(decisions.notMine);
+  const papers: Paper[] = [];
+  const seen = new Set<string>();
+  for (const { paper } of publications) {
+    if (!paper) continue;
+    const keys = orcidWorkKeys(paper);
+    if (keys.some(key => notMine.has(key)) || keys.some(key => seen.has(key))) continue;
+    keys.forEach(key => seen.add(key));
+    papers.push(paper);
+  }
+  return papers;
+}
+
+/** The OpenAlex work ids (`W123`) of `papers`, in their order, each once. */
+export function readerWorkIds(papers: Paper[]) {
+  return [...new Set(papers.map(paper => openAlexWorkId(paper.id)).filter((id): id is string => id !== null))];
+}
+
+/** The work ids a citing-works request names: the newest CITING_WORKS_MAX_CITED. */
+export function citedWorkIds(papers: Paper[]) {
+  return readerWorkIds(papers).slice(0, CITING_WORKS_MAX_CITED);
+}
+
+/**
+ * What the papers citing the reader's works can be asked for with: 'known'
+ * when some of `papers` have an OpenAlex work id; 'failed' when none has one
+ * and a lookup of their details (`lookupFailed`) did not answer, so their ids
+ * are missing rather than unknown to OpenAlex; 'unknown' otherwise.
+ */
+export function citedWorksState(papers: Paper[], lookupFailed: boolean) {
+  if (citedWorkIds(papers).length > 0) return 'known' as const;
+  return lookupFailed ? 'failed' as const : 'unknown' as const;
+}
+
+/**
+ * The papers citing the reader's works that are not their own: a work with an
+ * author whose ORCID iD is `orcidId`, or that is itself one of the reader's
+ * works (`readerIds`), is left out. Each keeps, in its reference order, the
+ * reader's works it cites.
+ */
+export function othersCitations(works: CitingWork[], orcidId: string, readerIds: string[]) {
+  const reader = orcidId.toUpperCase();
+  const ids = new Set(readerIds);
+  return works
+    .filter(work => !work.orcids.includes(reader) && !ids.has(openAlexWorkId(work.paper.id) ?? ''))
+    .map(work => ({ paper: work.paper, cites: [...new Set(work.references.filter(id => ids.has(id)))] }));
+}
+
+/** A paper with more authors than this is a large collaboration; its authors are not counted as coauthors. */
+export const COAUTHORS_MAX_AUTHORS = 30;
+/** How many coauthors My profile shows, and how many works they must share with the reader. */
+export const COAUTHORS_SHOWN = 8;
+export const COAUTHORS_MIN_SHARED = 2;
+
+export interface Coauthor { id: string; name: string; sharedWorks: number; latestYear: number | null }
+
+/**
+ * The reader's frequent coauthors, from the authors of `papers` (readerPapers)
+ * known by an OpenAlex author id: those sharing COAUTHORS_MIN_SHARED works or
+ * more, by shared works, then the most recent shared year, then name, at most
+ * COAUTHORS_SHOWN. A paper of more than COAUTHORS_MAX_AUTHORS authors is
+ * skipped. The reader is left out: their author ids (`readerAuthorIds`, the
+ * ids that carry their iD on OpenAlex), and an author with exactly their name
+ * when it is known (`readerName`), for a work OpenAlex files under another id
+ * of theirs. With no author id known, an author on every counted paper is
+ * taken for the reader too, once there are two counted papers or more.
+ */
+export function frequentCoauthors(papers: Paper[], { readerAuthorIds, readerName = null }: { readerAuthorIds: string[]; readerName?: string | null }) {
+  const reader = new Set(readerAuthorIds.map(openAlexAuthorId).filter((id): id is string => id !== null));
+  const found = new Map<string, { name: string; works: Set<number>; latestYear: number | null }>();
+  let counted = 0;
+  papers.forEach((paper, index) => {
+    const authors = Array.isArray(paper.authors) ? paper.authors : [];
+    if (authors.length > COAUTHORS_MAX_AUTHORS) return;
+    counted += 1;
+    for (const author of authors) {
+      if (typeof author === 'string') continue;
+      const id = openAlexAuthorId(author.id);
+      if (!id || reader.has(id) || sameFullName(readerName, author.name)) continue;
+      const entry = found.get(id) ?? { name: cleanText(author.name), works: new Set<number>(), latestYear: null };
+      entry.works.add(index);
+      if (paper.year && (entry.latestYear === null || paper.year > entry.latestYear)) entry.latestYear = paper.year;
+      found.set(id, entry);
+    }
+  });
+  return [...found]
+    .map(([id, { name, works, latestYear }]): Coauthor => ({ id, name, sharedWorks: works.size, latestYear }))
+    .filter(coauthor => coauthor.sharedWorks >= COAUTHORS_MIN_SHARED && coauthor.name)
+    .filter(coauthor => reader.size > 0 || counted < 2 || coauthor.sharedWorks < counted)
+    .sort((a, b) => b.sharedWorks - a.sharedWorks || (b.latestYear ?? -Infinity) - (a.latestYear ?? -Infinity) || a.name.localeCompare(b.name))
+    .slice(0, COAUTHORS_SHOWN);
 }

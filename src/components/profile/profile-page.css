@@ -86,6 +86,29 @@
   min-width: 0;
 }
 
+/* Which of the reader's works a citing paper cites, under its authors. */
+.orcid-cites-line {
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+/* A coauthor: the name in the serif, the shared count as mono machine data.
+   Prefixed: they have to outrank the row's own muted paragraph. */
+.settings-row-content > p.orcid-coauthor-name {
+  margin-top: 0;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--fs-base);
+  overflow-wrap: anywhere;
+}
+
+.settings-row-content > p.orcid-coauthor-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .orcid-hidden {
   margin-top: var(--space-4);
 }
