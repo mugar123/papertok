@@ -62,7 +62,7 @@ test('this browser forgets the privacy notice of the deleted account only, even 
 test('this browser forgets which survey version the deleted account was shown, and only that account', async () => {
   const storage = fakeStorage();
   for (const uid of ['uid-a', 'uid-b']) {
-    recordPmfSurveyShown({ uid, surveyOpen: true, version: '0.3.0', storage, track: () => Promise.resolve(true) });
+    recordPmfSurveyShown({ uid, signedInUid: uid, surveyOpen: true, version: '0.3.0', storage, track: () => Promise.resolve(true) });
     for (const day of ['2026-11-18', '2026-11-19', '2026-11-20']) recordPmfSurveyDay(uid, new Date(`${day}T10:00:00`), '0.3.0', storage);
   }
   await deleteConfirmedAccount({

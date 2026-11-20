@@ -42,7 +42,7 @@ const noTrack = () => Promise.resolve(true);
 
 /** The survey opened for the account and was answered or closed. */
 function showSurvey(uid: string, version: string, storage: Storage) {
-  recordPmfSurveyShown({ uid, surveyOpen: true, version, storage, track: noTrack })?.close();
+  recordPmfSurveyShown({ uid, signedInUid: uid, surveyOpen: true, version, storage, track: noTrack })?.close();
 }
 
 test('a reader is asked once PaperTok was opened on three different days, not before', () => {
@@ -188,7 +188,7 @@ test('nobody is asked without an account, with storage blocked or from a garbled
   };
   assert.doesNotThrow(() => recordPmfSurveyDay('reader', new Date(), '0.3.0', blocked));
   assert.doesNotThrow(() => recordPmfSurveyPaper({ paperId: 'W1', viewerId: 'reader', signedInUid: 'reader' }, blocked));
-  assert.doesNotThrow(() => recordPmfSurveyShown({ uid: 'reader', surveyOpen: true, version: '0.3.0', storage: blocked, track: noTrack }));
+  assert.doesNotThrow(() => recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', storage: blocked, track: noTrack }));
   assert.doesNotThrow(() => forgetPmfSurveyAsked('reader', blocked));
   assert.equal(pmfSurveyDue('reader', '0.3.0', blocked), false);
 
@@ -210,12 +210,12 @@ test('opening the survey settles its version and sends one shown event, and noth
     return Promise.resolve(true);
   };
 
-  assert.equal(recordPmfSurveyShown({ uid: 'reader', surveyOpen: false, version: '0.3.0', storage, track }), null);
-  assert.equal(recordPmfSurveyShown({ uid: null, surveyOpen: true, version: '0.3.0', storage, track }), null);
+  assert.equal(recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: false, version: '0.3.0', storage, track }), null);
+  assert.equal(recordPmfSurveyShown({ uid: null, signedInUid: null, surveyOpen: true, version: '0.3.0', storage, track }), null);
   assert.deepEqual(sent, []);
   assert.equal(pmfSurveyDue('reader', '0.3.0', storage), true, 'still due');
 
-  recordPmfSurveyShown({ uid: 'reader', surveyOpen: true, version: '0.3.0', storage, track });
+  recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', storage, track });
   assert.equal(pmfSurveyDue('reader', '0.3.0', storage), false);
   assert.deepEqual(sent, [['pmf_survey_shown', { app_version: '0.3.0' }]]);
 });
@@ -226,7 +226,7 @@ test('an opened survey sends its answer once, and a close nobody answered as a d
     sent.push([eventName, params]);
     return Promise.resolve(true);
   };
-  const open = () => recordPmfSurveyShown({ uid: 'reader', surveyOpen: true, version: '0.3.0', storage: createStorage(), track });
+  const open = () => recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', storage: createStorage(), track });
 
   const answered = open();
   answered?.answer({ disappointment: 'very', nps: 9, role: null });
@@ -304,7 +304,7 @@ test('both survey events describe the reader by reading level and broad areas, a
     sent.push([eventName, sanitizeProductEventParams(eventName, params, 'enabled')]);
     return Promise.resolve(true);
   };
-  const open = (reader?: Parameters<typeof recordPmfSurveyShown>[0]['reader']) => recordPmfSurveyShown({ uid: 'reader', surveyOpen: true, version: '0.3.0', reader, storage: createStorage(), track });
+  const open = (reader?: Parameters<typeof recordPmfSurveyShown>[0]['reader']) => recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', reader, storage: createStorage(), track });
 
   open({ readingLevel: 'researcher', areas: pmfSurveyAreas(['cs.LG', 'quant-ph', 'cs.CV']) })?.answer({ disappointment: 'somewhat', nps: 8, role: 'researcher' });
   open({ readingLevel: 'beginner', areas: [] })?.close();
@@ -344,10 +344,33 @@ test('each event of the survey is sent with the guard it is given, so one that f
     return true;
   };
   const shown = recordPmfSurveyShown({
-    uid: 'reader-a', surveyOpen: true, version: '0.3.0', reader: { readingLevel: 'researcher', areas: ['physics'] },
+    uid: 'reader-a', signedInUid: signedIn, surveyOpen: true, version: '0.3.0', reader: { readingLevel: 'researcher', areas: ['physics'] },
     storage: createStorage(), track, stillValid: () => signedIn === 'reader-a',
   });
   signedIn = 'reader-b';
   shown?.close();
   assert.deepEqual(sent, [['pmf_survey_shown', 'researcher']], 'the dismissal after the switch is dropped');
+});
+
+test('an account switch before the opening effect leaves the survey unrecorded', () => {
+  const storage = createStorage();
+  dwellOn('reader-a', papers(20), storage);
+  const sent: unknown[] = [];
+  const signedInUid = 'reader-b';
+  const shown = recordPmfSurveyShown({
+    uid: 'reader-a', signedInUid, surveyOpen: true, version: '0.3.0', storage,
+    reader: { readingLevel: 'researcher', areas: ['physics'] },
+    track: async (eventName, params, stillValid) => {
+      if (stillValid && !stillValid()) return false;
+      sent.push([signedInUid, eventName, params]);
+      return true;
+    },
+    stillValid: () => true,
+  });
+
+  shown?.close();
+
+  assert.deepEqual(sent, []);
+  assert.equal(pmfSurveyDue('reader-a', '0.3.0', storage), true);
+  assert.equal(storage.getItem('papertok_pmfSurveyAsked:reader-b'), null);
 });

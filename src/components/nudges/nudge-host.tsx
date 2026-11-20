@@ -10,6 +10,7 @@ import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
 import { ANALYTICS_CONSENT, trackPmfSurvey } from '../../services/analytics-service.ts';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
+import { auth } from '../../services/firebase.ts';
 import { readAccountPrivacyNotice, saveAccountPrivacyNotice } from '../../services/privacy-notice-service.ts';
 import {
   NUDGE_DWELL_MS,
@@ -280,12 +281,9 @@ export default function NudgeHost() {
   // Both of its events describe the reader as they were when it opened: their
   // reading level and the broad areas of their interests. A change to either
   // while it is open does not reopen it.
-  // Its events go out only while the consent and account it opened under
-  // still hold, read from Firebase when each is sent (analyticsSessionContext,
-  // as the reader's time does): a switch to another account remounts this
-  // host and closes the survey, and that dismissal, which the SDK may capture
-  // after the new account is identified, is dropped rather than filed under
-  // the new account with the first one's reader fields.
+  // Firebase can switch accounts before this effect runs with the prior
+  // profile. Verify the account at opening, then let analytics recheck the
+  // pinned account and consent when it captures either event.
   const shownSurvey = useRef<PmfSurveyShown | null>(null);
   const surveyReader = useEffectEvent(() => ({ readingLevel: readingPreferences.aiExplanationLevel, areas: pmfSurveyAreas(userPreferences) }));
   useEffect(() => {
@@ -295,6 +293,7 @@ export default function NudgeHost() {
       version: APP_VERSION,
       reader: surveyReader(),
       track: (eventName, params, stillValid) => trackPmfSurvey(eventName, params, { stillValid }),
+      signedInUid: auth.currentUser?.uid,
       stillValid: pinAnalyticsContext(analyticsSessionContext),
     });
     shownSurvey.current = shown;

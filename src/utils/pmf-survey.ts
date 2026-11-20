@@ -228,13 +228,21 @@ export interface PmfSurveyShown {
  * the one `pmf_survey` event of that opening: the answer the dialog hands
  * over, or a dismissal when it closes without one. Both events describe
  * `reader` as it was when the survey opened. Nothing is recorded before it
- * opens or without an account. `stillValid` says whether the account that
- * opened it is still the signed-in one; each event is sent with it, so a
- * dismissal that lands after a switch to another account is dropped rather
- * than filed under that account with the first one's reader fields.
+ * opens or if Firebase has already switched away from the rendered `uid`.
+ * Both events carry `stillValid` so analytics can check the opening account
+ * and consent again before capture.
  */
-export function recordPmfSurveyShown({ uid, surveyOpen, version, reader, storage, track, stillValid }: { uid: string | null | undefined; surveyOpen: boolean; version: string; reader?: PmfSurveyReader; storage?: SurveyStorage | null; track: SurveyTrack; stillValid?: () => boolean }): PmfSurveyShown | null {
-  if (!surveyOpen || !uid) return null;
+export function recordPmfSurveyShown({ uid, signedInUid, surveyOpen, version, reader, storage, track, stillValid }: {
+  uid: string | null | undefined;
+  signedInUid: string | null | undefined;
+  surveyOpen: boolean;
+  version: string;
+  reader?: PmfSurveyReader;
+  storage?: SurveyStorage | null;
+  track: SurveyTrack;
+  stillValid?: () => boolean;
+}): PmfSurveyShown | null {
+  if (!surveyOpen || !uid || uid !== signedInUid) return null;
   // The newest version asked is kept: a tab still running an earlier one does
   // not write its version over it.
   const target = resolveStorage(storage);
