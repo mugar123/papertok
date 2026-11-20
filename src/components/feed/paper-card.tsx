@@ -115,7 +115,7 @@ import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
 import type { ReaderCard, ReaderMenu } from './paper-menu.tsx';
 import { paperActions, shareMethod } from './paper-actions.ts';
-import { followReasonLabels, followsAnyAuthor } from '../../utils/follow-reasons.ts';
+import { followReasonLabels } from '../../utils/follow-reasons.ts';
 import { AboutFollows } from './about-follows.tsx';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
@@ -545,7 +545,11 @@ const PaperCard = memo(function PaperCard({
   
   const hasFollowedAuthor = useMemo(() => {
     if (!paper?.authors?.length || !followedByType.author?.length) return false;
-    return followsAnyAuthor(paper.authors, isFollowing);
+    return paper.authors.some(author => isFollowing({
+      type: 'author',
+      id: (author as PaperAuthor)?.id || (author as PaperAuthor)?.name || author as string,
+      name: (author as PaperAuthor)?.name || author as string,
+    }));
   }, [followedByType.author, isFollowing, paper]);
   const followReasons = useMemo(
     () => followReasonLabels(paper?._followedEntityMatches, hasFollowedAuthor, isFollowing),

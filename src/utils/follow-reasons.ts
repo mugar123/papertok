@@ -1,5 +1,4 @@
 import type { Paper, PaperFollowMatch } from '../models/paper.ts';
-import type { FollowInput } from './following.ts';
 
 type FollowType = PaperFollowMatch['type'];
 
@@ -10,23 +9,6 @@ const LABELS: Record<FollowType, string> = {
   project: 'Followed project',
   journal: 'Followed journal',
 };
-
-/**
- * What a card's author is asked about the reader's follows: every id the
- * author object carries, since ids in one namespace tell two authors apart and
- * a follow may be known by the OpenAlex id or by the ORCID iD alone.
- */
-export function authorFollowProbe(author: Paper['authors'][number]): FollowInput {
-  const name = typeof author === 'string' ? author : author?.name;
-  const id = typeof author === 'string' ? undefined : author?.id;
-  const orcid = typeof author === 'string' ? undefined : author?.orcid;
-  return { type: 'author', id: id || name, name, ...(orcid ? { externalIds: { orcid } } : {}) };
-}
-
-/** Whether the reader follows any author of a card. */
-export function followsAnyAuthor(authors: Paper['authors'] | undefined, isFollowing: (entity: FollowInput) => boolean) {
-  return (authors || []).some(author => isFollowing(authorFollowProbe(author)));
-}
 
 /**
  * The reasons a card is among the reader's follows: one entry per follow type

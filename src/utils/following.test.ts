@@ -340,11 +340,6 @@ test('two institutions with different ids and one name are two follows', () => {
   assert.deepEqual(afterFirstAgain.next.map(follow => follow.canonicalId), ['I222']);
 });
 
-test('two authors with different ids and one name are two follows', () => {
-  const followed = [createFollowEntity({ type: 'author', id: 'A1', displayName: 'Wei Zhang' })!];
-  assert.equal(followsEntity(followed, { type: 'author', id: 'A2', displayName: 'Wei Zhang' }), false);
-});
-
 test('an institution is the same follow under its OpenAlex id and its ROR id', () => {
   const followed = [createFollowEntity({ type: 'institution', id: 'I111', displayName: 'University of Oxford', externalIds: { ror: 'https://ror.org/052gg0110' } })!];
   assert.equal(followsEntity(followed, { type: 'institution', id: '052gg0110', displayName: 'Oxford' }), true);
@@ -375,13 +370,7 @@ test('an OpenAlex-id follow is recognised by a ROR-id control for the same name,
   assert.equal(followsEntity(stored, otherName), false, 'the name still has to agree when no id can');
 });
 
-test('the same holds for an author followed by OpenAlex id and met by ORCID iD', () => {
-  const stored = [createFollowEntity({ type: 'author', id: 'A5023888391', displayName: 'Josiah Carberry' })!];
-  assert.equal(followsEntity(stored, { type: 'author', id: '0000-0002-1825-0097', displayName: 'Josiah Carberry' }), true);
-  assert.equal(followsEntity(stored, { type: 'author', id: '0000-0002-1825-0097', displayName: 'Someone Else' }), false);
-});
-
-test('two institutions or authors with different ids in one namespace stay two follows, whichever namespace', () => {
+test('two institutions with different ids in one namespace stay two follows, whichever namespace', () => {
   const rorOnly = [createFollowEntity({ type: 'institution', id: '02f40zc51', displayName: 'Institute of Physics' })!];
   assert.equal(followsEntity(rorOnly, { type: 'institution', id: '01ggx4157', displayName: 'Institute of Physics' }), false);
   const toggled = planFollowToggle(rorOnly, createFollowEntity({ type: 'institution', id: '01ggx4157', displayName: 'Institute of Physics' })!, { list: 'listed' });
@@ -403,4 +392,25 @@ test('a control with an OpenAlex id and a ROR id meets a follow by whichever id 
   assert.equal(followsEntity([byRor], control), true);
   const toggled = planFollowToggle([byOpenAlex, byRor], createFollowEntity(control)!, { list: 'listed' });
   assert.deepEqual(toggled.next.map(follow => follow.canonicalId), ['I1'], 'only the follow that agrees is removed');
+});
+
+// OpenAlex splits one person across several author ids, so authors keep
+// matching as they did before ENG-123: by id, then by normalized name.
+test('authors are matched by id, then by name, whatever other ids they carry', () => {
+  const stored = [createFollowEntity({ type: 'author', id: 'A1', displayName: 'Josiah Carberry', externalIds: { orcid: '0000-0002-1825-0097' } })!];
+
+  // The reader's profile of a card author: an OpenAlex id of its own, no ORCID.
+  const profile = { type: 'author' as const, id: 'A2', displayName: 'Josiah Carberry' };
+  assert.equal(followsEntity(stored, profile), true);
+  const toggled = planFollowToggle(stored, createFollowEntity(profile)!, { list: 'listed' });
+  assert.equal(toggled.existing?.canonicalId, 'A1');
+  assert.deepEqual(toggled.next, [], 'unfollowed, with no second author added');
+
+  // The card's author: the same ORCID, or none, beside another OpenAlex id.
+  assert.equal(followsEntity(stored, { ...profile, name: 'Josiah Carberry', externalIds: { orcid: '0000-0002-1825-0097' } }), true);
+  assert.equal(followsEntity(stored, { type: 'author', id: 'https://openalex.org/A2', name: 'Josiah Carberry' }), true);
+  // A shared id still settles it, and another name does not match.
+  assert.equal(followsEntity(stored, { type: 'author', id: 'https://openalex.org/A1', name: 'Someone Else' }), true);
+  assert.equal(followsEntity(stored, { type: 'author', id: 'A2', name: 'Someone Else' }), false);
+  assert.equal(followsEntity(stored, { type: 'author', id: '0000-0002-1825-0097', name: 'Someone Else' }), false);
 });

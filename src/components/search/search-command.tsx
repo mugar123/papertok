@@ -321,7 +321,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
           <span className="sc-meta">
             {getLocalizedInstitutionName(author.institutionData || { display_name: author.institution })}
           </span>
-          {renderFollow({ type: 'author', id: author.id, name: author.display_name, externalIds: { orcid: author.orcid } })}
+          {renderFollow({ type: 'author', id: author.id, name: author.display_name })}
         </CommandItem>
       );
     }),
