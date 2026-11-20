@@ -313,10 +313,8 @@ function AppContent() {
     return () => clearTimeout(timer)
   }, [sessionUid])
 
-  // Not held for the idle prefetch above: a reader opened in the first seconds
-  // would still grow its uses pill late. One small request per session.
   useEffect(() => {
-    if (sessionUid) primeAIUses(sessionUid)
+    if (sessionUid) return primeAIUses(sessionUid)
   }, [sessionUid])
 
   // The href stays for assistive technology; the click is handled here rather
