@@ -288,7 +288,8 @@ function relay(t: import('node:test').TestContext, answer: (url: URL) => unknown
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     urls.push(url);
-    return Response.json(answer(url));
+    const body = answer(url);
+    return body instanceof Response ? body : Response.json(body);
   });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
   t.after(() => {
@@ -300,6 +301,17 @@ function relay(t: import('node:test').TestContext, answer: (url: URL) => unknown
   return { urls, env };
 }
 const filtersOf = (url: URL) => url.searchParams.get('filter')!.split(',');
+
+test('an Atom error entry leaves the arXiv corpus lane unharvested', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 3, 0, 0, 3) });
+  const xml = readFileSync(new URL('./test-support/arxiv-error.xml', import.meta.url), 'utf8');
+  const { urls, env } = relay(t, () => new Response(xml));
+  const { db, binding } = testD1();
+  const job = { source: 'arxiv-search', lane: 'author-name:Example' } as const;
+  await assert.rejects(harvestLane({ ...env, PAPER_STORE: binding }, job), /arXiv API error/);
+  assert.deepEqual(db.prepare('SELECT harvested_through FROM lane_state WHERE source = ? AND lane = ?').all(job.source, job.lane), []);
+  assert.equal(urls.length, 1);
+});
 // What a keyword lane's request searches titles and abstracts for.
 const keywordSearchOf = (url: URL) => filtersOf(url).find(filter => filter.startsWith('title_and_abstract.search:'));
 
