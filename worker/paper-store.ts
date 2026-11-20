@@ -16,7 +16,7 @@ import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 import { entityLane, servedFollows } from '../src/utils/follow-lanes.ts';
 import { FOLLOWED_JOURNAL_WORK_TYPES } from '../src/utils/following.ts';
-import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
+import { ARXIV_FEED_AREAS, isArxivCategory } from '../src/services/arxiv-records.ts';
 import { MAX_LIMIT as LEDGER_MAX_LIMIT, reserveRequestQuota } from './request-quota-ledger.ts';
 import { isKeywordLane } from './keyword-lanes.ts';
 
@@ -451,7 +451,13 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
   // The article is the merge base, so the row's own enrichments (an abstract
   // from Semantic Scholar) keep their credit only through this list.
   const enrichedBy = [...new Set([...(row.sources?.enrichedBy ?? []), ...merged.sources.enrichedBy])];
-  return storedPaper({ ...merged, id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
+  // `merge` takes categories only from an arXiv record, so arXiv categories on
+  // this OpenAlex row came from an eprint merged into it, and the article's
+  // concept names must not replace them (ENG-205).
+  const arxivCategories = row.categories?.length && row.categories.every(isArxivCategory)
+    ? { primaryCategory: row.primaryCategory, categories: row.categories, allCategories: row.allCategories }
+    : {};
+  return storedPaper({ ...merged, ...arxivCategories, id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
 }
 
 /**
