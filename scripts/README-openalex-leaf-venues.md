@@ -80,7 +80,9 @@ the upgrade is a step of its own (`upgradeWorkingPapers` in
 the batch, it reads the row that record was filed under, by the article's work
 id or DOI. When that row is a working-paper row OpenAlex started, the row
 becomes the journal's reviewed row: it takes the article's DOI, landing page,
-title, abstract, venue and date, drops the Working paper tag, keeps the working
+title, abstract, venue, topics, primary topic, type and date (the working
+paper's topics fill only what the article lists none of, ENG-165), drops the
+Working paper tag, keeps the working
 paper's `false` under its own DOI, and keeps the id readers liked or saved it
 under. The same write moves the row's date in every lane it holds, so the
 newest-first feed orders it by the article's date. It also files the row under
