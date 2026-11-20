@@ -10,10 +10,13 @@ import {
   getRewritablePdfUrl,
   lastKnownAIUses,
   PaperRewriteError,
+  noteAIUsesLeft,
   rememberAIUses,
   rewriteCacheKey,
   rewriteKeeping,
   rewritePaper,
+  settleAIUsesRead,
+  subscribeAIUses,
   toRewriteError,
 } from './paper-rewrite-service.ts';
 import { WorkerApiAuthError } from './worker-api-client.ts';
@@ -293,4 +296,46 @@ test('each account keeps its own remembered count, and an account change forgets
   clearRewriteCache();
   assert.equal(lastKnownAIUses('uid-c'), null);
   assert.equal(lastKnownAIUses('uid-d'), null);
+});
+
+const RESET_AT = '2026-11-21T00:00:00.000Z';
+
+test('a refund is shown even when another read already added the reset time to the count', () => {
+  clearRewriteCache();
+  rememberAIUses('uid-e', { remainingUses: 1, dailyLimit: 10 });
+  const staleRead = lastKnownAIUses('uid-e');
+  noteAIUsesLeft('uid-e', 0);
+  const refundRead = lastKnownAIUses('uid-e');
+
+  // The read that started before the use cannot give the use back.
+  settleAIUsesRead('uid-e', staleRead, { remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  assert.equal(lastKnownAIUses('uid-e')?.remainingUses, 0);
+
+  // The read that started after the failed use confirms the refund.
+  settleAIUsesRead('uid-e', refundRead, { remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  assert.equal(lastKnownAIUses('uid-e')?.remainingUses, 1);
+});
+
+test('a read that started before a use cannot undo it, whichever order the reads answer in', () => {
+  clearRewriteCache();
+  rememberAIUses('uid-f', { remainingUses: 1, dailyLimit: 10 });
+  const staleRead = lastKnownAIUses('uid-f');
+  noteAIUsesLeft('uid-f', 0);
+  const refundRead = lastKnownAIUses('uid-f');
+  settleAIUsesRead('uid-f', refundRead, { remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  settleAIUsesRead('uid-f', staleRead, { remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  noteAIUsesLeft('uid-f', 0);
+  settleAIUsesRead('uid-f', staleRead, { remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  assert.equal(lastKnownAIUses('uid-f')?.remainingUses, 0);
+});
+
+test('a use reported by an explanation reaches everything that shows the count', () => {
+  clearRewriteCache();
+  rememberAIUses('uid-g', { remainingUses: 10, dailyLimit: 10, resetAt: RESET_AT });
+  let notified = 0;
+  const stop = subscribeAIUses(() => { notified += 1; });
+  noteAIUsesLeft('uid-g', 9);
+  stop();
+  assert.deepEqual(lastKnownAIUses('uid-g'), { remainingUses: 9, dailyLimit: 10, resetAt: RESET_AT });
+  assert.equal(notified, 1);
 });

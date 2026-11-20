@@ -32,7 +32,7 @@ import {
   PAPER_REWRITE_LEVELS,
   PaperRewriteError,
   rewriteCacheKey,
-  rememberAIUses,
+  noteAIUsesLeft,
   subscribeAIUses,
   rewritePaper,
 } from '../../services/paper-rewrite-service.ts';
@@ -397,11 +397,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    */
   const [seededQuota] = useState(() => lastKnownAIUses(uid));
   const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(uid));
-  const noteQuota = useCallback((remainingUses: number) => {
-    if (!uid) return;
-    const current = lastKnownAIUses(uid);
-    rememberAIUses(uid, { ...current, dailyLimit: current?.dailyLimit ?? null, remainingUses });
-  }, [uid]);
   const [stage, setStage] = useState('source');
   const abortRef = useRef<AbortController | null>(null);
   // The reader's own scroll container, so a touch selection outside it (e.g.
@@ -523,9 +518,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
           // The reservation has already happened by the time this arrives, so it
           // is the freshest count there is — fresher than what the reader asked
           // for when it opened.
-          if (typeof nextMeta.remainingUses === 'number') {
-            noteQuota(nextMeta.remainingUses);
-          }
+          if (uid && typeof nextMeta.remainingUses === 'number') noteAIUsesLeft(uid, nextMeta.remainingUses);
         },
         // `reveal` is what separates a section that was just written from one
         // that was already there. Only the fresh one gets the wipe; a cached
@@ -575,7 +568,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       // is nothing to refund.
       if (requested && uid) void refreshAIUses(uid, controller.signal);
     }
-  }, [noteQuota, paper, trackEvent, uid]);
+  }, [paper, trackEvent, uid]);
 
   useEffect(() => {
     // The two ways the PDF can change are not the same thing. Going from no
@@ -694,7 +687,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     paperId,
     level,
     language: 'en',
-    onQuota: noteQuota,
     trackEvent,
   });
 

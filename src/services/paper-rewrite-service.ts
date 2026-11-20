@@ -175,15 +175,35 @@ export function rememberAIUses(uid: string, uses: AIUses | null) {
   quotaChanges.dispatchEvent(new Event('change'));
 }
 
+/**
+ * Puts the answer of one read of the count into the shared state.
+ *
+ * `before` is what was known when the read started. A read that started at the
+ * count still standing may replace it, refund included. A use spent since the
+ * read started makes it stale, so it can only add what the use did not bring
+ * (the limit and reset time). The counter, not the object, says whether a use
+ * happened: metadata arriving from another read replaces the object and must
+ * not make a later, correct read look stale.
+ */
+export function settleAIUsesRead(uid: string, before: AIUses | null, fresh: AIUses | null) {
+  const current = lastKnownAIUses(uid);
+  if (before?.remainingUses === current?.remainingUses) rememberAIUses(uid, fresh);
+  else if (current && !current.resetAt && fresh) {
+    rememberAIUses(uid, { ...fresh, remainingUses: current.remainingUses });
+  }
+}
+
+/** Records the count a use reported, for every card and reader that shows it. */
+export function noteAIUsesLeft(uid: string, remainingUses: number) {
+  const current = lastKnownAIUses(uid);
+  rememberAIUses(uid, { ...current, dailyLimit: current?.dailyLimit ?? null, remainingUses });
+}
+
 export async function refreshAIUses(uid: string, signal: AbortSignal) {
   const before = lastKnownAIUses(uid);
   const fresh = await fetchRemainingAIUses({ signal });
   if (signal.aborted || !navigator.onLine) return;
-  const current = lastKnownAIUses(uid);
-  if (before === current) rememberAIUses(uid, fresh);
-  else if (current && !current.resetAt && fresh) {
-    rememberAIUses(uid, { ...fresh, remainingUses: current.remainingUses });
-  }
+  settleAIUsesRead(uid, before, fresh);
 }
 
 export function primeAIUses(uid: string) {
