@@ -12,6 +12,8 @@ import { followName, followRefusal, refusalShownTo, sayFollowRefused } from '../
 import { ABOUT_INSTITUTION_LIMIT, aboutFollowTargets } from './about-follow-targets.ts';
 import './about-follows.css';
 
+type Section = 'journal' | 'institution';
+
 type AboutFollowsProps = {
   paper: Paper;
   // A guest's press asks for an account.
@@ -34,7 +36,7 @@ export function AboutFollows({ paper, onAuthRequired, onOpenSettings }: AboutFol
   const [announcement, setAnnouncement] = useState('');
   // Said in the panel, under the section pressed, not as a toast: the panel is a modal layer, and a
   // toast sits outside its focus trap. A press that settles after the panel closed is a toast.
-  const [refusal, setRefusal] = useState<RefusalLine<FollowRefusal & { type: FollowInput['type'] }> | null>(null);
+  const [refusal, setRefusal] = useState<RefusalLine<FollowRefusal & { section: Section }> | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -42,7 +44,7 @@ export function AboutFollows({ paper, onAuthRequired, onOpenSettings }: AboutFol
   }, []);
   if (!journal && institutions.length === 0) return null;
 
-  const press = (event: MouseEvent, entity: FollowInput) => {
+  const press = (event: MouseEvent, entity: FollowInput, section: Section) => {
     if (!user) {
       onAuthRequired();
       return;
@@ -58,18 +60,18 @@ export function AboutFollows({ paper, onAuthRequired, onOpenSettings }: AboutFol
       (nowFollowing) => setAnnouncement(nowFollowing ? `Following ${name}` : `Unfollowed ${name}`),
       (error: unknown) => sayFollowRefused(
         followRefusal(error, { name, following, openSettings: () => onOpenSettings(inReader) }),
-        { inView: () => mounted.current, showInLine: refused => setRefusal({ uid, refused: { ...refused, type: entity.type! } }), startedAt },
+        { inView: () => mounted.current, showInLine: refused => setRefusal({ uid, refused: { ...refused, section } }), startedAt },
       ),
     );
   };
   const refused = refusalShownTo(refusal, user?.uid);
-  const refusalLine = (type: FollowInput['type']) => refused?.type === type && (
+  const refusalLine = (section: Section) => refused?.section === section && (
     <p className="pc-follow-refusal" role="alert">
       {refused.message}
       {refused.action && <Button variant="outline" size="sm" onClick={refused.action.onClick}>{refused.action.label}</Button>}
     </p>
   );
-  const row = (entity: FollowInput) => {
+  const row = (entity: FollowInput, section: Section) => {
     const name = followName(entity);
     return (
       <li key={`${entity.type}:${entity.id}`} className="pc-follow-row">
@@ -77,7 +79,7 @@ export function AboutFollows({ paper, onAuthRequired, onOpenSettings }: AboutFol
         <FollowToggle
           pressed={isFollowing(entity)}
           pending={isFollowPending(entity)}
-          onClick={(event) => press(event, entity)}
+          onClick={(event) => press(event, entity, section)}
           followLabel={`Follow ${name}`}
           followingLabel={`Following ${name}`}
         />
@@ -90,14 +92,14 @@ export function AboutFollows({ paper, onAuthRequired, onOpenSettings }: AboutFol
       {journal && (
         <section className="pc-about-section">
           <h3 className="pc-about-heading">Journal</h3>
-          <ul className="pc-follow-list">{row(journal)}</ul>
+          <ul className="pc-follow-list">{row(journal, 'journal')}</ul>
           {refusalLine('journal')}
         </section>
       )}
       {institutions.length > 0 && (
         <section className="pc-about-section">
           <h3 className="pc-about-heading">Institutions</h3>
-          <ul className="pc-follow-list">{shown.map(row)}</ul>
+          <ul className="pc-follow-list">{shown.map(entity => row(entity, 'institution'))}</ul>
           {refusalLine('institution')}
           {institutions.length > ABOUT_INSTITUTION_LIMIT && (
             <Button
