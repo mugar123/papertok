@@ -571,7 +571,10 @@ arrow above the title, with the reading time under the title when the paper's
 text can be read and the paper's links (DOI, code, data) to its right; below
 come the status chips, topics and funding that are not on the card face;
 topics and funding are ruled rows, the field's rule in its ink and its topics'
-in a lighter one. Its heading and sections come in from the right one after
+in a lighter one. The journal OpenAlex identifies and the institutions of the authors that
+carry a verified id come as ruled rows, each name with the Follow control (the
+first five institutions, then `Show all`); a paper with neither has no such
+section. Its heading and sections come in from the right one after
 another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
@@ -583,7 +586,7 @@ notes are the full-text reader's notes panel and its selection opens the same
 highlight editor, whose second way out is Explain this to me.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
-institution, project, topic or journal can be followed: the Explorer header, beside a
+institution, project, topic or journal can be followed: a row of About this paper, the Explorer header, beside a
 Share glyph drawn the same way in the neutral rail, and search results. It is
 an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
 40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press

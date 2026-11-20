@@ -228,6 +228,9 @@ const VERIFIED_FOLLOW_ID: Partial<Record<FollowEntity['type'], (id: string) => b
   topic: id => /^[TC]\d+$/.test(id) || CATEGORY_IDS.has(id) || getAreaLeaves(id) !== null,
 };
 
+/** Whether `id` is a provider id the type's follow is known by (not a name or address-bar text). */
+export const isVerifiedFollowId = (type: FollowEntity['type'], id: string) => Boolean(VERIFIED_FOLLOW_ID[type]?.(id));
+
 /**
  * The `follow_change` event of a press that followed or unfollowed `entity`.
  * Which journals a reader follows stays out of analytics, detailed analytics
@@ -239,7 +242,7 @@ export function followChangeEvent(entity: FollowEntity, wasFollowing: boolean) {
     entity_type: entity.type,
     action: wasFollowing ? 'remove' : 'add',
     surface: 'other',
-    entity_id: VERIFIED_FOLLOW_ID[entity.type]?.(entity.canonicalId) ? entity.canonicalId : undefined,
+    entity_id: isVerifiedFollowId(entity.type, entity.canonicalId) ? entity.canonicalId : undefined,
   };
 }
 
