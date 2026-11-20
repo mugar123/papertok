@@ -133,8 +133,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  'With a verified email, your saves count by default. PaperTok links your account to each paper you save once per UTC week.',
-  'Turn this off in Settings → Privacy to exclude future saves.',
+  'With a verified email, your saves count by default and PaperTok links your account to each paper you save once per UTC week. Turn this off in Settings → Privacy to exclude future saves.',
+  'With usage analytics on, PaperTok links survey events to your account, including your reading level and broad areas of interest when available. Submitting the survey records your answers, including your role if you chose one.',
+  'My profile lists recent papers that cite your work and your frequent coauthors. PaperTok keeps neither list.',
 ];
 
 /**
@@ -152,8 +153,16 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['With a verified email, your saves count by default', /With a verified email, your saves count by default/],
     ['PaperTok links your account to each paper you save once per UTC week', /PaperTok links your account to each paper you save once per UTC week/],
     ['Turn this off in Settings → Privacy to exclude future saves', /Turn this off in Settings → Privacy to exclude future saves/],
+    ['With usage analytics on, PaperTok links survey events to your account', /With usage analytics on, PaperTok links survey events to your account/],
+    ['your reading level and broad areas of interest when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
+    ['Submitting the survey records your answers, including your role if you chose one', /Submitting the survey records your answers, including your role if you chose one/],
+    ['recent papers that cite your work', /papers from the last 12 months that cite your publications/],
+    ['your frequent coauthors', /coauthors you share two or more of those works with/],
+    ['PaperTok keeps neither list', /PaperTok keeps neither list/],
   ],
   unsaid: [
+    [/anonymous/i, 'survey events are linked to the signed-in account'],
+    [/required role/i, 'readers can skip the role question'],
     [/authors can see|published totals/i, 'this release only collects contributions'],
   ],
 };
