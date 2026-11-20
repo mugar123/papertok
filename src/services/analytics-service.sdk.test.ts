@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { gunzipSync } from 'node:zlib';
 import type { PostHog } from 'posthog-js';
-import { ANALYTICS_CONSENT, sanitizeAnalyticsCapture, startAnalyticsClient } from './analytics-service.ts';
+import { ANALYTICS_CONSENT, sanitizeAnalyticsCapture, setAnalyticsConsent, startAnalyticsClient, trackBeforeProfileLoad, trackProductEvent } from './analytics-service.ts';
 
 /*
  * The installed posthog-js, started with the app's own options, in a browser
@@ -47,6 +47,7 @@ const browserGlobals = {
   navigator: {
     get userAgent() { return browser.userAgent; },
     get webdriver() { return browser.webdriver; },
+    locks: { request: async (_key: string, capture: () => boolean) => capture() },
     language: 'en-GB',
     languages: ['en-GB'],
     onLine: true,
@@ -149,4 +150,35 @@ test('the SDK still drops a webdriver or headless browser before the app\'s filt
   } finally {
     desktop.config.before_send = filter;
   }
+});
+
+test('feed engagement samples the first provisional action in each session and preserves card summaries', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const batches = [];
+  const signedIn = () => true;
+  await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED);
+  assert.equal(await trackBeforeProfileLoad({ kind: 'read' }, false, signedIn), false);
+  await setAnalyticsConsent(ANALYTICS_CONSENT.ENABLED);
+  for (const kind of ['like', 'save', 'read'] as const) {
+    const action = { kind };
+    assert.equal(await trackBeforeProfileLoad(action, true, signedIn), false);
+    assert.equal(await trackBeforeProfileLoad(action, false, () => false), false);
+    assert.equal(await trackBeforeProfileLoad({ kind, restores: true }, false, signedIn), false);
+    for (const undo of ['unlike', 'unsave', 'unread', 'undoNotInterested'] as const) {
+      assert.equal(await trackBeforeProfileLoad({ kind: undo }, false, signedIn), false);
+    }
+    const sample = () => trackBeforeProfileLoad(action, false, signedIn);
+    assert.deepEqual(await Promise.all([sample(), sample()]), [true, false]);
+    batches.push(...await leavePage());
+    t.mock.timers.tick(31 * 60 * 1000);
+  }
+  const summary = { cards: 20, skips: 2, deep_reads: 4, likes: 1, saves: 0 };
+  assert.equal(await trackProductEvent('feed_engagement', summary), true);
+  batches.push(...await leavePage());
+  const payloads = batches.flatMap(({ text }) => {
+    const batch = (JSON.parse(text) as { batch: Array<{ event: string; properties: Record<string, unknown> }> }).batch;
+    return batch.filter(row => row.event === 'feed_engagement').map(row =>
+      Object.fromEntries(Object.entries(row.properties).filter(([key]) => key in summary || key === 'before_profile_load')));
+  });
+  assert.deepEqual(payloads, [...Array.from({ length: 3 }, () => ({ before_profile_load: true })), summary]);
 });

@@ -30,7 +30,8 @@ export interface EuropePmcRecord {
 
 import { safeCatalogUrl } from './external-url.ts';
 import { orderMeshDescriptors } from './mesh-check-tags.ts';
-import { isRetractedPublication } from './medline-record.ts';
+import { isRetractedPublication, medlineStudyType } from './medline-record.ts';
+import { trialRegistrationFromAbstract } from '../models/paper-evidence.ts';
 
 // `OA` is open access; `F` is free full text. Both mean the reader can open it,
 // which is the only question either caller is asking.
@@ -141,12 +142,17 @@ export function mapEuropePmcRecord(raw: EuropePmcRecord | null | undefined) {
   const pdfUrl = safeCatalogUrl(openUrls.find(item => item?.documentStyle === 'pdf')?.url);
   const pmcid = String(raw?.pmcid || '').trim();
   const terms = uniqueTerms([...meshDescriptors(raw), ...(raw?.keywordList?.keyword || [])]);
+  const abstract = stripMarkup(raw?.abstractText);
+  const studyType = medlineStudyType(raw?.pubTypeList?.pubType);
+  const trialRegistration = trialRegistrationFromAbstract(abstract);
 
   return {
     pmid: String(raw?.pmid || '').trim(),
     providerId: String(raw?.id || '').trim(),
     pmcid,
-    abstract: stripMarkup(raw?.abstractText),
+    abstract,
+    ...(studyType && { studyType }),
+    ...(trialRegistration && { trialRegistration }),
     authors: recordAuthors(raw),
     terms,
     openAccess: declaredOpen || openUrls.length > 0,

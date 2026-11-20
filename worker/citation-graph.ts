@@ -18,7 +18,7 @@ import {
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publication-status.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
-import { addOpenAlexCredentials, fetchOpenAlexJsonWithFallback } from './openalex-api.ts';
+import { addOpenAlexCredentials, fetchOpenAlexJsonWithFallback, openAlexCitingWorksUrl } from './openalex-api.ts';
 import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonWithTimeout, getSafeLimit, OPENALEX_CALLS } from './provider-runtime.ts';
 
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
@@ -204,9 +204,7 @@ async function resolveCitationConnections(connections: CitationConnection[], env
 
 async function fetchOpenAlexCitingWorks(openAlexId: string | undefined, env: WorkerEnv, limit: number) {
   if (!openAlexId) return [];
-  const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
-  url.searchParams.set('filter', `cites:${openAlexId}`);
-  url.searchParams.set('sort', 'publication_date:desc');
+  const url = openAlexCitingWorksUrl([openAlexId], env);
   url.searchParams.set('per-page', String(Math.min(40, limit * 4)));
   url.searchParams.set('select', CITATION_GRAPH_OPENALEX_SELECT);
   const payload = await fetchOpenAlexJsonWithFallback<{ results?: OpenAlexWork[] }>(url, env, 7500);

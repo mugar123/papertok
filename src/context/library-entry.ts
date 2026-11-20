@@ -1,34 +1,50 @@
 import type { Paper } from '../models/paper.ts';
 
-import { withRetractionOf } from '../models/paper.ts';
+import { withJournalOf, withPublicationEvidenceOf } from '../models/paper.ts';
 import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 
+// A like or save may settle after a read, note or Read later change has replaced the entry's paper.
+const localPaperWrite = Symbol('localPaperWrite');
+
 export interface LibraryEntry {
+  [localPaperWrite]?: symbol;
   paperId: string; paper: Partial<Paper>; readLater?: boolean; readAt?: string | number | null;
   note?: string; tags?: string[]; updatedAt?: string | number | null;
 }
 
 type Library = Record<string, LibraryEntry>;
+export type LibraryState = {
+  personalLibrary: Library;
+  libraryPapers: Record<string, Partial<Paper>>;
+};
 
 /**
  * Apply updates in call order, then give React the resulting snapshots.
  * A write answer needs the result before the next render, and React can
  * replay a state updater, so the caller handles effects after this returns.
  */
-export function createLibraryUpdater(publish: (library: Library) => void) {
-  let current: Library = {};
-  return (update: Library | ((library: Library) => Library)): boolean => {
+export function createLibraryUpdater(publish: (state: LibraryState) => void) {
+  let current: LibraryState = { personalLibrary: {}, libraryPapers: {} };
+  const setLibraryState = (update: LibraryState | ((state: LibraryState) => LibraryState)): boolean => {
     const next = typeof update === 'function' ? update(current) : update;
     if (next === current) return false;
     current = next;
     publish(next);
     return true;
   };
+  return {
+    getLibraryState: () => current,
+    setLibraryState,
+    setPersonalLibrary: (update: (entries: Library) => Library) => setLibraryState(state => {
+      const personalLibrary = update(state.personalLibrary);
+      return personalLibrary === state.personalLibrary ? state : { ...state, personalLibrary };
+    }),
+  };
 }
 
-/** `copy` with a retraction the entry's copy or `loaded` records; `copy` itself when neither adds one. */
-const keepingRetraction = (copy: Partial<Paper>, entry: LibraryEntry | undefined, loaded: Partial<Paper> | undefined) => (
-  withRetractionOf(withRetractionOf(copy, entry?.paper), loaded)
+/** Keep evidence from the existing entry and the loaded interaction. */
+const keepingPublicationEvidence = (copy: Partial<Paper>, entry: LibraryEntry | undefined, loaded: Partial<Paper> | undefined) => (
+  withPublicationEvidenceOf(withPublicationEvidenceOf(copy, entry?.paper), loaded)
 );
 
 /**
@@ -48,7 +64,7 @@ export function withLibraryCopy(
   loaded?: Partial<Paper>,
 ) {
   const entry = library[paperId];
-  return { ...library, [paperId]: { ...entry, ...fields, paperId, paper: keepingRetraction(copy, entry, loaded) } };
+  return { ...library, [paperId]: { ...entry, ...fields, paperId, [localPaperWrite]: Symbol(), paper: keepingPublicationEvidence(copy, entry, loaded) } };
 }
 
 /**
@@ -69,7 +85,7 @@ export function readLaterChange(
     loaded?: Partial<Paper>;
   },
 ) {
-  const stamped = { paper: keepingRetraction(copy, previous, loaded), updatedAt };
+  const stamped = { paper: keepingPublicationEvidence(copy, previous, loaded), updatedAt };
   return {
     show: (library: Record<string, LibraryEntry>) => {
       const stamp = readLaterStamp(library[paperId], previous, stamped, { late });
@@ -79,28 +95,20 @@ export function readLaterChange(
   };
 }
 
-/*
- * A like or a save writes `copy` as the paper's interaction copy and rewrites
- * no library entry. A retraction `copy` records is now stored, so the two
- * helpers below add it to what the library holds in memory, as its next load
- * would hold it (ENG-84): a later mark from a card without the retraction
- * keeps it through `withLibraryCopy`, and the lists show it. Each returns its
- * input itself when `copy` adds nothing.
- */
-
-/** The library with the retraction `copy` records on the paper's entry, if it has one. */
-export function libraryWithRetractionOf(library: Record<string, LibraryEntry>, paperId: string, copy: Partial<Paper>) {
+/** A like or save updates the interaction copy without changing the entry's marks. */
+export function libraryAfterInteraction(library: Record<string, LibraryEntry>, paperId: string, copy: Partial<Paper>, beforeWrite?: LibraryEntry) {
   const entry = library[paperId];
-  return entry && copy.publicationStatus === 'retracted' && entry.paper.publicationStatus !== 'retracted'
-    ? { ...library, [paperId]: { ...entry, paper: withRetractionOf(entry.paper, copy) } }
-    : library;
+  if (!entry) return library;
+  const kept = withPublicationEvidenceOf(entry.paper, copy);
+  const laterMark = entry[localPaperWrite] !== beforeWrite?.[localPaperWrite];
+  const paper = laterMark ? kept : withJournalOf(kept, copy);
+  return paper === entry.paper ? library : { ...library, [paperId]: { ...entry, paper } };
 }
 
-/** The loaded interaction copies with `copy`'s retraction, or with `copy` when none was loaded. */
-export function loadedWithRetractionOf(papers: Record<string, Partial<Paper>>, paperId: string, copy: Partial<Paper>) {
+export function loadedAfterInteraction(papers: Record<string, Partial<Paper>>, paperId: string, copy: Partial<Paper>) {
   const known = papers[paperId];
-  if (copy.publicationStatus !== 'retracted' || known?.publicationStatus === 'retracted') return papers;
-  return { ...papers, [paperId]: known ? withRetractionOf(known, copy) : copy };
+  const paper = known ? withJournalOf(withPublicationEvidenceOf(known, copy), copy) : copy;
+  return paper === known ? papers : { ...papers, [paperId]: paper };
 }
 
 /*
@@ -116,18 +124,43 @@ export function libraryAfterLoad(
   entries: Record<string, LibraryEntry>,
   papers: Record<string, Partial<Paper>>,
 ) {
-  return Object.entries(current).reduce(
-    (next, [id, entry]) => withLibraryCopy(next, id, entry.paper, {}, papers[id] ?? entries[id]?.paper),
-    { ...entries, ...current },
-  );
+  const next = { ...entries, ...current };
+  for (const [id, entry] of Object.entries(current)) {
+    const paper = withPublicationEvidenceOf(entry.paper, papers[id] ?? entries[id]?.paper);
+    if (paper !== entry.paper) next[id] = { ...entry, paper };
+  }
+  return next;
 }
 
 /** The loaded interaction copies after a load. */
 export function loadedAfterLoad(current: Record<string, Partial<Paper>>, papers: Record<string, Partial<Paper>>) {
-  return Object.entries(papers).reduce(
-    (next, [id, copy]) => loadedWithRetractionOf(next, id, copy),
-    { ...papers, ...current },
-  );
+  const next = { ...papers };
+  for (const [id, copy] of Object.entries(current)) next[id] = withPublicationEvidenceOf(copy, papers[id]);
+  return next;
+}
+
+/** A server answer refreshes journals unless a local interaction replaced its copy during the read. */
+export function libraryAfterRead(
+  current: LibraryState, beforeRead: LibraryState, entries: LibraryState['personalLibrary'],
+  papers: LibraryState['libraryPapers'], fromCache: boolean,
+): LibraryState {
+  const personalLibrary = libraryAfterLoad(current.personalLibrary, entries, papers);
+  const libraryPapers = loadedAfterLoad(current.libraryPapers, papers);
+  const journalChanged = (copy: Partial<Paper>, before: Partial<Paper> | undefined) =>
+    !before || copy.journal !== before.journal || copy.venueId !== before.venueId || copy.sourceName !== before.sourceName;
+  for (const [id, stored] of Object.entries(papers)) {
+    const entry = current.personalLibrary[id]?.paper;
+    const loaded = current.libraryPapers[id];
+    let journal = stored;
+    if (loaded && (fromCache || journalChanged(loaded, beforeRead.libraryPapers[id]))) journal = loaded;
+    if (entry && (fromCache || journalChanged(entry, beforeRead.personalLibrary[id]?.paper))) journal = entry;
+    libraryPapers[id] = withJournalOf(libraryPapers[id], journal);
+    if (personalLibrary[id]) {
+      const paper = withJournalOf(personalLibrary[id].paper, journal);
+      if (paper !== personalLibrary[id].paper) personalLibrary[id] = { ...personalLibrary[id], paper };
+    }
+  }
+  return { personalLibrary, libraryPapers };
 }
 
 /**
@@ -138,5 +171,5 @@ export function loadedAfterLoad(current: Record<string, Partial<Paper>>, papers:
 export function libraryCopyOf(library: Record<string, LibraryEntry>, papers: Record<string, Partial<Paper>>, paperId: string) {
   const entryCopy = library[paperId]?.paper;
   const loaded = papers[paperId];
-  return loaded ? withRetractionOf(loaded, entryCopy) : entryCopy;
+  return loaded && entryCopy ? withJournalOf(withPublicationEvidenceOf(loaded, entryCopy), entryCopy) : loaded ?? entryCopy;
 }

@@ -1,4 +1,6 @@
 import type { Paper } from '../src/models/paper.ts';
+import { trialRegistrationFromAbstract, withPaperEvidenceOf } from '../src/models/paper-evidence.ts';
+import { withPublicationEvidenceOf } from '../src/models/paper.ts';
 import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 import type { EuropePmcRecord } from '../src/utils/europe-pmc-record.ts';
 import type { WorkerEnv } from './env.ts';
@@ -150,7 +152,10 @@ async function openAlexEnrichments(env: EnrichEnv, ids: string[]) {
       // and answer an arXiv id with both, the most cited first: a retracted
       // article's eprint record would otherwise hide the retraction.
       const keep = (key: string) => {
-        if (byId[key]?.publicationStatus !== 'retracted') byId[key] = mapped.enrichment;
+        const known = byId[key];
+        byId[key] = known?.publicationStatus === 'retracted'
+          ? withPaperEvidenceOf(known, mapped.enrichment)
+          : withPaperEvidenceOf(mapped.enrichment, known);
       };
       if (mapped.arxivId) keep(mapped.arxivId);
       const doi = normalizeDoi(work.doi || work.ids?.doi);
@@ -464,11 +469,11 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
     openAlexAnswered = false;
   }
   let enriched = mergeOpenAlexEnrichment(papers, openAlex);
-  // Set after the merge rather than merged as OpenAlex's record: a paper
-  // OpenAlex does not know by its arXiv id has had no OpenAlex enrichment, so
-  // it does not list OpenAlex in `sources.enrichedBy`, and it counts a miss.
-  enriched = enriched.map((paper, index): Paper => (journalDois[index] && paper.publicationStatus !== 'retracted'
-    && openAlex[`doi:${journalDois[index]}`]?.publicationStatus === 'retracted' ? { ...paper, publicationStatus: 'retracted' } : paper));
+  // The journal record adds evidence only. The arXiv lookup still determines
+  // whether OpenAlex found the eprint or the store should count a miss.
+  enriched = enriched.map((paper, index) => journalDois[index]
+    ? withPublicationEvidenceOf(paper, openAlex[`doi:${journalDois[index]}`])
+    : paper);
   // iCite is asked by the PubMed ids the papers were stored with; Europe PMC
   // also by the ones OpenAlex has just given, so their abstracts come in this pass.
   const pmids = [...new Set(papers.map(paper => paper.pmid).filter(Boolean) as string[])];
@@ -509,9 +514,11 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   // OpenAlex has just typed the work again, and with OpenAlex's type alone a
   // book would go back to its lanes. A refresh takes only Crossref's answer.
   enriched = enriched.map((paper, index) => {
-    if (paper.sources?.primary !== 'openalex') return withCrossrefType(paper, undefined);
+    const record = crossref.records.get(normalizeDoi(paper.doi));
+    const withRegistration = withPaperEvidenceOf(paper, { trialRegistration: trialRegistrationFromAbstract(record?.abstract) });
+    if (paper.sources?.primary !== 'openalex') return withCrossrefType(withRegistration, undefined);
     const kept = rows[index].kind === 'retry' && papers[index].sources.enrichedBy.includes('crossref') ? papers[index].publicationType : undefined;
-    return withCrossrefType(paper, crossref.records.get(normalizeDoi(paper.doi))?.type ?? kept);
+    return withCrossrefType(withRegistration, record?.type ?? kept);
   });
   enriched = mergeFeedAbstracts(enriched, [...crossref.records].flatMap(([doi, { abstract }]) => (abstract ? [{ doi, abstract, sources: { primary: 'crossref', enrichedBy: [] } }] : [])));
   const semanticScholarDois = recoverableAbstractDois(enriched).slice(0, S2_RECOVERY_BATCH);

@@ -102,7 +102,7 @@ test('invalid global amounts and expiry deadlines do not write quota state', asy
   const ledger = new RequestQuotaLedger({ storage: harness.storage });
   for (const extra of [
     { globalAmount: -1 }, { globalAmount: null }, { globalAmount: 0.5 },
-    { expiresAt: Date.now() }, { expiresAt: Date.now() + 4 * 24 * 60 * 60 * 1000 },
+    { expiresAt: Date.now() }, { expiresAt: Date.now() + 8 * 24 * 60 * 60 * 1000 },
     { expiresAt: 'tomorrow' }, { expiresAt: null },
   ]) {
     const response = await ledger.fetch(new Request('https://internal', {

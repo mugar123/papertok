@@ -1,4 +1,5 @@
 import type { Paper, PaperFollowMatch } from '../models/paper.ts';
+import { mergedPaperEvidence } from '../models/paper-evidence.ts';
 
 import { isPlaceholderAuthorName } from '../services/paper-builder.ts';
 
@@ -74,6 +75,7 @@ function mergeFollowingUpdatePaperRecords(current: Paper, paper: Paper, updateKe
   const merged: Paper = {
     ...current,
     ...paper,
+    ...mergedPaperEvidence(current, paper),
     id: current.id || paper.id,
     doi: current.doi || paper.doi,
     arxivId: current.arxivId || paper.arxivId,

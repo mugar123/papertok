@@ -250,6 +250,23 @@ test('a later copy that credits no one takes away the credit an earlier copy sto
   assert.deepEqual(shown(paperLegacyAdapter({ id: card.id, ...creditedLater })), [recovered, 'Abstract:', 'Semantic Scholar'], 'savedPapers document, credited again');
 });
 
+test('marking an abstract trial as read clears the previously saved trial source', () => {
+  const paper = { id: 'pmid:123', title: 'A clinical study' };
+  const indexed = { ...paper, trialRegistration: 'NCT04280705', trialRegistrationSource: 'pubmed-secondary-source' as const };
+  const saved = mergeIntoStored({}, { saved: true, paper: copyForMergeWrite(serializeLibraryPaper(indexed)) });
+  const writeRead = (copy: Partial<Paper>) => mergeIntoStored(saved, {
+    read: true, paper: copyForMergeWrite(serializeLibraryPaper(copy)),
+  }).paper as Partial<Paper>;
+
+  const thin = writeRead(paper);
+  assert.equal(thin.trialRegistration, 'NCT04280705');
+  assert.equal(thin.trialRegistrationSource, 'pubmed-secondary-source');
+
+  const replaced = writeRead({ ...paper, trialRegistration: 'NCT00000001' });
+  assert.equal(replaced.trialRegistration, 'NCT00000001');
+  assert.equal(Object.hasOwn(replaced, 'trialRegistrationSource'), false);
+});
+
 const paper = {
   id: 'paper-1',
   title: 'A useful result',

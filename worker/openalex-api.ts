@@ -105,6 +105,13 @@ export function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
   return url;
 }
 
+export function openAlexCitingWorksUrl(ids: string[], env: WorkerEnv) {
+  const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
+  url.searchParams.set('filter', `cites:${ids.join('|')}`);
+  url.searchParams.set('sort', 'publication_date:desc');
+  return url;
+}
+
 // Only a refusal of the key itself is worth asking again without it: a key that
 // was rejected or whose budget is spent. A 404 or an outage answers the same
 // without the key, and retrying a timeout doubled the wait.

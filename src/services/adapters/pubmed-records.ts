@@ -21,7 +21,8 @@ export interface PubmedResponse {
 
 import { CATEGORIES } from '../../data/category-taxonomy.ts';
 import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmed-efetch.ts';
-import { MONTHS, PROTOCOL_SERIES_ISSNS, isAfterToday, isProtocolBookSeries, isRetractedPublication } from '../../utils/medline-record.ts';
+import { MONTHS, PROTOCOL_SERIES_ISSNS, isAfterToday, isProtocolBookSeries, isRetractedPublication, medlineStudyType } from '../../utils/medline-record.ts';
+import { withPaperEvidenceOf } from '../../models/paper-evidence.ts';
 
 // PubMed's E-utilities payloads as the app's papers, for the browser's
 // adapter and the Worker's paper store alike: neither fetch path lives here.
@@ -261,6 +262,7 @@ export function mapPubmedSummary(raw: PubmedSummary, provider = 'pubmed'): Paper
     publicationStatus: isRetractedPublication(raw.pubtype) ? 'retracted' : 'published',
     // `book-series` is a venue `isFeedPublication` leaves out of the feed.
     publicationType: chapter ? 'book-chapter' : publicationTypeFromPubtype(raw.pubtype),
+    studyType: medlineStudyType(raw.pubtype),
     sourceType: chapter ? 'book-series' : undefined,
     openAccess: isOpenAccess,
     pdfUrl,
@@ -307,7 +309,7 @@ export function readPubmedPayload(
           paper.categories = enrichment.categories;
           paper.keywords = enrichment.categories;
         }
-        return paper;
+        return withPaperEvidenceOf(paper, enrichment);
       });
     }
   } catch (err) {

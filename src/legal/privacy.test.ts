@@ -151,28 +151,28 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('readers who saw an earlier November 20 notice are owed the cumulative revision 5 notice', () => {
-  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.5');
-  for (const version of ['2026-11-20', '2026-11-20.2', '2026-11-20.4']) {
+test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.9');
+  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6', '2026-11-20.7', '2026-11-20.8']) {
     assert.equal(privacyNoticeStatus({
       user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
       signedIn: true,
       version: PRIVACY_POLICY_VERSION,
       effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
       baseline: PRIVACY_NOTICE_BASELINE_VERSION,
-      account: { uid: 'reader', version },
+      account: { uid: 'reader', version: seen },
       storage: null,
-    }), 'owed', version);
+    }), 'owed', seen);
   }
-  const summary = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(summary, /Anthropic.*Claude.*explains and rewrites.*outside the EU/i);
-  assert.match(summary, /usage analytics on.*survey.*your account/i);
-  assert.match(summary, /reading level and broad interests when available/i);
-  assert.match(summary, /answers.*optional role/i);
-  assert.match(summary, /My profile.*papers citing your work.*frequent coauthors.*without storing either list/i);
-  assert.match(summary, /verified email.*saves count by default/i);
-  assert.match(summary, /your account to each saved paper once per UTC week/i);
-  assert.match(summary, /omit future saves in Settings → Privacy/i);
+  const notice = PRIVACY_POLICY_CHANGE.join(' ');
+  assert.match(notice, /Anthropic.*rewrites\/explanations outside the EU/i);
+  assert.match(notice, /Verified-email saves count per account\/paper\/UTC week.*opt out: Settings→Privacy/i);
+  assert.match(notice, /Analytics ties survey level\/broad interests\/answers\/optional role to accounts/i);
+  assert.match(notice, /Day 7–13 return marks stay local.*PostHog visits/i);
+  assert.match(notice, /Accounts keep Essential\/Curiosity priorities, mix and area levels/i);
+  assert.match(notice, /My profile suggests interests, listing recent citations\/coauthors unsaved/i);
+  assert.match(notice, /flags sessions with likes\/saves\/reads before profile load/i);
+  assert.match(notice, /Weekly citation mail uses ORCID on OpenAlex/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

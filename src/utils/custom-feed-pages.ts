@@ -6,6 +6,7 @@ import { corpusRequestOf, ingredientKey, type CustomFeed, type FeedIngredient } 
 import { SEMANTIC_PROFILE_POSITIVE_CAP } from './feed-interactions.ts';
 import { recentSeenIds } from './recent-feed-pages.ts';
 import { createSessionCache } from './session-cache.ts';
+import { mergeFeedEvidence } from '../models/paper-evidence.ts';
 
 // The pages a custom feed has been served, merged into one list, and the
 // decisions its page makes from them: what to ask the corpus for, whether the
@@ -23,7 +24,7 @@ export interface CustomFeedPages { papers: Paper[]; page: number; hasMore: boole
  * (`feedPageOf` for a custom feed): a page is merged, not judged, so the list
  * goes on past the papers left out. `loading` is the latest answer's.
  */
-export function mergeFeedPage(current: CustomFeedPages | null, incoming: { papers: Paper[]; hasMore: boolean; loading: LoadingFollow[] }, page: number): CustomFeedPages {
+export function mergeFeedPage(current: CustomFeedPages | null, incoming: { papers: Paper[]; receivedPapers?: Paper[]; hasMore: boolean; loading: LoadingFollow[] }, page: number): CustomFeedPages {
   const papers = page === 0 || !current ? [] : [...current.papers];
   const held = new Set(papers.map(paper => paper.id));
   for (const paper of incoming.papers) {
@@ -31,7 +32,7 @@ export function mergeFeedPage(current: CustomFeedPages | null, incoming: { paper
     held.add(paper.id);
     papers.push(paper);
   }
-  return { papers, page, hasMore: incoming.hasMore, loading: incoming.loading };
+  return { papers: mergeFeedEvidence(papers, incoming.receivedPapers ?? incoming.papers), page, hasMore: incoming.hasMore, loading: incoming.loading };
 }
 
 /**

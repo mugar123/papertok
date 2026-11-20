@@ -74,6 +74,8 @@ service cloud.firestore {
       return [
         'onboardingComplete',
         'preferences',
+        'interestMix',
+        'areaPreferences',
         'selectedCategories',
         // Subareas the reader removed from their interests; the feed keeps them out.
         'deselectedPreferences',
@@ -87,6 +89,36 @@ service cloud.firestore {
         // (src/context/EmailNotificationsContext.jsx). A bool, then deleted.
         'emailDigestOptIn'
       ];
+    }
+
+    function validAreaPreference(value) {
+      return value is map
+        && value.keys().hasOnly(['priority', 'level'])
+        && value.get('priority', 'essential') in ['essential', 'curiosity']
+        && value.get('level', 'university') in ['beginner', 'university', 'researcher'];
+    }
+
+    function validAreaPreferences(value) {
+      // Canonical area IDs from src/data/category-taxonomy.ts.
+      return value is map
+        && value.keys().hasOnly([
+          'physics', 'cs', 'ai', 'math', 'stat', 'econ', 'q-fin', 'eess',
+          'mech', 'civil', 'chemeng', 'med', 'bio', 'chem'
+        ])
+        && validAreaPreference(value.get('physics', {}))
+        && validAreaPreference(value.get('cs', {}))
+        && validAreaPreference(value.get('ai', {}))
+        && validAreaPreference(value.get('math', {}))
+        && validAreaPreference(value.get('stat', {}))
+        && validAreaPreference(value.get('econ', {}))
+        && validAreaPreference(value.get('q-fin', {}))
+        && validAreaPreference(value.get('eess', {}))
+        && validAreaPreference(value.get('mech', {}))
+        && validAreaPreference(value.get('civil', {}))
+        && validAreaPreference(value.get('chemeng', {}))
+        && validAreaPreference(value.get('med', {}))
+        && validAreaPreference(value.get('bio', {}))
+        && validAreaPreference(value.get('chem', {}));
     }
 
     // Fields an early version of the app wrote into users/{uid} and nothing has
@@ -166,6 +198,8 @@ service cloud.firestore {
         && (!('preferences' in request.resource.data)
           || request.resource.data.preferences is list
             && request.resource.data.preferences.size() <= 100)
+        && request.resource.data.get('interestMix', 'balanced') in ['mostly-work', 'balanced', 'half-and-half']
+        && validAreaPreferences(request.resource.data.get('areaPreferences', {}))
         && (!('selectedCategories' in request.resource.data)
           || request.resource.data.selectedCategories is list
             && request.resource.data.selectedCategories.size() <= 100)

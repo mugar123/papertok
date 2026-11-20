@@ -74,7 +74,7 @@ export function useCorpusFeedPages<Run>(options: {
    */
   runFor: (current: Run | null, page: number, replaced: CustomFeedPages | null) => Run;
   /** Asks the corpus for the page. `run`, when returned, replaces the run kept with the pages. */
-  ask: (run: Run, page: number) => Promise<{ papers: Paper[]; hasMore: boolean; loading?: LoadingFollow[]; run?: Run }>;
+  ask: (run: Run, page: number) => Promise<{ papers: Paper[]; receivedPapers?: Paper[]; hasMore: boolean; loading?: LoadingFollow[]; run?: Run }>;
   /** The papers of the merged list to show now. */
   shown: (papers: Paper[]) => Paper[];
   caches: Caches<Run>;
@@ -115,7 +115,7 @@ export function useCorpusFeedPages<Run>(options: {
     void ask(run, page).then((answer) => {
       if (tokenRef.current !== token) return;
       inFlightRef.current = null;
-      const incoming = { papers: answer.papers, hasMore: answer.hasMore, loading: answer.loading ?? [] };
+      const incoming = { ...answer, loading: answer.loading ?? [] };
       setState(current => (current.key === key
         ? { ...current, ...settled, pages: mergeFeedPage(current.pages, incoming, page), run: answer.run ?? run, error: null, pending: null }
         : current));

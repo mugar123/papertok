@@ -796,17 +796,18 @@ function readLaterPaper(initial: Record<string, LibraryEntry> = {
   const state = { library: initial };
   const queued: Array<Record<string, LibraryEntry>> = [];
   let deferRender = false;
-  const setLibrary = createLibraryUpdater(library => {
-    if (deferRender) queued.push(library);
-    else state.library = library;
+  const { setLibraryState, setPersonalLibrary } = createLibraryUpdater(({ personalLibrary }) => {
+    if (deferRender) queued.push(personalLibrary);
+    else state.library = personalLibrary;
   });
+  const setLibrary = (library: Record<string, LibraryEntry>) => setPersonalLibrary(() => library);
   setLibrary(initial);
   const render = () => {
     for (const library of queued.splice(0)) state.library = library;
   };
   const loadEmptyProfile = () => {
     changes.screenReplaced();
-    setLibrary(() => ({}));
+    setLibraryState(current => ({ ...current, personalLibrary: {} }));
   };
   const answers: Array<{ accept: () => void; refuse: () => void }> = [];
   const reported: string[] = [];
@@ -819,8 +820,8 @@ function readLaterPaper(initial: Record<string, LibraryEntry> = {
       copy: { title: 'One' }, readLater: nextValue, updatedAt: `T${clock}`, late: Boolean(options.afterWrite),
     });
     return writeMark({
-      show: () => { setLibrary(change.show); },
-      undo: () => setLibrary(change.undo) ? undefined : false,
+      show: () => { setPersonalLibrary(change.show); },
+      undo: () => setPersonalLibrary(change.undo) ? undefined : false,
       write: () => new Promise<void>((accept, refuse) => {
         answers.push({ accept, refuse: () => refuse(new Error('permission-denied')) });
       }),

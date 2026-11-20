@@ -170,8 +170,7 @@ export async function getEmailNotificationHealth() {
 /**
  * Whether the reader follows anything the weekly digest is built from. A
  * journal is not (D6), so a reader who follows only journals gets the digest
- * from their chosen categories, or, with none, the Worker refuses to subscribe
- * them (EMAIL_FOLLOWS_REQUIRED).
+ * from their chosen categories or connected ORCID iD.
  */
 export function hasDigestFollows(follows: readonly Partial<FollowEntity>[]) {
   return follows.some(isDigestFollow);

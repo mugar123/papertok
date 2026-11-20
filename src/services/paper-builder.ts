@@ -4,6 +4,7 @@ import { listedDois } from '../utils/publication-status.ts';
 import { normalizeArxivId, normalizeDoi } from '../utils/public-navigation.ts';
 
 import type { Paper, PaperAuthor, PaperSources } from '../models/paper.ts';
+import { storedPaperEvidence, trialRegistrationFromAbstract, withPaperEvidenceOf } from '../models/paper-evidence.ts';
 
 // Below this many alphanumeric characters a title is not a fingerprint of a
 // paper -- "editorial", "introduction", "lettertotheeditor" (17) -- and the
@@ -166,12 +167,16 @@ export class PaperBuilder {
     // Canonical ID preference: Original ID > DOI
     // Using Original ID ensures arXiv IDs remain stable for internal fetching and navigation.
     const canonicalId = data.id || doi || `unknown-${Date.now()}`;
+    const evidence = storedPaperEvidence(data);
+    const trialRegistration = evidence.trialRegistration ?? trialRegistrationFromAbstract(data.abstract);
     return {
       id: canonicalId,
       sources: data.sources || { primary: 'unknown', enrichedBy: [] },
       title: data.title || 'Untitled',
       abstract: data.abstract || 'No abstract available.',
       ...(data.abstractSource && { abstractSource: data.abstractSource }),
+      ...evidence,
+      ...(trialRegistration && { trialRegistration }),
       authors: Array.isArray(data.authors) ? data.authors : [],
       arxivId: data.arxivId || undefined,
       pmid: data.pmid || undefined,
@@ -266,7 +271,7 @@ export class PaperBuilder {
   static merge(existingPaper: Paper, enrichmentData: Partial<Paper>, sourceName?: string): Paper;
   static merge(existingPaper: Partial<Paper> & Pick<Paper, 'sources'>, enrichmentData: Partial<Paper>, sourceName?: string): Partial<Paper> & Pick<Paper, 'sources'>;
   static merge(existingPaper: Partial<Paper> & Pick<Paper, 'sources'>, enrichmentData: Partial<Paper>, sourceName?: string) {
-    const merged = { ...existingPaper };
+    const merged = withPaperEvidenceOf({ ...existingPaper }, enrichmentData);
 
     // Update traceability
     if (sourceName && !merged.sources.enrichedBy.includes(sourceName)) {

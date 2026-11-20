@@ -1,5 +1,6 @@
 import type { Paper } from '../../models/paper.ts';
 import type { PaperSearchFilters, PaperSearchResult } from './index.ts';
+import { trialRegistrationFromAbstract } from '../../models/paper-evidence.ts';
 
 export interface SemanticScholarRecord {
   paperId: string;
@@ -73,6 +74,7 @@ export class SemanticScholarAdapter {
     const externalIds = raw.externalIds || {};
     const doi = typeof externalIds.DOI === 'string' && externalIds.DOI.trim() ? externalIds.DOI.trim() : null;
     const arxivId = typeof externalIds.ArXiv === 'string' && externalIds.ArXiv.trim() ? externalIds.ArXiv.trim() : undefined;
+    const trialRegistration = trialRegistrationFromAbstract(raw.abstract);
     return {
       id: raw.paperId,
       sources: { primary: 'semanticscholar', enrichedBy: [] },
@@ -80,6 +82,7 @@ export class SemanticScholarAdapter {
       arxivId,
       title: raw.title || 'Untitled',
       abstract: raw.abstract || 'No abstract available.',
+      ...(trialRegistration && { trialRegistration }),
       // Semantic Scholar's licence asks for a credit wherever its data is
       // shown (ENG-109). Named on the text, the credit follows it into
       // another record of the paper that lacks one, and into a stored copy.
