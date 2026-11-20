@@ -8,6 +8,24 @@ export interface LibraryEntry {
   note?: string; tags?: string[]; updatedAt?: string | number | null;
 }
 
+type Library = Record<string, LibraryEntry>;
+
+/**
+ * Apply updates in call order, then give React the resulting snapshots.
+ * A write answer needs the result before the next render, and React can
+ * replay a state updater, so the caller handles effects after this returns.
+ */
+export function createLibraryUpdater(publish: (library: Library) => void) {
+  let current: Library = {};
+  return (update: Library | ((library: Library) => Library)): boolean => {
+    const next = typeof update === 'function' ? update(current) : update;
+    if (next === current) return false;
+    current = next;
+    publish(next);
+    return true;
+  };
+}
+
 /** `copy` with a retraction the entry's copy or `loaded` records; `copy` itself when neither adds one. */
 const keepingRetraction = (copy: Partial<Paper>, entry: LibraryEntry | undefined, loaded: Partial<Paper> | undefined) => (
   withRetractionOf(withRetractionOf(copy, entry?.paper), loaded)

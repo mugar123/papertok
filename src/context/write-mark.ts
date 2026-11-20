@@ -299,7 +299,7 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  */
 export async function writeMark({ show, undo, write, failure, afterWrite = false, throwOnError = false, stillSignedIn, changes, markKey, from, to, isOn }: {
   show: (takesBack: boolean) => void;
-  /** Returns false when the screen holds nothing to put back: no move is counted. */
+  /** Returns false when applying the undo leaves state unchanged. */
   undo?: () => void | false;
   write: () => Promise<void>;
   /** Logged with the error when the write is refused. */
