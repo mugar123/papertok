@@ -200,7 +200,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Opens the original article in a new tab.',
         { needsAccount: true }),
       entry('close-reader', 'Close reader', X,
-        'Closes the reader and returns to the card.',
+        'Closes the reader and returns to the page underneath.',
         { needsAccount: true }),
     ],
   },
