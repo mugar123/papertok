@@ -366,9 +366,10 @@ export async function loadOrcidPublications(orcidId: string, host: OrcidHost, de
     console.warn(`OpenAlex details for ${ids.length} works could not be loaded`, error);
     unanswered.push(...ids);
   };
+  const options = { onRequestFailed, includeTopics: true };
   const [byDoi, byId] = await Promise.all([
-    fetchPapersByDois([...new Set([...dois, ...addedDois])], { onRequestFailed }),
-    fetchPapersByOpenAlexIds(addedIds, { onRequestFailed }),
+    fetchPapersByDois([...new Set([...dois, ...addedDois])], options),
+    fetchPapersByOpenAlexIds(addedIds, options),
   ]);
   const looked = papersByKey([...byDoi, ...byId]);
   const paperFor = (keys: string[]) => keys.map(key => known.get(key) ?? looked.get(key)).find(paper => paper !== undefined) ?? null;
