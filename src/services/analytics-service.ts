@@ -1,5 +1,6 @@
 import { CATEGORIES as TAXONOMY_AREAS } from '../data/category-taxonomy.ts';
 import { loadOptionalModule } from '../utils/module-load-recovery.ts';
+import type { InteractionEvent } from '../utils/interaction-profile.ts';
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
 import { APP_RELOAD_KEY, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/app-reload.ts';
 import { sanitizeExceptionProperties } from '../utils/error-telemetry.ts';
@@ -25,6 +26,7 @@ const ANALYTICS_ACTIVATION_KEY = 'papertok_analytics_activation_at';
 const ANALYTICS_ACTIVATION_EVENT_KEY = 'papertok_analytics_activation_sent';
 const WEEK_ONE_RETURN_KEY = 'papertok_analytics_week_one_return';
 const ANALYTICS_ACQUISITION_SESSION_KEY = 'papertok_analytics_acquisition_sent';
+const PROFILE_SAMPLE_SESSION_KEY = 'papertok_profile_sample_session';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Every route `app.tsx` declares has to appear here (or be matched by one of
@@ -216,10 +218,12 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // asked for — the second costs one of the day's AI uses and the first is free,
   // so counting them together would hide which one people actually want.
   paper_annotation: { level: 'rewrite_level', surface: 'surface', origin: 'annotation_origin', ...PAPER_DETAIL },
-  // How the For You feed is landing, one event per twenty cards: of those
+  // before_profile_load alone marks the first qualifying action in a session.
+  // The other fields measure how the For You feed is landing, one event per twenty cards: of those
   // cards, how many were skipped, read past the reader's own median dwell,
   // liked and saved. Counts only; no paper, topic or account travels with it.
   feed_engagement: {
+    before_profile_load: 'boolean',
     cards: 'boundedNumber', skips: 'boundedNumber', deep_reads: 'boundedNumber', likes: 'boundedNumber', saves: 'boundedNumber',
   },
   // A failure the reader is left looking at: the error boundary's screen or the
@@ -230,7 +234,7 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // gives away, which is the clearest demand signal it has. `scope` keeps that
   // apart from the provider's own budget running out, which is an outage.
   ai_limit_reached: { feature: 'ai_feature', scope: 'ai_quota_scope' },
-  // Likes from every surface. `feed_engagement` counts only the For You feed's.
+  // Likes from every surface. The twenty-card summaries count only For You likes.
   like_change: { action: 'action', ...PAPER_DETAIL },
   // How long a card was on screen, and how long the reader stayed open: the
   // time spent per paper, which no count of views can give.
@@ -522,6 +526,7 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
   try {
     storage?.removeItem(ANALYTICS_ACTIVATION_KEY);
     storage?.removeItem(ANALYTICS_ACTIVATION_EVENT_KEY);
+    storage?.removeItem(PROFILE_SAMPLE_SESSION_KEY);
     storage?.removeItem(WEEK_ONE_RETURN_KEY);
     storage?.removeItem('papertok_analytics_day_7_return_sent');
     getSessionStorage()?.removeItem(ANALYTICS_ACQUISITION_SESSION_KEY);
@@ -883,6 +888,30 @@ export async function trackProductEvent(eventName: ProductAnalyticsEvent, params
   const consent = readAnalyticsConsent();
   if (consent === ANALYTICS_CONSENT.DENIED) return false;
   return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent), stillValid);
+}
+
+export async function trackBeforeProfileLoad(event: Pick<InteractionEvent, 'kind' | 'restores'>, hydrated: boolean, stillSignedIn: () => boolean) {
+  if (hydrated || event.restores || !['like', 'save', 'read'].includes(event.kind)) return false;
+  if (!canSendAnalytics() || readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED) return false;
+  const consent = analyticsConsentState();
+  const client = await loadAnalyticsClient();
+  const storage = getBrowserStorage();
+  if (!client || !storage || !navigator.locks) return false;
+  try {
+    // Tabs share a PostHog session. Reserve its sample before another tab can capture.
+    return await navigator.locks.request(PROFILE_SAMPLE_SESSION_KEY, () => {
+      if (!stillSignedIn() || consent !== analyticsConsentState() || !mayCapture(client)) return false;
+      // A read-only session lookup can still return the ID from before an idle timeout.
+      const session = client.sessionManager?.checkAndGetSessionAndWindowId().sessionId;
+      if (!session || storage.getItem(PROFILE_SAMPLE_SESSION_KEY) === session) return false;
+      storage.setItem(PROFILE_SAMPLE_SESSION_KEY, session);
+      const sent = client.capture('feed_engagement', { before_profile_load: true });
+      if (!sent) storage.removeItem(PROFILE_SAMPLE_SESSION_KEY);
+      return Boolean(sent);
+    });
+  } catch {
+    return false;
+  }
 }
 
 function hostnameMatches(hostname: string, patterns: readonly (string | RegExp)[]) {

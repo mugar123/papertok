@@ -124,6 +124,14 @@ flowchart TD
   browser callers; this diagram shows the main application boundaries, not
   every outbound request.
 
+## Feed engagement
+
+For twenty-card For You summaries, filter `feed_engagement` to events where
+`cards` is set. A separate sample with only `before_profile_load = true`
+counts a signed-in reader liking, saving or recording a read on any screen
+before their interaction profile loads. The browser sends at most one per
+PostHog session. Browsers without shared storage or Web Locks skip the sample.
+
 ## Week-1 retention
 
 Pablo must paste this query into a PostHog SQL insight and save it as a table.
