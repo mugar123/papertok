@@ -2350,6 +2350,7 @@ test('when Claude\'s fallback model takes over mid-line, it continues the line a
 });
 
 test('when Claude\'s fallback model takes over after sections were shown, its sections follow them', async () => {
+  const store = fakeRewriteStore();
   const { events } = await runRewrite({
     provider: async () => sseResponse([
       messageStart('claude-opus-5-5'),
@@ -2358,11 +2359,16 @@ test('when Claude\'s fallback model takes over after sections were shown, its se
       anthropicText(sectionLine('results', 'It worked.')),
       anthropicStop('end_turn'),
     ]),
-  }, anthropicEnv());
+  }, anthropicEnv({ AI_REWRITE_STORE: store }));
 
   assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'section', 'done']);
   assert.deepEqual(events.filter(event => event.type === 'section').map(event => event.paragraphs![0]), ['It began.', 'It worked.']);
   assert.equal(events.at(-1)!.truncated, undefined);
+  assert.equal(events.at(-1)!.model, 'claude-opus-4-8');
+  // Kept briefly under the model that finished it, though the first half came from the primary.
+  const [entry] = [...store.entries.values()];
+  assert.equal(JSON.parse(entry.value).meta.model, 'claude-opus-4-8');
+  assert.ok((entry.ttl ?? 0) <= 120);
 });
 
 test('a rewrite Claude\'s fallback model wrote is stored briefly under that model, and replays under it', async () => {
