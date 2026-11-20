@@ -117,6 +117,7 @@ interface RpcAnswer {
 
 async function withUpstream<T>(upstream: Upstream, run: (calls: string[]) => Promise<T>) {
   const calls: string[] = [];
+  const taxonomy = new Map<string, Response>();
   const originalFetch = globalThis.fetch;
   const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async input => {
@@ -126,8 +127,11 @@ async function withUpstream<T>(upstream: Upstream, run: (calls: string[]) => Pro
   };
   (globalThis as TestGlobals).caches = {
     default: {
-      match: async (): Promise<Response | null | undefined> => null,
-      put: async (): Promise<void> => {},
+      match: async request => taxonomy.get(String(request instanceof Request ? request.url : request))?.clone(),
+      put: async (request, response) => {
+        const url = String(request instanceof Request ? request.url : request);
+        if (new URL(url).pathname.startsWith('/mcp/taxonomy/')) taxonomy.set(url, response.clone());
+      },
     },
   };
   try {
@@ -786,6 +790,8 @@ test("get_paper opens an arXiv result through OpenAlex when the search has just 
     const { answer } = await callTool(env, 'get_paper', { id: listed.id });
     assert.equal(answer.result?.isError, undefined);
     const paper = answer.result?.structuredContent?.paper as { id: string; arxivId: string; title: string };
+    assert.deepEqual(answer.result?.structuredContent?.fallback, { from: 'arxiv', to: 'openalex', code: 'PROVIDER_RATE_LIMITED' });
+    assert.deepEqual((paper as Record<string, unknown>).categories, ['cond-mat.mes-hall']);
     assert.deepEqual([paper.id, paper.arxivId, paper.title], ['openalex:W4400000123', '2603.01234', 'Strained graphene in the lab']);
   }));
   assert.equal(calls.filter(url => url.startsWith('https://export.arxiv.org/')).length, 1, 'arXiv is asked once, by the search');
@@ -1520,25 +1526,48 @@ test('one OpenAlex work has one id, whichever tool and identifier found it', asy
   });
 });
 
-test("a paper both sources found is listed with arXiv's categories, get_paper answers with OpenAlex's, and both tools say so", async () => {
-  const conceptual = { ...OPENALEX_WORK, concepts: [{ id: 'https://openalex.org/C1', display_name: 'Graphene', level: 2, score: 0.9 }] };
+test('a single-source search can supply taxonomy to the other provider through their shared DOI', async () => {
+  const topic = { id: 'https://openalex.org/T42', display_name: 'Materials' };
+  const work = { ...OPENALEX_WORK, topics: [topic] };
+  for (const source of ['openalex', 'arxiv']) {
+    await withUpstream(url => {
+      if (url.startsWith('https://export.arxiv.org/')) return new Response(arxivFeed(ARXIV_PREPRINT_ENTRY));
+      return Response.json(url.includes('search=') ? { results: [work] } : work);
+    }, async calls => {
+      await callTool(routeEnv(), 'search_papers', { query: 'graphene', sources: [source] });
+      const id = source === 'arxiv' ? '10.1234/example.2026.1' : '2603.09999';
+      const { answer } = await callTool(routeEnv(), 'get_paper', { id });
+      const paper = answer.result?.structuredContent?.paper as Record<string, unknown>;
+      assert.deepEqual(paper.topics, [topic]);
+      assert.deepEqual(paper.categories, ['cond-mat.mtrl-sci']);
+      if (source === 'openalex') assert.equal(paper.peerReviewed, undefined);
+      assert.equal(calls.length, 2);
+    });
+  }
+});
+
+test("a merged search keeps both taxonomies on detail by OpenAlex id, DOI, PMID or arXiv id", async () => {
+  const conceptual = { ...OPENALEX_WORK, ids: { ...OPENALEX_WORK.ids, pmid: 'https://pubmed.ncbi.nlm.nih.gov/123/' }, concepts: [{ id: 'https://openalex.org/C1', display_name: 'Graphene', level: 2, score: 0.9 }] };
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [conceptual] });
-    if (url.startsWith('https://api.openalex.org/works/')) return Response.json(conceptual);
+    if (url.startsWith('https://api.openalex.org/works/')) return Response.json({ ...OPENALEX_WORK, topics: [{ id: 'T42', display_name: 'Materials' }] });
     if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(arxivFeed(ARXIV_PREPRINT_ENTRY));
     throw new Error(`unexpected upstream ${url}`);
-  }, async () => {
-    type Relayed = { id: string; categories?: string[] };
+  }, async calls => {
+    type Relayed = { id: string; categories?: string[]; concepts?: Array<{ id: string }>; taxonomySources?: Record<string, string> };
     const env = routeEnv();
     const searched = await callTool(env, 'search_papers', { query: 'graphene sheets under strain' });
     const [listed] = searched.answer.result?.structuredContent?.papers as Relayed[];
     assert.deepEqual([listed.id, listed.categories], ['openalex:W4400000001', ['cond-mat.mtrl-sci']]);
-    for (const id of [listed.id, '10.1234/example.2026.1']) {
-      const { answer } = await callTool(env, 'get_paper', { id });
+    for (const id of [listed.id, '10.1234/example.2026.1', 'pmid:123', '2603.09999']) {
+      const { answer } = await callTool(routeEnv(), 'get_paper', { id });
       const paper = answer.result?.structuredContent?.paper as Relayed;
-      assert.deepEqual([paper.id, paper.categories], ['openalex:W4400000001', ['Graphene']], id);
+      if (id === '2603.09999') assert.equal('peerReviewed' in paper, false);
+      assert.deepEqual(paper.categories, ['cond-mat.mtrl-sci'], id);
+      assert.equal(paper.concepts?.[0].id, 'https://openalex.org/C1', id);
+      assert.deepEqual(paper.taxonomySources, { categories: 'arxiv', concepts: 'openalex', ...(id !== '2603.09999' && { topics: 'openalex' }) }, id);
     }
-    // A model that compares the two answers reads why they differ.
+    assert.equal(calls.length, 6);
     const tools = (await rpc(env, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).answer.result?.tools;
     for (const name of ['search_papers', 'get_paper']) {
       const description = String(tools?.find(tool => tool.name === name)?.description);
@@ -1548,8 +1577,8 @@ test("a paper both sources found is listed with arXiv's categories, get_paper an
   });
 });
 
-test('a work without concepts is listed with its topic names as categories, which get_paper does not give, and search_papers says so', async () => {
-  const topical = { ...OPENALEX_WORK, topics: [{ id: 'https://openalex.org/T1', display_name: 'Graphene and 2D materials', score: 0.99 }] };
+test('a work without concepts is listed with its topic names as categories, in search and detail', async () => {
+  const topical = { ...OPENALEX_WORK, topics: [{ display_name: 'Unidentified topic' }, { id: 'T2' }, { id: 'https://openalex.org/T1', display_name: 'Graphene and 2D materials', score: 0.99 }] };
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [topical] });
     if (url.startsWith('https://api.openalex.org/works/')) return Response.json(topical);
@@ -1561,7 +1590,9 @@ test('a work without concepts is listed with its topic names as categories, whic
     const [listed] = searched.answer.result?.structuredContent?.papers as Relayed[];
     assert.deepEqual(listed.categories, ['Graphene and 2D materials']);
     const { answer } = await callTool(env, 'get_paper', { id: listed.id });
-    assert.equal((answer.result?.structuredContent?.paper as Relayed).categories, undefined);
+    const detail = answer.result?.structuredContent?.paper as Relayed & { topics?: Array<{ id: string }> };
+    assert.deepEqual(detail.categories, ['Graphene and 2D materials']);
+    assert.deepEqual(detail.topics?.map(topic => topic.id), ['T2', 'https://openalex.org/T1']);
     const tools = (await rpc(env, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).answer.result?.tools;
     assert.match(String(tools?.find(tool => tool.name === 'search_papers')?.description), /topic names/);
   });

@@ -1652,8 +1652,8 @@ SDK is not used, so the package lock is unchanged.
 
 | Tool | Route asked in-process | Result |
 | --- | --- | --- |
-| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` filtered to the app's search types (`OPENALEX_SEARCH_TYPES`: articles, conference papers, reviews, preprints), and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` (by DOI, arXiv id, or an identical title whose first authors can be one person: one surname with given names that agree, as "Ana Economist" and "Economist A" do and "Maria Garcia" and "Jose Garcia" do not; the `Unknown` the OpenAlex mappers write for a missing name is no name, and a title under 20 letters and digits, such as "Introduction", joins no two records whose DOIs differ unless one is arXiv's own) and ranked by title match with the app's `mergeRankedPapers`, plus the sources that refused or failed. A paper has OpenAlex's `openalex:W…` id when OpenAlex found it, else its arXiv id, and arXiv's categories when arXiv found it, else OpenAlex's concept names, or its topic names for a work without concepts, which `get_paper` keeps in `topics` only. Unlike the app's search, which drops weak title matches when the query reads as a title, it keeps papers found only through their abstract |
-| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when the arXiv beat refuses the agent (about one try in two) or the arXiv relay fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back. A successful relay response with an unreadable feed or an Atom error entry returns `UPSTREAM_UNAVAILABLE` without an OpenAlex lookup | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it, and its `categories` are its concept names, so a paper both sources found comes back without the arXiv categories the search listed. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; a valid arXiv listing without the paper is `NOT_FOUND` |
+| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` filtered to the app's search types (`OPENALEX_SEARCH_TYPES`: articles, conference papers, reviews, preprints), and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` (by DOI, arXiv id, or an identical title whose first authors can be one person: one surname with given names that agree, as "Ana Economist" and "Economist A" do and "Maria Garcia" and "Jose Garcia" do not; the `Unknown` the OpenAlex mappers write for a missing name is no name, and a title under 20 letters and digits, such as "Introduction", joins no two records whose DOIs differ unless one is arXiv's own) and ranked by title match with the app's `mergeRankedPapers`, plus the sources that refused or failed. A paper has OpenAlex's `openalex:W…` id when OpenAlex found it, else its arXiv id, and arXiv's categories when arXiv found it, else OpenAlex's concept names, or its topic names for a work without concepts. Unlike the app's search, which drops weak title matches when the query reads as a title, it keeps papers found only through their abstract |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when the arXiv beat refuses the agent (about one try in two) or the arXiv relay fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back. A successful relay response with an unreadable feed or an Atom error entry returns `UPSTREAM_UNAVAILABLE` without an OpenAlex lookup | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work keeps its `openalex:W…` id for OpenAlex, DOI and PMID lookups. Detail includes the source taxonomies available to the lookup (below). Successful fallback adds `fallback: { from: 'arxiv', to: 'openalex', code }` beside `paper`, where `code` is the arXiv error. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; a valid arXiv listing without the paper is `NOT_FOUND` |
 | `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest. It takes a DOI only: a paper known by its arXiv or OpenAlex id needs `get_paper` first for its DOI |
 
 ENG-91's phase 1 also lists `get_citation_graph(id)` and `get_figures(arxiv_id)`.
@@ -1664,6 +1664,15 @@ not in this phase either. `/resources/figures` is public with a per-IP
 allowance of 20 misses a minute, but it does not take the arXiv beat's seat:
 each miss fetches arXiv's HTML rendering and ar5iv's at once. Offering it to
 agents waits for phase 2, with the citation graph (ENG-91).
+
+Both paper tools include `taxonomySources` when they return categories, concepts or
+topics. Its keys name those fields and its values are `arxiv` or `openalex`.
+OpenAlex subjects retain their provider IDs. A search can return arXiv categories
+alongside OpenAlex concepts and topics for the same paper. For ten minutes the
+edge can reuse those classifications by paper identifier on a detail lookup.
+Only taxonomy and its public paper identifiers enter this cache. A cache miss
+or eviction leaves detail with the evidence from its own provider response.
+The lookup makes the same provider requests either way.
 
 Tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract, the feed's internal fields (the
@@ -1676,7 +1685,7 @@ the arXiv fallback's record included, names no repository as its journal, as
 a search's record of it names none. They come with
 bounded lists: 20 authors in a search and 100 in `get_paper` (about 7 KB), 10
 institutions, 5 concepts, 5 names in `categories` (an OpenAlex record's concept
-names, or in a search its topic names when it has no concepts; an arXiv record's categories) and in `keywords` and `allCategories`
+names, or its topic names when it has no concepts; an arXiv record's categories) and in `keywords` and `allCategories`
 where they differ from it, and 3 topics. A search also cuts each abstract at the
 last space within 1,500 characters and ends it with `…`; `get_paper` sends the
 whole abstract (up to the 6,000 characters `usableOpenAlexAbstract` accepts). A
@@ -1723,9 +1732,8 @@ points:
   odd period is never an agent's, so even on an idle Worker every agent arXiv
   miss in an odd period is refused: about half of uncached arXiv lookups,
   which a search lists under `unavailable` and `get_paper` answers from
-  OpenAlex for one billed unit. That answer is the OpenAlex record: id
-  `openalex:W…` and concept names in `categories`, where arXiv's answer has
-  the arXiv id and arXiv categories. A refused seat is
+  OpenAlex for one billed unit. That answer identifies OpenAlex as the fallback and keeps its
+  `openalex:W…` id. Cached arXiv categories take precedence over OpenAlex names. A refused seat is
   `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to the start of the
   next public seat (1 to 6 seconds, rounded up), under `unavailable` in a
   search; `get_paper` then asks OpenAlex, and logs arXiv's refusal with
