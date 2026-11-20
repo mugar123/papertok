@@ -362,10 +362,13 @@ export function storedAbstractSource(paper: Partial<Pick<Paper, 'abstract' | 'su
  * The `savedPapers` document carries none of these fields.
  */
 export function withPublicationEvidenceOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
-  const merged = withPaperEvidenceOf(paper, other);
-  return other?.publicationStatus === 'retracted' && merged.publicationStatus !== 'retracted'
-    ? { ...merged, publicationStatus: 'retracted' }
-    : merged;
+  return withRetractionOf(withPaperEvidenceOf(paper, other), other);
+}
+
+export function withRetractionOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
+  return other?.publicationStatus === 'retracted' && paper.publicationStatus !== 'retracted'
+    ? { ...paper, publicationStatus: 'retracted' }
+    : paper;
 }
 
 const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) && getArxivArchiveArea(value) !== null;

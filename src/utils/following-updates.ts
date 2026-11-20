@@ -1,5 +1,5 @@
 import type { Paper, PaperFollowMatch } from '../models/paper.ts';
-import { withPaperEvidenceOf } from '../models/paper-evidence.ts';
+import { mergedPaperEvidence } from '../models/paper-evidence.ts';
 
 import { isPlaceholderAuthorName } from '../services/paper-builder.ts';
 
@@ -75,6 +75,7 @@ function mergeFollowingUpdatePaperRecords(current: Paper, paper: Paper, updateKe
   const merged: Paper = {
     ...current,
     ...paper,
+    ...mergedPaperEvidence(current, paper),
     id: current.id || paper.id,
     doi: current.doi || paper.doi,
     arxivId: current.arxivId || paper.arxivId,
@@ -87,7 +88,7 @@ function mergeFollowingUpdatePaperRecords(current: Paper, paper: Paper, updateKe
   };
   if (text.abstractSource) merged.abstractSource = text.abstractSource;
   else delete merged.abstractSource;
-  return withPaperEvidenceOf(withPaperEvidenceOf(merged, current), paper);
+  return merged;
 }
 
 export function mergeFollowingUpdatePapers(papers: Paper[] = [], limit = 60) {

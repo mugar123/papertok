@@ -1,5 +1,6 @@
 import type { Paper } from '../models/paper.ts';
-import { knownCitationCount, paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withPublicationEvidenceOf } from '../models/paper.ts';
+import { knownCitationCount, paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withPublicationEvidenceOf, withRetractionOf } from '../models/paper.ts';
+import { mergedPaperEvidence } from '../models/paper-evidence.ts';
 
 /**
  * `copy` with `other`'s authors when `other`, a copy of the same paper, lists
@@ -65,6 +66,7 @@ export function listPaperFromCopies(libraryCopy: Partial<Paper>, otherCopy: Part
   const merged = {
     ...libraryCopy,
     ...filledFrom(otherCopy, libraryCopy),
+    ...mergedPaperEvidence(libraryCopy, otherCopy),
     doi: libraryCopy.doi || otherCopy.doi,
     arxivId: libraryCopy.arxivId || otherCopy.arxivId,
     openUrl: libraryCopy.openUrl || otherCopy.openUrl,
@@ -78,7 +80,7 @@ export function listPaperFromCopies(libraryCopy: Partial<Paper>, otherCopy: Part
   // The text the paper shows: its abstract once a copy was read back as a
   // paper, else the summary, as `paperLegacyAdapter` reads a copy.
   const text = merged.sources ? merged.abstract : merged.summary || merged.abstract;
-  const paper = withPublicationEvidenceOf(
+  const paper = withRetractionOf(
     { ...merged, abstractSource: storedAbstractSource(libraryCopy, text) ?? storedAbstractSource(otherCopy, text) },
     libraryCopy,
   );

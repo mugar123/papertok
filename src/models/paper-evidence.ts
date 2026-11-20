@@ -36,7 +36,7 @@ function firstTrialId(first: string | undefined, second: string | undefined) {
   return first && second && first > second ? second : first ?? second;
 }
 
-export function withPaperEvidenceOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
+export function mergedPaperEvidence(paper: Partial<Paper>, other: Partial<Paper> | null | undefined) {
   const studyType = studyTypeFromIds([paper.studyType, other?.studyType]);
   const first = readTrialRegistration(paper.trialRegistration);
   const second = readTrialRegistration(other?.trialRegistration);
@@ -46,7 +46,12 @@ export function withPaperEvidenceOf<T extends Partial<Paper>>(paper: T, other: P
     other?.trialRegistrationSource === 'pubmed-secondary-source' ? second : undefined,
   );
   const trialRegistration = indexed ?? firstTrialId(first, second);
-  const trialRegistrationSource = indexed ? 'pubmed-secondary-source' : undefined;
+  const trialRegistrationSource = indexed ? 'pubmed-secondary-source' as const : undefined;
+  return { studyType, trialRegistration, trialRegistrationSource };
+}
+
+export function withPaperEvidenceOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
+  const { studyType, trialRegistration, trialRegistrationSource } = mergedPaperEvidence(paper, other);
   return studyType === paper.studyType && trialRegistration === paper.trialRegistration
     && trialRegistrationSource === paper.trialRegistrationSource
     ? paper
