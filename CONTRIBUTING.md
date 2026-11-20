@@ -85,7 +85,13 @@ the same Node runtime without a separate TypeScript loader.
 Use explicit relative extensions such as `./helper.ts` and `import type` for
 types. Enums, value namespaces and parameter properties are rejected. Node does
 not execute `.tsx`, so behavior that needs a test lives in a `.ts` module the
-test imports. Tests never read source files and match their text: ESLint rejects
+test imports. Wiring that only exists in React (what a provider does with its
+failures, what a route element redirects to) is tested by rendering the app's
+own code in jsdom: `tests/dom/` loads the `.tsx` modules through
+Vite's module runner, stands in for `services/firebase.ts` and for the Worker's
+`fetch`, and `renderFeed` and `renderApp` mount the provider tree and the whole
+app. Tests are still `.test.ts` files that call `createElement`, and still run
+under `node --test`. Tests never read source files and match their text: ESLint rejects
 it, and a structural rule over source belongs in `eslint.config.ts`. Deliberately
 incomplete or invalid test inputs retain their original values: local type
 assertions describe the fixture boundary, not runtime validation.

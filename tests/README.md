@@ -6,6 +6,15 @@ Firestore emulator and asserts on what the rules engine actually decides.
 `npm test` runs Node tests under `src/`, `worker/`, `proxy/`, `scripts/`
 and `eslint-rules/`. This suite separately checks Firestore authorization.
 
+## DOM helpers
+
+`tests/dom/` is not a test suite. It holds the helpers behind the React tests in
+`src/` (`src/app.test.ts`, `src/context/feed-failure-events.test.ts`): a jsdom
+browser, a Vite module runner for the `.tsx` modules, and stand-ins for
+`services/firebase.ts` and the Worker's `fetch`. It lives here, outside `src/`,
+so the app's TypeScript project does not compile Vite and jsdom with Node's
+types. `CONTRIBUTING.md` says when to use it.
+
 ## Running
 
 ```bash
