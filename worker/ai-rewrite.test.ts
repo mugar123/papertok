@@ -2312,14 +2312,32 @@ const fallbackBlock = () => anthropicFrame({
   content_block: { type: 'fallback', from: { model: 'claude-opus-5-5' }, to: { model: 'claude-opus-4-8' } },
 });
 
-test('when Claude\'s fallback model takes over before any section, only its rewrite is shown and kept', async () => {
+const messageStart = (model: string) => anthropicFrame({
+  type: 'message_start',
+  message: { id: 'msg_test', type: 'message', role: 'assistant', model, content: [] },
+});
+
+/** The final `message_delta` of a turn a fallback model served: the documented served-by signal. */
+const servedByFallback = () => anthropicFrame({
+  type: 'message_delta',
+  delta: { stop_reason: 'end_turn', stop_sequence: null },
+  usage: {
+    output_tokens: 10,
+    iterations: [{ type: 'message', model: 'claude-opus-5-5' }, { type: 'fallback_message', model: 'claude-opus-4-8' }],
+  },
+});
+
+test('when Claude\'s fallback model takes over mid-line, it continues the line and the rewrite is whole', async () => {
   const store = fakeRewriteStore();
+  const line = sectionLine('intro', 'It began.');
   const { events } = await runRewrite({
     provider: async () => sseResponse([
-      // The declining model had only begun a line when it handed over.
-      anthropicText('The declining model began: '),
+      messageStart('claude-opus-5-5'),
+      // The declining model stopped inside a JSON line; the fallback model
+      // continues the same text, so the halves must join rather than restart.
+      anthropicText(line.slice(0, 20)),
       fallbackBlock(),
-      anthropicText(sectionLine('intro', 'It began.')),
+      anthropicText(line.slice(20)),
       anthropicText(sectionLine('results', 'It worked.')),
       anthropicStop('end_turn'),
     ]),
@@ -2328,25 +2346,95 @@ test('when Claude\'s fallback model takes over before any section, only its rewr
   assert.deepEqual(events.filter(event => event.type === 'section').map(event => event.paragraphs![0]), ['It began.', 'It worked.']);
   assert.equal(events.at(-1)!.type, 'done');
   assert.equal(events.at(-1)!.truncated, undefined);
-  assert.equal(store.entries.size, 1);
+  assert.equal(events.at(-1)!.model, 'claude-opus-4-8');
 });
 
-test('when Claude\'s fallback model takes over after sections were shown, the rewrite stops there instead of repeating them', async () => {
+test('when Claude\'s fallback model takes over after sections were shown, its sections follow them', async () => {
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      messageStart('claude-opus-5-5'),
+      anthropicText(sectionLine('intro', 'It began.')),
+      fallbackBlock(),
+      anthropicText(sectionLine('results', 'It worked.')),
+      anthropicStop('end_turn'),
+    ]),
+  }, anthropicEnv());
+
+  assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'section', 'done']);
+  assert.deepEqual(events.filter(event => event.type === 'section').map(event => event.paragraphs![0]), ['It began.', 'It worked.']);
+  assert.equal(events.at(-1)!.truncated, undefined);
+});
+
+test('a rewrite Claude\'s fallback model wrote is stored briefly under that model, and replays under it', async () => {
+  const store = fakeRewriteStore();
+  const env = anthropicEnv({ AI_REWRITE_STORE: store });
+  // A decline before any output: `message_start` already names the fallback model.
+  const fellBack = () => sseResponse([
+    messageStart('claude-opus-4-8'),
+    fallbackBlock(),
+    anthropicText(sectionLine('intro', 'It began.')),
+    anthropicStop('end_turn'),
+  ]);
+  const { events } = await runRewrite({ provider: async () => fellBack() }, env);
+
+  assert.equal(events.at(-1)!.model, 'claude-opus-4-8');
+  const [entry] = [...store.entries.values()];
+  assert.equal(JSON.parse(entry.value).meta.model, 'claude-opus-4-8');
+  const ttl = entry.ttl ?? 0;
+  assert.ok(ttl >= 60 && ttl <= 120, `ttl ${entry.ttl}`);
+});
+
+test('a turn served by sticky routing, which carries no fallback block, is read from the served-by signal', async () => {
   const store = fakeRewriteStore();
   const { events } = await runRewrite({
     provider: async () => sseResponse([
+      messageStart('claude-opus-4-8'),
       anthropicText(sectionLine('intro', 'It began.')),
-      fallbackBlock(),
+      servedByFallback(),
+    ]),
+  }, anthropicEnv({ AI_REWRITE_STORE: store }));
+
+  assert.equal(events.at(-1)!.model, 'claude-opus-4-8');
+  const [entry] = [...store.entries.values()];
+  assert.equal(JSON.parse(entry.value).meta.model, 'claude-opus-4-8');
+  assert.ok((entry.ttl ?? 0) <= 120);
+});
+
+test('the model Claude names for itself is not a fallback', async () => {
+  const store = fakeRewriteStore();
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      // Aliases come back resolved: a different spelling alone proves nothing.
+      messageStart('claude-opus-5-5-resolved'),
       anthropicText(sectionLine('intro', 'It began.')),
-      anthropicText(sectionLine('results', 'It worked.')),
       anthropicStop('end_turn'),
     ]),
   }, anthropicEnv({ AI_REWRITE_STORE: store }));
 
-  assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'done']);
-  assert.equal(events.at(-1)!.truncated, true);
-  assert.equal(events.at(-1)!.finishReason, 'SAFETY');
-  assert.equal(store.entries.size, 0);
+  assert.equal(events.at(-1)!.model, 'claude-opus-5-5');
+  const [entry] = [...store.entries.values()];
+  assert.equal(JSON.parse(entry.value).meta.model, 'claude-opus-5-5');
+  assert.ok((entry.ttl ?? 0) > 120);
+});
+
+test('a regenerate Claude\'s fallback model answered leaves the complete primary rewrite in place', async () => {
+  const store = fakeRewriteStore();
+  const env = anthropicEnv({ AI_REWRITE_STORE: store });
+  await runRewrite({ provider: async () => anthropicRewrite() }, env);
+  const stored = [...store.entries];
+  assert.equal(stored.length, 1);
+
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      messageStart('claude-opus-4-8'),
+      fallbackBlock(),
+      anthropicText(sectionLine('intro', 'Fallback version.')),
+      anthropicStop('end_turn'),
+    ]),
+  }, env, { regenerate: true });
+
+  assert.equal(events.at(-1)!.model, 'claude-opus-4-8');
+  assert.deepEqual([...store.entries], stored);
 });
 
 test('a Claude stream that fails before any text gives the use back', async () => {

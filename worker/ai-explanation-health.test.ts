@@ -103,6 +103,32 @@ test('/health/ai checks that the Anthropic key can use the configured model', as
   assert.equal(calls.length, 2);
 });
 
+test('/health/ai gives up on an Anthropic body that stalls after its headers', { timeout: 5_000 }, async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  let sentHeaders!: () => void;
+  const reached = new Promise<void>(resolve => { sentHeaders = resolve; });
+  globalThis.fetch = async (_input, init = {}) => {
+    // The SDK's own timeout is over once the headers are in; only our deadline
+    // can end the read of a body that never completes.
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"type":"mod'));
+        init.signal!.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+      },
+    });
+    sentHeaders();
+    return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  const check = checkAIProviderHealth({ AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test-key' });
+  await reached;
+  context.mock.timers.tick(8_000);
+  const health = await check;
+
+  assert.equal(health.available, false);
+  assert.equal(health.code, 'AI_TIMEOUT');
+});
+
 test('/health/ai reports an Anthropic outage as busy, not as a missing key', async () => {
   stubFetch({
     'api.anthropic.com/v1/models': () => json({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }, 529),

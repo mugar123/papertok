@@ -391,11 +391,19 @@ async function checkAnthropicHealth(env: WorkerEnv) {
   if (!isAnthropicConfigured(env)) {
     return { provider, model, configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
   }
+  // The SDK's `timeout` ends when the headers arrive, so a body that stalls
+  // after them would hold the health check open. The deadline runs until the
+  // read is over.
+  const deadline = new AbortController();
+  const timeout = setTimeout(() => deadline.abort(), 8_000);
   try {
-    await createAnthropicClient(env).models.retrieve(model, null, { timeout: 8_000 });
+    await createAnthropicClient(env).models.retrieve(model, null, { signal: deadline.signal });
     return { provider, model, configured: true, available: true, code: null };
   } catch (error) {
-    return { provider, model, configured: true, available: false, code: anthropicFailure(error).code };
+    const code = deadline.signal.aborted ? 'AI_TIMEOUT' : anthropicFailure(error).code;
+    return { provider, model, configured: true, available: false, code };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

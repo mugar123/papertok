@@ -20,14 +20,20 @@ interface ModelRequest {
   signal: AbortSignal;
 }
 type ModelSectionEvent = { type: 'section'; section: RewriteSection }
-  | { type: 'end'; rawText: string; finishReason: string; firstTextAtMs: number; droppedSections: number };
+  | { type: 'end'; rawText: string; finishReason: string; firstTextAtMs: number; droppedSections: number; servedModel?: string };
 interface SsePayload extends AIProviderPayload {
   choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
   type?: string;
   delta?: { type?: string; text?: unknown; stop_reason?: unknown };
-  content_block?: { type?: string };
+  content_block?: { type?: string; to?: { model?: unknown } };
+  message?: { model?: unknown };
+  usage?: { iterations?: Array<{ type?: unknown }> };
 }
-type SseEvent = { text: string; finishReason: string; restart?: boolean };
+/**
+ * `model` is the model an Anthropic event names: the one that opened the stream,
+ * or, with `fallback`, the one that took over.
+ */
+type SseEvent = { text: string; finishReason: string; model?: string; fallback?: boolean };
 
 
 /**
@@ -444,11 +450,19 @@ export function parseSseEvent(line: unknown): SseEvent | null {
     }
     if (parsed?.type === 'message_delta') {
       const reason = cleanText(parsed.delta?.stop_reason, 40);
-      return { text: '', finishReason: ANTHROPIC_FINISH_REASONS[reason] || reason.toUpperCase() };
+      // The served-by signal: it covers a turn sticky routing sent straight to
+      // the fallback model, which has no `fallback` block.
+      const fallback = Array.isArray(parsed.usage?.iterations)
+        && parsed.usage.iterations.some(entry => entry?.type === 'fallback_message');
+      return { text: '', finishReason: ANTHROPIC_FINISH_REASONS[reason] || reason.toUpperCase(), ...(fallback ? { fallback } : {}) };
     }
-    // The refusing model's output ends here and a fallback model starts over.
+    if (parsed?.type === 'message_start') {
+      return { text: '', finishReason: '', model: cleanText(parsed.message?.model, 100) };
+    }
+    // A fallback model takes over from the one that declined. It continues the
+    // text that model had written, so this changes who is writing, not the text.
     if (parsed?.type === 'content_block_start' && parsed.content_block?.type === 'fallback') {
-      return { text: '', finishReason: '', restart: true };
+      return { text: '', finishReason: '', fallback: true, model: cleanText(parsed.content_block.to?.model, 100) };
     }
     // A stream that fails after it began carries the failure as an event, not a status.
     if (parsed?.type === 'error') return { text: '', finishReason: 'ERROR' };
@@ -505,38 +519,32 @@ export function createSseLineSplitter() {
 export async function* streamModelSections(upstreamBody: { getReader(): Pick<ReadableStreamDefaultReader<Uint8Array | string>, 'read' | 'releaseLock'> & Partial<Pick<ReadableStreamDefaultReader<Uint8Array | string>, 'cancel'>> }): AsyncGenerator<ModelSectionEvent> {
   const decoder = new TextDecoder();
   const splitLines = createSseLineSplitter();
-  let assembler = createSectionAssembler();
+  const assembler = createSectionAssembler();
   const reader = upstreamBody.getReader();
   const startedAt = Date.now();
   let rawText = '';
   let finishReason = '';
   let firstTextAtMs = 0;
-  let shown = 0;
-  let declinedAfterShown = false;
+  // Anthropic only: who wrote the text. A fallback model continues what the
+  // model that declined had written, so the text and the assembler run on across
+  // the switch; only the name of the model changes.
+  let openedBy = '';
+  let tookOver = '';
+  let fellBack = false;
 
   try {
-    read: for (;;) {
+    for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = typeof value === 'string' ? value : decoder.decode(value, { stream: true });
       for (const line of splitLines(chunk)) {
         const event = parseSseEvent(line);
         if (!event) continue;
-        if (event.restart) {
-          // Anthropic's fallback model writes the rewrite again from its first
-          // line, after the model that declined. Nothing of the first attempt
-          // has reached the reader yet: it is dropped. Once sections have been
-          // shown they cannot be recalled, and the second attempt would repeat
-          // them, so the rewrite stops there as the refusal it is.
-          if (shown > 0) {
-            declinedAfterShown = true;
-            finishReason = 'SAFETY';
-            break read;
-          }
-          assembler = createSectionAssembler();
-          rawText = '';
-          finishReason = '';
-          continue;
+        if (event.fallback) {
+          fellBack = true;
+          tookOver = event.model || tookOver;
+        } else if (event.model) {
+          openedBy = event.model;
         }
         finishReason = event.finishReason || finishReason;
         const delta = event.text;
@@ -544,15 +552,24 @@ export async function* streamModelSections(upstreamBody: { getReader(): Pick<Rea
         if (!firstTextAtMs) firstTextAtMs = Date.now() - startedAt;
         rawText += delta;
         for (const section of assembler.push(delta)) {
-          shown += 1;
           yield { type: 'section', section };
         }
       }
     }
-    for (const section of declinedAfterShown ? [] : assembler.flush()) {
+    for (const section of assembler.flush()) {
       yield { type: 'section', section };
     }
-    yield { type: 'end', rawText, finishReason, firstTextAtMs, droppedSections: assembler.dropped };
+    // `openedBy` alone is not a fallback: an alias comes back under its resolved
+    // name. Sticky routing opens the stream on the fallback model, which is why
+    // the served-by signal can stand without a `fallback` block.
+    yield {
+      type: 'end',
+      rawText,
+      finishReason,
+      firstTextAtMs,
+      droppedSections: assembler.dropped,
+      ...(fellBack && (tookOver || openedBy) ? { servedModel: tookOver || openedBy } : {}),
+    };
   } finally {
     // A consumer that stops pulling — the pump, because its own reader hung up —
     // used to just drop the lock and leave the provider streaming into nobody.
@@ -1056,6 +1073,9 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         finishReason = event.finishReason;
         firstTextAt = event.firstTextAtMs;
         droppedSections = event.droppedSections;
+        // Anthropic's own fallback ran inside the one request: the cache policy
+        // for a fallback model's text applies, and `done` names who wrote it.
+        if (event.servedModel) activeModel = event.servedModel;
       }
 
       // Formatting deviations are recoverable; only a silent model is not.

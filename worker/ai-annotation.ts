@@ -216,7 +216,11 @@ async function anthropicAnnotationNote({ env, model, prompt, signal }: Annotatio
       { signal },
     );
   } catch (error) {
-    throw anthropicProviderError(error);
+    // The SDK's own timeout covers the headers only. When our budget ends the
+    // read of the body, what surfaces is a native AbortError that is not an SDK
+    // error, which would read as an outage and refund work Anthropic may have
+    // billed. The budget is the reason, whatever the error looks like.
+    throw signal.aborted ? new AIExplanationError('AI_TIMEOUT', 504) : anthropicProviderError(error);
   }
   const { text, refusal } = anthropicAnswer(message);
   if (refusal) {

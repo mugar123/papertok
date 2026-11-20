@@ -531,6 +531,38 @@ test('a Claude that never answers is cut off at the annotation budget', async (c
   assert.deepEqual(ledger.actions, ['reserve']);
 });
 
+test('a Claude whose answer stalls mid-body is cut off at the budget, and the use is not refunded', async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const ledger = recordingLedger();
+  let sentHeaders!: () => void;
+  const reached = new Promise<void>(resolve => { sentHeaders = resolve; });
+  const { result: response } = await withAnthropic(
+    (_call, signal) => {
+      // The headers arrived and the JSON never finishes: the SDK's own timeout
+      // is over by now, so only our budget can end the read, with a native AbortError.
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"id":"msg_test","type":"mess'));
+          signal!.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+        },
+      });
+      sentHeaders();
+      return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+    async () => {
+      const answer = withCachedIdentity(() => reportApi.fetch(annotationRequest(), annotationEnv(ledger, ANTHROPIC)));
+      await reached;
+      context.mock.timers.tick(14_000);
+      return answer;
+    },
+  );
+
+  assert.equal(response.status, 504);
+  assert.equal(await errorCode(response), 'AI_TIMEOUT');
+  // Anthropic may have billed the work already: no free retry.
+  assert.deepEqual(ledger.actions, ['reserve']);
+});
+
 test('Claude chosen without an Anthropic key is not configured, and costs nothing', async () => {
   const ledger = recordingLedger();
   const response = await withCachedIdentity(() => reportApi.fetch(
