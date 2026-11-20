@@ -5,7 +5,6 @@ export interface PassageSelection { sectionId: string; paragraphIndex: number; q
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
 interface AnnotationOptions {
   uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
-  onQuota?: (remaining: number) => void;
   trackEvent?: (name: ProductAnalyticsEvent, params: Record<string, unknown>) => unknown;
 }
 
@@ -16,6 +15,7 @@ import {
   saveUserHighlight,
 } from '../services/user-highlight-service.ts';
 import { annotatePassage, PaperAnnotationError } from '../services/paper-annotation-service.ts';
+import { noteAIUsesLeft } from '../services/paper-rewrite-service.ts';
 
 /**
  * Everything a passage can become.
@@ -61,7 +61,6 @@ export function usePassageAnnotations({
   paperId,
   level,
   language,
-  onQuota,
   trackEvent,
 }: AnnotationOptions) {
   const owner = `${uid}:${paperId}`;
@@ -213,7 +212,7 @@ export function usePassageAnnotations({
         language,
         signal: controller.signal,
       });
-      if (typeof answer.remainingUses === 'number') onQuota?.(answer.remainingUses);
+      if (uid && typeof answer.remainingUses === 'number') noteAIUsesLeft(uid, answer.remainingUses);
       const saved = await saveUserHighlight(uid, {
         paperId,
         paperTitle: paper?.title,
@@ -259,7 +258,7 @@ export function usePassageAnnotations({
     } finally {
       setBusy(IDLE);
     }
-  }, [language, level, onQuota, paper, paperId, pending, scheduleSettle, setLoaded, trackEvent, uid]);
+  }, [language, level, paper, paperId, pending, scheduleSettle, setLoaded, trackEvent, uid]);
 
   const remove = useCallback(async (annotationId: string) => {
     if (!annotationId) return false;

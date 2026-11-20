@@ -16,7 +16,7 @@ const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 
 const COPY = {
   title: 'Plain-words summaries',
-  description: 'Papers you have read in plain words',
+  description: 'Saved summaries are free to reopen.',
   loading: 'Loading your summaries…',
   emptyTitle: 'No summaries yet',
   empty: 'A paper you read in plain words is listed here.',
