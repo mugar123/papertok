@@ -1,7 +1,9 @@
 import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapOpenAlexEnrichmentWork, mapOpenAlexWork } from './open-alex-work.ts';
+import { formatOpenAlexWorkAsPaper, mapOpenAlexEnrichmentWork, mapOpenAlexWork } from './open-alex-work.ts';
+import { aboutFollowTargets } from '../components/feed/about-follow-targets.ts';
+import { PaperBuilder } from '../services/paper-builder.ts';
 
 // Synthetic works shaped as OpenAlex returns them. The source ids are real:
 // American Economic Review is S23254222 (`/sources/issn:0002-8282`, 2026-10-25)
@@ -43,4 +45,23 @@ test("a work keeps the OpenAlex id of the journal that published it, and no id w
 
   assert.equal(mapOpenAlexWork(work(null))?.venueId, undefined, 'no source, no venue');
   assert.equal(mapOpenAlexWork(work({ display_name: 'A journal without an id', type: 'journal' }))?.venueId, undefined);
+});
+
+test('the same OpenAlex work offers its journal to follow through every normalizer', () => {
+  const journal = work({ id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' });
+  const expected = { type: 'journal', id: 'S23254222', displayName: 'American Economic Review', source: 'openalex' };
+
+  assert.deepEqual(aboutFollowTargets(mapOpenAlexWork(journal)).journal, expected);
+  assert.deepEqual(aboutFollowTargets(formatOpenAlexWorkAsPaper(journal)).journal, expected);
+
+  // A card from another source (arXiv, with its own journal reference) takes
+  // the id and OpenAlex's name together from the enrichment.
+  const arxiv = PaperBuilder.create({ id: '2610.00001', sources: { primary: 'arxiv', enrichedBy: [] }, title: 'Monetary policy', journal: 'Am. Econ. Rev. 116, 1 (2026)' });
+  const enriched = PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(journal)!.enrichment, 'openalex');
+  assert.deepEqual(aboutFollowTargets(enriched).journal, expected);
+
+  // No id, no name: a repository and a working-paper series offer nothing.
+  const repository = work({ id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' });
+  assert.equal(aboutFollowTargets(formatOpenAlexWorkAsPaper(repository)).journal, null);
+  assert.equal(aboutFollowTargets(mapOpenAlexWork(repository)).journal, null);
 });

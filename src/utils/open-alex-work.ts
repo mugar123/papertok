@@ -178,6 +178,15 @@ export function openAlexJournalId(work: OpenAlexWork | null | undefined) {
   return /^S\d+$/.test(id) && !isListedWorkingPaperSeries(id) ? id : undefined;
 }
 
+/**
+ * OpenAlex's own name for the journal `openAlexJournalId` gives, kept beside
+ * the id so a card can name what it offers to follow (ENG-123). Absent without
+ * the id: the work's `journal` text can be another provider's.
+ */
+export function openAlexJournalName(work: OpenAlexWork | null | undefined) {
+  return openAlexJournalId(work) ? work?.primary_location?.source?.display_name?.trim() || undefined : undefined;
+}
+
 function getReliableEnrichmentDoi(work: OpenAlexWork, arxivId: string) {
   const doi = normalizeDoi(work?.doi || work?.ids?.doi);
   if (!doi) return undefined;
@@ -234,6 +243,7 @@ export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlex
       pmid: normalizePmid(work.ids?.pmid) || undefined,
       journal: work.primary_location?.source?.display_name,
       venueId: openAlexJournalId(work),
+      sourceName: openAlexJournalName(work),
       publisher: work.primary_location?.source?.host_organization_name,
       openAccess: work.open_access?.is_oa,
       pdfUrl: work.open_access?.oa_url,
@@ -361,6 +371,7 @@ export function formatOpenAlexWorkAsPaper(work: OpenAlexWork, includeTopics = fa
     pmid: normalizePmid(work.ids?.pmid) || undefined,
     journal: work.primary_location?.source?.display_name,
     venueId: openAlexJournalId(work),
+    sourceName: openAlexJournalName(work),
     publisher: work.primary_location?.source?.host_organization_name,
     citationCount: work.cited_by_count || 0,
     citationCountKnown: Number.isFinite(work.cited_by_count),
