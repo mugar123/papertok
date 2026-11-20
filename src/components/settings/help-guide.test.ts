@@ -58,9 +58,9 @@ test('the controls marked as spending an AI use are the five the overview names'
   assert.equal(allowanceOf('explain'), 'ai');
 });
 
-test('every change to a public list is marked as counting toward the daily limit', () => {
+test('the controls that change a list, which updates a public one, are marked as counting toward the daily limit', () => {
   const counted = entries.filter(({ entry }) => entry.allowance === 'publish').map(({ entry }) => entry.id);
-  assert.deepEqual(counted, ['publish', 'stop-sharing']);
+  assert.deepEqual(counted, ['publish', 'stop-sharing', 'edit-list', 'delete-list', 'edit-note', 'remove-paper']);
 });
 
 test('the controls that only show or hide something are marked free', () => {

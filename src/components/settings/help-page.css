@@ -50,7 +50,8 @@
 }
 
 /* A long stamp wraps, so its lines need room. */
-.settings-list .help-row .help-stamps .settings-status {
+.settings-list .help-row .help-stamps .settings-status,
+.help-legend .settings-status {
   padding-block: 2px;
   line-height: 1.3;
 }
