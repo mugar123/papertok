@@ -1,16 +1,8 @@
 import './dom-environment.ts';
 import { createElement, type ComponentType, type Context } from 'react';
 import { MemoryRouter } from 'react-router-dom';
+import type { UseDigestReactivation } from '../../src/hooks/digest-reactivation-types.ts';
 import { startAppModules } from './app-modules.ts';
-
-interface DigestReactivationView {
-  enabled: boolean;
-  refresh: () => Promise<void>;
-  save: (enabled: boolean) => Promise<void>;
-  unavailable: boolean;
-}
-
-type UseDigestReactivation = (uid: string, subscribed: boolean, emailVerified: boolean) => DigestReactivationView;
 
 export async function loadDigestReactivation() {
   const app = await startAppModules();

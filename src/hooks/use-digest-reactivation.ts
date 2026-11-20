@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EmailNotificationServiceError, getReactivationConsent, recordDigestVisit, saveReactivationConsent } from '../services/email-notification-service.ts';
+import type { UseDigestReactivation } from './digest-reactivation-types.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 
-export function useDigestReactivation(uid: string | null, subscribed: boolean, emailVerified: boolean) {
+export const useDigestReactivation: UseDigestReactivation = (uid, subscribed, emailVerified) => {
   const [consent, setConsent] = useState<Awaited<ReturnType<typeof getReactivationConsent>> | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const subscriberUid = subscribed ? uid : null;
@@ -93,4 +94,4 @@ export function useDigestReactivation(uid: string | null, subscribed: boolean, e
   const loading = subscribed && consent === null && !unavailable;
   const known = consent !== null;
   return useMemo(() => ({ enabled, known, loading, unavailable, refresh, save }), [enabled, known, loading, unavailable, refresh, save]);
-}
+};
