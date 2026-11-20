@@ -130,17 +130,37 @@ const VERIFIED_FOLLOW_ID: Partial<Record<FollowEntity['type'], (id: string) => b
 export const isVerifiedFollowId = (type: FollowEntity['type'], id: string) => Boolean(VERIFIED_FOLLOW_ID[type]?.(id));
 
 /**
- * The ids an author or an institution is identified by: its OpenAlex id and the
- * ORCID iD or ROR id it carries beside it. Ids of different kinds count as one
- * entity only through a follow that carries both. A follow without one (a
- * legacy follow stored by name) is recognised by its name alone.
+ * The ids an author or an institution is identified by, by namespace: its
+ * OpenAlex id, and the ORCID iD (author) or ROR id (institution) it carries
+ * beside it. A follow without one (a legacy follow stored by name) has none.
  */
-function verifiedFollowIds(entity: Pick<FollowEntity, 'type' | 'canonicalId' | 'externalIds'>) {
-  if (entity.type !== 'author' && entity.type !== 'institution') return [];
+function followIdsByNamespace(entity: Pick<FollowEntity, 'type' | 'canonicalId' | 'externalIds'>) {
+  const ids = new Map<'openalex' | 'external', string>();
+  if (entity.type !== 'author' && entity.type !== 'institution') return ids;
   const external = entity.type === 'author' ? entity.externalIds?.orcid : entity.externalIds?.ror;
-  return [entity.canonicalId, external]
-    .map(normalizeFollowId)
-    .filter(id => isVerifiedFollowId(entity.type, id));
+  for (const id of [entity.canonicalId, external].map(normalizeFollowId)) {
+    if (isVerifiedFollowId(entity.type, id)) ids.set(/^[AI]\d+$/.test(id) ? 'openalex' : 'external', id);
+  }
+  return ids;
+}
+
+/**
+ * Whether ids settle that two authors or two institutions are one: true when
+ * they share an id, false when they share a namespace and every id in it
+ * differs (two institutions with one name), null when the ids say nothing
+ * because the two carry ids of different namespaces only (an OpenAlex id
+ * against a ROR id), or one carries none.
+ */
+function sameByIds(one: Parameters<typeof followIdsByNamespace>[0], other: Parameters<typeof followIdsByNamespace>[0]) {
+  const otherIds = followIdsByNamespace(other);
+  let shared = false;
+  for (const [namespace, id] of followIdsByNamespace(one)) {
+    const otherId = otherIds.get(namespace);
+    if (otherId === undefined) continue;
+    if (otherId === id) return true;
+    shared = true;
+  }
+  return shared ? false : null;
 }
 
 export function followsEntity(followedEntities: FollowEntity[], entity: FollowInput) {
@@ -149,16 +169,14 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
   const id = normalizeFollowId(normalized.canonicalId);
   const name = normalizeFollowText(normalized.displayName);
 
-  const verifiedIds = verifiedFollowIds(normalized);
   return (followedEntities || []).some((follow) => {
     if (follow.type !== normalized.type) return false;
     if (normalizeFollowId(follow.canonicalId) === id) return true;
-    // Two entities that each carry a verified id are told apart by it: the same
-    // name is two people, or two institutions, unless an id says they are one.
-    if (verifiedIds.length > 0) {
-      const followIds = verifiedFollowIds(follow);
-      if (followIds.length > 0) return followIds.some(followId => verifiedIds.includes(followId));
-    }
+    // Ids in one namespace tell two entities apart even when they share a name.
+    // With no namespace in common, the name decides, as it does for a follow
+    // stored by name: an OpenAlex id and a ROR id do not say they differ.
+    const byIds = sameByIds(normalized, follow);
+    if (byIds !== null) return byIds;
     // No journal was ever stored by name, and two sources can share one.
     if (!name || normalized.type === 'journal') return false;
     const followName = normalizeFollowText(follow.displayName);

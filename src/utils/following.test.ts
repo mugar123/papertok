@@ -360,10 +360,36 @@ test('a follow stored by name alone is still recognised by name, whichever id th
   assert.equal(followsEntity(verified, { type: 'institution', displayName: 'Sorbonne University' }), true, 'a probe without an id is matched by name');
 });
 
-test('an id of one kind and an id of another are one institution only where a follow carries both', () => {
-  const oxfordRor = { type: 'institution' as const, id: '052gg0110', displayName: 'University of Oxford' };
-  const withBoth = [createFollowEntity({ type: 'institution', id: 'I114027177', displayName: 'University of Oxford', externalIds: { ror: '052gg0110' } })!];
-  const openAlexOnly = [createFollowEntity({ type: 'institution', id: 'I114027177', displayName: 'University of Oxford' })!];
-  assert.equal(followsEntity(withBoth, oxfordRor), true);
-  assert.equal(followsEntity(openAlexOnly, oxfordRor), false, 'nothing says the two ids are one institution');
+// A follow saved before externalIds carried the ROR id holds only the OpenAlex id,
+// and a search result from ROR passes only the ROR id: no namespace in common.
+test('an OpenAlex-id follow is recognised by a ROR-id control for the same name, and unfollowed, not duplicated', () => {
+  const stored = [createFollowEntity({ type: 'institution', id: 'I184999862', displayName: 'Universidad de Salamanca' })!];
+  const control = { type: 'institution' as const, id: '02f40zc51', displayName: 'Universidad de Salamanca', externalIds: { ror: '02f40zc51' } };
+  assert.equal(followsEntity(stored, control), true);
+
+  const toggled = planFollowToggle(stored, createFollowEntity(control)!, { list: 'listed' });
+  assert.equal(toggled.existing?.canonicalId, 'I184999862');
+  assert.deepEqual(toggled.next, [], 'unfollowed, with no second follow added');
+
+  const otherName = { ...control, displayName: 'Universidad de Valladolid' };
+  assert.equal(followsEntity(stored, otherName), false, 'the name still has to agree when no id can');
+});
+
+test('the same holds for an author followed by OpenAlex id and met by ORCID iD', () => {
+  const stored = [createFollowEntity({ type: 'author', id: 'A5023888391', displayName: 'Josiah Carberry' })!];
+  assert.equal(followsEntity(stored, { type: 'author', id: '0000-0002-1825-0097', displayName: 'Josiah Carberry' }), true);
+  assert.equal(followsEntity(stored, { type: 'author', id: '0000-0002-1825-0097', displayName: 'Someone Else' }), false);
+});
+
+test('two institutions or authors with different ids in one namespace stay two follows, whichever namespace', () => {
+  const rorOnly = [createFollowEntity({ type: 'institution', id: '02f40zc51', displayName: 'Institute of Physics' })!];
+  assert.equal(followsEntity(rorOnly, { type: 'institution', id: '01ggx4157', displayName: 'Institute of Physics' }), false);
+  const toggled = planFollowToggle(rorOnly, createFollowEntity({ type: 'institution', id: '01ggx4157', displayName: 'Institute of Physics' })!, { list: 'listed' });
+  assert.deepEqual(toggled.next.map(follow => follow.canonicalId), ['02f40zc51', '01ggx4157']);
+
+  // A shared id settles it even when the OpenAlex ids differ (a duplicate OpenAlex record).
+  const bothIds = [createFollowEntity({ type: 'institution', id: 'I1', displayName: 'University of Oxford', externalIds: { ror: '052gg0110' } })!];
+  assert.equal(followsEntity(bothIds, { type: 'institution', id: 'I2', displayName: 'Oxford', externalIds: { ror: '052gg0110' } }), true);
+  // And different ids in a shared namespace beat a shared name even where another namespace has no answer.
+  assert.equal(followsEntity(bothIds, { type: 'institution', id: 'I2', displayName: 'University of Oxford' }), false);
 });
