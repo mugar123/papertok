@@ -9,7 +9,7 @@ import type { ArxivRecord } from './paper-sources.ts';
 import type { Paper } from '../src/models/paper.ts';
 import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
-import { mapBioRxivPaper } from '../src/services/domain-source-records.ts';
+import { mapAdsPaper, mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers } from './leaf-filing.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
@@ -1598,6 +1598,80 @@ test("a working-paper row whose categories mix arXiv's codes with other terms ke
       [true, shown, ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']],
       `stored primary ${JSON.stringify(stored)}`,
     );
+  }
+});
+
+// A batch that lists OpenAlex's working paper before its eprint merges the
+// eprint into OpenAlex's record, and `merge` takes categories only from an
+// arXiv record: the batch must still give the stored working-paper row the
+// eprint's categories, as the reverse order does (ENG-206).
+test("a stored working-paper row takes its arXiv eprint's categories in either order, in one batch or on separate nights, and listed again", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  const expected = ['econ.EM', ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']];
+  for (const [name, later] of [
+    ['working paper, then eprint, one batch', [[workingPaper, eprint]]],
+    ['eprint, then working paper, one batch', [[eprint, workingPaper]]],
+    ['working paper, then eprint, separate nights', [[workingPaper], [eprint]]],
+    ['eprint, then working paper, separate nights', [[eprint], [workingPaper]]],
+  ] as const) {
+    const nights = [[workingPaper], ...later.map(night => [...night])];
+    assert.deepEqual(categories((await journalRowAfter(t, nights)).json), expected, name);
+    assert.deepEqual(categories((await journalRowAfter(t, [...nights, ...nights.slice(1)])).json), expected, `${name}, listed again`);
+  }
+});
+
+// A stored row's list can lack the eprint's codes, as this loss left it with
+// the working paper's own list, or hold them beside MeSH terms Europe PMC's
+// enrichment added, with no primary. Listing the eprint again gives the row
+// the eprint's categories in either order; a batch without the eprint
+// changes no category, and the unknown primary stays unknown.
+test("a stored working-paper row whose categories lost or mixed its eprint's codes takes them back when the eprint is listed again", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  for (const [name, stored] of [['lost', workingPaper.categories], ['mixed', ['econ.EM', 'q-fin.ST', 'Models, Economic']]] as const) {
+    const storeList = (night: number, db: ReturnType<typeof testD1>['db']) => {
+      if (night !== 1) return;
+      const row = db.prepare('SELECT id, paper FROM works').get() as { id: number; paper: string };
+      db.prepare('UPDATE works SET paper = ? WHERE id = ?').run(JSON.stringify({ ...JSON.parse(row.paper) as Paper, primaryCategory: '', categories: stored, allCategories: stored }), row.id);
+    };
+    for (const later of [[workingPaper, eprint], [eprint, workingPaper]]) {
+      const relisted = await journalRowAfter(t, [[workingPaper], [eprint], later], storeList);
+      assert.deepEqual(categories(relisted.json), ['econ.EM', ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']], `${name}, ${later[0] === eprint ? 'eprint' : 'working paper'} first`);
+    }
+    const withoutEprint = await journalRowAfter(t, [[workingPaper], [eprint], [workingPaper]], storeList);
+    assert.deepEqual(categories(withoutEprint.json), ['', stored, stored], `${name}, working paper alone`);
+  }
+});
+
+// ADS copies arXiv's classes into its own list, beside its keywords, and can
+// leave some out. Its record listed alone is no eprint: it changes no
+// category of a row the eprint started, nor of one ADS started.
+test("an ADS record listed alone keeps the categories of a row the eprint or ADS started", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const ads = mapAdsPaper({
+    bibcode: '2026arXiv261001234E', title: [gmmArticle.title], author: ['Economist, Ana'], abstract: 'The ADS copy of the arXiv version of this paper.',
+    identifier: ['arXiv:2610.01234'], arxiv_class: ['econ.EM'], keyword: ['Econometrics'], doctype: 'eprint', pubdate: '2026-10-00', year: '2026',
+  })!;
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  for (const [first, list] of [[eprint, ['econ.EM', 'q-fin.ST']], [ads, ['econ.EM', 'Econometrics']]] as const) {
+    const name = first.sources.primary;
+    assert.deepEqual(categories((await journalRowAfter(t, [[first]])).json), ['econ.EM', list, list], `${name} alone`);
+    assert.deepEqual(categories((await journalRowAfter(t, [[first], [ads]])).json), ['econ.EM', list, list], `${name}, then ADS`);
   }
 });
 

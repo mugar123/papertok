@@ -371,6 +371,18 @@ function storedPaper(paper: Paper): Paper {
   return stored;
 }
 
+// The arXiv codes among a paper's categories, as its categories, or nothing
+// when it has none. MeSH terms Europe PMC added beside them stay in
+// `biomedicalTerms`. The primary stays only when it is one of the codes: the
+// series lane's area key `econ` passes `isArxivCategory` but is no arXiv
+// category.
+function arxivCategoriesOf(paper: Paper): Pick<Paper, 'primaryCategory' | 'categories' | 'allCategories'> {
+  const codes = (paper.categories ?? []).filter(isArxivCategory);
+  return codes.length > 0
+    ? { primaryCategory: codes.find(code => code === paper.primaryCategory) ?? '', categories: codes, allCategories: codes }
+    : {};
+}
+
 // Without an abstract, the title alone: the mappers' "No abstract available."
 // would make every such paper alike.
 const embeddingText = (paper: Partial<Paper>) => (hasUsableAIAbstract(paper.abstract)
@@ -378,7 +390,13 @@ const embeddingText = (paper: Partial<Paper>) => (hasUsableAIAbstract(paper.abst
   : text(paper.title)).slice(0, EMBED_TEXT_CHARS);
 
 interface WorkRow { id: number; paper: string; kept_until: string }
-interface Group { paper: Paper; lanes: Set<string>; keys: Set<string> }
+// `arxivCategories`: the paper's categories are those of an arXiv record of
+// the batch. ADS and INSPIRE put arXiv codes in their own lists, so codes
+// alone do not say an eprint brought them.
+interface Group { paper: Paper; lanes: Set<string>; keys: Set<string>; arxivCategories: boolean }
+
+// The records `merge` takes categories from.
+const givesArxivCategories = (paper: Paper) => paper.sources?.primary === 'arxiv' && Boolean(paper.primaryCategory);
 
 // A new row's number comes from its paper id, so two writers filing the same
 // paper at once (a like looked up by two requests, a followed lane's run beside
@@ -453,15 +471,8 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
   const enrichedBy = [...new Set([...(row.sources?.enrichedBy ?? []), ...merged.sources.enrichedBy])];
   // `merge` takes categories only from an arXiv record, so arXiv codes on this
   // OpenAlex row came from an eprint merged into it, and the article's concept
-  // names (kept in `concepts`) must not replace them (ENG-205). MeSH terms
-  // Europe PMC added beside them stay in `biomedicalTerms`. The primary stays
-  // only when it is one of the codes: the series lane's area key `econ`
-  // passes `isArxivCategory` but is no arXiv category.
-  const arxivCodes = (row.categories ?? []).filter(isArxivCategory);
-  const arxivCategories = arxivCodes.length > 0
-    ? { primaryCategory: arxivCodes.find(code => code === row.primaryCategory) ?? '', categories: arxivCodes, allCategories: arxivCodes }
-    : {};
-  return storedPaper({ ...merged, ...arxivCategories, id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
+  // names (kept in `concepts`) must not replace them (ENG-205).
+  return storedPaper({ ...merged, ...arxivCategoriesOf(row), id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
 }
 
 /**
@@ -613,16 +624,18 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const joined = [...new Set(keys.map(key => groupOfKey.get(key)).filter(Boolean) as Group[])];
     let group = joined[0];
     if (!group) {
-      group = { paper, lanes: new Set(), keys: new Set() };
+      group = { paper, lanes: new Set(), keys: new Set(), arxivCategories: givesArxivCategories(paper) };
       groups.push(group);
     } else {
       for (const other of joined.slice(1)) {
         group.paper = PaperBuilder.merge(group.paper, other.paper, other.paper.provider || other.paper.sources?.primary);
+        group.arxivCategories ||= givesArxivCategories(other.paper);
         other.lanes.forEach(lane => group.lanes.add(lane));
         other.keys.forEach(key => group.keys.add(key));
         groups.splice(groups.indexOf(other), 1);
       }
       group.paper = PaperBuilder.merge(group.paper, paper, paper.provider || paper.sources?.primary);
+      group.arxivCategories ||= givesArxivCategories(paper);
     }
     if (isJournalArticleRecord(paper, item.paper.raw)) articles.push(paper);
     item.lanes.forEach(lane => group.lanes.add(lane));
@@ -660,6 +673,10 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
       paper = stored.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other.paper, other.paper.provider || other.paper.sources?.primary), base);
       paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
+      // A batch that lists another source's record of the paper before its
+      // eprint brings the eprint's categories inside that record, which
+      // `merge` takes none from (ENG-206).
+      if (group.arxivCategories && group.paper.sources?.primary !== 'arxiv') paper = { ...paper, ...arxivCategoriesOf(group.paper) };
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }
