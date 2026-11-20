@@ -75,7 +75,7 @@ import {
 import { openSearchScope, scopeAnswerPaints, searchPageIssue } from './search-page-run.ts';
 import type { SearchRun } from './search-page-run.ts';
 import { visibleSearchResults } from './search-visible-results.ts';
-import { formatProjectAmount } from '../../utils/format-project-amount.ts';
+import { projectByline } from './project-byline.ts';
 import './search-page.css';
 
 const SEARCH_DEBOUNCE_MS = 320;
@@ -939,10 +939,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
                   >
                     {(project.funder || project.budget! > 0) && (
                       <p className="list-row-byline">
-                        {[
-                          project.funder,
-                          project.budget! > 0 && formatProjectAmount(project.budget!, project.currency, locale),
-                        ].filter(Boolean).join(' · ')}
+                        {projectByline(project.funder, project.budget, project.currency, locale)}
                       </p>
                     )}
                   </ListRow>
