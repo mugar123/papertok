@@ -169,12 +169,17 @@ export function parseArxivAtom(xml: string) {
   if (Object.keys(document).length !== 1 || feed === undefined || Array.isArray(feed)) {
     throw new Error('Expected a single arXiv feed');
   }
+  if (text(typeof feed === 'string' ? feed : feed['#text'])) {
+    throw new Error('Unexpected text in arXiv feed');
+  }
   const entries: AtomEntry[] = feed.entry ?? [];
   return entries.flatMap((entry): ArxivRecord[] => {
+    const id = entry.id && typeof entry.id === 'object' && '#text' in entry.id ? entry.id['#text'] : entry.id;
+    if (text(id).includes('/api/errors#')) throw new Error('arXiv API error');
     const primary = text(entry.primary_category?.['@_term']);
     const categories = [...new Set([primary, ...(entry.category || []).map(category => text(category?.['@_term']))].filter(Boolean))];
     const paper = {
-      arxivId: versionless(entry.id),
+      arxivId: versionless(id),
       title: text(entry.title),
       abstract: text(entry.summary),
       authors: (entry.author || []).map(author => text(author?.name)).filter(Boolean),

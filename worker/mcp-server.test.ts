@@ -1,12 +1,14 @@
 import type { WorkerEnv } from './env.ts';
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test, { afterEach, beforeEach, mock } from 'node:test';
 import { trackErrors } from './error-tracking.ts';
 import reportApi from './index.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 const SECRET = 'test-only-pdf-rate-limit-key-32-bytes';
+const ARXIV_ERROR_FEED = readFileSync(new URL('./test-support/arxiv-error.xml', import.meta.url), 'utf8');
 
 // A request from outside the Worker, an agent's included, takes only even
 // seats of the arXiv beat, and an agent never waits for one. Every test starts
@@ -469,7 +471,7 @@ test('search_papers asks the same upstream questions whatever the limit', async 
 
 test('search_papers accepts empty result lists from both providers', async () => {
   await withUpstream(url => url.startsWith('https://api.openalex.org/')
-    ? Response.json({ results: [] }) : new Response(arxivFeed('')), async calls => {
+    ? Response.json({ results: [] }) : new Response(arxivFeed('<![CDATA[  ]]>')), async calls => {
     const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'graphene' });
     assert.equal(answer.result?.isError, undefined);
     assert.deepEqual(answer.result?.structuredContent?.papers, []);
@@ -487,6 +489,8 @@ for (const [source, body] of [
   ['arxiv', '<feed/><other/>'],
   ['arxiv', '<feed/><feed/>'],
   ['arxiv', '<feed/>unexpected'],
+  ['arxiv', '<feed>temporarily unavailable</feed>'],
+  ['arxiv', '<feed xml:lang="en">temporarily unavailable</feed>'],
 ]) {
   test(`search_papers reports an invalid ${source} response (${body})`, async () => {
     await withUpstream(() => new Response(body), async calls => {
@@ -498,6 +502,28 @@ for (const [source, body] of [
     });
   });
 }
+
+test('an Atom error entry makes arXiv unavailable for search and lookup', async () => {
+  await withUpstream(url => url.startsWith('https://api.openalex.org/')
+    ? Response.json({ results: [OPENALEX_WORK] }) : new Response(ARXIV_ERROR_FEED), async calls => {
+    const search = await callTool(routeEnv(), 'search_papers', { query: 'graphene', sources: ['arxiv'] });
+    const unavailable = [{ source: 'arxiv', code: 'UPSTREAM_UNAVAILABLE' }];
+    assert.equal(search.answer.result?.isError, true);
+    assert.equal(search.answer.result?.structuredContent?.code, 'SOURCES_UNAVAILABLE');
+    assert.deepEqual(search.answer.result?.structuredContent?.unavailable, unavailable);
+
+    const both = await callTool(routeEnv(), 'search_papers', { query: 'graphene' });
+    assert.equal(both.answer.result?.isError, undefined);
+    const papers = both.answer.result?.structuredContent?.papers as Array<{ id: string }>;
+    assert.deepEqual(papers.map(paper => paper.id), ['openalex:W4400000001']);
+    assert.deepEqual(both.answer.result?.structuredContent?.unavailable, unavailable);
+
+    const lookup = await callTool(routeEnv(), 'get_paper', { id: 'arxiv:2603.01234' });
+    assert.equal(lookup.answer.result?.isError, true);
+    assert.equal(lookup.answer.result?.structuredContent?.code, 'UPSTREAM_UNAVAILABLE');
+    assert.equal(calls.length, 4);
+  });
+});
 
 test('get_paper reports an unreadable arXiv feed without another lookup', async () => {
   await withUpstream(() => new Response('<feedback/>'), async calls => {
