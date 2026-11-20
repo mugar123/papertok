@@ -86,12 +86,13 @@ test('every control that can change a public list says it counts only when the l
   assert.match(text('delete-list'), /cannot be deleted until it resets/);
 });
 
-test('Read article says the viewer opens on a PDF it can show or on full text, and when a new tab opens', () => {
+test('Read article lists every target it tries, in order, and which of them open in the viewer or a new tab', () => {
   const read = text('read');
-  assert.match(read, /full text it finds for the paper, opens in PaperTok’s viewer/);
-  assert.match(read, /university’s library, the publisher’s version opens in a new tab/);
-  assert.match(read, /an arXiv PDF, for example\), or full text it finds for the paper, opens in PaperTok’s viewer/);
-  assert.match(read, /publisher’s or DOI page opens in a new tab/);
+  assert.match(read, /First, your university’s library, if you linked one and it has the paper: a new tab./);
+  assert.match(read, /full text PaperTok finds for the paper, shown in PaperTok’s viewer/);
+  assert.match(read, /Only a link on arxiv.org opens in PaperTok’s viewer; every other one, a repository PDF included, opens in a new tab/);
+  assert.match(read, /open copy found for the paper \(its PDF, then its page\), the paper’s open-access PDF, its arXiv PDF, its own PDF link, a ChemRxiv page, and its landing page/);
+  assert.match(read, /last resort opens the DOI page in a new tab/);
 });
 
 test('the Interests section describes Priority, Feed mix and the per-area level with the mixes the app has', () => {
@@ -104,6 +105,20 @@ test('the Interests section describes Priority, Feed mix and the per-area level 
   assert.match(text('feed-mix'), /Shows once you have chosen areas of both kinds/);
   assert.equal(allowanceOf('area-priority'), 'free');
   assert.deepEqual(section.entries.map(entry => entry.needsAccount), [false, false, true]);
+});
+
+test('Filters keeps the sort order apart from the three filters that get chips and that Reset clears', () => {
+  const filters = text('filters');
+  assert.match(filters, /three filters and a sort order/);
+  assert.match(filters, /Reset clears the three filters and closes the panel/);
+  assert.match(filters, /Sort by, Most cited or Most recent, is set in the same panel but is not a filter: it has no chip, it is not counted, and Reset leaves it as it is/);
+});
+
+test('the Settings section says how to reach Settings from an account and that a visitor has none', () => {
+  const settings = HELP_SECTIONS.find(section => section.id === 'settings');
+  assert.ok(settings?.signedInOnly);
+  assert.match(settings.intro, /^Reached from the account menu: your picture, at the right end of the top bar\. Only an account has Settings; a visitor does not\./);
+  assert.doesNotMatch(settings.intro, /beside this one/);
 });
 
 test('the trial number is a link and the study-type label is information only', () => {
