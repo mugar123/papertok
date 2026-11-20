@@ -14,6 +14,7 @@ import {
   LinkBreak,
   LinkSimple,
   PencilSimple,
+  Question,
   ShieldCheck,
   Sparkle,
   Trash,
@@ -41,6 +42,7 @@ import InstitutionDialog from '../institution/institution-dialog.tsx';
 import InstitutionPill from '../institution/institution-pill.tsx';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import EditInterestsModal from './edit-interests-modal.tsx';
+import HelpPage from './help-page.tsx';
 import SummaryHistory from './summary-history.tsx';
 import { LEVEL_DETAILS } from './reading-levels.ts';
 import { FollowingSheet } from './following-settings-page.tsx';
@@ -69,6 +71,7 @@ const SETTINGS_PAGES = [
   { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics and author statistics', Icon: ShieldCheck },
+  { slug: 'help', label: 'Help', summary: 'What each button and gesture does', Icon: Question },
 ];
 
 const SETTINGS_COPY = {
@@ -678,6 +681,7 @@ const PAGE_COMPONENTS = {
   reading: ReadingPage,
   notifications: NotificationsPage,
   privacy: PrivacyPage,
+  help: HelpPage,
 };
 
 export default function SettingsPage({ page = 'profile' }) {

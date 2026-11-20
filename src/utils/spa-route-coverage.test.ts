@@ -41,6 +41,12 @@ test('a custom feed has an address of its own', async () => {
   assert.ok(!matches('/feeds/abcd1234/extra'));
 });
 
+test('the Help page has an address of its own', async () => {
+  const matches = await spaMatcher();
+  assert.ok(matches('/settings/help'));
+  assert.ok(!matches('/helpful'));
+});
+
 test('Zotero returns the browser to an address the app answers', async () => {
   const matches = await spaMatcher();
   assert.ok(matches('/zotero/callback'));

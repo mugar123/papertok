@@ -19,6 +19,7 @@ const LABELS: Record<string, string> = {
   '/settings/reading': 'Reading & AI · Settings',
   '/settings/notifications': 'Notifications · Settings',
   '/settings/privacy': 'Privacy · Settings',
+  '/settings/help': 'Help · Settings',
   '/settings/following': 'Following settings',
   '/settings/feeds': 'Feeds settings',
   '/login': 'Sign in',
@@ -37,6 +38,7 @@ const SELF_TITLED = new Set([
   '/settings/reading',
   '/settings/notifications',
   '/settings/privacy',
+  '/settings/help',
 ])
 
 function normalize(pathname: string) {

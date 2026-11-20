@@ -20,7 +20,7 @@ test('returns null for self-titled and unknown routes', () => {
   // themselves (settings-page.tsx, usePublicPageMetadata); the announcer must
   // not fight them.
   assert.equal(routeTitle('/settings'), null)
-  for (const page of ['profile', 'discovery', 'reading', 'notifications', 'privacy']) {
+  for (const page of ['profile', 'discovery', 'reading', 'notifications', 'privacy', 'help']) {
     assert.equal(routeTitle(`/settings/${page}`), null, `/settings/${page}`)
   }
   assert.equal(routeTitle('/paper/x'), null)
@@ -33,6 +33,7 @@ test('labels announce even self-titled routes', () => {
   assert.equal(routeLabel('/settings'), 'Settings')
   assert.equal(routeLabel('/settings/profile'), 'Account · Settings')
   assert.equal(routeLabel('/settings/privacy'), 'Privacy · Settings')
+  assert.equal(routeLabel('/settings/help'), 'Help · Settings')
   assert.equal(routeLabel('/nonsense'), null)
 })
 
