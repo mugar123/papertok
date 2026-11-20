@@ -151,7 +151,7 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('an existing reader who saw the first 20 November notice is owed the survey notice', () => {
+test('a reader who saw only the first 20 November notice is owed all subsequent changes', () => {
   assert.equal(privacyNoticeStatus({
     user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
     signedIn: true,
@@ -161,6 +161,13 @@ test('an existing reader who saw the first 20 November notice is owed the survey
     account: { uid: 'reader', version: '2026-11-20' },
     storage: null,
   }), 'owed');
+  const notice = PRIVACY_POLICY_CHANGE.join(' ');
+  assert.match(notice, /analytics on.*survey.*account/i);
+  assert.match(notice, /reading level and broad areas of interest/i);
+  assert.match(notice, /answers.*role if you chose one/i);
+  assert.match(notice, /My profile.*papers that cite your work.*frequent coauthors.*keeps neither list/i);
+  assert.match(notice, /only your browser.*return 7 to 13 days after your first real use/i);
+  assert.match(notice, /first-use and visit events already sent to PostHog/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

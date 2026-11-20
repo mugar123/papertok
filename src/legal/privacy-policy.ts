@@ -127,6 +127,8 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
+  'With usage analytics on, PaperTok links survey events to your account, including your reading level and broad areas of interest when available. Submitting the survey records your answers, including your role if you chose one.',
+  'My profile lists recent papers that cite your work and your frequent coauthors. PaperTok keeps neither list.',
   'Only your browser keeps the mark for a return 7 to 13 days after your first real use. PaperTok measures these returns using the first-use and visit events already sent to PostHog.',
 ];
 
@@ -140,12 +142,20 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  lead: 'Only your browser keeps the mark',
+  lead: 'With usage analytics on',
   clauses: [
+    ['PaperTok links survey events to your account', /With usage analytics on, PaperTok links survey events to your account/],
+    ['your reading level and broad areas of interest when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
+    ['Submitting the survey records your answers, including your role if you chose one', /Submitting the survey records your answers, including your role if you chose one/],
+    ['recent papers that cite your work', /papers from the last 12 months that cite your publications/],
+    ['your frequent coauthors', /coauthors you share two or more of those works with/],
+    ['PaperTok keeps neither list', /PaperTok keeps neither list/],
     ['Only your browser keeps the mark for a return 7 to 13 days after your first real use', /Only your browser keeps the mark for a return 7 to 13 days after your first real use/],
     ['using the first-use and visit events already sent to PostHog', /using the first-use and visit events already sent to PostHog/],
   ],
   unsaid: [
+    [/anonymous/i, 'survey events are linked to the signed-in account'],
+    [/required role/i, 'readers can skip the role question'],
     [/stops measuring returns/i, 'the existing visit events still measure returns'],
   ],
 };
