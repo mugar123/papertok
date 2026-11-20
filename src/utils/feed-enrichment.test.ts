@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Paper } from '../models/paper.ts';
+import { mergeFeedEvidence } from '../models/paper-evidence.ts';
 import {
   abstractsInFlight,
   getOpenAlexEnrichmentId,
@@ -13,6 +14,22 @@ import {
   preserveFeedAbstracts,
   recoverableAbstractDois,
 } from './feed-enrichment.ts';
+
+test('a recurring card takes evidence from a later batch and keeps its displayed record', () => {
+  const card: Paper = {
+    id: 'pmid:32445440',
+    sources: { primary: 'pubmed', enrichedBy: [] },
+    title: 'A trial report',
+    abstract: 'The abstract already shown on the card.',
+    authors: [],
+  };
+  const next = mergeFeedEvidence([card], [
+    { ...card, id: 'pmid:24352797', studyType: 'practice-guideline' },
+    { ...card, abstract: 'An alternate abstract.', studyType: 'randomized-controlled-trial', trialRegistration: 'NCT04280705' },
+  ]);
+  assert.deepEqual(next, [{ ...card, studyType: 'randomized-controlled-trial', trialRegistration: 'NCT04280705', trialRegistrationSource: undefined }]);
+  assert.equal(mergeFeedEvidence(next, [card]), next);
+});
 
 test('normalizes arXiv versions for OpenAlex enrichment', () => {
   assert.equal(getOpenAlexEnrichmentId('arxiv:2607.12345v2'), '2607.12345');

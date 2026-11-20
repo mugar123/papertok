@@ -1,0 +1,77 @@
+<!-- EFetch excerpts for PMIDs 32445440, 24352797, 43059205, 43059327 and 36914411. -->
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID Version="1">32445440</PMID>
+      <Article>
+        <ArticleTitle>Remdesivir for the Treatment of Covid-19 - Final Report.</ArticleTitle>
+        <DataBankList CompleteYN="Y">
+          <DataBank>
+            <DataBankName>ClinicalTrials.gov</DataBankName>
+            <AccessionNumberList>
+              <AccessionNumber>NCT04280705</AccessionNumber>
+            </AccessionNumberList>
+          </DataBank>
+        </DataBankList>
+        <PublicationTypeList>
+          <PublicationType UI="D017428">Clinical Trial, Phase III</PublicationType>
+          <PublicationType UI="D016428">Journal Article</PublicationType>
+          <PublicationType UI="D016449">Randomized Controlled Trial</PublicationType>
+          <PublicationType UI="D052061">Research Support, N.I.H., Extramural</PublicationType>
+          <PublicationType UI="D013485">Research Support, Non-U.S. Gov't</PublicationType>
+        </PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID Version="1">24352797</PMID>
+      <Article>
+        <ArticleTitle>2014 evidence-based guideline for the management of high blood pressure in adults: report from the panel members appointed to the Eighth Joint National Committee (JNC 8).</ArticleTitle>
+        <PublicationTypeList>
+          <PublicationType UI="D016428">Journal Article</PublicationType>
+          <PublicationType UI="D017065">Practice Guideline</PublicationType>
+          <PublicationType UI="D052061">Research Support, N.I.H., Extramural</PublicationType>
+        </PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID Version="1">43059205</PMID>
+      <Article>
+        <ArticleTitle>Prevalence of Diastolic Dysfunction Among COPD Patients-A Systematic Review and Meta-Analysis.</ArticleTitle>
+        <PublicationTypeList>
+          <PublicationType UI="D016428">Journal Article</PublicationType>
+          <PublicationType UI="D000078182">Systematic Review</PublicationType>
+          <PublicationType UI="D017418">Meta-Analysis</PublicationType>
+          <PublicationType UI="D016454">Review</PublicationType>
+        </PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID Version="1">43059327</PMID>
+      <Article>
+        <ArticleTitle>From Sea to Protein: A Systematic Review of Techno-Economic Assessments of Seaweed Protein Production for Food and Feed Applications.</ArticleTitle>
+        <PublicationTypeList>
+          <PublicationType UI="D016428">Journal Article</PublicationType>
+          <PublicationType UI="D000078182">Systematic Review</PublicationType>
+          <PublicationType UI="D016454">Review</PublicationType>
+        </PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID Version="1">36914411</PMID>
+      <Article>
+        <ArticleTitle>Anti-IL17A, Ixekizumab, for treatment-resistant chronic venous leg ulcers: A phase II randomized, double-blind, placebo-controlled pilot trial.</ArticleTitle>
+        <PublicationTypeList>
+          <PublicationType UI="D016422">Letter</PublicationType>
+        </PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+</PubmedArticleSet>

@@ -15,6 +15,8 @@ interface XmlNode {
  */
 
 import { orderMeshDescriptors } from './mesh-check-tags.ts';
+import { readTrialRegistration, trialRegistrationFromAbstract } from '../models/paper-evidence.ts';
+import { medlineStudyType } from './medline-record.ts';
 
 function collapseWhitespace(value: unknown) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -122,12 +124,20 @@ export function mergePubmedAuthors(cardAuthors: Paper['authors'] | null | undefi
  * CommentsCorrections come after it.
  */
 export function readPubmedEfetch(xmlDoc: Pick<XmlNode, 'querySelectorAll'> | null | undefined) {
-  const records: Record<string, Pick<Paper, 'abstract' | 'authors'> & { authors: PaperAuthor[]; categories: string[] }> = {};
+  const records: Record<string, Pick<Paper, 'abstract' | 'studyType' | 'trialRegistration' | 'trialRegistrationSource'> & { authors: PaperAuthor[]; categories: string[] }> = {};
   for (const article of Array.from(xmlDoc?.querySelectorAll?.('PubmedArticle') || [])) {
     const pmid = collapseWhitespace(article.querySelector('PMID')?.textContent);
     if (!pmid) continue;
+    const abstract = pubmedAbstractText(article);
+    const accessions = Array.from(article.querySelectorAll('Article > DataBankList > DataBank'))
+      .filter(bank => /^clinicaltrials\.gov$/i.test(collapseWhitespace(bank.querySelector('DataBankName')?.textContent)))
+      .flatMap(bank => Array.from(bank.querySelectorAll('AccessionNumber')));
+    const registration = accessions.map(node => readTrialRegistration(collapseWhitespace(node.textContent))).find(Boolean);
     records[`pmid:${pmid}`] = {
-      abstract: pubmedAbstractText(article),
+      abstract,
+      studyType: medlineStudyType(Array.from(article.querySelectorAll('Article > PublicationTypeList > PublicationType'), node => collapseWhitespace(node.textContent))),
+      trialRegistration: registration ?? trialRegistrationFromAbstract(abstract),
+      ...(registration && { trialRegistrationSource: 'pubmed-secondary-source' as const }),
       categories: pubmedSubjects(article),
       authors: pubmedAuthors(article),
     };

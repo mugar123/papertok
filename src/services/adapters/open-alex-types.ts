@@ -14,6 +14,7 @@ export interface OpenAlexWork {
   publication_year?: number | null;
   publication_date?: string;
   type?: string;
+  study_designs?: Array<{ id?: string; display_name?: string }> | null;
   is_retracted?: boolean;
   primary_location?: OpenAlexLocation | null;
   best_oa_location?: OpenAlexLocation | null;

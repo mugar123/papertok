@@ -125,6 +125,7 @@ import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
 import { saveRollbacks, takeBacksOnProfile } from './save-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
+import { mergeFeedEvidence, withPaperEvidenceOf } from '../models/paper-evidence.ts';
 import { abstractExcerpt, copyOfRecordWithoutCopy, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
@@ -1465,10 +1466,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         allFetched.forEach(p => {
           const existing = uniqueMap.get(p.id);
           if (existing) {
-            existing._followedEntityMatches = mergeFollowEntityMatches(
-              existing._followedEntityMatches,
-              p._followedEntityMatches,
-            );
+            uniqueMap.set(p.id, {
+              ...withPaperEvidenceOf(existing, p),
+              _followedEntityMatches: mergeFollowEntityMatches(existing._followedEntityMatches, p._followedEntityMatches),
+            });
           } else {
             uniqueMap.set(p.id, p);
           }
@@ -1481,6 +1482,22 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
       if (requestId !== feedRequestId.current) return;
+
+      if ((!reset || keepThroughVisible) && newPapers.some(paper => paper.studyType || paper.trialRegistration)) {
+        const userId = activeUserId.current;
+        const signature = feedPreferenceSignature(userPreferences);
+        setPapers(current => {
+          if (feedSessionId.current !== activeSessionId) return current;
+          const next = mergeFeedEvidence(current, newPapers);
+          const cached = feedCache.current[activeMode];
+          if (next !== current && cached) {
+            const snapshot = { ...cached, papers: next };
+            feedCache.current[activeMode] = snapshot;
+            scheduleFeedSnapshotWrite(userId, signature, snapshot);
+          }
+          return next;
+        });
+      }
 
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
@@ -1692,7 +1709,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     userPreferences, deselectedPreferences, addedPreferences, interestSettings, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed, readerLean,
     calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent, user?.uid,
-    lastVisit, restoreFeedSnapshot,
+    lastVisit, restoreFeedSnapshot, scheduleFeedSnapshotWrite,
   ]);
 
   const preferencesSignatureRef = useRef<string | null>(null);

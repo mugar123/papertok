@@ -138,6 +138,7 @@ import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-s
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 import type { StatusTagKey } from '../../utils/paper-status.ts';
+import { trialRegistrationUrl, type StudyType } from '../../models/paper-evidence.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
 import { sourceAttribution } from '../../utils/source-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
@@ -150,6 +151,13 @@ import { buildPaperTopicTags, getPaperClassification } from '../../utils/paper-t
  * A 420ms collapse keeps resetting this, so the reading lands once — after it.
  */
 const ABSTRACT_SETTLE_MS = 180;
+
+const STUDY_TYPE_LABELS: Record<StudyType, string> = {
+  'randomized-controlled-trial': 'Randomized controlled trial',
+  'systematic-review': 'Systematic review',
+  'meta-analysis': 'Meta-analysis',
+  'practice-guideline': 'Practice guideline',
+};
 // The abstract's open and resize. paper-card.css reads it as --abstract-motion.
 const ABSTRACT_MOTION_MS = 300;
 // The abstract ⇄ map swap: the slide and the slot's height (`.pc-slot--morphing`
@@ -1910,6 +1918,9 @@ const PaperCard = memo(function PaperCard({
     readerListeners.current.forEach(onChange => onChange());
   });
 
+  const trialUrl = trialRegistrationUrl(paper.trialRegistration);
+  const studyTypeLabel = paper.studyType && STUDY_TYPE_LABELS[paper.studyType];
+
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
@@ -2055,6 +2066,22 @@ const PaperCard = memo(function PaperCard({
                 </span>
               )}
             </>
+          )}
+          {(studyTypeLabel || trialUrl) && (
+            <div className="pc-evidence">
+              {studyTypeLabel && <span>{studyTypeLabel}</span>}
+              {trialUrl && (
+                <a
+                  href={trialUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${paper.trialRegistration} on ClinicalTrials.gov (opens in a new tab)`}
+                  onClick={event => event.stopPropagation()}
+                >
+                  {paper.trialRegistration}
+                </a>
+              )}
+            </div>
           )}
         </div>
 

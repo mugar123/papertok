@@ -1,4 +1,5 @@
 import type { Paper } from '../models/paper.ts';
+import { trialRegistrationFromAbstract } from '../models/paper-evidence.ts';
 
 import { PaperBuilder } from '../services/paper-builder.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
@@ -90,8 +91,11 @@ export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
       .find(({ abstract }) => abstract);
     if (!recovered) return paper;
     changed = true;
-    // Recovery supplies only text; it must not replace publication or access metadata.
-    return PaperBuilder.merge(paper, { abstract: recovered.abstract, abstractSource: recovered.credit }, recovered.source);
+    return PaperBuilder.merge(paper, {
+      abstract: recovered.abstract,
+      abstractSource: recovered.credit,
+      trialRegistration: trialRegistrationFromAbstract(recovered.abstract),
+    }, recovered.source);
   });
   return changed ? merged : papers;
 }

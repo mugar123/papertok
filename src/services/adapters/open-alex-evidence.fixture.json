@@ -1,0 +1,16 @@
+{
+  "id": "https://openalex.org/W2588681363",
+  "doi": "https://doi.org/10.1159/000454668",
+  "type": "review",
+  "title": "The “Golden Age” of Probiotics: A Systematic Review and Meta-Analysis of Randomized and Observational Studies in Preterm Infants",
+  "study_designs": [
+    {
+      "display_name": "Systematic Review",
+      "id": "https://openalex.org/study-designs/systematic-review"
+    },
+    {
+      "display_name": "Meta-Analysis",
+      "id": "https://openalex.org/study-designs/meta-analysis"
+    }
+  ]
+}

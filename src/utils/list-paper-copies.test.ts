@@ -283,3 +283,13 @@ test('a device copy with unknown citations does not replace a known library coun
   assert.equal(mergeListPaperCopies({ [cached.id]: cached }, { [cached.id]: library }, 'interaction')[cached.id].citationCount, 42);
   assert.equal(listPaper({ ...library, citationCount: 0 }, cached, undefined)?.citationCountKnown, true);
 });
+
+for (const indexedFirst of [true, false]) {
+  test(`keeps the indexed trial when the PubMed copy comes ${indexedFirst ? 'first' : 'last'}`, () => {
+    const indexed = { ...card, trialRegistration: 'NCT04280705', trialRegistrationSource: 'pubmed-secondary-source' as const };
+    const mentioned = { ...card, trialRegistration: 'NCT00000001' };
+    const [first, second] = indexedFirst ? [indexed, mentioned] : [mentioned, indexed];
+    const merged = listPaperFromCopies(interactionCopy(first), interactionCopy(second));
+    assert.deepEqual([merged.trialRegistration, merged.trialRegistrationSource], ['NCT04280705', 'pubmed-secondary-source']);
+  });
+}
