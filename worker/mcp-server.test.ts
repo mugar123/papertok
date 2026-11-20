@@ -467,6 +467,59 @@ test('search_papers asks the same upstream questions whatever the limit', async 
   assert.deepEqual(seven.asked, one.asked);
 });
 
+test('search_papers accepts empty result lists from both providers', async () => {
+  await withUpstream(url => url.startsWith('https://api.openalex.org/')
+    ? Response.json({ results: [] }) : new Response(arxivFeed('')), async calls => {
+    const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'graphene' });
+    assert.equal(answer.result?.isError, undefined);
+    assert.deepEqual(answer.result?.structuredContent?.papers, []);
+    assert.deepEqual(answer.result?.structuredContent?.unavailable, []);
+    assert.equal(calls.length, 2);
+  });
+});
+
+for (const [source, body] of [
+  ['openalex', '{}'],
+  ['openalex', '{"results":{}}'],
+  ['openalex', '{'],
+  ['arxiv', '<feed><entry></feed>'],
+  ['arxiv', '<feedback/>'],
+  ['arxiv', '<feed/><other/>'],
+  ['arxiv', '<feed/><feed/>'],
+  ['arxiv', '<feed/>unexpected'],
+]) {
+  test(`search_papers reports an invalid ${source} response (${body})`, async () => {
+    await withUpstream(() => new Response(body), async calls => {
+      const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'graphene', sources: [source] });
+      assert.equal(answer.result?.isError, true);
+      assert.equal(answer.result?.structuredContent?.code, 'SOURCES_UNAVAILABLE');
+      assert.deepEqual(answer.result?.structuredContent?.unavailable, [{ source, code: 'UPSTREAM_UNAVAILABLE' }]);
+      assert.equal(calls.length, 1);
+    });
+  });
+}
+
+test('get_paper reports an unreadable arXiv feed without another lookup', async () => {
+  await withUpstream(() => new Response('<feedback/>'), async calls => {
+    const { answer } = await callTool(routeEnv(), 'get_paper', { id: 'arxiv:2603.01234' });
+    assert.equal(answer.result?.isError, true);
+    assert.equal(answer.result?.structuredContent?.code, 'UPSTREAM_UNAVAILABLE');
+    assert.equal(calls.length, 1);
+  });
+});
+
+test('search_papers keeps OpenAlex papers when arXiv sends a truncated feed', async () => {
+  await withUpstream(url => url.startsWith('https://api.openalex.org/')
+    ? Response.json({ results: [OPENALEX_WORK] }) : new Response('<feed>'), async calls => {
+    const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'graphene' });
+    assert.equal(answer.result?.isError, undefined);
+    const papers = answer.result?.structuredContent?.papers as Array<{ id: string }>;
+    assert.deepEqual(papers.map(paper => paper.id), ['openalex:W4400000001']);
+    assert.deepEqual(answer.result?.structuredContent?.unavailable, [{ source: 'arxiv', code: 'UPSTREAM_UNAVAILABLE' }]);
+    assert.equal(calls.length, 2);
+  });
+});
+
 test('search_papers keeps arXiv when the OpenAlex budget refuses the search', async () => {
   await withUpstream(url => {
     if (url.startsWith('https://export.arxiv.org/api/query')) return new Response(ARXIV_FEED);

@@ -7,7 +7,7 @@ import type { UpstreamError } from './provider-runtime.ts';
 import type { OpenAireProduct } from '../src/services/open-aire-records.ts';
 import type { KeywordReading } from './keyword-lanes.ts';
 
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { ARXIV_FEED_AREAS, arxivPaper, isArxivCategory } from '../src/services/arxiv-records.ts';
 import { pubmedCategoryQuery, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
@@ -68,6 +68,7 @@ export interface ArxivRecord {
 
 const XML = new XMLParser({
   ignoreAttributes: false,
+  ignorePiTags: true,
   attributeNamePrefix: '@_',
   removeNSPrefix: true,
   parseTagValue: false,
@@ -161,7 +162,14 @@ interface AtomEntry {
 
 /** Papers of an arXiv API Atom feed (a search or an `id_list` lookup). */
 export function parseArxivAtom(xml: string) {
-  const entries: AtomEntry[] = XML.parse(xml)?.feed?.entry || [];
+  if (XMLValidator.validate(xml) !== true) throw new Error('Invalid arXiv XML');
+  // A final processing instruction makes the parser retain stray text after a self-closing feed.
+  const document = XML.parse(xml + '<?end?>');
+  const { feed } = document;
+  if (Object.keys(document).length !== 1 || feed === undefined || Array.isArray(feed)) {
+    throw new Error('Expected a single arXiv feed');
+  }
+  const entries: AtomEntry[] = feed.entry ?? [];
   return entries.flatMap((entry): ArxivRecord[] => {
     const primary = text(entry.primary_category?.['@_term']);
     const categories = [...new Set([primary, ...(entry.category || []).map(category => text(category?.['@_term']))].filter(Boolean))];

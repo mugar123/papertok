@@ -1727,7 +1727,15 @@ ledger did not answer (logged as a 503), `NOT_FOUND`,
 `INVALID_ARGUMENTS`, `UPSTREAM_RATE_LIMITED`, `UPSTREAM_TIMEOUT`,
 `UPSTREAM_UNAVAILABLE`, and `SOURCES_UNAVAILABLE` when every searched source
 failed, with `retryAfterSeconds` when every one was only rate limited), so the
-client model can read them. A provider's `retry-after` becomes
+client model can read them. An empty OpenAlex `results` array or an arXiv feed
+with no entries is a successful empty search. Invalid JSON, a missing or
+non-array `results` field, malformed XML or a missing feed root marks that
+source as `UPSTREAM_UNAVAILABLE`. A partial search returns the other source's
+papers and lists the failed source under `unavailable`. If the arXiv relay
+returns a body that `get_paper` cannot parse, the tool reports
+`UPSTREAM_UNAVAILABLE` without requesting an OpenAlex lookup.
+
+A provider's `retry-after` becomes
 `retryAfterSeconds` whether it gives seconds or an HTTP date in any of RFC
 9110's three forms: a date already past is 1 second, a header that is neither
 (`1.5`, `-5`, an ISO date) is 60 seconds, and a day is the most. An exception inside a tool call is

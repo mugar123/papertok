@@ -369,7 +369,8 @@ async function searchOpenAlex(query: string, since: string, caller: Request, env
     'per-page': MAX_RESULTS,
     select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   }, caller, env);
-  const { results = [] } = await response.json<{ results?: OpenAlexWork[] }>();
+  const { results } = await response.json<{ results?: OpenAlexWork[] }>();
+  if (!Array.isArray(results)) throw new ToolFailure({ code: 'UPSTREAM_UNAVAILABLE' });
   return results.map(work => mapOpenAlexWork(work));
 }
 
@@ -465,7 +466,12 @@ async function getArxivPaper(arxivId: string, caller: Request, env: WorkerEnv) {
   try {
     papers = await arxivPapers({ id_list: arxivId, max_results: 1 }, caller, env);
   } catch (error) {
-    if (!(error instanceof ToolFailure) || error.details.code === 'INVALID_ARGUMENTS') throw error;
+    if (!(error instanceof ToolFailure)) {
+      // The relay answered but its body was unreadable. Report it without a billed fallback.
+      captureWorkerException(error);
+      throw new ToolFailure({ code: 'UPSTREAM_UNAVAILABLE' });
+    }
+    if (error.details.code === 'INVALID_ARGUMENTS') throw error;
     const work = await ask(handleAgentOpenAlex, '/openalex/works', {
       filter: `locations.landing_page_url:http://arxiv.org/abs/${arxivId}|https://arxiv.org/abs/${arxivId}`,
       per_page: 1,
