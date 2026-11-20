@@ -190,7 +190,8 @@ function refreshFaceMotion(phase: string, reduced: boolean | null): Pick<MotionP
 }
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
-// Whether the veil's heading holds the focus, read as the veil's exit starts.
+// Whether the veil's heading holds the focus, read as the veil's exit starts
+// and as the feed's status region takes new words.
 const holdsFocus = (heading: RefObject<HTMLElement | null>) => heading.current !== null && heading.current === document.activeElement;
 
 // The `<main>` landmark is opt-in (via the `landmark` prop) rather than baked
@@ -260,11 +261,14 @@ const endFade: FocusEventHandler<HTMLElement> = (event) => {
 // `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
 // dentro del otro sumaría el hueco de la barra dos veces, así que el landmark
 // ES el contenedor en cada rama en vez de un nivel más.
-function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, children }: PropsWithChildren<{
+function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, statusSaidBy = null, children }: PropsWithChildren<{
   landmark: FeedContainerProps['landmark'];
   className?: string;
   nodeRef?: (node: HTMLElement | null) => void;
   status?: string;
+  // The heading that says `status` itself while it holds the focus: the
+  // veil's, where a retry's focus waits (useWaitFocus).
+  statusSaidBy?: RefObject<HTMLElement | null> | null;
 }>) {
   // A live region speaks a change to its text, not the text it is inserted
   // with, and the feed's first render is often already a wait. So the region
@@ -276,8 +280,18 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, c
     const settle = setTimeout(() => { setRegionReady(true); }, STATUS_REGION_SETTLE_MS);
     return () => { clearTimeout(settle); };
   }, []);
+  // A screen reader reads the heading the focus lands on, so words that
+  // heading says when they arrive stay unsaid here: the wait is heard once
+  // (ENG-177). Decided as the words change, which is the commit the focus
+  // lands, and kept until they change again: the heading has said them even
+  // if the focus or the veil has gone by the time the region settles.
+  const saidByFocus = useEffectEvent(() => statusSaidBy !== null && holdsFocus(statusSaidBy));
+  const saidRef = useRef(false);
   useEffect(() => {
-    if (regionReady && statusRef.current) statusRef.current.textContent = status ?? '';
+    saidRef.current = saidByFocus();
+  }, [status]);
+  useEffect(() => {
+    if (regionReady && statusRef.current) statusRef.current.textContent = saidRef.current ? '' : status ?? '';
   }, [status, regionReady]);
   const statusRegion = <span ref={statusRef} className="visually-hidden" role="status" />;
   if (!landmark) {
@@ -1416,7 +1430,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const refreshLabel = refreshLabels[refreshPhase];
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
-    <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark}>
+    <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} statusSaidBy={atomVeil ? veilHeadingRef : null} landmark={landmark}>
       {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"
@@ -1572,9 +1586,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                   failed: the slot is mounted ahead of the load, and a fresh
                   one after every page, so a live region carrying the words
                   from the start would speak for waits that are not
-                  happening. Under the veil there is no page to add to: the
-                  landmark's status speaks for that wait. */}
-              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', retrying: nextPageRetrying, lastVisit, asked: askedUnderLastVisit })}</span>
+                  happening. Under the veil there is no page to add to, and a
+                  refresh's load is not a next page: the landmark's status
+                  speaks for those waits. */}
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', retrying: nextPageRetrying, refreshing: isRefreshing, lastVisit, asked: askedUnderLastVisit })}</span>
             </div>
           </div>
         )}
@@ -1591,7 +1606,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           papers are on their way this is the whole screen; the frame they
           land, the cards mount underneath and this recedes over them. Not a
           live region: it is inserted with its words, which a region does not
-          speak, and the landmark's status announces the wait instead. */}
+          speak, and the landmark's status announces the wait instead, unless
+          a retry's focus waits on the heading, which then says it. */}
       <AnimatePresence custom={veilHeadingRef} onExitComplete={veilLeft}>
         {atomVeil && (
           <motion.div

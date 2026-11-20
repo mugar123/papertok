@@ -96,7 +96,9 @@ export function lastVisitAfterLoad(lastVisit: LastVisit, added: boolean): LastVi
 /**
  * What a screen reader hears from the feed's status region: a refresh's own
  * words, and "Loading papers…" under the veil otherwise. The veil's visible
- * copy is in the page from its first frame, so it cannot be the announcement.
+ * copy is in the page from its first frame, so it cannot be the announcement,
+ * unless a retry's focus waits on the veil's heading: the heading then says
+ * the wait, and the region leaves these words unsaid (FeedLandmark, ENG-177).
  * One text through the veil's whole wait, its automatic retry included, so
  * the wait is spoken once.
  */
@@ -188,9 +190,12 @@ export function feedTailState({ loading, hasMore, error, hasPapers, autoRetryPen
  * attempt as "loading" and "could not load" alternate. Under the last visit's
  * cards a failed load is the first load's, and the feed's status already says
  * the feed could not update (ENG-188), until the reader asks again with Try
- * again (`asked`): that attempt's failure is the tail's to say.
+ * again (`asked`): that attempt's failure is the tail's to say. A refresh's
+ * load (`refreshing`) is not a next page: the feed's status already says
+ * "Refreshing papers…", so the tail says nothing of it (ENG-177).
  */
-export function nextPageStatusText({ loading, hasPapers, failed = false, retrying = false, lastVisit = null, asked = false }: { loading: boolean; hasPapers: boolean; failed?: boolean; retrying?: boolean; lastVisit?: LastVisitStatus; asked?: boolean }) {
-  if (failed || (loading && retrying && hasPapers)) return lastVisit === 'not-updated' && !asked ? '' : 'Could not load more papers.';
-  return loading && hasPapers ? 'Loading more papers…' : '';
+export function nextPageStatusText({ loading, hasPapers, failed = false, retrying = false, refreshing = false, lastVisit = null, asked = false }: { loading: boolean; hasPapers: boolean; failed?: boolean; retrying?: boolean; refreshing?: boolean; lastVisit?: LastVisitStatus; asked?: boolean }) {
+  const nextPageLoading = loading && hasPapers && !refreshing;
+  if (failed || (nextPageLoading && retrying)) return lastVisit === 'not-updated' && !asked ? '' : 'Could not load more papers.';
+  return nextPageLoading ? 'Loading more papers…' : '';
 }

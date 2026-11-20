@@ -347,6 +347,16 @@ test('an automatic retry of a failed page does not announce the failure again', 
   assert.equal(nextPageStatusText({ loading: false, hasPapers: true, retrying: true }), '');
 });
 
+// A refresh over cards was spoken twice: "Refreshing papers…" by the feed's
+// status and "Loading more papers…" by the tail (ENG-177).
+test('a refresh\'s load is said by the feed\'s status alone, not by the tail', () => {
+  assert.equal(refreshStatusText({ isRefreshing: true, end: null, hasPapers: true }), 'Refreshing papers…');
+  assert.equal(nextPageStatusText({ loading: true, hasPapers: true, refreshing: true }), '');
+  assert.equal(nextPageStatusText({ loading: true, hasPapers: true, retrying: true, refreshing: true }), '');
+  // A page that failed while the refresh's spinner still runs is still the tail's to say.
+  assert.equal(nextPageStatusText({ loading: false, hasPapers: true, failed: true, refreshing: true }), 'Could not load more papers.');
+});
+
 test('the tail speaks of more papers only under papers already shown', () => {
   assert.equal(nextPageStatusText({ loading: true, hasPapers: false }), '');
   assert.equal(nextPageStatusText({ loading: true, hasPapers: true }), 'Loading more papers…');
