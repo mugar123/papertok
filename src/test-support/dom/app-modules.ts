@@ -25,6 +25,8 @@ export async function startAppModules() {
     logLevel: 'silent',
     appType: 'custom',
     server: { middlewareMode: true, hmr: false, watch: null, ws: false },
+    // No .env files: a developer's would differ from CI's.
+    envDir: false,
     optimizeDeps: { noDiscovery: true },
     define: { 'import.meta.env.VITE_PAPER_API_BASE_URL': JSON.stringify(WORKER_ORIGIN) },
     resolve: { alias: [{ find: /^(?:.*\/)?firebase\.ts$/, replacement: FIREBASE_STUB }] },
