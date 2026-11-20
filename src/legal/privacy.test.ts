@@ -152,7 +152,8 @@ test('the in-app notice announces the version this page is dated', () => {
 });
 
 test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
-  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4']) {
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.6');
+  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5']) {
     assert.equal(privacyNoticeStatus({
       user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
       signedIn: true,
@@ -164,13 +165,13 @@ test('readers who saw an earlier 20 November notice are owed the cumulative upda
     }), 'owed', seen);
   }
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /verified email.*saves link your account to each paper once per UTC week by default/i);
-  assert.match(notice, /exclude future saves in Settings → Privacy/i);
-  assert.match(notice, /analytics on.*survey events link your account.*reading level and broad interests when available/i);
-  assert.match(notice, /submitting records your answers and optional role/i);
-  assert.match(notice, /My profile.*recent citing papers.*frequent coauthors.*without keeping either list/i);
-  assert.match(notice, /only your browser marks returns 7–13 days after first use/i);
-  assert.match(notice, /measured from existing PostHog first-use and visit events/i);
+  assert.match(notice, /Anthropic.*paper text outside the EU/i);
+  assert.match(notice, /My profile.*recent citing papers.*frequent coauthors.*and stores neither list/i);
+  assert.match(notice, /Verified-email saves.*each paper to your account once per UTC week.*by default/i);
+  assert.match(notice, /Omit future saves in Settings → Privacy/i);
+  assert.match(notice, /analytics on.*surveys link available reading level and broad interests to your account/i);
+  assert.match(notice, /answers and optional role on submission/i);
+  assert.match(notice, /Only your browser marks returns 7–13 days after first use.*existing PostHog first-use and visit events/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

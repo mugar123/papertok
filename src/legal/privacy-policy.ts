@@ -116,6 +116,9 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20.6';
  * The text ships with #531. Use the end of the planned merge day until the
  * deployment succeeds, then use its success time. If the merge slips to a
  * later UTC day, update the page date, version and cutoff before merging.
+ *
+ * Version 2026-11-20.5 adds Anthropic and its processing regions. The same
+ * provisional cutoff applies until the page ships with #532.
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
@@ -133,9 +136,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  'With a verified email, saves link your account to each paper once per UTC week by default. Exclude future saves in Settings → Privacy.',
-  'With analytics on, survey events link your account to your reading level and broad interests when available. Submitting records your answers and optional role.',
-  'My profile shows recent citing papers and frequent coauthors without keeping either list. Only your browser marks returns 7–13 days after first use, measured from existing PostHog first-use and visit events.',
+  'Anthropic may process paper text outside the EU. My profile lists recent citing papers and frequent coauthors and stores neither list.',
+  'Verified-email saves link each paper to your account once per UTC week by default. Omit future saves in Settings → Privacy.',
+  'With analytics on, surveys link available reading level and broad interests to your account, plus answers and optional role on submission. Only your browser marks returns 7–13 days after first use, measured from existing PostHog first-use and visit events.',
 ];
 
 /**
@@ -148,19 +151,20 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  lead: 'With a verified email',
+  lead: 'Anthropic',
   clauses: [
-    ['With a verified email', /With a verified email, your saves count by default/],
-    ['saves link your account to each paper once per UTC week by default', /PaperTok links your account to each paper you save once per UTC week/],
-    ['Exclude future saves in Settings → Privacy', /Turn this off in Settings → Privacy to exclude future saves/],
-    ['With analytics on, survey events link your account', /With usage analytics on, PaperTok links survey events to your account/],
-    ['your reading level and broad interests when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
-    ['Submitting records your answers and optional role', /Submitting the survey records your answers, including your role if you chose one/],
+    ['Anthropic may process paper text outside the EU', /Anthropic may process the request in any region it serves, including outside the European Union/],
     ['recent citing papers', /papers from the last 12 months that cite your publications/],
     ['frequent coauthors', /coauthors you share two or more of those works with/],
-    ['without keeping either list', /PaperTok keeps neither list/],
+    ['and stores neither list', /PaperTok keeps neither list/],
+    ['Verified-email saves', /With a verified email, your saves count by default/],
+    ['link each paper to your account once per UTC week', /PaperTok links your account to each paper you save once per UTC week/],
+    ['Omit future saves in Settings → Privacy', /Turn this off in Settings → Privacy to exclude future saves/],
+    ['With analytics on, surveys link', /With usage analytics on, PaperTok links survey events to your account/],
+    ['available reading level and broad interests', /events include your reading level and broad areas of interest, such as Physics, when available/],
+    ['answers and optional role on submission', /Submitting the survey records your answers, including your role if you chose one/],
     ['Only your browser marks returns 7–13 days after first use', /Only your browser keeps the mark for a return 7 to 13 days after your first real use/],
-    ['measured from existing PostHog first-use and visit events', /using the first-use and visit events already sent to PostHog/],
+    ['existing PostHog first-use and visit events', /using the first-use and visit events already sent to PostHog/],
   ],
   unsaid: [
     [/anonymous/i, 'survey events are linked to the signed-in account'],
