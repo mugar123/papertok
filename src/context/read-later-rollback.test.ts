@@ -36,6 +36,12 @@ test('a refused first save to Read later leaves no mark and no edit time', () =>
   assert.equal(restored.p3.updatedAt, undefined);
 });
 
+test('an undo leaves the library alone when the mark and stamped fields are already restored', () => {
+  assert.equal(restoreReadLater(before, 'p2', before.p2, stamped), before);
+  const library = { p3: { paperId: 'p3', paper: { title: 'Three' }, note: 'Added while the save waited' } };
+  assert.equal(restoreReadLater<Entry>(library, 'p3', undefined, stamped), library);
+});
+
 test('a refused Read later removal keeps the topic a late enrichment added to the paper copy meanwhile', () => {
   // keepLateTopics completes the stored copy with a new object.
   const enriched: Record<string, Entry> = { ...removed, p2: { ...removed.p2, paper: { ...stamped.paper, primaryTopic: 'Galaxy formation' } } };

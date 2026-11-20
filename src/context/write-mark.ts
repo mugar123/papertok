@@ -266,7 +266,11 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  * mark, and a refused change is taken back only as far as the changes still
  * standing allow. Each actual move runs `show` or `undo` once, so the reading
  * profile hears of each change on screen once. Without `undo`, a refused
- * change keeps what it showed, as the feed's toggles always have.
+ * change keeps what it showed, as the feed's toggles always have. An `undo`
+ * that returns false found nothing on screen to put back, such as a Read
+ * later entry a profile load has since emptied: it counts no move, so the
+ * next tap is shown rather than taken for one the screen already holds
+ * (ENG-171).
  * `show` hears whether the change takes back one still waiting
  * (`markChanges().takesBack`): a Like pressed again while its unlike waits
  * is told as putting back what the unlike took, as the undo of a refused
@@ -295,7 +299,8 @@ export type MarkChanges = ReturnType<typeof markChanges>;
  */
 export async function writeMark({ show, undo, write, failure, afterWrite = false, throwOnError = false, stillSignedIn, changes, markKey, from, to, isOn }: {
   show: (takesBack: boolean) => void;
-  undo?: () => void;
+  /** Returns false when applying the undo leaves state unchanged. */
+  undo?: () => void | false;
   write: () => Promise<void>;
   /** Logged with the error when the write is refused. */
   failure: string;
@@ -344,8 +349,7 @@ export async function writeMark({ show, undo, write, failure, afterWrite = false
       show(false);
       moved();
     } else if (value === from && undo) {
-      undo();
-      moved();
+      if (undo() !== false) moved();
     }
   }
   // A screen this answer leaves alone may already show `to` for a reason no

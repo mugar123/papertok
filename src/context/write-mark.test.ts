@@ -2,7 +2,7 @@ import type { InteractionEvent, InteractionProfile, StoredInteractionProfile } f
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadedMarkValue, markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
-import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
+import { createLibraryUpdater, readLaterChange, type LibraryEntry } from './library-entry.ts';
 import { saveRollbacks, takeBacksOnProfile } from './save-rollback.ts';
 import {
   createEmptyInteractionProfile, curatedIds, deserializeInteractionProfile, readProfileSignals, recordInteractionEvent, serializeInteractionProfile,
@@ -789,13 +789,26 @@ test('a Remove pressed again after the card changed the like meanwhile is still 
   assert.deepEqual(paper.profile, ['unlike', 'like', 'unlike']);
 });
 
-// A paper in Read later, changed the way FeedContext's toggleReadLater changes
-// it: each change stamps the entry with its own edit time, and a refusal the
-// caller asked about restores the entry with restoreReadLater.
-function readLaterPaper() {
+function readLaterPaper(initial: Record<string, LibraryEntry> = {
+  p1: { paperId: 'p1', paper: { title: 'One' }, readLater: true, updatedAt: 'T0' },
+}) {
   const changes = markChanges();
-  type Entry = { paperId: string; paper: { title: string; primaryTopic?: string }; readLater?: boolean; note?: string; updatedAt?: string };
-  const state = { library: { p1: { paperId: 'p1', paper: { title: 'One' }, readLater: true, updatedAt: 'T0' } } as Record<string, Entry> };
+  const state = { library: initial };
+  const queued: Array<Record<string, LibraryEntry>> = [];
+  let deferRender = false;
+  const { setLibraryState, setPersonalLibrary } = createLibraryUpdater(({ personalLibrary }) => {
+    if (deferRender) queued.push(personalLibrary);
+    else state.library = personalLibrary;
+  });
+  const setLibrary = (library: Record<string, LibraryEntry>) => setPersonalLibrary(() => library);
+  setLibrary(initial);
+  const render = () => {
+    for (const library of queued.splice(0)) state.library = library;
+  };
+  const loadEmptyProfile = () => {
+    changes.screenReplaced();
+    setLibraryState(current => ({ ...current, personalLibrary: {} }));
+  };
   const answers: Array<{ accept: () => void; refuse: () => void }> = [];
   const reported: string[] = [];
   let clock = 0;
@@ -803,16 +816,12 @@ function readLaterPaper() {
     const previous = state.library.p1;
     const nextValue = value ?? !previous?.readLater;
     clock += 1;
-    const updatedAt = `T${clock}`;
-    const storedPaper = { title: 'One' };
+    const change = readLaterChange('p1', previous, {
+      copy: { title: 'One' }, readLater: nextValue, updatedAt: `T${clock}`, late: Boolean(options.afterWrite),
+    });
     return writeMark({
-      show: () => {
-        const stamp = readLaterStamp(state.library.p1, previous, { paper: storedPaper, updatedAt }, { late: Boolean(options.afterWrite) });
-        state.library = { ...state.library, p1: { ...state.library.p1, ...stamp, readLater: nextValue } };
-      },
-      undo: () => {
-        state.library = restoreReadLater(state.library, 'p1', previous, { paper: storedPaper, updatedAt });
-      },
+      show: () => { setPersonalLibrary(change.show); },
+      undo: () => setPersonalLibrary(change.undo) ? undefined : false,
       write: () => new Promise<void>((accept, refuse) => {
         answers.push({ accept, refuse: () => refuse(new Error('permission-denied')) });
       }),
@@ -826,11 +835,12 @@ function readLaterPaper() {
       isOn: () => Boolean(state.library.p1?.readLater),
     }).catch(() => { reported.push(options.afterWrite ? 'removal' : 'save'); });
   };
-  return { state, answers, reported, toggle };
+  return { state, answers, reported, toggle, setLibrary, loadEmptyProfile, render, deferRender: () => { deferRender = true; } };
 }
 
 const readLaterRemoval = { afterWrite: true, throwOnError: true };
 const saveButton = { throwOnError: true };
+const galaxiesTopic = { id: 'T1', display_name: 'Galaxies' };
 
 test('an accepted Read later removal stays when a Save tap sent meanwhile is refused', async () => {
   const paper = readLaterPaper();
@@ -849,12 +859,12 @@ test('an accepted Read later removal keeps the topic and the note\'s edit time w
   const removed = paper.toggle(false, readLaterRemoval);
   // keepLateTopics completes the copy, then a note is saved from the row's Edit.
   const { p1 } = paper.state.library;
-  paper.state.library = { p1: { ...p1, paper: { ...p1.paper, primaryTopic: 'Galaxies' } } };
-  paper.state.library = { p1: { ...paper.state.library.p1, note: 'read the appendix', updatedAt: 'T9' } };
+  paper.setLibrary({ p1: { ...p1, paper: { ...p1.paper, primaryTopic: galaxiesTopic } } });
+  paper.setLibrary({ p1: { ...paper.state.library.p1, note: 'read the appendix', updatedAt: 'T9' } });
   paper.answers[0].accept();
   await removed;
   assert.equal(paper.state.library.p1.readLater, false);
-  assert.equal(paper.state.library.p1.paper.primaryTopic, 'Galaxies');
+  assert.equal(paper.state.library.p1.paper.primaryTopic?.display_name, 'Galaxies');
   assert.equal(paper.state.library.p1.updatedAt, 'T9');
   assert.equal(paper.state.library.p1.note, 'read the appendix');
 });
@@ -863,10 +873,10 @@ test('an accepted Read later removal stamps its edit time when only the paper co
   const paper = readLaterPaper();
   const removed = paper.toggle(false, readLaterRemoval);
   const { p1 } = paper.state.library;
-  paper.state.library = { p1: { ...p1, paper: { ...p1.paper, primaryTopic: 'Galaxies' } } };
+  paper.setLibrary({ p1: { ...p1, paper: { ...p1.paper, primaryTopic: galaxiesTopic } } });
   paper.answers[0].accept();
   await removed;
-  assert.equal(paper.state.library.p1.paper.primaryTopic, 'Galaxies');
+  assert.equal(paper.state.library.p1.paper.primaryTopic?.display_name, 'Galaxies');
   assert.equal(paper.state.library.p1.updatedAt, 'T1');
 });
 
@@ -907,6 +917,63 @@ test('a refused Read later removal leaves the newer accepted change on screen', 
   await Promise.all([off, on]);
   assert.equal(paper.state.library.p1.readLater, true);
   assert.equal(paper.state.library.p1.updatedAt, 'T3', 'stamped by the last change');
+});
+
+// ENG-171: the save dialog takes a paper off Read later (`throwOnError`, so a
+// refusal is undone), a profile load empties the library while that waits, and
+// Firestore refuses it. The undo finds no entry to put back, so it moves
+// nothing and must not count as a move: the next Save has to show.
+test('a Save after a refused Read later removal that a profile load emptied meanwhile shows', async () => {
+  const paper = readLaterPaper();
+  const removed = paper.toggle(false, saveButton);
+  paper.loadEmptyProfile();
+  paper.answers[0].refuse();
+  await silenced(() => removed);
+  assert.deepEqual(paper.state.library, {}, 'nothing to put back');
+  const saved = paper.toggle(true, saveButton);
+  paper.answers[1].accept();
+  await saved;
+  assert.equal(paper.state.library.p1?.readLater, true);
+});
+
+test('a refused first Read later save is rolled back when its update has not rendered yet', async () => {
+  const paper = readLaterPaper({});
+  paper.deferRender();
+  const saved = paper.toggle(true, saveButton);
+  assert.deepEqual(paper.state.library, {}, 'the save has not rendered');
+  paper.answers[0].refuse();
+  await silenced(() => saved);
+  paper.render();
+  assert.equal(paper.state.library.p1?.readLater ?? false, false);
+  assert.deepEqual(paper.reported, ['save']);
+});
+
+test('a Save shows after a refused Read later removal when the empty profile was queued before the refusal', async () => {
+  const paper = readLaterPaper();
+  const removed = paper.toggle(false, saveButton);
+  paper.deferRender();
+  paper.loadEmptyProfile();
+  assert.equal(paper.state.library.p1?.readLater, false, 'the old entry is still drawn');
+  paper.answers[0].refuse();
+  await silenced(() => removed);
+  paper.render();
+  assert.deepEqual(paper.state.library, {}, 'the undo had no entry to restore');
+  const saved = paper.toggle(true, saveButton);
+  paper.answers[1].accept();
+  await saved;
+  paper.render();
+  assert.equal(paper.state.library.p1?.readLater, true);
+});
+
+test('a refused removal from the Read later list keeps the paper in place', async () => {
+  const paper = readLaterPaper();
+  const removed = paper.toggle(false, readLaterRemoval);
+  assert.equal(paper.state.library.p1?.readLater, true);
+  paper.answers[0].refuse();
+  await silenced(() => removed);
+  assert.equal(paper.state.library.p1?.readLater, true);
+  assert.equal(paper.state.library.p1?.updatedAt, 'T0');
+  assert.deepEqual(paper.reported, ['removal']);
 });
 
 test('a like accepted before React draws it is shown once', async () => {

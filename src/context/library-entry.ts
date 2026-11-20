@@ -12,6 +12,36 @@ export interface LibraryEntry {
   note?: string; tags?: string[]; updatedAt?: string | number | null;
 }
 
+type Library = Record<string, LibraryEntry>;
+export type LibraryState = {
+  personalLibrary: Library;
+  libraryPapers: Record<string, Partial<Paper>>;
+};
+
+/**
+ * Apply updates in call order, then give React the resulting snapshots.
+ * A write answer needs the result before the next render, and React can
+ * replay a state updater, so the caller handles effects after this returns.
+ */
+export function createLibraryUpdater(publish: (state: LibraryState) => void) {
+  let current: LibraryState = { personalLibrary: {}, libraryPapers: {} };
+  const setLibraryState = (update: LibraryState | ((state: LibraryState) => LibraryState)): boolean => {
+    const next = typeof update === 'function' ? update(current) : update;
+    if (next === current) return false;
+    current = next;
+    publish(next);
+    return true;
+  };
+  return {
+    getLibraryState: () => current,
+    setLibraryState,
+    setPersonalLibrary: (update: (entries: Library) => Library) => setLibraryState(state => {
+      const personalLibrary = update(state.personalLibrary);
+      return personalLibrary === state.personalLibrary ? state : { ...state, personalLibrary };
+    }),
+  };
+}
+
 /** Keep evidence from the existing entry and the loaded interaction. */
 const keepingPublicationEvidence = (copy: Partial<Paper>, entry: LibraryEntry | undefined, loaded: Partial<Paper> | undefined) => (
   withPublicationEvidenceOf(withPublicationEvidenceOf(copy, entry?.paper), loaded)
@@ -108,11 +138,6 @@ export function loadedAfterLoad(current: Record<string, Partial<Paper>>, papers:
   for (const [id, copy] of Object.entries(current)) next[id] = withPublicationEvidenceOf(copy, papers[id]);
   return next;
 }
-
-type LibraryState = {
-  personalLibrary: Record<string, LibraryEntry>;
-  libraryPapers: Record<string, Partial<Paper>>;
-};
 
 /** A server answer refreshes journals unless a local interaction replaced its copy during the read. */
 export function libraryAfterRead(
