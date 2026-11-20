@@ -171,8 +171,7 @@
 }
 
 @media (pointer: coarse) {
-  .pdf-topbar :is(button, a),
-  .pdf-dock :is(button, a) {
+  .pdf-topbar :is(button, a) {
     min-width: 44px;
     min-height: 44px;
   }
@@ -199,75 +198,16 @@
   }
 }
 
-/* The shadow is the container's, so it follows the card while it is clipped to the bar. */
-.pdf-dock-root {
+/* Sent before: a dot beside the Z, seen without hovering for the date. */
+.pdf-dock-zotero[data-sent] { position: relative; }
+.pdf-dock-zotero[data-sent]::after {
   position: absolute;
-  bottom: max(var(--space-5), env(safe-area-inset-bottom));
-  left: 50%;
-  z-index: 2;
-  translate: -50% 0;
-  filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--text-primary) 14%, transparent));
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
 }
-@media (max-width: 767px) {
-  .pdf-dock-root { transition: translate 220ms var(--ease-out-expo), opacity 150ms linear; }
-  .pdf-dock-root[data-stowed]:not(:focus-within) { translate: -50% calc(100% + var(--space-8)); opacity: 0; pointer-events: none; }
-}
-@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
-  .pdf-dock-root { transition: opacity 150ms linear; }
-  .pdf-dock-root[data-stowed]:not(:focus-within) { translate: -50% 0; }
-}
-.pdf-dock {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  gap: var(--space-1);
-  align-items: center;
-  padding: var(--space-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  background: var(--bg-card);
-  transition: border-color 150ms ease;
-}
-/* Open, the bar sits inside the card, whose ground it shares: it draws none of
-   its own, so the card's border runs unbroken under it. */
-.pdf-dock[data-info-open] { border-color: transparent; background: transparent; }
-.pdf-dock > * { border-radius: var(--radius-sm); }
-.pdf-dock-toggle { height: 40px; padding-inline: var(--space-3); }
-/* On and off read apart by ink and icon (an open or a struck eye), not by a
-   fill: a filled button reads as hovered. */
-.pdf-dock-toggle[data-pressed] { background: transparent; color: var(--text-primary); box-shadow: none; }
-.pdf-dock-toggle:not([data-pressed]) { color: var(--text-tertiary); }
 
-.pdf-info-positioner { z-index: 0; }
-.pdf-info {
-  width: min(440px, calc(100vw - 2 * var(--space-4)));
-  padding: var(--space-2) var(--space-2) calc(var(--dock-h, 50px) + var(--space-2));
-  border-radius: var(--radius-xl);
-  background: var(--bg-card);
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
-  clip-path: inset(0 round var(--radius-xl));
-  transition: clip-path 240ms var(--ease-out-expo);
-}
-.pdf-info[data-starting-style],
-.pdf-info[data-ending-style] {
-  clip-path: inset(calc(100% - var(--dock-h, 50px)) calc(50% - var(--dock-w, 200px) / 2) 0 round var(--radius-xl));
-}
-.pdf-info[data-ending-style] { transition-duration: 180ms; }
-/* What scrolls is the card's content, so nothing passes under the bar at its
-   foot; and however long the outline, the card keeps to part of the screen. */
-.pdf-info-body {
-  max-height: min(60dvh, 520px);
-  padding: var(--space-3);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  transition: opacity 150ms linear 60ms;
-}
-.pdf-info[data-starting-style] .pdf-info-body,
-.pdf-info[data-ending-style] .pdf-info-body { opacity: 0; transition-delay: 0s; }
-@media (prefers-reduced-motion: reduce) {
-  .pdf-info, .pdf-info[data-starting-style], .pdf-info[data-ending-style] { clip-path: none; transition: opacity 150ms linear; }
-  .pdf-info[data-starting-style], .pdf-info[data-ending-style] { opacity: 0; }
-}
-.pdf-info .pc-menu-share { flex-wrap: wrap; }
-.pdf-info .pc-menu-link { flex-basis: 100%; }
-.pdf-menu-title { font: 600 1.25rem/1.25 var(--font-serif); letter-spacing: -0.01em; color: var(--text-primary); }

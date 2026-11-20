@@ -1,7 +1,8 @@
 import type { OwnList } from './own-lists.ts';
 import type { Paper } from '../models/paper.ts';
 
-import { withRetractionOf } from '../models/paper.ts';
+import { mergeListPaperCopies } from './list-paper-copies.ts';
+import { readStoredListPapers, saveStoredListPapers } from './user-scoped-storage.ts';
 import { createSessionCache } from './session-cache.ts';
 
 /**
@@ -13,7 +14,7 @@ import { createSessionCache } from './session-cache.ts';
  * spinner while it happened.
  *
  * Keys carry the uid so no account can ever be served another account's entry.
- * Nothing here survives a reload.
+ * Paper metadata also survives reloads in bounded, account-scoped device storage.
  */
 export const ownListsCache = createSessionCache<OwnList[]>({ maxEntries: 4 });
 /**
@@ -79,8 +80,14 @@ export function forgetOwnLists(uid: string | undefined) {
 }
 
 /** The papers this account's lists screen has already resolved. */
-export function readListPapers(uid: string) {
-  return uid ? listPapersCache.get(uid) : undefined;
+export function readListPapers(uid: string, storage?: Parameters<typeof readStoredListPapers>[1]) {
+  if (!uid) return undefined;
+  let papers = listPapersCache.get(uid);
+  if (!papers) {
+    papers = readStoredListPapers(uid, storage);
+    listPapersCache.set(uid, papers);
+  }
+  return papers;
 }
 
 /**
@@ -88,15 +95,82 @@ export function readListPapers(uid: string) {
  *
  * Merged rather than replaced: a list is opened one at a time, and replacing
  * would throw away the previous list's papers on every visit — which is the
- * re-fetching this cache exists to stop. A newer copy of a paper replaces
- * the older one but keeps its retraction (`withRetractionOf`).
+ * re-fetching this cache exists to stop. Each copy is merged by the rule the
+ * screen's own state uses (`mergeListPaperCopies`), so the next visit is
+ * seeded with the copy the screen showed, not the one that arrived last.
  */
-export function rememberListPapers(uid: string, papers: Record<string, Partial<Paper>>) {
+export function rememberListPapers(uid: string, papers: Record<string, Partial<Paper>>, source: 'saved' | 'interaction', storage?: Parameters<typeof saveStoredListPapers>[2]) {
   if (!uid || !papers || typeof papers !== 'object') return;
-  const known = listPapersCache.get(uid) ?? {};
-  const next = { ...known };
-  Object.entries(papers).forEach(([paperId, paper]) => {
-    next[paperId] = withRetractionOf(paper, known[paperId]);
-  });
+  const merged = mergeListPaperCopies(readListPapers(uid, storage) ?? {}, papers, source);
+  // Move received entries to the end so the bounded device copy keeps them first.
+  const next = { ...merged };
+  for (const id of Object.keys(papers)) {
+    delete next[id];
+    next[id] = merged[id];
+  }
   listPapersCache.set(uid, next);
+  saveStoredListPapers(uid, next, storage);
+}
+
+/**
+ * The papers whose `savedPapers` read has answered this session, keyed by
+ * uid: the document came back, or the server confirmed there is none. Until
+ * it has, a paper the lists hold no field or date for is read again
+ * (`listPaperNeedsRead`), so a failed read stays retryable.
+ */
+const listSavedAnswers = createSessionCache<Set<string>>({ maxEntries: 2 });
+const savedAnswerListeners = new Set<() => void>();
+
+export function rememberSavedAnswers(uid: string, paperIds: string[]) {
+  if (!uid || paperIds.length === 0) return;
+  listSavedAnswers.set(uid, new Set([...(listSavedAnswers.get(uid) ?? []), ...paperIds]));
+  savedAnswerListeners.forEach(listener => listener());
+}
+
+export function savedAnswered(uid: string | undefined, paperId: string) {
+  return Boolean(uid && listSavedAnswers.get(uid)?.has(paperId));
+}
+
+/**
+ * The account's answered papers for `useSyncExternalStore`: a new set after
+ * each change and the same set otherwise. A screen that subscribes renders
+ * again when an answer changes nothing else it holds, such as a confirmed
+ * absence that arrives after its row stopped waiting.
+ */
+export function savedAnswersOf(uid: string | undefined): ReadonlySet<string> | undefined {
+  return uid ? listSavedAnswers.get(uid) : undefined;
+}
+
+/** Calls `listener` after the answered papers change; returns the unsubscribe. */
+export function subscribeSavedAnswers(listener: () => void) {
+  savedAnswerListeners.add(listener);
+  return () => {
+    savedAnswerListeners.delete(listener);
+  };
+}
+
+/**
+ * The papers the lists asked a provider the field of this session
+ * (`readPaperFields`) and got an answer for, keyed by uid, so a paper the
+ * provider does not name is not asked on every visit to its list. A paper
+ * whose request failed is left out and asked again.
+ */
+const listFieldAnswers = createSessionCache<Set<string>>({ maxEntries: 2 });
+
+export function rememberFieldAnswers(uid: string, paperIds: string[]) {
+  if (!uid || paperIds.length === 0) return;
+  listFieldAnswers.set(uid, new Set([...(listFieldAnswers.get(uid) ?? []), ...paperIds]));
+}
+
+export function fieldAnswered(uid: string | undefined, paperId: string) {
+  return Boolean(uid && listFieldAnswers.get(uid)?.has(paperId));
+}
+
+/** End the account's paper session, including the answers that suppress reads. */
+export function forgetListPapers(uid: string | undefined) {
+  if (!uid) return;
+  listPapersCache.delete(uid);
+  listSavedAnswers.delete(uid);
+  listFieldAnswers.delete(uid);
+  savedAnswerListeners.forEach(listener => listener());
 }

@@ -85,12 +85,17 @@ test('everything present is carried, within the caps the rules set', () => {
   assert.deepEqual(payload.authors, full.authors);
   assert.equal(payload.savedAt, SAVED_AT);
 
-  // The rules cap authors at 20; the app has always stored at most 5.
+  // The rules cap authors at 20, as many as an interaction's copy keeps.
   const many = buildSavedPaperPayload(
     { ...full, authors: Array.from({ length: 40 }, (_, i) => `Author ${i}`) },
     SAVED_AT,
   );
-  assert.equal(many.authors!.length, 5);
+  assert.equal(many.authors!.length, 20);
+
+  // A card's authors are `{ name }` objects as often as names, and a
+  // document written from one used to keep no authors at all.
+  const named = buildSavedPaperPayload({ ...full, authors: [{ name: ' A ' }, 'B', { name: '' }] }, SAVED_AT);
+  assert.deepEqual(named.authors, ['A', 'B']);
 
   // 1000 in the rules, 500 by convention here.
   const long = buildSavedPaperPayload({ ...full, summary: 'x'.repeat(4000) }, SAVED_AT);

@@ -3,7 +3,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hydrateSeededPaper, hydratedAbstract, hydratedAuthors, seedPaintsWhole } from './paper-seed.ts';
 import { reviewTagForPaper } from './paper-status.ts';
-import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './reading-library.ts';
+import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP, abstractExcerpt, copyOfRecordWithoutCopy } from './reading-library.ts';
+import { paperLegacyAdapter } from '../models/paper.ts';
+import { buildSavedPaperPayload } from './saved-paper-payload.ts';
+import { listPaper } from './list-paper-copies.ts';
 
 test('a handed-over copy paints only when it carries a title and a real abstract', () => {
   assert.equal(seedPaintsWhole({ title: 'T', abstract: 'Despite growing interest in open access…' }), true);
@@ -152,4 +155,21 @@ test('OpenAlex fallback cannot replace known arXiv category lists', () => {
   const paper = hydrateSeededPaper(seed, { ...provider, allCategories: ['Electronic circuit'] });
   assert.deepEqual(paper!.allCategories, ['cond-mat.str-el', 'cs.ET', 'q-bio.NC']);
   assert.deepEqual(paper!.primaryTopic, provider.primaryTopic);
+});
+
+// A list row of a paper saved before PAP-60 carries the 500 characters the
+// record kept, and a savedPapers document keeps 500 too. The paper page took
+// that excerpt over the provider's whole abstract: 500 was not a cap it knew.
+test('a copy cut at 500 characters gives way to the provider\'s whole abstract', () => {
+  const whole = `${'Perfect absorption in the hyperfine levels of molecular spins. '.repeat(19)}End.`.slice(0, 1200);
+  const card = { id: '2505.06123', title: 'Perfect absorption', authors: [{ name: 'Author 1' }], summary: whole };
+  const provider = paperLegacyAdapter({ id: card.id, title: card.title, summary: whole });
+  const record = JSON.parse(JSON.stringify({ paperTitle: card.title, paperAuthors: card.authors, paperAbstract: abstractExcerpt(card) }));
+  const rowCopy = listPaper(undefined, undefined, copyOfRecordWithoutCopy(card.id, record))!;
+  const savedCopy = paperLegacyAdapter({ id: card.id, ...JSON.parse(JSON.stringify(buildSavedPaperPayload(card, '2026-11-12T10:00:00.000Z'))) });
+  for (const [label, copy] of [['the record\'s copy', rowCopy], ['the savedPapers document', savedCopy]] as const) {
+    const seeded = paperLegacyAdapter({ ...copy, id: card.id });
+    assert.equal(seeded.abstract.length, 500, label);
+    assert.equal(hydrateSeededPaper(seeded, provider)?.abstract, whole, label);
+  }
 });

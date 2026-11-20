@@ -5,7 +5,8 @@ import type { OwnList } from '../../utils/own-lists.ts';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { auth, db } from '../../services/firebase.ts';
-import { savedPaperDocRef } from '../../services/saved-paper-store.ts';
+import { writeSavedPaperCopy } from '../../services/saved-paper-store.ts';
+import { submitAuthorSave } from '../../services/author-metrics-service.ts';
 import { collection, getDocs, doc, setDoc, limit, query } from 'firebase/firestore';
 import { isReadTimeout, patientRead } from '../../utils/bounded-read.ts';
 import {
@@ -45,8 +46,6 @@ import useIsPhone from '../../hooks/use-is-phone.ts';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Textarea } from '../ui/textarea.tsx';
-import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
-import { copyForMergeWrite } from '../../utils/stored-copy-write.ts';
 import { pickerUndoToastId } from './picker-undo-toast.ts';
 import {
   ownListsAreFresh,
@@ -96,14 +95,25 @@ export default function SaveToListModal({
   surface,
   onClose,
   embedded = false,
+  titleId,
   closeGuardRef,
+  finalFocus,
 }: {
   paper: Paper;
   /** The surface of the card that opened the picker, which its save reports (forYouCardNotable). */
   surface?: string;
   onClose: () => void;
   embedded?: boolean;
+  /** The title's id, for a host sheet that labels itself with it (embedded). */
+  titleId?: string;
   closeGuardRef?: MutableRefObject<((eventDetails: Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => void) | null>;
+  /**
+   * Asked on close where focus goes, given the closing window: an element,
+   * true for the button that opened the window, or false to leave focus
+   * alone. The lists page needs it when Save took the paper out of the open
+   * list and that button leaves with its row.
+   */
+  finalFocus?: (overlay: HTMLElement | null) => HTMLElement | boolean;
 }) {
   const { user } = useAuth();
   const { language } = useLanguage();
@@ -179,6 +189,7 @@ export default function SaveToListModal({
   // `saving: false`. The list writes are idempotent, but `toggleReadLater` is
   // a toggle — running it twice puts Read later back where it started.
   const savingRef = useRef(false);
+  const pendingAuthorSave = useRef<{ uid: string; paperId: string } | null>(null);
   const [saveError, setSaveError] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   // app.tsx mounts this window and unmounts it on `onClose`, so the window
@@ -418,9 +429,9 @@ export default function SaveToListModal({
    * the window can go. Flipping `open` is all it takes: Base UI marks the
    * popup `data-closed`, waits for `dialogOut` to finish (or for nothing,
    * under `prefers-reduced-motion`, where the stylesheet sets the animation
-   * to `none`), hands focus back to the button that opened the window, and
-   * only then reports `onOpenChangeComplete(false)` — the one place the
-   * parent is told.
+   * to `none`), hands focus back to the button that opened the window (or to
+   * `finalFocus`), and only then reports `onOpenChangeComplete(false)` — the
+   * one place the parent is told.
    */
   const closeDialog = () => (embedded ? onClose() : setOpen(false));
 
@@ -544,11 +555,9 @@ export default function SaveToListModal({
        * pressing Save again redoes only what is missing.
        */
       if (savesPaper) {
-        await setDoc(
-          savedPaperDocRef(user!.uid, paper.id),
-          copyForMergeWrite(buildSavedPaperPayload(paper, new Date().toISOString())),
-          { merge: true },
-        );
+        const uid = user!.uid;
+        await writeSavedPaperCopy(uid, paper, !alreadySaved);
+        if (!alreadySaved) pendingAuthorSave.current = { uid, paperId: paper.id };
         // The aggregate learns of the save only once the document exists.
         // The other order left an orphan whenever this write was refused:
         // "saved" everywhere, a paper in no list, and a Save that could
@@ -563,13 +572,18 @@ export default function SaveToListModal({
       await writeListMembership({ uid: user!.uid, paper, lists: toAdd.map(listById), added: true, language });
       await writeListMembership({ uid: user!.uid, paper, lists: toRemove.map(listById), added: false, language });
 
-      if (readLaterChanged) await toggleReadLater(paper);
+      if (readLaterChanged) await toggleReadLater(paper, pendingReadLater, { throwOnError: true });
       if (metadataChanged) await saveReadingMetadata(paper, { note, tags: finalTags });
       if (unsavesPaper) await unmarkSaved(paper);
 
       const paperDetail = { paper_id: paper.id };
       toAdd.forEach(() => { void trackEvent('save_change', { action: 'add', surface: 'lists', ...paperDetail }); });
       toRemove.forEach(() => { void trackEvent('save_change', { action: 'remove', surface: 'lists', ...paperDetail }); });
+      const pending = pendingAuthorSave.current;
+      if ((pendingReadLater || pendingListIds.size > 0) && pending?.uid === user!.uid && pending.paperId === paper.id) {
+        submitAuthorSave(pending.uid, pending.paperId);
+        pendingAuthorSave.current = null;
+      }
       if (savesPaper) void markActivation();
 
       closeDialog();
@@ -626,7 +640,6 @@ export default function SaveToListModal({
     listsStalled: 'Your lists are taking unusually long. We are still trying — your papers are safe.',
     listsUnavailable: 'Your lists could not be loaded. They are still there.',
     retry: 'Try again',
-    noLists: 'No lists yet — create the first one right below.',
     newListCta: 'Create a new list',
     noteAndTags: 'Note and tags',
     private: 'Private',
@@ -705,8 +718,9 @@ export default function SaveToListModal({
     if (from == null || !sheet || reduceMotion) return;
     animateSize(sheet, 'height', from, 240, EASE_IN_OUT);
   }, [creatingList, reduceMotion]);
+  const finalFocusFromSheet = finalFocus && (() => finalFocus(sheetOf() ?? null));
   const frame = (children: ReactNode) => (isPhone ? (
-    <DrawerContent className="save-modal--sheet">
+    <DrawerContent className="save-modal--sheet" finalFocus={finalFocusFromSheet}>
       {children}
     </DrawerContent>
   ) : (
@@ -715,6 +729,7 @@ export default function SaveToListModal({
       overlayClassName="save-modal-scrim"
       showClose={false}
       closeLabel={copy.close}
+      finalFocus={finalFocusFromSheet}
     >
       {children}
     </DialogContent>
@@ -725,7 +740,7 @@ export default function SaveToListModal({
           {isPhone && !embedded && <DrawerHandle />}
           {/* No header: the X alone, in the corner. The title still names the
               window for assistive tech. */}
-          <Title className="visually-hidden">{copy.title}</Title>
+          <Title id={titleId} className="visually-hidden">{copy.title}</Title>
           {/* The sections morph: the one leaving blurs out over the one
               arriving (`popLayout` lifts it out of the flow, so the window's
               height already reads the new one), in the direction of travel —
@@ -818,7 +833,7 @@ export default function SaveToListModal({
                     {copy.retry}
                   </Button>
                 </div>
-              ) : (
+              ) : lists.length > 0 && (
                 <div className="save-modal-rows">
                   {readLaterRow}
                   {lists.map((list) => {
@@ -844,9 +859,6 @@ export default function SaveToListModal({
                       </label>
                     );
                   })}
-                  {lists.length === 0 && (
-                    <p className="save-modal-empty">{copy.noLists}</p>
-                  )}
                 </div>
               )}
               {/* The door to the create view: a list row in a box of its own. */}

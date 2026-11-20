@@ -21,6 +21,8 @@
  *   cooldown for the `retry-after` it carried (`DEFAULT_COOLDOWN_MS` when it
  *   carried none), during which every request is refused at once. Asking
  *   again inside that window costs a round trip and answers the same thing.
+ *   The refusal carries what is left of the cooldown as `retryAfterMs`, so a
+ *   caller can wait for it rather than guess.
  *
  * `now` and `sleep` are injectable so the lane can be tested without waiting.
  */
@@ -29,10 +31,12 @@ export const DEFAULT_COOLDOWN_MS = 4_000;
 
 export class ArxivQueueError extends Error {
   declare code: string;
-  constructor(code: string, message: string|undefined) {
+  declare retryAfterMs?: number;
+  constructor(code: string, message: string|undefined, retryAfterMs?: number) {
     super(message);
     this.name = 'ArxivQueueError';
     this.code = code;
+    if (retryAfterMs !== undefined) this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -49,8 +53,9 @@ export function createArxivRequestQueue<T = unknown>({
   let refusedUntil = 0;
 
   const runNow = async (enqueuedAt: number, task: () => T | PromiseLike<T>) => {
-    if (now() < refusedUntil) {
-      throw new ArxivQueueError('RATE_LIMITED', 'arXiv is rate limited; not asking again yet');
+    const cooldownLeft = refusedUntil - now();
+    if (cooldownLeft > 0) {
+      throw new ArxivQueueError('RATE_LIMITED', 'arXiv is rate limited; not asking again yet', cooldownLeft);
     }
     if (Number.isFinite(maxQueueWaitMs) && now() - enqueuedAt > maxQueueWaitMs!) {
       throw new ArxivQueueError('QUEUE_EXPIRED', 'arXiv request waited longer than anyone waits for it');

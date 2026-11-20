@@ -1,6 +1,10 @@
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/account-warmup.ts';
+import type { InterestSettings } from '../utils/area-preferences.ts';
+import { forgetSessionDismissed } from '../utils/custom-feed-dismissed.ts';
+import { forgetCustomFeedPages } from '../utils/custom-feed-pages.ts';
 import { clearGuestInterests } from '../utils/guest-interests.ts';
-import { forgetOwnLists } from '../utils/profile-session-caches.ts';
+import { forgetOwnLists, forgetListPapers } from '../utils/profile-session-caches.ts';
+import { forgetRecentPages } from '../utils/recent-feed-pages.ts';
 import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
 
 type DeviceStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
@@ -26,6 +30,10 @@ export function closeAccountSession(userId: string | undefined, storage?: Device
   clearGuestInterests(storage);
   clearUserScopedStorage(userId, storage);
   forgetOwnLists(userId);
+  forgetListPapers(userId);
+  forgetCustomFeedPages();
+  forgetRecentPages();
+  forgetSessionDismissed();
   resetAccountWarmup(userId);
 }
 
@@ -34,7 +42,7 @@ export function closeAccountSession(userId: string | undefined, storage?: Device
  * onboarding as finished, and the guest answer that seeded it is spent, so it
  * cannot seed the next new account on this device.
  */
-export function adoptOnboardedProfile(userId: string, preferences: string[], storage?: DeviceStorage) {
-  saveStoredOnboarding(userId, { complete: true, preferences }, storage);
+export function adoptOnboardedProfile(userId: string, preferences: string[], settings: InterestSettings, storage?: DeviceStorage) {
+  saveStoredOnboarding(userId, { complete: true, preferences, ...settings }, storage);
   clearGuestInterests(storage);
 }

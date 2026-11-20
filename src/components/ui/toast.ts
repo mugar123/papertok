@@ -6,6 +6,8 @@ const overlayPortals = new Set<HTMLElement>();
 let signedIn: string | null | undefined;
 /** Counts the account changes (`forgetAccountToasts`). */
 let account = 0;
+/** The ids of the toasts shown for the account signed in (`toastForAccount`). */
+let accountToasts = new Set<string | number>();
 /** Errors and refusal lines waiting for the overlays opened after their action started to leave. */
 let held: Array<{ overlaysAtStart: number; show: () => void }> = [];
 let heldCount = 0;
@@ -85,22 +87,38 @@ export function toastError(title: Parameters<typeof toast.error>[0], { startedAt
 }
 
 /**
+ * A toast about what account `uid` holds, such as the sources of its custom
+ * feed still loading, which can name its own searches. It is put away when
+ * the account changes (`forgetAccountToasts`), and it is never shown once
+ * `uid` is no longer the account signed in: a page's effect can still run for
+ * the previous account after auth has named the next one.
+ */
+export function toastForAccount(uid: string, title: Parameters<typeof toast>[0], options?: ExternalToast) {
+  if (uid !== signedIn) return;
+  accountToasts.add(toast(title, options));
+}
+
+/**
  * Called with whoever auth says is signed in, `uid` or null, each time it
  * says so. When the account changed, by signing out or in, here or in another
  * tab, the errors of what the account before did are not this reader's, and
  * an Undo or other action on a toast would act for the reader now: puts away
- * the error toasts and those with an action, forgets the errors and refusal
- * lines waiting for an overlay, and keeps `toastError` from showing those of
- * actions still under way. The same account again, as when the profile load
- * is tried again, keeps them.
+ * the error toasts, those with an action and those shown for that account,
+ * forgets the errors and refusal lines waiting for an overlay, and keeps
+ * `toastError` from showing those of actions still under way. A toast put
+ * away here leaves Sonner's list at once, so a Toaster that mounts later is
+ * not given it again. The same account again, as when the profile load is
+ * tried again, keeps them.
  */
 export function forgetAccountToasts(uid: string | null) {
   if (uid === signedIn) return;
   signedIn = uid;
   account += 1;
   held = [];
+  const forAccount = accountToasts;
+  accountToasts = new Set();
   for (const shown of toast.getToasts()) {
-    if (('duration' in shown && shown.duration === Infinity) || ('action' in shown && shown.action)) toast.dismiss(shown.id);
+    if (forAccount.has(shown.id) || ('duration' in shown && shown.duration === Infinity) || ('action' in shown && shown.action)) toast.dismiss(shown.id);
   }
 }
 

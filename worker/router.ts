@@ -13,6 +13,7 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
+import { isAnthropicConfigured } from './anthropic-client.ts';
 import { isNanConfigured } from './nan-client.ts';
 import {
   EmailNotificationError,
@@ -22,9 +23,14 @@ import {
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
 import { handlePublicListRequest, PUBLIC_LIST_PATHS, PublicListApiError } from './public-list-api.ts';
 import { ACCOUNT_DELETE_PATH, AccountDeletionError, handleAccountDeletionRequest } from './account-deletion.ts';
+import { AUTHOR_METRIC_SAVE_PATH } from '../src/utils/author-metrics.ts';
+import { handleAuthorSave } from './author-metrics.ts';
+import { FirestoreAdminError } from './firestore-admin.ts';
 import { INSTITUTION_PATHS, InstitutionLinkError, handleInstitutionLinkRequest } from './institution-link.ts';
 import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAccess } from './institution-access.ts';
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
+import { ZOTERO_PATHS, ZoteroError, handleZoteroRequest } from './zotero.ts';
+import { ORCID_PATHS, OrcidError, handleOrcidRequest } from './orcid.ts';
 import { isServiceAccountConfigured } from './firebase-service-account.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { handleOpenAlex } from './openalex-api.ts';
@@ -208,6 +214,18 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       },
     });
   }
+  if (url.pathname === AUTHOR_METRIC_SAVE_PATH) {
+    const headers = { ...corsHeaders(origin, env), 'cache-control': 'no-store' };
+    if (!allowedOrigins(env).has(origin)) return new Response(null, { status: 403, headers });
+    if (request.method !== 'POST') return new Response(null, { status: 405, headers: { ...headers, allow: 'POST' } });
+    try {
+      return new Response(null, { status: await handleAuthorSave(request, env), headers });
+    } catch (error) {
+      const status = error instanceof WorkerAuthError ? error.status
+        : error instanceof FirestoreAdminError && error.status === 400 ? 400 : 503;
+      return new Response(null, { status, headers });
+    }
+  }
   // Cloudflare sirve su propio robots.txt gestionado para cualquier host de
   // una zona, y por defecto dice `Allow: /`. Para una API eso esta al reves:
   // nada enlaza a estas rutas, pero un rastreador que las encuentre gasta los
@@ -309,6 +327,42 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       return json({ code: known ? error.code : 'INSTITUTION_LINK_FAILED' }, known ? error.status : 502, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
+      });
+    }
+  }
+  if (ZOTERO_PATHS.has(url.pathname)) {
+    // The OAuth callback is derived from this Origin, so it must be one of ours.
+    if (!origin || !allowedOrigins(env).has(origin)) {
+      return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
+    }
+    try {
+      return json(await handleZoteroRequest(request, env, origin), 200, { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' });
+    } catch (error) {
+      captureWorkerException(error);
+      const known = error instanceof ZoteroError || error instanceof WorkerAuthError;
+      if (!known) console.error('Zotero request failed', error);
+      return json({ code: known ? error.code : 'ZOTERO_FAILED' }, known ? error.status : 502, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+        ...(error instanceof ZoteroError && error.retryAfter ? { 'retry-after': error.retryAfter } : {}),
+      });
+    }
+  }
+  if (ORCID_PATHS.has(url.pathname)) {
+    // The OAuth redirect address is derived from this Origin, so it must be one of ours.
+    if (!origin || !allowedOrigins(env).has(origin)) {
+      return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
+    }
+    try {
+      return json(await handleOrcidRequest(request, env, origin), 200, { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' });
+    } catch (error) {
+      captureWorkerException(error);
+      const known = error instanceof OrcidError || error instanceof WorkerAuthError;
+      if (!known) console.error('ORCID request failed', error);
+      return json({ code: known ? error.code : 'ORCID_FAILED' }, known ? error.status : 502, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+        ...(error instanceof OrcidError && error.retryAfter ? { 'retry-after': error.retryAfter } : {}),
       });
     }
   }
@@ -447,7 +501,7 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   if (url.pathname === '/health') {
     return json({
       ok: true,
-      aiConfigured: Boolean(env.GEMINI_API_KEY || isNanConfigured(env)),
+      aiConfigured: Boolean(env.GEMINI_API_KEY || isNanConfigured(env) || isAnthropicConfigured(env)),
       openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
       adsConfigured: Boolean(env.NASA_ADS_API_TOKEN),
       scopusConfigured: isScopusEgressConfigured(env),

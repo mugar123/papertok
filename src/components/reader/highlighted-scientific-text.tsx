@@ -181,6 +181,7 @@ export default function HighlightedScientificText({ children, highlights = [], p
         // an attribute is the cheaper thing to toggle.
         const marks = item.kind
           ? {
+            'data-color': item.color || undefined,
             'data-fresh': item.fresh ? '' : undefined,
             'data-proposed': item.proposed ? '' : undefined,
           }

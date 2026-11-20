@@ -41,9 +41,10 @@ const EMPTY_LOCALIZED_INSTITUTION_NAMES = Object.freeze<Record<string, Record<st
 
 /**
  * How long the app waits for the first snapshot of `following` before it stops
- * blocking on it. Long enough that a healthy connection never sees it.
+ * blocking on it. Long enough that a healthy connection never sees it. The
+ * custom feeds wait as long for theirs.
  */
-const FIRST_SNAPSHOT_GRACE_MS = 6500;
+export const FIRST_SNAPSHOT_GRACE_MS = 6500;
 
 export function FollowingProvider({ children }: PropsWithChildren) {
   const { user, followedAuthors } = useAuth();

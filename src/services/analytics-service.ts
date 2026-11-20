@@ -1,11 +1,13 @@
+import { CATEGORIES as TAXONOMY_AREAS } from '../data/category-taxonomy.ts';
 import { loadOptionalModule } from '../utils/module-load-recovery.ts';
+import type { InteractionEvent } from '../utils/interaction-profile.ts';
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
 import { APP_RELOAD_KEY, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/app-reload.ts';
 import { sanitizeExceptionProperties } from '../utils/error-telemetry.ts';
 type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
 type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
-interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: (eventName: ProductAnalyticsEvent, params?: Record<string, unknown>) => Promise<unknown> }
+interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: (eventName: ProductAnalyticsEvent, params?: Record<string, unknown>, stillValid?: () => boolean) => Promise<unknown> }
 
 // Vercel counts page views; PostHog measures repeat product use with a
 // persistent browser identifier, linked to the account on sign-in. Both
@@ -22,10 +24,10 @@ export const ANALYTICS_CONSENT = Object.freeze({
 const ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 const ANALYTICS_ACTIVATION_KEY = 'papertok_analytics_activation_at';
 const ANALYTICS_ACTIVATION_EVENT_KEY = 'papertok_analytics_activation_sent';
-const ANALYTICS_DAY_7_KEY = 'papertok_analytics_day_7_return_sent';
+const WEEK_ONE_RETURN_KEY = 'papertok_analytics_week_one_return';
 const ANALYTICS_ACQUISITION_SESSION_KEY = 'papertok_analytics_acquisition_sent';
+const PROFILE_SAMPLE_SESSION_KEY = 'papertok_profile_sample_session';
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DAY_7_MS = 7 * DAY_MS;
 
 // Every route `app.tsx` declares has to appear here (or be matched by one of
 // the patterns in `normalizeAnalyticsPath`), because anything else is filed
@@ -33,9 +35,9 @@ const DAY_7_MS = 7 * DAY_MS;
 // report. `/profile`, `/settings/profile`, `/settings/comments` and
 // `/admin/moderation` shipped missing and took a tenth of all page views with
 // them; `/research` (removed) and its legacy alias `/report` both
-// redirect to `/feed`, `/profile` (removed) redirects to `/lists`, and they
-// stay listed so those arrivals read as the old link they came from rather
-// than as noise. The test 'every route the app
+// redirect to `/feed`, and they stay listed so those arrivals read as the old
+// link they came from rather than as noise. `/profile` is My profile again,
+// the account's own page. The test 'every route the app
 // declares is a named analytics path' is what keeps this list from drifting
 // behind the router again.
 const STATIC_ANALYTICS_PATHS = new Set([
@@ -52,6 +54,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/lists',
   '/login',
   '/onboarding',
+  '/recent',
   '/institution/verify',
   '/profile',
   '/report',
@@ -59,11 +62,14 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/search',
   '/settings',
   '/settings/discovery',
+  '/settings/feeds',
   '/settings/following',
   '/settings/notifications',
   '/settings/privacy',
   '/settings/profile',
   '/settings/reading',
+  '/zotero/callback',
+  '/orcid/callback',
 ]);
 const EXPLORER_TYPES = new Set(['author', 'institution', 'project', 'topic']);
 const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
@@ -152,13 +158,20 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   // screen means adding it here in the same commit. `connections` is a paper
   // opened from another paper's citation graph, and `similar` a card in the
   // Similar papers layer.
-  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'other']),
+  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'connections', 'similar', 'custom_feed', 'recent', 'other']),
   // The in-app paper viewer (components/pdf/viewer-outcome.ts).
   viewer_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none']),
   viewer_time_content: new Set(['text', 'pdf_embed', 'pdf_pages', 'external_link', 'none', 'loading']),
   viewer_text_status: new Set(['shown', 'none', 'failed']),
   viewer_pdf_issue: new Set(['not_embeddable', 'timeout', 'relay_failed', 'render_failed', 'not_relayable', 'no_open_copy']),
   full_text_source: new Set(['arxiv', 'ar5iv', 'europepmc']),
+  // A custom feed's order as the reader chose it: Newest first or Best match.
+  feed_order: new Set(['newest', 'best']),
+  zotero_result: new Set(['sent', 'failed']),
+  pmf_disappointment: new Set(['very', 'somewhat', 'not', 'dismissed']),
+  pmf_role: new Set(['undergraduate', 'graduate', 'researcher', 'industry', 'other']),
+  // The taxonomy's broad areas (data/category-taxonomy.ts), never a subarea.
+  reader_area: new Set(Object.keys(TAXONOMY_AREAS)),
 });
 
 const FEED_LOAD_DIMENSIONS = { load_type: 'feed_load_type', attempt: 'feed_load_attempt', first_screen: 'boolean', client_release: 'release' };
@@ -187,7 +200,6 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   tutorial_complete: { language: 'language' },
   activation: {},
   newsletter_change: { action: 'newsletter_action' },
-  day_7_return: {},
   select_content: { content_type: 'content_type', surface: 'surface', position: 'boundedNumber', method: 'method' },
   // The reader added by the light redesign. Its events (`paper_rewrite` through
   // `paper_highlight`) shipped instrumented and silent before they were
@@ -206,10 +218,12 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // asked for — the second costs one of the day's AI uses and the first is free,
   // so counting them together would hide which one people actually want.
   paper_annotation: { level: 'rewrite_level', surface: 'surface', origin: 'annotation_origin', ...PAPER_DETAIL },
-  // How the For You feed is landing, one event per twenty cards: of those
+  // before_profile_load alone marks the first qualifying action in a session.
+  // The other fields measure how the For You feed is landing, one event per twenty cards: of those
   // cards, how many were skipped, read past the reader's own median dwell,
   // liked and saved. Counts only; no paper, topic or account travels with it.
   feed_engagement: {
+    before_profile_load: 'boolean',
     cards: 'boundedNumber', skips: 'boundedNumber', deep_reads: 'boundedNumber', likes: 'boundedNumber', saves: 'boundedNumber',
   },
   // A failure the reader is left looking at: the error boundary's screen or the
@@ -220,7 +234,7 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // gives away, which is the clearest demand signal it has. `scope` keeps that
   // apart from the provider's own budget running out, which is an outage.
   ai_limit_reached: { feature: 'ai_feature', scope: 'ai_quota_scope' },
-  // Likes from every surface. `feed_engagement` counts only the For You feed's.
+  // Likes from every surface. The twenty-card summaries count only For You likes.
   like_change: { action: 'action', ...PAPER_DETAIL },
   // How long a card was on screen, and how long the reader stayed open: the
   // time spent per paper, which no count of views can give.
@@ -247,6 +261,28 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   connections_open: { surface: 'surface', graph_available: 'boolean' },
   connections_interact: { action: 'connections_action', view: 'connections_view' },
   similar_open: { surface: 'surface' },
+  // Custom feeds: one created, deleted or opened. A created feed is sent as
+  // how many ingredients of each kind it holds (`customFeedCreateEvent`) and
+  // its order; never its name, its id or what its ingredients are. An edit
+  // sends nothing.
+  custom_feed_create: { topic_count: 'boundedNumber', author_count: 'boundedNumber', keyword_count: 'boundedNumber', feed_order: 'feed_order' },
+  custom_feed_delete: {},
+  custom_feed_open: { feed_order: 'feed_order' },
+  zotero_send: { result: 'zotero_result' },
+  // The product-market fit survey (components/nudges/pmf-survey.tsx): that it
+  // opened, then the answer or the dismissal. Fixed labels, a 0 to 10 score,
+  // the optional role the reader chose (sent only with an answer) and the
+  // product version, never text. `activation_age` tells readers who arrived
+  // in the last days from those who have used PaperTok for weeks, and opened
+  // against answered gives the response rate. Both events also carry the
+  // reader's reading level setting and the broad areas of their interests
+  // (utils/pmf-survey.ts), so either can be split by kind of reader; the areas
+  // describe the reader's interests, so they are a detail-level list.
+  pmf_survey_shown: { app_version: 'app_version', activation_age: 'activation_age', reading_level: 'rewrite_level', areas: 'detail_list:reader_area' },
+  pmf_survey: {
+    disappointment: 'pmf_disappointment', nps: 'nps', role: 'pmf_role', app_version: 'app_version', activation_age: 'activation_age',
+    reading_level: 'rewrite_level', areas: 'detail_list:reader_area',
+  },
 }) satisfies Readonly<Record<string, Record<string, string>>>;
 
 export type ProductAnalyticsEvent = keyof typeof EVENT_PARAMETER_SCHEMAS;
@@ -390,6 +426,8 @@ export function normalizeAnalyticsPath(pathname = '/') {
   // app.tsx redirects it.
   if (/^\/public\/paper\/[^/]+$/.test(path)) return '/public/paper/:id';
   if (/^\/public\/list\/[^/]+$/.test(path)) return '/public/list/:id';
+  // The account's own feed: its id stays out of the report.
+  if (/^\/feeds\/[^/]+$/.test(path)) return '/feeds/:id';
 
   return '/unknown';
 }
@@ -445,6 +483,9 @@ export function sanitizeProductEventParams(eventName: string | number, params: R
     }
     if (type === 'release' && typeof value === 'string' && /^[a-f0-9]{40}$/i.test(value)) safeParams[key] = value.toLowerCase();
     if (type === 'worker_version' && typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value)) safeParams[key] = value.toLowerCase();
+    if (type === 'app_version' && typeof value === 'string' && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value)) safeParams[key] = value;
+    // A score as chosen, so one out of range is dropped rather than moved to an end.
+    if (type === 'nps' && Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 10) safeParams[key] = value;
     if (type === 'duration' && Number.isFinite(value)) safeParams[key] = Math.min(3_600_000, Math.max(0, Math.round(value as number)));
     if ((type === 'rewrite_error' || type === 'auth_error' || type === 'feed_error') && typeof value === 'string') {
       safeParams[key] = CATEGORIES[type].has(value) ? value : 'other';
@@ -454,6 +495,15 @@ export function sanitizeProductEventParams(eventName: string | number, params: R
     }
     if (type === 'identifier' && consent === ANALYTICS_CONSENT.ENABLED && typeof value === 'string' && value.trim()) {
       safeParams[key] = value.trim().slice(0, 300);
+    }
+    // A list of one category's labels, sent like an identifier only at the
+    // enabled level: an unknown label is dropped, each label kept once (so the
+    // list never holds more than the category does) and sorted, and a list
+    // left empty is not sent.
+    if (type.startsWith('detail_list:') && consent === ANALYTICS_CONSENT.ENABLED && Array.isArray(value)) {
+      const labels = CATEGORIES[type.slice('detail_list:'.length)];
+      const kept = [...new Set(value.filter((label): label is string => typeof label === 'string' && labels.has(label)))].sort();
+      if (kept.length) safeParams[key] = kept;
     }
     if (CATEGORIES[type]?.has(value as string)) safeParams[key] = value;
     return safeParams;
@@ -476,7 +526,9 @@ function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = get
   try {
     storage?.removeItem(ANALYTICS_ACTIVATION_KEY);
     storage?.removeItem(ANALYTICS_ACTIVATION_EVENT_KEY);
-    storage?.removeItem(ANALYTICS_DAY_7_KEY);
+    storage?.removeItem(PROFILE_SAMPLE_SESSION_KEY);
+    storage?.removeItem(WEEK_ONE_RETURN_KEY);
+    storage?.removeItem('papertok_analytics_day_7_return_sent');
     getSessionStorage()?.removeItem(ANALYTICS_ACQUISITION_SESSION_KEY);
   } catch {
     // Consent withdrawal still disables collection when storage is unavailable.
@@ -503,8 +555,8 @@ let consentChanges = 0;
  * tab wrote it (for browsers without storage). Turning analytics off and on
  * again leaves the level as it was, but not this value.
  */
-export function analyticsConsentState() {
-  return `${readAnalyticsConsent()}#${storedConsentChanges()}#${consentChanges}`;
+export function analyticsConsentState(storage?: AnalyticsStorage | null) {
+  return `${readAnalyticsConsent(storage)}#${storedConsentChanges(storage)}#${consentChanges}`;
 }
 
 export async function setAnalyticsConsent(value: string) {
@@ -804,7 +856,7 @@ function canSendAnalytics() {
 
 // `true` means PostHog accepted the event into its send queue, which is as much
 // as a batched transport can honestly report. The callers' bookkeeping
-// (`activation`, `day_7_return`, the guest demo) relies on it never being true
+// (`activation`, the guest demo) relies on it never being true
 // for an event that was dropped.
 async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>, stillValid?: () => boolean) {
   if (!canSendAnalytics()) return false;
@@ -836,6 +888,30 @@ export async function trackProductEvent(eventName: ProductAnalyticsEvent, params
   const consent = readAnalyticsConsent();
   if (consent === ANALYTICS_CONSENT.DENIED) return false;
   return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent), stillValid);
+}
+
+export async function trackBeforeProfileLoad(event: Pick<InteractionEvent, 'kind' | 'restores'>, hydrated: boolean, stillSignedIn: () => boolean) {
+  if (hydrated || event.restores || !['like', 'save', 'read'].includes(event.kind)) return false;
+  if (!canSendAnalytics() || readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED) return false;
+  const consent = analyticsConsentState();
+  const client = await loadAnalyticsClient();
+  const storage = getBrowserStorage();
+  if (!client || !storage || !navigator.locks) return false;
+  try {
+    // Tabs share a PostHog session. Reserve its sample before another tab can capture.
+    return await navigator.locks.request(PROFILE_SAMPLE_SESSION_KEY, () => {
+      if (!stillSignedIn() || consent !== analyticsConsentState() || !mayCapture(client)) return false;
+      // A read-only session lookup can still return the ID from before an idle timeout.
+      const session = client.sessionManager?.checkAndGetSessionAndWindowId().sessionId;
+      if (!session || storage.getItem(PROFILE_SAMPLE_SESSION_KEY) === session) return false;
+      storage.setItem(PROFILE_SAMPLE_SESSION_KEY, session);
+      const sent = client.capture('feed_engagement', { before_profile_load: true });
+      if (!sent) storage.removeItem(PROFILE_SAMPLE_SESSION_KEY);
+      return Boolean(sent);
+    });
+  } catch {
+    return false;
+  }
 }
 
 function hostnameMatches(hostname: string, patterns: readonly (string | RegExp)[]) {
@@ -919,58 +995,63 @@ export async function trackAcquisition({
   }
 }
 
+/** The survey's two events, with how long ago this browser activated, so cohorts can be told apart. */
+export async function trackPmfSurvey(eventName: 'pmf_survey_shown' | 'pmf_survey', params: Record<string, unknown>, { now = Date.now, track = trackProductEvent, stillValid }: Omit<TrackingOptions, 'storage'> & { stillValid?: () => boolean } = {}) {
+  let age: string | undefined;
+  try {
+    age = activationAge(resolveTimestamp(now));
+  } catch {
+    // Storage the browser refuses holds no activation mark; the answer still counts.
+  }
+  return track(eventName, { ...params, ...(age && { activation_age: age }) }, stillValid);
+}
+
 function resolveTimestamp(now: number | (() => number)) {
   const timestamp = typeof now === 'function' ? now() : now;
   return Number.isFinite(timestamp) ? timestamp : Date.now();
 }
 
-// Marks whose send is still waiting, in this tab. The first event of a page
-// waits for PostHog to load, and a second call in that window would otherwise
-// pass the stored check and send the mark twice: opening `/` asks on the way in
-// and again after the redirect to `/feed`. Kept in memory, not in storage, so a
-// tab closed mid-send leaves the mark unsent and the next visit tries again.
-const marksInFlight = new Set<string>();
+// Two first-use actions can overlap while PostHog loads. Keep the pending
+// mark in memory so closing the tab mid-send leaves activation retryable.
+let activationInFlight = false;
 
-export async function markActivation({ storage = getBrowserStorage(), now = Date.now, track = trackProductEvent }: TrackingOptions = {}) {
-  if (readAnalyticsConsent(storage) === ANALYTICS_CONSENT.DENIED) return false;
+export async function markActivation({ storage: suppliedStorage, now = Date.now, track = trackProductEvent }: TrackingOptions = {}) {
+  const storage = suppliedStorage === undefined ? getBrowserStorage() : suppliedStorage;
+  if (readAnalyticsConsent(suppliedStorage) === ANALYTICS_CONSENT.DENIED) return false;
 
   try {
     if (storage?.getItem(ANALYTICS_ACTIVATION_EVENT_KEY) === 'true') return false;
-    if (marksInFlight.has(ANALYTICS_ACTIVATION_EVENT_KEY)) return false;
+    if (activationInFlight) return false;
     const timestamp = resolveTimestamp(now);
-    marksInFlight.add(ANALYTICS_ACTIVATION_EVENT_KEY);
+    activationInFlight = true;
     try {
-      const tracked = await track('activation');
-      if (!tracked) return false;
+      const consentState = analyticsConsentState(suppliedStorage);
+      const stillValid = () => analyticsConsentState(suppliedStorage) === consentState;
+      const tracked = await track('activation', {}, stillValid);
+      if (!tracked || !stillValid()) return false;
+      if (storage?.getItem(ANALYTICS_ACTIVATION_EVENT_KEY) === 'true') return false;
       storage?.setItem(ANALYTICS_ACTIVATION_KEY, String(timestamp));
       storage?.setItem(ANALYTICS_ACTIVATION_EVENT_KEY, 'true');
       return true;
     } finally {
-      marksInFlight.delete(ANALYTICS_ACTIVATION_EVENT_KEY);
+      activationInFlight = false;
     }
   } catch {
     return false;
   }
 }
 
-export async function trackDay7Return({ storage = getBrowserStorage(), now = Date.now, track = trackProductEvent }: TrackingOptions = {}) {
-  if (readAnalyticsConsent(storage) === ANALYTICS_CONSENT.DENIED) return false;
-
+export function markWeekOneReturn({ storage: suppliedStorage, now = Date.now }: Pick<TrackingOptions, 'storage' | 'now'> = {}) {
+  const storage = suppliedStorage === undefined ? getBrowserStorage() : suppliedStorage;
+  if (!storage || readAnalyticsConsent(suppliedStorage) === ANALYTICS_CONSENT.DENIED) return false;
   try {
-    if (storage?.getItem(ANALYTICS_DAY_7_KEY) === 'true') return false;
-    if (marksInFlight.has(ANALYTICS_DAY_7_KEY)) return false;
-    const activatedAt = Number(storage?.getItem(ANALYTICS_ACTIVATION_KEY));
+    if (storage.getItem(WEEK_ONE_RETURN_KEY) === 'true') return false;
+    const activatedAt = Number(storage.getItem(ANALYTICS_ACTIVATION_KEY));
     if (!Number.isFinite(activatedAt) || activatedAt <= 0) return false;
-    if (resolveTimestamp(now) - activatedAt < DAY_7_MS) return false;
-    marksInFlight.add(ANALYTICS_DAY_7_KEY);
-    try {
-      const tracked = await track('day_7_return');
-      if (!tracked) return false;
-      storage?.setItem(ANALYTICS_DAY_7_KEY, 'true');
-      return true;
-    } finally {
-      marksInFlight.delete(ANALYTICS_DAY_7_KEY);
-    }
+    const elapsed = resolveTimestamp(now) - activatedAt;
+    if (elapsed < 7 * DAY_MS || elapsed >= 14 * DAY_MS) return false;
+    storage.setItem(WEEK_ONE_RETURN_KEY, 'true');
+    return true;
   } catch {
     return false;
   }

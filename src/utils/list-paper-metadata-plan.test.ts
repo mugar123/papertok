@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   FIRESTORE_IN_FILTER_MAX,
   PAPER_METADATA_BATCH_SIZE,
+  answeredIds,
   isFetchableDocumentId,
   planMetadataRequests,
   planRetryRequests,
@@ -156,4 +157,14 @@ test('planLibraryBatches has nothing to ask for when every id is illegal', async
   const { planLibraryBatches } = await import('./list-paper-metadata-plan.ts');
   assert.deepEqual(planLibraryBatches(['hep-th/0603001'], 30), { batches: [], unfetchable: ['hep-th/0603001'] });
   assert.deepEqual(planLibraryBatches(undefined!, 30), { batches: [], unfetchable: [] });
+});
+
+// Offline, a cache snapshot holding two of ten requested savedPapers
+// documents was taken as the server's word on all ten: the other eight were
+// settled without their documents, and their rows kept no field or date.
+test('a snapshot answers for the ids it lacks only when the server sent it', () => {
+  const requested = ['2505.06123', '2501.00001', '2509.99999'];
+  assert.deepEqual(answeredIds(requested, ['2505.06123'], false), requested, 'the server: present or absent');
+  assert.deepEqual(answeredIds(requested, [], false), requested, 'the server, with none of them');
+  assert.deepEqual(answeredIds(requested, ['2505.06123'], true), ['2505.06123'], 'the cache: only what it holds');
 });

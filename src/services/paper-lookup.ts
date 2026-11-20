@@ -1,4 +1,5 @@
 import type { parsePaperKey } from '../utils/public-navigation.ts';
+import type { OpenReviewNote } from './open-review-service.ts';
 
 import { fetchPapersByIds } from './arxiv-service.ts';
 import {
@@ -6,17 +7,34 @@ import {
   fetchPaperByArxivIdViaOpenAlex,
   fetchPaperByWorkId,
 } from './open-alex-service.ts';
+import { mapOpenReviewNote } from './open-review-service.ts';
+import { fetchWorkerSourceJson } from './worker-api-client.ts';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
 } from '../utils/feed-enrichment.ts';
 
 /**
+ * The submission an OpenReview forum id names, through the Worker
+ * (`/sources/openreview?id=`). Null when OpenReview has no such submission; a
+ * provider failure rejects. `options` is `fetchWorkerSourceJson`'s own seam.
+ */
+export async function fetchOpenReviewPaper(id: string, options?: Parameters<typeof fetchWorkerSourceJson>[2]) {
+  const data = await fetchWorkerSourceJson<{ notes?: OpenReviewNote[] }>('/sources/openreview', { id }, options);
+  const note = data?.notes?.[0];
+  return note ? mapOpenReviewNote(note) : null;
+}
+
+/**
  * The paper a public key names (`parsePaperKey`): its DOI record, its
- * OpenAlex or PubMed work, or its arXiv entry. Null when the provider has no
- * such paper; a provider failure rejects, so a page can offer a retry.
+ * OpenAlex or PubMed work, its arXiv entry, or its OpenReview submission. Null
+ * when the provider has no such paper; a provider failure rejects, so a page
+ * can offer a retry.
  */
 export async function loadPaperByIdentity(identity: NonNullable<ReturnType<typeof parsePaperKey>>) {
+  // A paper only OpenReview holds: no other provider knows its id.
+  if (identity.type === 'openreview') return fetchOpenReviewPaper(identity.value);
+
   // A DOI, and the papers the feed keys by provider id — an OpenAlex work, a
   // PubMed record — and remembers that way in Liked and Saved. OpenAlex
   // resolves all three as one work, abstract included, at no cost to the

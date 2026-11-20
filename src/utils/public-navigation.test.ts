@@ -129,6 +129,10 @@ test('a new account from a paper page door is onboarded and a signed-in reader k
   }
 });
 
+test('a custom feed keeps the navbar', () => {
+  assert.ok(keepsNavbarPath('/feeds/abcd1234'));
+});
+
 /**
  * The Liked tab is keyed by the feed's `paper.id`, and for an OpenAlex or
  * PubMed card that id is `openalex:W…` or `pmid:…` with no DOI stored beside
@@ -174,7 +178,29 @@ test('a provider id that carries the DOI inside it is keyed by that DOI', () => 
   assert.equal(encodePaperKey('biorxiv:not-a-doi:v1'), null);
 });
 
+test('a paper only OpenReview holds is addressed by its forum id', () => {
+  const key = encodePaperKey('openreview:5pShDP8LSm');
+  assert.equal(decodePaperKey(key!), 'openreview:5pShDP8LSm', 'the id keeps its case');
+  assert.deepEqual(parsePaperKey(key!), { type: 'openreview', value: '5pShDP8LSm' });
+  assert.equal(encodePaperKey('https://openreview.net/forum?id=5pShDP8LSm'), key, 'the forum URL');
+  assert.equal(encodePaperKey('https://openreview.net/pdf?id=5pShDP8LSm'), key, 'the PDF URL');
+  assert.equal(encodePaperKey('openreview.net/forum?id=5pShDP8LSm&noteId=abcDEF1234'), key, 'with a reply selected');
+  assert.equal(encodePaperKey({ id: 'openreview:5pShDP8LSm', openReviewId: '5pShDP8LSm' }), key, 'the paper the mapper builds');
+  assert.equal(encodePaperKey({ id: 's2:649def34', openReviewId: '5pShDP8LSm' }), key, 'a paper keyed by an id nobody can open');
+  assert.equal(getPublicPaperPath('openreview', '5pShDP8LSm'), `/paper/${key}`);
+  assert.equal(
+    encodePaperKey({ id: 'arxiv:2307.09288', arxivId: '2307.09288', openReviewId: '5pShDP8LSm' }),
+    encodePaperKey({ arxivId: '2307.09288' }),
+    'a submission with an arXiv copy keeps the arXiv address',
+  );
+});
+
 test('an id nobody can open is still no key at all', () => {
+  assert.equal(encodePaperKey('5pShDP8LSm'), null, 'a bare OpenReview id could be anything');
+  assert.equal(encodePaperKey('openreview:has spaces'), null);
+  assert.equal(encodePaperKey('https://openreview.net/group?id=ICLR.cc/2026/Conference'), null, 'a venue page is not a paper');
+  assert.equal(encodePaperKey('https://openreview.net/forum'), null);
+  assert.equal(getPublicPaperPath('openreview', '../notes'), null);
   assert.equal(encodePaperKey('31234567'), null, 'a bare number is not taken for a PubMed id');
   assert.equal(encodePaperKey('pmid:abc'), null);
   assert.equal(encodePaperKey('openalex:A2741809807'), null, 'an author id is not a work');

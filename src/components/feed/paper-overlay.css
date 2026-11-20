@@ -51,6 +51,13 @@
   pointer-events: none;
 }
 
+/* A card the reader arrived for (`arriving`): its page is mid route transition
+   underneath and is not where they meant to go, so the frame does not fade in
+   over it. It is opaque at once and only the surface drops in. */
+.paper-overlay--arriving[data-open] {
+  animation: none;
+}
+
 .paper-overlay-surface {
   position: absolute;
   inset: 0;
@@ -98,10 +105,15 @@
 }
 
 /* Reduced motion keeps the frame's fade (opacity only) and drops the surface's
-   travel. */
+   travel. An arriving card has no frame fade to keep, so its surface fades
+   instead: over the opaque frame, which still hides the page underneath. */
 @media (prefers-reduced-motion: reduce) {
   .paper-overlay[data-open] .paper-overlay-surface,
   .paper-overlay[data-closed] .paper-overlay-surface {
     animation: none;
+  }
+
+  .paper-overlay--arriving[data-open] .paper-overlay-surface {
+    animation: fadeIn 280ms var(--ease-out);
   }
 }

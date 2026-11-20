@@ -112,3 +112,19 @@ export function matchesAuthorName(reqName: unknown, oaName: unknown) {
   const right = readings(oaName);
   return left.some(a => right.some(b => sameSurname(a.surname, b.surname) && sameGiven(a.given, b.given)));
 }
+
+// The letters of a name in any script, with the marks that belong to them.
+function fullNameWords(value: unknown) {
+  return normalizeText(value).toLowerCase().replace(/[^\p{L}\p{M}\s-]/gu, ' ').split(/[\s-]+/).filter(Boolean);
+}
+
+/**
+ * Whether two names are written with the same given and family names, ignoring
+ * case, accents, dots and hyphens, in any script that separates its words. Unlike `matchesAuthorName`,
+ * no initial or dropped name is accepted, and a name of one word matches
+ * nothing: "M. Garcia" is not "Maria Garcia", who may be a coauthor of hers.
+ */
+export function sameFullName(a: unknown, b: unknown) {
+  const left = fullNameWords(a);
+  return left.length >= 2 && left.join(' ') === fullNameWords(b).join(' ');
+}

@@ -9,7 +9,9 @@ import {
   readListPapers,
   rememberListPapers,
   rememberOwnLists,
+  rememberSavedAnswers,
   reviseOwnLists,
+  savedAnswered,
 } from './profile-session-caches.ts';
 
 /**
@@ -67,7 +69,116 @@ test('rubbish is refused rather than cached', () => {
 // savedPapers document, which keeps no status, must not wipe the retraction
 // the interaction's copy recorded.
 test('a newer copy of a list paper replaces the older one but keeps its retraction', () => {
-  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'Old', publicationStatus: 'retracted' } });
-  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'New', publicationStatus: 'preprint' } });
+  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'Old', publicationStatus: 'retracted' } }, 'interaction');
+  rememberListPapers('uid-g', { 'pmid:9500320': { id: 'pmid:9500320', title: 'New', publicationStatus: 'preprint' } }, 'saved');
   assert.deepEqual(readListPapers('uid-g')?.['pmid:9500320'], { id: 'pmid:9500320', title: 'New', publicationStatus: 'retracted' });
+});
+
+// A list reopened in the same tab painted from whichever copy arrived last.
+// Both collections are read at once, and the interaction's record of a paper
+// saved before PAP-60 kept no field, date or abstract: landing after the
+// savedPapers document, it replaced it in the cache while the screen's own
+// state kept the document.
+test('the cache keeps a list paper\'s savedPapers document over a later interaction copy', () => {
+  const saved = { id: '2505.06123', title: 'Perfect absorption', categories: ['quant-ph'], year: 2025 };
+  const interaction = { id: '2505.06123', title: 'Perfect absorption', categories: [], year: null };
+  rememberListPapers('uid-h', { [saved.id]: saved }, 'saved');
+  rememberListPapers('uid-h', { [saved.id]: interaction }, 'interaction');
+  assert.deepEqual(readListPapers('uid-h')?.[saved.id], saved);
+
+  rememberListPapers('uid-i', { [saved.id]: interaction }, 'interaction');
+  rememberListPapers('uid-i', { [saved.id]: saved }, 'saved');
+  assert.deepEqual(readListPapers('uid-i')?.[saved.id], saved, 'in either order');
+});
+
+test('a savedPapers answer is kept for the account that read it', () => {
+  rememberSavedAnswers('uid-j', ['2505.06123']);
+  rememberSavedAnswers('uid-j', ['2501.00001']);
+  assert.equal(savedAnswered('uid-j', '2505.06123'), true);
+  assert.equal(savedAnswered('uid-j', '2501.00001'), true);
+  assert.equal(savedAnswered('uid-k', '2505.06123'), false, 'another account');
+  assert.equal(savedAnswered('uid-j', '2509.99999'), false, 'never asked');
+});
+
+test('list and favorite fields survive reload and thin responses without another metadata read', async () => {
+  const { listPapersCache } = await import('./profile-session-caches.ts');
+  const { listPaper, listPaperNeedsRead, listPaperNeedsFieldRead } = await import('./list-paper-copies.ts');
+  const { getPaperFieldClassification } = await import('./paper-topic-tags.ts');
+  const { clearUserScopedStorage } = await import('./user-scoped-storage.ts');
+  const data = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => { data.set(key, value); },
+    removeItem: (key: string) => { data.delete(key); },
+    key: (index: number) => [...data.keys()][index] ?? null,
+    get length() { return data.size; },
+  };
+  const papers = {
+    '2608.19175': { id: '2608.19175', title: 'State–Generator Geometry', primaryCategory: 'quant-ph', categories: [], classificationVersion: 1, year: 2026 },
+    'openalex:W1': { id: 'openalex:W1', title: 'Biology paper', primaryTopic: { id: 'T1', field: { id: '11', display_name: 'Biology' } }, classificationVersion: 1 },
+  };
+  rememberListPapers('reload-account', papers, 'saved', storage);
+  listPapersCache.delete('reload-account');
+  const restored = readListPapers('reload-account', storage)!;
+  assert.equal(getPaperFieldClassification(restored['2608.19175'])?.label, 'Quantum Physics');
+  assert.equal(restored['2608.19175'].year, 2026);
+  assert.equal(getPaperFieldClassification(restored['openalex:W1'])?.label, 'Biology');
+  assert.deepEqual(readListPapers('other-account', storage), {});
+  const thin = { id: '2608.19175', title: 'State–Generator Geometry', categories: [], year: null };
+  for (const source of ['saved', 'interaction'] as const) {
+    rememberListPapers('reload-account', { [thin.id]: thin }, source, storage);
+    const cached = readListPapers('reload-account', storage)![thin.id];
+    const row = listPaper(thin, cached, undefined)!;
+    assert.equal(getPaperFieldClassification(row)?.label, 'Quantum Physics', source);
+    assert.equal(row.year, 2026, source);
+    assert.equal(listPaperNeedsRead([thin, cached], false), false);
+    assert.equal(listPaperNeedsFieldRead([thin, cached], false), false);
+  }
+  clearUserScopedStorage('reload-account', storage);
+  listPapersCache.delete('reload-account');
+  assert.deepEqual(readListPapers('reload-account', storage), {});
+});
+
+test('ending an account session permits category recovery on signing in again', async () => {
+  const { forgetListPapers, rememberFieldAnswers, fieldAnswered } = await import('./profile-session-caches.ts');
+  const { listPaperNeedsFieldRead } = await import('./list-paper-copies.ts');
+  const paper = { id: '2608.19175', title: 'Paper', year: 2026 };
+  rememberListPapers('repeat-session', { [paper.id]: paper }, 'saved');
+  rememberSavedAnswers('repeat-session', [paper.id]);
+  rememberFieldAnswers('repeat-session', [paper.id]);
+  forgetListPapers('repeat-session');
+  assert.equal(savedAnswered('repeat-session', paper.id), false);
+  assert.equal(fieldAnswered('repeat-session', paper.id), false);
+  assert.equal(listPaperNeedsFieldRead([paper], savedAnswered('repeat-session', paper.id)), true);
+});
+
+test('a subscriber hears each saved-read answer, and the answered set changes only then', async () => {
+  const { forgetListPapers, savedAnswersOf, subscribeSavedAnswers } = await import('./profile-session-caches.ts');
+  let heard = 0;
+  const unsubscribe = subscribeSavedAnswers(() => { heard += 1; });
+
+  assert.equal(savedAnswersOf('uid-sub'), undefined);
+  // A confirmed absence leaves no document anywhere: this answer is the only change.
+  rememberSavedAnswers('uid-sub', ['2601.00001']);
+  const first = savedAnswersOf('uid-sub');
+  assert.equal(heard, 1);
+  assert.deepEqual([...first!], ['2601.00001']);
+  assert.equal(savedAnswersOf('uid-sub'), first, 'the same set while nothing changes');
+
+  rememberSavedAnswers('uid-sub', []);
+  assert.equal(heard, 1, 'nothing answered, nothing to hear');
+  rememberSavedAnswers('uid-sub', ['2601.00002']);
+  assert.equal(heard, 2);
+  assert.notEqual(savedAnswersOf('uid-sub'), first);
+  assert.equal(savedAnswersOf('uid-sub')!.has('2601.00002'), true);
+  assert.equal(savedAnswersOf(undefined), undefined);
+
+  forgetListPapers('uid-sub');
+  assert.equal(heard, 3);
+  assert.equal(savedAnswersOf('uid-sub'), undefined);
+
+  unsubscribe();
+  rememberSavedAnswers('uid-sub', ['2601.00003']);
+  assert.equal(heard, 3, 'an unsubscribed listener hears nothing');
+  forgetListPapers('uid-sub');
 });

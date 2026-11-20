@@ -1,8 +1,8 @@
+import type { OpenReviewNote } from '../src/services/open-review-service.ts';
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 
-interface OpenReviewNote extends Record<string, unknown> { content?: Record<string, unknown> }
 interface HuggingFaceEntry { paper?: { publishedAt?: string }; publishedAt?: string }
 interface HuggingFaceResources extends Record<string, unknown> {
   linkedModels?: Array<Record<string, unknown>>;
@@ -10,7 +10,9 @@ interface HuggingFaceResources extends Record<string, unknown> {
 }
 
 
+import { normalizeOpenReviewId } from '../src/utils/public-navigation.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
+import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount } from './open-review-api.ts';
 import {
   cacheResponse,
   DEGRADED_CACHE_SECONDS,
@@ -260,16 +262,6 @@ function compactOpenReviewNote(note: OpenReviewNote) {
   };
 }
 
-function isOpenReviewSubmission(note: OpenReviewNote) {
-  const domain = String(note?.domain || '').toLowerCase();
-  return ![
-    'dblp.org',
-    'openreview.net/public_article',
-    'openreview.net/arxiv',
-    'openreview.net/orcid',
-  ].some(prefix => domain.startsWith(prefix));
-}
-
 // The date the card shows. `mapOpenReviewNote` builds `published` from `pdate`,
 // then `cdate`, then `tcdate`; an order that disagrees with the date printed on
 // the card reads as no order at all, so the Worker sorts by the same precedence.
@@ -280,6 +272,24 @@ function openReviewNoteDate(note: OpenReviewNote) {
 export async function handleOpenReview(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
+  // One paper by its forum id, for the paper page and a pasted OpenReview link.
+  // The same route as the search because it answers the same `{ notes }`; the
+  // key carries the id alone, so no search parameter can split one note.
+  const requestedId = context.requestUrl.searchParams.get('id');
+  if (requestedId !== null) {
+    const id = normalizeOpenReviewId(`openreview:${requestedId}`);
+    if (!id) return json({ error: 'Invalid OpenReview id' }, 400, corsHeaders(context.origin, env));
+    // OpenReview answers a lookup by id only to a signed-in caller
+    // (open-review-api.ts). Without the account this is a Worker that was not
+    // provisioned, which is neither "no such paper" nor OpenReview failing.
+    if (!openReviewAccount(env)) {
+      return json({ error: 'OpenReview lookups are not configured', code: 'OPENREVIEW_NOT_CONFIGURED' }, 503, corsHeaders(context.origin, env));
+    }
+    return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.openreview, async () => {
+      const note = await fetchOpenReviewNote(env, id);
+      return { notes: note ? [compactOpenReviewNote(note)] : [], count: note ? 1 : 0 };
+    }, { canonicalParams: { id } });
+  }
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
   if (!query) return json({ error: 'Missing OpenReview query' }, 400, corsHeaders(context.origin, env));
 

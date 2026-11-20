@@ -5,8 +5,9 @@ import type { Harvested, StoreEnv } from './paper-store.ts';
 import type { HarvestAsk } from './openalex-api.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { OpenAireProduct } from '../src/services/open-aire-records.ts';
+import type { KeywordReading } from './keyword-lanes.ts';
 
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { ARXIV_FEED_AREAS, arxivPaper, isArxivCategory } from '../src/services/arxiv-records.ts';
 import { pubmedCategoryQuery, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
@@ -29,7 +30,8 @@ import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
+import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, LATE_ARRIVAL_DAYS, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf, writeLaneRanks } from './paper-store.ts';
+import { KEYWORD_LANE_PREFIX, isKeywordLane, keywordFilter, keywordSearchText } from './keyword-lanes.ts';
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
 import { EUROPE_PMC_NOTABLE_QUERIES } from './europepmc-notable-leaves.generated.ts';
 import { ADS_NOTABLE_OWN_CLASS_LEAVES } from './ads-notable-leaves.generated.ts';
@@ -66,6 +68,7 @@ export interface ArxivRecord {
 
 const XML = new XMLParser({
   ignoreAttributes: false,
+  ignorePiTags: true,
   attributeNamePrefix: '@_',
   removeNSPrefix: true,
   parseTagValue: false,
@@ -159,12 +162,24 @@ interface AtomEntry {
 
 /** Papers of an arXiv API Atom feed (a search or an `id_list` lookup). */
 export function parseArxivAtom(xml: string) {
-  const entries: AtomEntry[] = XML.parse(xml)?.feed?.entry || [];
+  if (XMLValidator.validate(xml) !== true) throw new Error('Invalid arXiv XML');
+  // A final processing instruction makes the parser retain stray text after a self-closing feed.
+  const document = XML.parse(xml + '<?end?>');
+  const { feed } = document;
+  if (Object.keys(document).length !== 1 || feed === undefined || Array.isArray(feed)) {
+    throw new Error('Expected a single arXiv feed');
+  }
+  if (text(typeof feed === 'string' ? feed : feed['#text'])) {
+    throw new Error('Unexpected text in arXiv feed');
+  }
+  const entries: AtomEntry[] = feed.entry ?? [];
   return entries.flatMap((entry): ArxivRecord[] => {
+    const id = entry.id && typeof entry.id === 'object' && '#text' in entry.id ? entry.id['#text'] : entry.id;
+    if (text(id).includes('/api/errors#')) throw new Error('arXiv API error');
     const primary = text(entry.primary_category?.['@_term']);
     const categories = [...new Set([primary, ...(entry.category || []).map(category => text(category?.['@_term']))].filter(Boolean))];
     const paper = {
-      arxivId: versionless(entry.id),
+      arxivId: versionless(id),
       title: text(entry.title),
       abstract: text(entry.summary),
       authors: (entry.author || []).map(author => text(author?.name)).filter(Boolean),
@@ -199,7 +214,10 @@ export function arxivRecordPaper(record: ArxivRecord): Paper {
  * One OAI-PMH page of an arXiv set, filed under its categories. Only papers
  * first submitted within CORPUS_DAYS are kept: the set also lists revisions of
  * old papers, and a new paper is announced days after its v1 date, so `from`
- * alone would drop it.
+ * alone would drop it. arXiv announces a paper within about four days of its
+ * v1, so a record first submitted more than LATE_ARRIVAL_DAYS before is a
+ * revision: it is filed with no arrival in any lane, and a lane that had
+ * trimmed it does not put it on top of its day-by-day feed.
  */
 export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionToken }: { set: string; from: string; resumptionToken?: string }) {
   const url = new URL(OAI_ENDPOINT);
@@ -221,8 +239,11 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
   if (!response.ok) throw new PaperStoreError(`OAI_HTTP_${response.status}`, 502);
   const page = parseOaiPage(await response.text());
   const since = daysFromNow(-CORPUS_DAYS);
+  const announced = daysFromNow(-LATE_ARRIVAL_DAYS);
   const recent = page.papers.filter(paper => paper.published >= since);
-  const stored = await ingestPapers(env, recent.map(record => ({ paper: arxivRecordPaper(record), lanes: [] })));
+  const filed = (records: typeof recent) => records.map(record => ({ paper: arxivRecordPaper(record), lanes: [] }));
+  const stored = await ingestPapers(env, filed(recent.filter(paper => paper.published >= announced)))
+    + await ingestPapers(env, filed(recent.filter(paper => paper.published < announced)), { firstLoad: true });
   return { stored, listed: page.papers.length, resumptionToken: page.resumptionToken, retryAfterSeconds: 0 };
 }
 
@@ -461,24 +482,27 @@ const HARVEST_OPENALEX_PARTS: Record<HarvestPart, HarvestAsk> = {
   new: { newFollow: true },
 };
 
-async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', sort = 'publication_date:desc', part }: {
-  page: number; perPage: number; search?: string; sort?: string; part: HarvestPart;
-}) {
+interface OpenAlexListingRequest { page: number; perPage: number; sort?: string; part: HarvestPart }
+
+// A page of a works listing, and how many works the whole listing has.
+async function openAlexListing(env: SourceEnv, filter: string, { page, perPage, sort = 'publication_date:desc', part }: OpenAlexListingRequest) {
   const params: Record<string, string | number> = {
     filter, sort, page, 'per-page': perPage, select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   };
-  if (search) params.search = search;
   const harvest = (request: Request, routeEnv: WorkerEnv) => handleHarvestOpenAlex(request, routeEnv, HARVEST_OPENALEX_PARTS[part]);
   const response = await askRoute(harvest, '/openalex/works', params, env);
-  return (await response.json<{ results?: OpenAlexWork[] }>()).results || [];
+  const { results, meta } = await response.json<{ results?: OpenAlexWork[]; meta?: { count?: number } }>();
+  return { results: results || [], count: Number(meta?.count) || 0 };
 }
+
+const openAlexWorks = async (env: SourceEnv, filter: string, request: OpenAlexListingRequest) => (await openAlexListing(env, filter, request)).results;
 
 const windowFilter = (now = Date.now()) => `from_publication_date:${day(daysFromNow(-CORPUS_DAYS, now))},to_publication_date:${day(new Date(now).toISOString())}`;
 
-async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', sort, part, map = (work: OpenAlexWork) => mapOpenAlexWork(work) }: {
-  page: number; lane: string; perPage: number; search?: string; sort?: string; part: HarvestPart; map?: (work: OpenAlexWork) => Partial<Paper> | null;
+async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, sort, part, map = (work: OpenAlexWork) => mapOpenAlexWork(work) }: {
+  page: number; lane: string; perPage: number; sort?: string; part: HarvestPart; map?: (work: OpenAlexWork) => Partial<Paper> | null;
 }) {
-  const works = await openAlexWorks(env, filter, { page, perPage, search, sort, part });
+  const works = await openAlexWorks(env, filter, { page, perPage, sort, part });
   return pageOf(filed(works.map(map), lane), perPage);
 }
 
@@ -751,12 +775,14 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       },
     }),
   },
+  // A followed author, institution, topic, concept or journal. A followed
+  // search or a feed's keyword (`query:`) has the same source name and a
+  // harvest of its own (`harvestKeywordLane`).
   'openalex-follows': {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14, keepsOld: true,
     fetchPage: (env, { lane, page, newFollow }) => {
       const [kind, value] = [lane.slice(0, lane.indexOf(':')), lane.slice(lane.indexOf(':') + 1)];
       const part = newFollow ? 'new' : 'nightly';
-      if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value, part });
       // None dated after today, which would sort first.
       const until = `to_publication_date:${day(new Date().toISOString())}`;
       // A followed journal (ENG-123, D4): its articles and reviews, without
@@ -876,6 +902,7 @@ const KEPT_LISTING_DAYS = 14;
  * progress only once it completes.
  */
 export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: LaneJob, now = Date.now()) {
+  if (source === 'openalex-follows' && isKeywordLane(lane)) return harvestKeywordLane(env, { source, lane, newFollow }, now);
   const spec = SOURCES[source];
   const db = env.PAPER_STORE!;
   const state = await db.prepare('SELECT harvested_through FROM lane_state WHERE source = ? AND lane = ?').bind(source, lane)
@@ -889,7 +916,7 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   for (let page = 1; page <= pages; page += 1) {
     if (spec.gapMs) await new Promise(resolve => setTimeout(resolve, spec.gapMs));
     const result = await spec.fetchPage(env, { lane, page, since, waits, newFollow });
-    stored += await ingestPapers(env, result.items, { keepUntil, now });
+    stored += await ingestPapers(env, result.items, { keepUntil, now, firstLoad: reached ? undefined : lane });
     if (!spec.separateListings && (!result.full || (spec.dated && result.newest && result.newest < since))) break;
   }
   // Only the papers this run's pages filed in the lane carry OpenAlex's counts
@@ -901,14 +928,18 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   // one), so the refresh still comes for both. One never enriched still gets
   // its first enrichment, which also asks Crossref its type. The listing does
   // not renew a paper without an abstract either (the placeholder is shorter
-  // than the 40 characters of `isPlausibleAbstract`): the refresh is what asks
-  // for its abstract again, at about one OpenAlex refresh call per 50 such
-  // papers every 14 days. Nor does it renew a paper with a PubMed id: the
-  // listing leaves out only what OpenAlex marks retracted, and the refresh is
-  // what reads PubMed's `Retracted Publication` type from Europe PMC. Nearly
-  // every paper of the 26 medicine and biology notable lanes has one, about
-  // 26,000 papers: about 260 OpenAlex refresh calls and 650 Crossref type
-  // calls a week, with their iCite and Europe PMC calls.
+  // than the 40 characters of `isPlausibleAbstract`): the refresh asks for its
+  // abstract again, at about one OpenAlex refresh call per 50 such papers
+  // every 14 days, and, while the paper is young, the abstract retries
+  // (`ABSTRACT_RETRY_DAYS`, paper-enrichment.ts) also ask. Nor does it renew a
+  // paper with a PubMed id: the listing leaves out only what OpenAlex marks
+  // retracted, and the refresh is what reads PubMed's `Retracted Publication`
+  // type from Europe PMC. Nearly every paper of the 26 medicine and biology
+  // notable lanes has one, about 26,000 papers: about 260 OpenAlex refresh
+  // calls and 650 Crossref type calls a week, with their iCite and Europe PMC
+  // calls. `enrich_misses = 0` also passes over a row whose enrichment is
+  // uncounted (-1, `UNCOUNTED` in paper-enrichment.ts), so the listing does
+  // not put off its refresh.
   if (spec.renewsEnrichment) {
     await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
       AND LENGTH(COALESCE(paper ->> '$.abstract', '')) >= 40 AND paper ->> '$.pmid' IS NULL
@@ -916,6 +947,115 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   }
   await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)
     ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(source, lane, new Date(now).toISOString()).run();
+  return stored;
+}
+
+// ─── Keyword lanes ───
+
+// A keyword of several words is asked as a phrase when the phrase names at
+// least this many papers of any year, a screen of the feed: "quadratic
+// funding" is a term of its own, "lmsr prediction markets" is three words
+// that 2 papers put together (2026-11-14).
+const KEYWORD_PHRASE_MINIMUM = 20;
+// The best matches of any year a lane keeps, in OpenAlex's order: one page.
+const KEYWORD_CATALOGUE = 50;
+// How often that listing is asked again, and its reading decided again.
+const KEYWORD_CATALOGUE_DAYS = 7;
+// How long a paper of that listing stays: four listings, so a paper leaves
+// only after three in a row failed or stopped returning it.
+const KEYWORD_CATALOGUE_KEPT_DAYS = 28;
+// The best matches of the last 90 days a night adds. Cut by place, not by
+// score: `relevance_score` does not tell the papers about a keyword from
+// those that touch it (both scored 18 to 23 for one keyword, 2026-11-14).
+const KEYWORD_NOVELTIES = 20;
+
+type KeywordListing = { reading: KeywordReading; works: OpenAlexWork[] | null };
+
+// The lane's weekly listing: the phrase when it fills a screen, the loose
+// words otherwise, and always for a keyword of one word.
+async function keywordCatalogue(env: SourceEnv, keyword: string, part: HarvestPart): Promise<KeywordListing> {
+  const list = (reading: KeywordReading) => openAlexListing(env, keywordFilter(keyword, reading), { page: 1, perPage: KEYWORD_CATALOGUE, sort: 'relevance_score:desc', part });
+  if (keyword.includes(' ')) {
+    const phrase = await list('phrase');
+    if (phrase.count >= KEYWORD_PHRASE_MINIMUM) return { reading: 'phrase', works: phrase.results };
+  }
+  return { reading: 'words', works: (await list('words')).results };
+}
+
+/**
+ * Harvests a keyword lane, a followed search's or a custom feed's keyword,
+ * under the source name `openalex-follows`, the one lane state the followed
+ * lanes' jobs and readers look up. Two listings in titles and abstracts, each
+ * one page, most relevant first:
+ * - once a week (in UTC days, so a run that reaches the lane earlier in the
+ *   night than last week's still lists it), the best matches of any year.
+ *   Their order is each paper's rank in the lane (`writeLaneRanks`), they stay
+ *   KEYWORD_CATALOGUE_KEPT_DAYS past the listing, and none arrives as news: a
+ *   2015 paper is placed by its date in a feed that goes day by day;
+ * - every night, the best matches of the last 90 days, asked as the weekly
+ *   listing last read the keyword. One published within LATE_ARRIVAL_DAYS
+ *   arrives tonight; one that enters the list later, because another left it,
+ *   keeps its publication date, as every paper of the lane's first load does.
+ * A paper of this week that both listings return arrives tonight. The weekly
+ * listing is filed, with its state, even when the night's request then fails,
+ * so it is not asked again for that. When it fails on a
+ * lane that has a reading, the lane keeps its ranks, the night's novelties
+ * are still filed and the listing is due again the next night; a lane's first
+ * one failing fails the turn. A keyword nothing can be searched for asks
+ * nothing and ends its turn, so its feed does not wait for it.
+ */
+async function harvestKeywordLane(env: SourceEnv, { source, lane, newFollow }: LaneJob, now = Date.now()) {
+  const db = env.PAPER_STORE!;
+  const tonight = new Date(now).toISOString();
+  const finish = () => db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)
+    ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(source, lane, tonight).run();
+  const keyword = keywordSearchText(lane.slice(KEYWORD_LANE_PREFIX.length));
+  if (!keyword) {
+    await finish();
+    return 0;
+  }
+  const state = await db.prepare('SELECT harvested_through, reading, catalogued_at FROM lane_state WHERE source = ? AND lane = ?').bind(source, lane)
+    .first<{ harvested_through: string; reading: string | null; catalogued_at: string | null }>();
+  const read = state?.reading;
+  const kept: KeywordReading | null = read === 'phrase' || read === 'words' ? read : null;
+  const listedThisWeek = day(state?.catalogued_at || '') > day(daysFromNow(-KEYWORD_CATALOGUE_DAYS, now));
+  const part = newFollow ? 'new' : 'nightly';
+  // Only the request is tried: a failed write to the store fails the turn.
+  const { reading, works } = kept && listedThisWeek
+    ? { reading: kept, works: null }
+    : await keywordCatalogue(env, keyword, part).catch((error: unknown): KeywordListing => {
+      if (!kept) throw error;
+      console.warn(`The weekly listing of ${lane} failed; the lane keeps its ranks`, error);
+      return { reading: kept, works: null };
+    });
+  const fileCatalogue = async () => {
+    if (!works) return 0;
+    const papers = works.map(work => mapOpenAlexWork(work));
+    const written = await ingestPapers(env, filed(papers, lane), { keepUntil: daysFromNow(KEYWORD_CATALOGUE_KEPT_DAYS, now), now, firstLoad: lane });
+    await writeLaneRanks(env, lane, papers.map(paper => paper?.id || ''));
+    await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through, reading, catalogued_at) VALUES (?, ?, '', ?, ?)
+      ON CONFLICT (source, lane) DO UPDATE SET reading = excluded.reading, catalogued_at = excluded.catalogued_at`).bind(source, lane, reading, tonight).run();
+    return written;
+  };
+  const novelties = await openAlexListing(env, `${windowFilter(now)},${keywordFilter(keyword, reading)}`, {
+    page: 1, perPage: KEYWORD_NOVELTIES, sort: 'relevance_score:desc', part,
+  }).catch(async (error: unknown) => {
+    // The weekly listing was answered: it is filed, and not asked again for this failure.
+    await fileCatalogue();
+    throw error;
+  });
+  const listed = filed(novelties.results.map(work => mapOpenAlexWork(work)), lane);
+  const keepUntil = daysFromNow(KEPT_LISTING_DAYS, now);
+  // Tonight's news first: the weekly listing gives its papers no arrival, and
+  // a row the lane holds keeps the one it has, so a paper of this week that is
+  // also among the best matches of any year would never arrive. A lane's
+  // first harvest has no news.
+  const announced = daysFromNow(-LATE_ARRIVAL_DAYS, now);
+  const isNews = (item: Harvested) => Boolean(state?.harvested_through) && publishedOf(item.paper, now) >= announced;
+  let stored = await ingestPapers(env, listed.filter(isNews), { keepUntil, now });
+  stored += await fileCatalogue();
+  stored += await ingestPapers(env, listed.filter(item => !isNews(item)), { keepUntil, now, firstLoad: lane });
+  await finish();
   return stored;
 }
 
@@ -964,7 +1104,7 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
       break;
     }
     try {
-      stored += await ingestPapers(env, result.items, { now });
+      stored += await ingestPapers(env, result.items, { now, firstLoad: lane });
     } catch (error) {
       throw new Error(`Backfill ${source} ${lane} page ${page} could not store ${result.items.length} records: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
@@ -1014,7 +1154,8 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   const deadline = new Promise<'late'>(resolve => setTimeout(() => resolve('late'), deadlineMs));
   const settled = await Promise.all(lookups.map(lookup => Promise.race([lookup.catch(() => [] as Harvested[]), deadline])));
   const found = settled.flatMap(result => (result === 'late' ? [] : result));
-  const stored = await ingestPapers(env, found, { keepUntil, now });
+  // One reader's like must not put an older paper on top of every reader's day-by-day feed.
+  const stored = await ingestPapers(env, found, { keepUntil, now, firstLoad: true });
   if (found.length) {
     const db = database(env);
     await keepLiked(db, [...new Set((await findWorks(db, paperIds)).values())], now);

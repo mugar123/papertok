@@ -1,5 +1,5 @@
 import type { FollowEntity } from '../../utils/following.ts';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -24,6 +24,7 @@ import { followRefusal, refusalShownTo, sayFollowRefused } from '../following/fo
 import type { ActionStart } from '../ui/toast.ts';
 import { sameAccount } from '../ui/toast.ts';
 import { followsListPress, unfollowOnLeave } from './follows-list-press.ts';
+import { focusAfterUnfollow, focusLeftByQuestion } from './focus-after-unfollow.ts';
 import { journalLimitNote } from './journal-limit-note.ts';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { Button } from '../ui/button.tsx';
@@ -56,6 +57,10 @@ function getFollowDisplayName(entity: FollowEntity) {
   return entity.type === 'institution'
     ? getLocalizedInstitutionName(entity)
     : entity.displayName;
+}
+
+function getRowKey(entity: FollowEntity) {
+  return entity.followKey || `${entity.type}:${entity.canonicalId}`;
 }
 
 function getInitials(name: string) {
@@ -111,6 +116,32 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     clearTimeout(releaseTimer.current);
     inView.current = false;
   }, []);
+  // Where focus goes once a confirmed unfollow's question has left: from the
+  // row it asked about to the row whose Unfollow button takes it, or to null
+  // for the type control (the page's current tab, the sheet's select). The
+  // row's own button, where the question would return it, leaves with the
+  // row, so a confirmed question returns no focus (finalFocus is false from
+  // the press) and the effect below moves it instead, in the commit that
+  // follows finishUnfollow. It moves focus only while focus is still where the
+  // question leaves it, never off a control the reader moved to during the
+  // close, and goes to the type control if the chosen row's button has gone
+  // or been disabled since. A cancelled question keeps Base UI's own return,
+  // which also leaves moved focus alone. toggleFollow takes the row out
+  // before its first await, so when the opening tab empties and the page
+  // switches tabs, the tab it switches to is the one that takes focus.
+  const unfollowFocus = useRef<{ from: string; to: string | null } | undefined>(undefined);
+  const unfollowButtons = useRef(new Map<string, HTMLButtonElement>());
+  const typeControl = useRef<HTMLButtonElement | null>(null);
+  const question = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const handOff = unfollowFocus.current;
+    if (!handOff) return;
+    unfollowFocus.current = undefined;
+    const { activeElement, body } = document;
+    if (!focusLeftByQuestion(activeElement, { body, rowButton: unfollowButtons.current.get(handOff.from), question: question.current })) return;
+    const nextRow = handOff.to === null ? undefined : unfollowButtons.current.get(handOff.to);
+    (nextRow && !nextRow.disabled ? nextRow : typeControl.current)?.focus();
+  });
 
   const pressStart = (press: 'unfollow' | 'undo') => followsListPress({ press, inOpenSheet: sheetOpen !== undefined && inView.current });
   const sayRefused = (refused: FollowRefusal, startedAt: ActionStart) => {
@@ -181,7 +212,17 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   const finishUnfollow = (isOpen: boolean) => {
     if (isOpen) return;
     const unfollow = unfollowOnLeave({ confirmedAt, unfollowing });
-    if (unfollow) void handleUnfollow(unfollow.entity, unfollow.startedAt);
+    if (unfollow) {
+      const from = getRowKey(unfollow.entity);
+      const pendingKeys = new Set(visibleEntities.filter(entity => following.isFollowPending(entity)).map(getRowKey));
+      unfollowFocus.current = { from, to: focusAfterUnfollow(visibleEntities.map(getRowKey), from, pendingKeys) };
+      void handleUnfollow(unfollow.entity, unfollow.startedAt);
+    } else if (released && unfollowing) {
+      // Confirmed, but the account changed during the leave and the row
+      // stays: its own button takes focus back, which the question did not.
+      const from = getRowKey(unfollowing);
+      unfollowFocus.current = { from, to: from };
+    }
     setConfirmedAt(null);
     setUnfollowing(null);
   };
@@ -202,6 +243,9 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     released,
     confirmUnfollow,
     finishUnfollow,
+    question,
+    unfollowButtons,
+    typeControl,
   };
 }
 
@@ -214,7 +258,7 @@ function followSummary({ loading, followedEntities }: FollowedView) {
 
 /** The follows of the type on show, or its loading or empty state. */
 function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; onExplore: () => void; onOpenEntity?: (path: string) => void }) {
-  const { activeType, activeTab, language, loading, followedEntities, followedByType, visibleEntities, isFollowPending, askUnfollow, actionError } = view;
+  const { activeType, activeTab, language, loading, followedEntities, followedByType, visibleEntities, isFollowPending, askUnfollow, actionError, unfollowButtons } = view;
   const limitNote = activeType === 'journal' ? journalLimitNote(followedByType.journal?.length ?? 0) : null;
   return (
     <>
@@ -240,10 +284,11 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
               const pending = isFollowPending(entity);
               const displayName = getFollowDisplayName(entity);
               const entityPath = getFollowedEntityPath(entity);
+              const rowKey = getRowKey(entity);
               return (
                 <motion.article
                   layout
-                  key={entity.followKey || `${entity.type}:${entity.canonicalId}`}
+                  key={rowKey}
                   className="following-settings-item"
                   initial={{ opacity: 0, transform: 'translateX(32px)' }}
                   animate={{ opacity: 1, transform: 'translateX(0px)', transition: { duration: 0.24, delay: 0.2, ease: EASE_OUT } }}
@@ -265,6 +310,11 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
                     <span className="following-settings-entity-name">{displayName}</span>
                   </Link>
                   <Button
+                    ref={(button: HTMLButtonElement | null) => {
+                      if (!button) return;
+                      unfollowButtons.current.set(rowKey, button);
+                      return () => { unfollowButtons.current.delete(rowKey); };
+                    }}
                     variant="ghost"
                     size="icon-sm"
                     className="following-settings-unfollow"
@@ -314,7 +364,7 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
  * which keeps its list and its scroll behind it.
  */
 function UnfollowConfirm({ view }: { view: FollowedView }) {
-  const { unfollowing, unfollowOpen, setUnfollowOpen, released, confirmUnfollow, finishUnfollow } = view;
+  const { unfollowing, unfollowOpen, setUnfollowOpen, released, confirmUnfollow, finishUnfollow, question } = view;
   const isPhone = useIsPhone();
   const unfollowName = unfollowing ? getFollowDisplayName(unfollowing) : '';
   const unfollowTitle = unfollowing ? `Unfollow "${unfollowName}"?` : 'Unfollow?';
@@ -334,7 +384,7 @@ function UnfollowConfirm({ view }: { view: FollowedView }) {
       onOpenChange={setUnfollowOpen}
       onOpenChangeComplete={finishUnfollow}
     >
-      <DrawerContent className="pc-share-sheet following-unfollow-drawer">
+      <DrawerContent ref={question} className="pc-share-sheet following-unfollow-drawer" finalFocus={!released}>
         <DrawerHandle />
         <div className="following-unfollow-sheet">
           {petri}
@@ -353,7 +403,7 @@ function UnfollowConfirm({ view }: { view: FollowedView }) {
       onOpenChange={setUnfollowOpen}
       onOpenChangeComplete={finishUnfollow}
     >
-      <AlertDialogContent className="following-unfollow-dialog">
+      <AlertDialogContent ref={question} className="following-unfollow-dialog" finalFocus={!released}>
         {petri}
         <AlertDialogTitle>{unfollowTitle}</AlertDialogTitle>
         <AlertDialogDescription>{unfollowDescription}</AlertDialogDescription>
@@ -376,7 +426,7 @@ export default function FollowingSettingsPage() {
     else void navigate('/settings/discovery');
   };
   const view = useFollowedView();
-  const { language, followedByType, activeType, setSelectedType } = view;
+  const { language, followedByType, activeType, setSelectedType, typeControl } = view;
 
   return (
     <main className="following-settings-page">
@@ -403,6 +453,7 @@ export default function FollowingSettingsPage() {
               return (
                 <button
                   key={type}
+                  ref={active ? typeControl : undefined}
                   type="button"
                   className={active ? 'is-active' : ''}
                   aria-current={active ? 'page' : undefined}
@@ -435,7 +486,7 @@ export default function FollowingSettingsPage() {
 export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const view = useFollowedView({ sheetOpen: open });
-  const { language, followedByType, activeType, activeTab, setSelectedType, unfollowOpen, unfollowing, clearActionError } = view;
+  const { language, followedByType, activeType, activeTab, setSelectedType, unfollowOpen, unfollowing, clearActionError, typeControl } = view;
   const countOf = (type: string) => followedByType[type]?.length || 0;
   const returning = !unfollowOpen && unfollowing !== null;
   // A page opened from the sheet waits for the sheet to close; the sheet
@@ -465,7 +516,7 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
           <DrawerTitle render={<h2 />}>{'Follows'}</DrawerTitle>
           <p>{followSummary(view)}</p>
           <Select value={activeType} onValueChange={value => setSelectedType(value)}>
-            <SelectTrigger aria-label={'Type of followed content'} className="settings-sheet-switcher">
+            <SelectTrigger ref={typeControl} aria-label={'Type of followed content'} className="settings-sheet-switcher">
               <span className="settings-sheet-switcher-icon"><activeTab.Icon size={18} weight="fill" aria-hidden="true" /></span>
               <span className="settings-sheet-switcher-copy">
                 <small>{'Type'}</small>

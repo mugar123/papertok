@@ -38,7 +38,7 @@ const ERROR_COPY = {
     EMAIL_TEST_OPENALEX_BUDGET: "PaperTok has paused test emails to keep the day's OpenAlex budget for opening papers and the feed. You can send one again by 00:00 UTC at the latest.",
     EMAIL_TEST_RECIPIENT_RESTRICTED: 'Resend rejected this recipient. Check that the sender domain is verified.',
     EMAIL_DATA_LOADING: 'We are still loading what you follow. Try again in a few seconds.',
-    EMAIL_FOLLOWS_REQUIRED: 'Follow a topic, author, institution, or project, or choose your subjects, before enabling emails.',
+    EMAIL_FOLLOWS_REQUIRED: 'Follow a topic, author, institution or project, choose your subjects, or connect ORCID to enable emails.',
     EMAIL_SEND_FAILED: 'The test email could not be sent.',
     EMAIL_TIMEOUT: 'The email service is taking too long.',
     EMAIL_UNAVAILABLE: 'The email service is not available right now.',
@@ -74,13 +74,14 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     testing,
     notificationDataReady,
     digestCovered,
+    hasCitationSource,
     digestSendReady,
     digestTurnedOff,
     savePreferences,
     sendTest,
   } = useEmailNotifications();
   const { followedEntities } = useFollowing();
-  const followsNotice = emailFollowsNotice(followedEntities, emailDigestPending, digestCovered);
+  const followsNotice = emailFollowsNotice(followedEntities, emailDigestPending, digestCovered, hasCitationSource);
   const [draft, setDraft] = useState(preferences);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testState, setTestState] = useState('idle');
@@ -187,12 +188,12 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
         {digestTurnedOff && (
           <div className="email-notification-provider-warning is-info">
             <strong>{'Email updates turned off'}</strong>
-            <span>{'You no longer follow a topic, author, institution or project, and you have no subjects chosen, which is what the weekly email covers. Follow one or choose your subjects, then switch email updates back on here.'}</span>
+            <span>Follow a topic, author, institution or project, choose your subjects, or connect ORCID. Then switch email updates back on here.</span>
           </div>
         )}
         {!loading && notificationDataReady && followsNotice && (
           <div className="email-notification-provider-warning is-follows">
-            <strong><Link to="/settings/following" onClick={onClose}>{followsNotice.heading}</Link></strong>
+            <strong><Link to={hasCitationSource ? '/profile' : '/settings/following'} onClick={onClose}>{followsNotice.heading}</Link></strong>
             <span>{followsNotice.body}</span>
           </div>
         )}

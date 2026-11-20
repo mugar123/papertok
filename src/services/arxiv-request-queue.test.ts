@@ -72,3 +72,20 @@ test('a 429 without retry-after cools down for the default', async () => {
   clock.value += 1;
   assert.equal(await queue.run('c', async () => 'c'), 'c');
 });
+
+// The caller of a refused request decides when to ask again, and a refusal
+// inside the address's minute allowance (retry-after up to 60 s) is a very
+// different wait from the Worker's 4 s beat.
+test('a refusal during the cooldown carries how much of it is left', async () => {
+  const clock = fakeClock();
+  const queue = createArxivRequestQueue({ gapMs: 0, maxQueueWaitMs: 6_000, now: clock.now, sleep: clock.sleep });
+  const refused = Object.assign(new Error('PaperTok arXiv API error: 429'), { status: 429, retryAfterMs: 60_000 });
+  await assert.rejects(queue.run('a', async () => { throw refused; }));
+
+  clock.value += 15_000;
+  await assert.rejects(queue.run('b', async () => 'b'), (error) => {
+    const { code, retryAfterMs } = error as Error & { code?: string; retryAfterMs?: number };
+    assert.deepEqual({ code, retryAfterMs }, { code: 'RATE_LIMITED', retryAfterMs: 45_000 });
+    return true;
+  });
+});

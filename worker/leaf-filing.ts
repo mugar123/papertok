@@ -128,18 +128,19 @@ export async function fileAreaPapers(env: StoreEnv, rules: Readonly<Record<strin
   for (const area of calibrated) {
     const centroids = new Map(leavesOf(area).filter(leaf => centroidOfLeaf.has(leaf)).map(leaf => [leaf, centroidOfLeaf.get(leaf)!]));
     if (centroids.size < 2) continue;
-    const { results } = await db.prepare(`SELECT l.work_id, l.published, v.embedding FROM work_lanes l
+    const { results } = await db.prepare(`SELECT l.work_id, l.published, l.arrived, v.embedding FROM work_lanes l
       JOIN work_vectors v ON v.work_id = l.work_id WHERE l.lane = ?`).bind(areaLane(area))
-      .all<{ work_id: number; published: string; embedding: unknown }>();
+      .all<{ work_id: number; published: string; arrived: string | null; embedding: unknown }>();
+    // A paper moved to a leaf keeps the arrival it had at area level.
     const filed = results.flatMap(row => {
       const closest = closestLeaf(readVector(row.embedding), centroids);
-      return ruleFiles(closest, rules[area]) ? [{ lane: closest!.leaf, id: row.work_id, published: row.published }] : [];
+      return ruleFiles(closest, rules[area]) ? [{ lane: closest!.leaf, id: row.work_id, published: row.published, arrived: row.arrived }] : [];
     });
     for (let start = 0; start < filed.length; start += 400) {
       const chunk = JSON.stringify(filed.slice(start, start + 400));
       await db.batch([
-        db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published)
-          SELECT value ->> 'lane', value ->> 'id', value ->> 'published' FROM json_each(?)`).bind(chunk),
+        db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, arrived)
+          SELECT value ->> 'lane', value ->> 'id', value ->> 'published', value ->> 'arrived' FROM json_each(?)`).bind(chunk),
         db.prepare('DELETE FROM work_lanes WHERE lane = ? AND work_id IN (SELECT value ->> \'id\' FROM json_each(?))').bind(areaLane(area), chunk),
       ]);
     }

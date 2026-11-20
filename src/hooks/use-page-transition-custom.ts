@@ -1,7 +1,8 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useLocation, useNavigationType } from 'react-router-dom';
 import { directionForHistoryIndex } from '../utils/route-direction.ts';
 import { lateralTabDirection } from '../utils/tab-direction.ts';
+import { useFeedTabs } from './use-feed-tabs.ts';
 
 /**
  * Computed once, in `App`, and read from here by every `PageTransition`.
@@ -18,7 +19,7 @@ import { lateralTabDirection } from '../utils/tab-direction.ts';
  * leaving and mis-reporting `data-nav-direction` for the rest of the run. One
  * caller, one answer, handed down.
  */
-const PageTransitionCustomContext = createContext<ReturnType<typeof usePageTransitionCustom>>({ direction: 0, lateral: false });
+const PageTransitionCustomContext = createContext<ReturnType<typeof usePageTransitionCustom>>({ direction: 0, lateral: false, historyDirection: 0 });
 
 export const PageTransitionCustomProvider = PageTransitionCustomContext.Provider;
 
@@ -65,10 +66,13 @@ export function usePageTransitionCustom() {
   // push, so the index only ever grows and both going to Following and coming
   // back from it reported 1. The bar's order is what knows which way is which;
   // `lateralTabDirection` returns null for anything that is not a tab-to-tab
-  // move, and history keeps the question.
-  const lateral = lateralTabDirection(useLocation().pathname);
-  // A navigation can ask for no transition at all: between a list and a
-  // paper opened from it, one page simply replaces the other.
-  if (useLocation().state?.pageMotion === 'still') return { direction: 0, lateral: false, still: true };
-  return { direction: lateral ?? historyDirection, lateral: lateral !== null };
+  // move, and history keeps the question. The order is the bar's, the
+  // reader's custom feeds included.
+  const feedTabs = useFeedTabs();
+  const tabOrder = useMemo(() => feedTabs.map(tab => tab.path), [feedTabs]);
+  const lateral = lateralTabDirection(useLocation().pathname, undefined, tabOrder);
+  // An explicit still navigation suppresses motion without losing the
+  // history direction used for scroll restoration.
+  if (useLocation().state?.pageMotion === 'still') return { direction: 0, lateral: false, still: true, historyDirection };
+  return { direction: lateral ?? historyDirection, lateral: lateral !== null, historyDirection };
 }

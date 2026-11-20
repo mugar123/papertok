@@ -684,6 +684,18 @@
   background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 35%, transparent);
 }
 
+/* A year before the earliest OpenAlex reports: unknown, so a baseline, not a bar. */
+.ehc-activity-bars span.is-unknown {
+  height: 2px;
+  background: var(--border-subtle);
+  animation: none;
+  pointer-events: none;
+}
+
+.ehc-activity-counts span.is-unknown {
+  color: var(--text-tertiary);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .ehc-activity-bars span:hover {
     background: var(--area-accent, var(--accent-primary));
@@ -2382,7 +2394,6 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background: var(--bg-card);
-  animation: settle var(--motion-base) linear backwards;
 }
 
 .orcid-profile > * + * {
@@ -2434,6 +2445,14 @@
   font-size: 0.9375rem;
   line-height: 1.6;
   color: var(--text-secondary);
+}
+
+.orcid-biography.is-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  overflow: hidden;
 }
 
 /* ─── Mobile ─── */
@@ -2619,7 +2638,6 @@
   .ex-skel,
   .ex-skel::after,
   .ehc-stat-value.is-settled,
-  .orcid-profile,
   .ehc-orcid-stamp svg,
   .explorer-container--author .ehc-header,
   .explorer-container--author.has-seed-name .ehc-header :is(.ehc-visual-slot, .ehc-info > :not(.ehc-title-row), .ehc-hero-aside > *),

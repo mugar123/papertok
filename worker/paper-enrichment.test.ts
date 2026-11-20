@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { Paper } from '../src/models/paper.ts';
+import type { AbstractRetries } from './paper-enrichment.ts';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { enrichPending } from './paper-enrichment.ts';
-import { embedWorks, evictExpired, ingestPapers, readNotableCandidates } from './paper-store.ts';
+import { embedWorks, evictExpired, ingestPapers, keepLiked, readNotableCandidates } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { mapPubmedSummary, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
@@ -15,6 +16,8 @@ import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { OPENALEX_TIER_PERCENT } from './provider-runtime.ts';
+// Captured Crossref work 10.1186/s40545-021-00394-9 with its registration paragraph.
+import crossrefTrial from './test-support/crossref-trial.fixture.json' with { type: 'json' };
 
 const NOW = Date.parse('2026-10-22T03:00:00Z');
 
@@ -99,7 +102,8 @@ test('stored papers get what the feed used to add to every page, once; an unknow
   // The followed author and topic now find the enriched paper.
   const lanes = db.prepare(`SELECT lane FROM work_lanes WHERE work_id = (SELECT work_id FROM work_keys WHERE key = 'arxiv:2610.11111') ORDER BY lane`).all().map(row => (row as { lane: string }).lane);
   assert.deepEqual(lanes, ['author:A5023888391', 'cs.CL', 'topic:T10181']);
-  assert.deepEqual(await enrichPending(env, 50, NOW), { workIds: [], stop: true }, 'nothing is asked twice');
+  const again = await enrichPending(env, 50, NOW);
+  assert.deepEqual([again.workIds, again.stop], [[], true], 'nothing is asked twice');
 });
 
 // PAP-88: readers' card batches stop at 80 % of the day's OpenAlex ceiling.
@@ -146,12 +150,14 @@ const awaitingAbstract = (workId: string, doi: string, type = 'article') => mapO
 
 interface Asked { url: URL; method: string; body: string; apiKey: string | null }
 
-// Crossref and Semantic Scholar as these tests set them; OpenAlex knows nothing
-// new and every other source answers empty.
+// Crossref, Semantic Scholar, OpenAlex and Europe PMC as these tests set them;
+// by default each knows nothing, and every other source answers empty.
 function recoveryProviders(t: import('node:test').TestContext, {
-  crossref,
+  crossref = () => Response.json({ message: { items: [] } }),
   semanticScholar = () => Response.json([]),
-}: { crossref: () => Response; semanticScholar?: () => Response }) {
+  openAlex = () => Response.json({ results: [] }),
+  europePmc = () => Response.json({ resultList: { result: [] } }),
+}: { crossref?: () => Response; semanticScholar?: () => Response; openAlex?: () => Response; europePmc?: () => Response }) {
   const asked: Asked[] = [];
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
@@ -161,7 +167,8 @@ function recoveryProviders(t: import('node:test').TestContext, {
     asked.push({ url, method: request.method, body: await request.text(), apiKey: request.headers.get('x-api-key') });
     if (url.hostname === 'api.crossref.org') return crossref();
     if (url.hostname === 'api.semanticscholar.org') return semanticScholar();
-    if (url.hostname === 'api.openalex.org') return Response.json({ results: [] });
+    if (url.hostname === 'api.openalex.org') return openAlex();
+    if (url.hostname === 'www.ebi.ac.uk') return europePmc();
     return Response.json({});
   });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
@@ -188,6 +195,22 @@ async function recoveryCorpus(papers: Paper[], settings: Record<string, string> 
 }
 const vectorOf = (db: ReturnType<typeof testD1>['db'], id: number) => db.prepare('SELECT embedding FROM work_vectors WHERE work_id = ?').get(id);
 const semanticScholarCalls = (asked: Asked[]) => asked.filter(request => request.url.hostname === 'api.semanticscholar.org');
+
+test('Crossref contributes an abstract NCT ID even if the paper already has an abstract', async t => {
+  recoveryProviders(t, {
+    crossref: () => Response.json({ message: { items: [crossrefTrial] } }),
+  });
+  const paper = {
+    ...awaitingAbstract('W4410000001', '10.1186/s40545-021-00394-9'),
+    abstract: 'The source already gave the paper an abstract.',
+  };
+  const { env, db } = await recoveryCorpus([paper]);
+  await enrichPending(env, 50, NOW);
+  const updated = stored(db)[paper.id].paper;
+  assert.equal(updated.abstract, paper.abstract);
+  assert.equal(updated.trialRegistration, 'NCT04967326');
+  assert.equal(updated.studyType, undefined);
+});
 
 test("a paper without an abstract gets Crossref's, stripped of JATS markup, from the same call that brings its type; its vector is dropped and re-embedded", async t => {
   const asked = recoveryProviders(t, {
@@ -372,6 +395,351 @@ test('an editorial has no abstract: it is not asked for one, and none it is offe
   assert.deepEqual(paper.sources.enrichedBy.filter(source => source === 'crossref' || source === 'semanticscholar'), []);
 });
 
+// A paper stored without an abstract is asked again while it is young, and a
+// source that fails does not end its search. Synthetic OpenAlex works in the
+// shape an area lane lists them, published at midnight UTC on the date given;
+// the first enrichment runs at 03:00 UTC on 2026-11-01, as the nightly run does.
+const NIGHT = Date.parse('2026-11-01T03:00:00Z');
+const LATE_ABSTRACT = 'We measure a synthetic effect that stands in for the abstract a source adds after its first record of the paper.';
+const invertedIndex = (text: string) => {
+  const index: Record<string, number[]> = {};
+  text.split(' ').forEach((word, position) => { (index[word] ??= []).push(position); });
+  return index;
+};
+const listedWork = (n: number, date: string, fields: Record<string, unknown> = {}) => ({
+  id: `https://openalex.org/W45${String(n).padStart(8, '0')}`, title: `A journal article listed before its abstract (${n})`, type: 'article', publication_date: date, abstract_inverted_index: null, ...fields,
+});
+async function listedCorpus(works: Array<ReturnType<typeof listedWork>>, at = NIGHT) {
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key', SEMANTIC_SCHOLAR_API_KEY: 's2-test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, works.map(work => ({ paper: mapOpenAlexWork(work)!, lanes: ['econ.gen'] })), { now: at });
+  return { env, db };
+}
+const askedOf = (asked: Asked[], hostname: string) => asked.filter(request => request.url.hostname === hostname);
+
+test('a young paper still without an abstract is asked again, OpenAlex included, as it turns 2, 4, 8 and 16 days old, and then waits for the refresh', async t => {
+  const asked = recoveryProviders(t, {});
+  // No DOI: OpenAlex is the only source to ask.
+  const { env } = await listedCorpus([listedWork(1, '2026-10-31')]);
+  await enrichPending(env, 50, NIGHT);
+  assert.deepEqual(askedOf(asked, 'api.openalex.org'), [], 'its first enrichment does not ask OpenAlex for its own record');
+  const nights: number[] = [];
+  for (let night = 1; night <= 20; night += 1) {
+    asked.length = 0;
+    await enrichPending(env, 50, NIGHT + night * DAY_MS);
+    if (askedOf(asked, 'api.openalex.org').length) nights.push(night);
+  }
+  assert.deepEqual(nights, [1, 3, 7, 15]);
+});
+
+test("OpenAlex's abstract, added after it first listed the paper, reaches the stored paper at the next retry, which does not ask Crossref its type again", async t => {
+  const work = listedWork(2, '2026-10-31', { doi: 'https://doi.org/10.5555/late' });
+  let hasAbstract = false;
+  const asked = recoveryProviders(t, {
+    openAlex: () => Response.json({ results: hasAbstract ? [{ ...work, abstract_inverted_index: invertedIndex(LATE_ABSTRACT) }] : [] }),
+    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/late', type: 'journal-article' }] } }),
+  });
+  const { env, db } = await listedCorpus([work]);
+  await enrichPending(env, 50, NIGHT);
+  assert.equal(stored(db)['openalex:W4500000002'].paper.abstract, NO_ABSTRACT);
+  assert.equal(askedOf(asked, 'api.crossref.org').length, 1);
+  hasAbstract = true;
+  asked.length = 0;
+  await enrichPending(env, 50, NIGHT + DAY_MS);
+  const { paper, misses } = stored(db)['openalex:W4500000002'];
+  assert.equal(paper.abstract, LATE_ABSTRACT);
+  assert.equal(misses, 0);
+  assert.equal(askedOf(asked, 'api.openalex.org').length, 1);
+  assert.deepEqual(askedOf(asked, 'api.crossref.org'), []);
+});
+
+// Published on 2026-10-27, 5 days old at its first enrichment: without the
+// failure, its next ask would come at 8 days, three nights later.
+const FAILURES = [
+  { source: 'Crossref', failing: { crossref: () => new Response('{}', { status: 500 }) }, answering: { crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/failed', type: 'journal-article', abstract: `<jats:p>${LATE_ABSTRACT}</jats:p>` }] } }) } },
+  { source: 'Semantic Scholar', failing: { semanticScholar: () => new Response('{}', { status: 429 }) }, answering: { semanticScholar: () => Response.json([{ externalIds: { DOI: '10.5555/failed' }, abstract: LATE_ABSTRACT }]) } },
+  { source: 'Europe PMC', failing: { europePmc: () => new Response('{}', { status: 503 }) }, answering: { europePmc: () => Response.json({ resultList: { result: [{ id: '42999999', source: 'MED', pmid: '42999999', title: 'A journal article', abstractText: LATE_ABSTRACT, isOpenAccess: 'N' }] } }) } },
+];
+for (const { source, failing, answering } of FAILURES) {
+  test(`a ${source} failure at the first enrichment leaves the paper to be asked again the next night, when ${source} gives its abstract`, async t => {
+    let answers: Parameters<typeof recoveryProviders>[1] = failing;
+    const asked = recoveryProviders(t, {
+      crossref: () => (answers.crossref ?? (() => Response.json({ message: { items: [{ DOI: '10.5555/failed', type: 'journal-article' }] } })))(),
+      semanticScholar: () => (answers.semanticScholar ?? (() => Response.json([])))(),
+      europePmc: () => (answers.europePmc ?? (() => Response.json({ resultList: { result: [] } })))(),
+    });
+    const { env, db } = await listedCorpus([listedWork(3, '2026-10-27', { doi: 'https://doi.org/10.5555/failed', ids: { pmid: 'https://pubmed.ncbi.nlm.nih.gov/42999999' } })]);
+    await enrichPending(env, 50, NIGHT);
+    assert.equal(stored(db)['openalex:W4500000003'].paper.abstract, NO_ABSTRACT);
+    answers = answering;
+    asked.length = 0;
+    const { workIds } = await enrichPending(env, 50, NIGHT + DAY_MS);
+    assert.equal(workIds.length, 1);
+    assert.equal(stored(db)['openalex:W4500000003'].paper.abstract, LATE_ABSTRACT);
+  });
+}
+
+// A source that fails every night: 2 days old at its first retry, the paper is
+// asked as it turns 2, 4, 8 and 16 days old and at its refresh, 14 days after
+// the last, rather than every night in between.
+const SCHEDULED_NIGHTS = [1, 3, 7, 15, 30];
+async function nightsAsked(env: WorkerEnv, asked: Asked[]) {
+  const nights: number[] = [];
+  const crossrefNights: number[] = [];
+  let openAlexCalls = 0;
+  for (let night = 1; night <= 32; night += 1) {
+    asked.length = 0;
+    const { workIds } = await enrichPending(env, 50, NIGHT + night * DAY_MS);
+    if (workIds.length) nights.push(night);
+    if (askedOf(asked, 'api.crossref.org').length) crossrefNights.push(night);
+    openAlexCalls += askedOf(asked, 'api.openalex.org').length;
+  }
+  return { nights, crossrefNights, openAlexCalls };
+}
+const persistWork = () => listedWork(6, '2026-10-31', { doi: 'https://doi.org/10.5555/persist', ids: { pmid: 'https://pubmed.ncbi.nlm.nih.gov/42999995' } });
+const PERSISTENT_FAILURES = [
+  { source: 'Semantic Scholar', failing: { semanticScholar: () => new Response('{}', { status: 429 }) } },
+  { source: 'Europe PMC', failing: { europePmc: () => new Response('{}', { status: 503 }) } },
+  { source: 'Crossref', failing: { crossref: () => new Response('{}', { status: 500 }) } },
+];
+for (const { source, failing } of PERSISTENT_FAILURES) {
+  test(`while ${source} fails every night, a young paper without an abstract is asked at its ages and its refresh, each time with Crossref`, async t => {
+    const asked = recoveryProviders(t, failing);
+    const { env } = await listedCorpus([persistWork()]);
+    // Its first enrichment is interrupted too, so none is counted.
+    await enrichPending(env, 50, NIGHT);
+    assert.deepEqual(await nightsAsked(env, asked), { nights: SCHEDULED_NIGHTS, crossrefNights: SCHEDULED_NIGHTS, openAlexCalls: 5 });
+  });
+}
+
+test('a source that starts failing after a counted enrichment leaves the retries at their ages, and they still do not ask Crossref', async t => {
+  let semanticScholarAnswers: () => Response = () => Response.json([]);
+  const asked = recoveryProviders(t, { semanticScholar: () => semanticScholarAnswers() });
+  const { env } = await listedCorpus([persistWork()]);
+  await enrichPending(env, 50, NIGHT);
+  semanticScholarAnswers = () => new Response('{}', { status: 429 });
+  // Only the refresh asks Crossref again.
+  assert.deepEqual(await nightsAsked(env, asked), { nights: SCHEDULED_NIGHTS, crossrefNights: [30], openAlexCalls: 5 });
+});
+
+test('a failure at the last scheduled retry leaves the paper for its refresh, 14 days later', async t => {
+  let europePmcAnswers: () => Response = () => Response.json({ resultList: { result: [] } });
+  const asked = recoveryProviders(t, { europePmc: () => europePmcAnswers() });
+  // PubMed ids and no DOI: Europe PMC and OpenAlex are their sources.
+  const ninthDay = NIGHT - 7 * DAY_MS;
+  const { env, db } = await listedCorpus([
+    listedWork(4, '2026-10-16', { ids: { pmid: 'https://pubmed.ncbi.nlm.nih.gov/42999998' } }),
+    listedWork(5, '2026-10-15', { ids: { pmid: 'https://pubmed.ncbi.nlm.nih.gov/42999996' } }),
+  ], ninthDay);
+  const ids = Object.fromEntries((db.prepare('SELECT id, paper FROM works').all() as Array<{ id: number; paper: string }>).map(row => [JSON.parse(row.paper).id, row.id]));
+  await enrichPending(env, 50, ninthDay);
+  // 16 and 17 days old, in steps of one paper each.
+  europePmcAnswers = () => new Response('{}', { status: 503 });
+  const steps: number[][] = [];
+  let retries: AbstractRetries | undefined;
+  for (let step = 0; step < 3; step += 1) {
+    const result = await enrichPending(env, 1, NIGHT + step * 600_000, retries);
+    steps.push(result.workIds);
+    retries = result.retries;
+  }
+  assert.deepEqual(steps, [[ids['openalex:W4500000004']], [ids['openalex:W4500000005']], []]);
+  europePmcAnswers = () => Response.json({ resultList: { result: ['42999998', '42999996'].map(pmid => ({ id: pmid, source: 'MED', pmid, title: 'A journal article', abstractText: LATE_ABSTRACT, isOpenAccess: 'N' })) } });
+  assert.deepEqual((await enrichPending(env, 50, NIGHT + DAY_MS)).workIds, [], 'no age is left to ask at');
+  asked.length = 0;
+  assert.equal((await enrichPending(env, 50, NIGHT + 15 * DAY_MS)).workIds.length, 2);
+  assert.equal(askedOf(asked, 'www.ebi.ac.uk').length, 1);
+  assert.equal(stored(db)['openalex:W4500000004'].paper.abstract, LATE_ABSTRACT);
+  assert.equal(stored(db)['openalex:W4500000005'].paper.abstract, LATE_ABSTRACT);
+});
+
+test('a Crossref call that times out keeps what the calls before it brought, and its papers are asked again the next night', async t => {
+  let calls = 0;
+  const asked = recoveryProviders(t, {
+    crossref: () => {
+      calls += 1;
+      if (calls === 2) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      return Response.json({ message: { items: Array.from({ length: 21 }, (_, index) => ({ DOI: `10.5555/chunk-${index}`, type: 'journal-article', abstract: `<jats:p>${LATE_ABSTRACT} (${index})</jats:p>` })) } });
+    },
+  });
+  // Nine days old: without the failure, the next ask would come at 16 days.
+  const { env, db } = await listedCorpus(Array.from({ length: 21 }, (_, index) => listedWork(10 + index, '2026-10-23', { doi: `https://doi.org/10.5555/chunk-${index}` })));
+  await enrichPending(env, 50, NIGHT);
+  assert.equal(askedOf(asked, 'api.crossref.org').length, 2, 'two calls of 20 and 1 DOIs');
+  const fromCrossref = () => Object.values(stored(db)).filter(work => work.paper.abstractSource === 'crossref').length;
+  assert.equal(fromCrossref(), 20);
+  const { workIds } = await enrichPending(env, 50, NIGHT + DAY_MS);
+  assert.equal(workIds.length, 1);
+  assert.equal(fromCrossref(), 21);
+});
+
+// In an outage every call waits out its deadline, so a step that went on
+// asking would run past its time limit.
+const timedOut = () => {
+  throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+};
+const OUTAGES = [
+  {
+    source: 'Crossref', hostname: 'api.crossref.org', papers: 41,
+    fields: (n: number) => ({ doi: `https://doi.org/10.5555/outage-${n}` }),
+    idsAsked: (request: Asked) => request.url.searchParams.get('filter')?.split(',') ?? [],
+  },
+  {
+    source: 'Europe PMC', hostname: 'www.ebi.ac.uk', papers: 101,
+    fields: (n: number) => ({ ids: { pmid: `https://pubmed.ncbi.nlm.nih.gov/${43000000 + n}` } }),
+    idsAsked: (request: Asked) => request.url.searchParams.get('query')?.match(/EXT_ID:\d+/g) ?? [],
+  },
+];
+for (const { source, hostname, papers, fields, idsAsked } of OUTAGES) {
+  test(`a ${source} that times out is asked once in a step, and every paper it did not answer is asked again the next night`, async t => {
+    let down = true;
+    const asked = recoveryProviders(t, {
+      crossref: () => (down ? timedOut() : Response.json({ message: { items: [] } })),
+      europePmc: () => (down ? timedOut() : Response.json({ resultList: { result: [] } })),
+    });
+    // Nine days old: without the outage, the next ask would come at 16 days.
+    const { env } = await listedCorpus(Array.from({ length: papers }, (_, n) => listedWork(100 + n, '2026-10-23', fields(n))));
+    await enrichPending(env, 500, NIGHT);
+    assert.equal(askedOf(asked, hostname).length, 1);
+    down = false;
+    asked.length = 0;
+    const { workIds } = await enrichPending(env, 500, NIGHT + DAY_MS);
+    assert.equal(workIds.length, papers);
+    assert.equal(new Set(askedOf(asked, hostname).flatMap(idsAsked)).size, papers);
+  });
+}
+
+test('a Europe PMC search that times out keeps the records the searches before it found', async t => {
+  let searches = 0;
+  const asked = recoveryProviders(t, {
+    europePmc: () => {
+      searches += 1;
+      if (searches === 2) timedOut();
+      // A record with an abstract for each id the search names.
+      const pmids = asked.at(-1)?.url.searchParams.get('query')?.match(/(?<=EXT_ID:)\d+/g) ?? [];
+      return Response.json({ resultList: { result: pmids.map(pmid => ({ id: pmid, source: 'MED', pmid, title: 'A journal article', abstractText: LATE_ABSTRACT, isOpenAccess: 'N' })) } });
+    },
+  });
+  const { env, db } = await listedCorpus(Array.from({ length: 101 }, (_, n) => listedWork(300 + n, '2026-10-23', { ids: { pmid: `https://pubmed.ncbi.nlm.nih.gov/${43100000 + n}` } })));
+  await enrichPending(env, 500, NIGHT);
+  assert.equal(askedOf(asked, 'www.ebi.ac.uk').length, 2, 'two searches of 100 and 1 ids');
+  assert.equal(Object.values(stored(db)).filter(work => work.paper.abstract === LATE_ABSTRACT).length, 100);
+});
+
+test('a Crossref call the source refuses loses only its own DOIs, and the calls after it are still sent', async t => {
+  let calls = 0;
+  const asked = recoveryProviders(t, {
+    crossref: () => {
+      calls += 1;
+      if (calls === 1) return new Response('{}', { status: 500 });
+      return Response.json({ message: { items: Array.from({ length: 41 }, (_, index) => ({ DOI: `10.5555/refused-${index}`, type: 'journal-article', abstract: `<jats:p>${LATE_ABSTRACT} (${index})</jats:p>` })) } });
+    },
+  });
+  const { env, db } = await listedCorpus(Array.from({ length: 41 }, (_, index) => listedWork(400 + index, '2026-10-23', { doi: `https://doi.org/10.5555/refused-${index}` })));
+  await enrichPending(env, 500, NIGHT);
+  assert.equal(askedOf(asked, 'api.crossref.org').length, 3, 'three calls of 20, 20 and 1 DOIs');
+  assert.equal(Object.values(stored(db)).filter(work => work.paper.abstractSource === 'crossref').length, 21);
+});
+
+test('a Europe PMC search the source refuses loses only its own ids, and the searches after it are still sent', async t => {
+  let searches = 0;
+  const asked = recoveryProviders(t, {
+    europePmc: () => {
+      searches += 1;
+      if (searches === 1) return new Response('{}', { status: 503 });
+      // A record with an abstract for each id the search names.
+      const pmids = asked.at(-1)?.url.searchParams.get('query')?.match(/(?<=EXT_ID:)\d+/g) ?? [];
+      return Response.json({ resultList: { result: pmids.map(pmid => ({ id: pmid, source: 'MED', pmid, title: 'A journal article', abstractText: LATE_ABSTRACT, isOpenAccess: 'N' })) } });
+    },
+  });
+  const { env, db } = await listedCorpus(Array.from({ length: 101 }, (_, n) => listedWork(500 + n, '2026-10-23', { ids: { pmid: `https://pubmed.ncbi.nlm.nih.gov/${43200000 + n}` } })));
+  await enrichPending(env, 500, NIGHT);
+  assert.equal(askedOf(asked, 'www.ebi.ac.uk').length, 2, 'two searches of 100 and 1 ids');
+  assert.equal(Object.values(stored(db)).filter(work => work.paper.abstract === LATE_ABSTRACT).length, 1);
+});
+
+test('the PubMed id OpenAlex gives a paper brings its Europe PMC abstract in the same pass', async t => {
+  const asked = recoveryProviders(t, {
+    openAlex: () => Response.json({ results: [{ id: 'https://openalex.org/W4500000005', doi: 'https://doi.org/10.5555/ads-pmid', ids: { doi: 'https://doi.org/10.5555/ads-pmid', pmid: 'https://pubmed.ncbi.nlm.nih.gov/42999997' }, type: 'article' }] }),
+    europePmc: () => Response.json({ resultList: { result: [{ id: '42999997', source: 'MED', pmid: '42999997', doi: '10.5555/ads-pmid', title: 'A synthetic ADS record without an abstract', abstractText: LATE_ABSTRACT, isOpenAccess: 'N' }] } }),
+  });
+  const ads = { ...mapAdsPaper({ bibcode: '2026SynJ..001....1A', title: ['A synthetic ADS record without an abstract'], author: ['Doe, J.'], doi: ['10.5555/ads-pmid'], doctype: 'article', pubdate: '2026-10-00', year: '2026' })!, abstract: NO_ABSTRACT };
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, [{ paper: ads, lanes: [] }], { now: NIGHT });
+  await enrichPending(env, 50, NIGHT);
+  const { paper } = stored(db)['ads:2026SynJ..001....1A'];
+  assert.equal(paper.pmid, '42999997');
+  assert.equal(askedOf(asked, 'www.ebi.ac.uk').length, 1);
+  assert.equal(paper.abstract, LATE_ABSTRACT);
+});
+
+test("a NASA ADS paper without an abstract gets Crossref's by its DOI", async t => {
+  recoveryProviders(t, {
+    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/ads', type: 'journal-article', abstract: `<jats:p>${FROM_CROSSREF}</jats:p>` }] } }),
+  });
+  const ads = { ...mapAdsPaper({ bibcode: '2026SynJ..002....1A', title: ['A synthetic ADS record without an abstract'], author: ['Doe, J.'], doi: ['10.5555/ads'], doctype: 'article', pubdate: '2026-10-00', year: '2026' })!, abstract: NO_ABSTRACT };
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_API_KEY: 'test-key' } as unknown as WorkerEnv;
+  await ingestPapers(env, [{ paper: ads, lanes: [] }], { now: NIGHT });
+  await enrichPending(env, 50, NIGHT);
+  const { paper } = stored(db)['ads:2026SynJ..002....1A'];
+  assert.equal(paper.abstract, FROM_CROSSREF);
+  assert.equal(paper.abstractSource, 'crossref');
+});
+
+test("a night's retries spend no more OpenAlex calls than they are given, after the new papers and before the refresh", async t => {
+  const asked = recoveryProviders(t, {});
+  // 120 papers 3 days old at their first enrichment, two nights ago: due
+  // again at 4 days. No DOI, so OpenAlex is the only source asked.
+  const twoNightsAgo = NIGHT - 2 * DAY_MS;
+  const { env, db } = await listedCorpus(Array.from({ length: 120 }, (_, index) => listedWork(100 + index, '2026-10-27')), twoNightsAgo);
+  await enrichPending(env, 500, twoNightsAgo);
+  // A paper whose counts are due their refresh, which OpenAlex is asked about
+  // by DOI, and a new paper with an abstract.
+  const refreshed = { ...mapAdsPaper({ bibcode: '2026SynJ..003....1A', title: ['A synthetic ADS record due its refresh'], abstract: 'A synthetic abstract, long enough to be one, for a paper due its refresh.', author: ['Doe, J.'], doi: ['10.5555/refresh'], doctype: 'article', pubdate: '2026-08-00', year: '2026' })! };
+  await ingestPapers(env, [{ paper: refreshed, lanes: [] }], { now: NIGHT - 16 * DAY_MS });
+  db.prepare("UPDATE works SET enriched_at = ? WHERE paper ->> '$.id' = ?").run(new Date(NIGHT - 15 * DAY_MS).toISOString(), refreshed.id);
+  await ingestPapers(env, [{ paper: mapOpenAlexWork(listedWork(99, '2026-10-31', { abstract_inverted_index: invertedIndex(LATE_ABSTRACT) }))!, lanes: [] }], { now: NIGHT });
+  const ids = Object.fromEntries((db.prepare('SELECT id, paper FROM works').all() as Array<{ id: number; paper: string }>).map(row => [JSON.parse(row.paper).id, row.id]));
+
+  asked.length = 0;
+  const step = await enrichPending(env, 500, NIGHT, { units: 2, after: null });
+  const openAlexFilters = askedOf(asked, 'api.openalex.org').map(request => request.url.searchParams.get('filter') ?? '');
+  const retried = openAlexFilters.filter(filter => filter.startsWith('openalex:')).flatMap(filter => filter.slice('openalex:'.length).split('|'));
+  assert.equal(openAlexFilters.filter(filter => filter.startsWith('openalex:')).length, 2);
+  assert.equal(retried.length, 100);
+  assert.ok(step.workIds.includes(ids['openalex:W4500000099']), 'the new paper comes first');
+  assert.ok(step.workIds.includes(ids[refreshed.id]), 'the refresh comes after the retries');
+  assert.equal(step.workIds.length, 102);
+  asked.length = 0;
+  assert.deepEqual((await enrichPending(env, 500, NIGHT + 600_000, step.retries)).workIds, [], 'the night has no retries left');
+  assert.equal((await enrichPending(env, 500, NIGHT + DAY_MS)).workIds.length, 20, 'the next night asks the rest');
+});
+
+test("a step whose retries read only editorials and letters does not end the run's retries: the next step reaches the article after them", async t => {
+  const asked = recoveryProviders(t, {});
+  // Newest first: an editorial and a letter, which are asked for no abstract,
+  // then an article, 4 days old the next night. No DOI, so OpenAlex is the
+  // only source asked.
+  const { env, db } = await listedCorpus([
+    listedWork(40, '2026-10-31', { type: 'editorial' }),
+    listedWork(41, '2026-10-31', { type: 'letter' }),
+    listedWork(42, '2026-10-29'),
+  ]);
+  await enrichPending(env, 50, NIGHT);
+  const ids = Object.fromEntries((db.prepare('SELECT id, paper FROM works').all() as Array<{ id: number; paper: string }>).map(row => [JSON.parse(row.paper).id, row.id]));
+
+  // Steps of two papers: the first reads the editorial and the letter.
+  asked.length = 0;
+  const first = await enrichPending(env, 2, NIGHT + DAY_MS, { units: 2, after: null });
+  assert.deepEqual([first.workIds, first.stop, first.retries.units], [[], false, 2]);
+  const second = await enrichPending(env, 2, NIGHT + DAY_MS + 600_000, first.retries);
+  assert.deepEqual(second.workIds, [ids['openalex:W4500000042']]);
+  assert.equal(askedOf(asked, 'api.openalex.org').length, 1);
+  const third = await enrichPending(env, 2, NIGHT + DAY_MS + 1_200_000, second.retries);
+  assert.deepEqual([third.workIds, third.stop], [[], true], 'the run ends once no paper is left to ask');
+});
+
 // Captured from OpenAlex on 2026-10-26 (`works/doi:10.1038/nature26142`,
 // keyless) and trimmed to fields the enrichment and the OpenAlex lanes
 // select: a Nature article of 2018, retracted in 2021, with its arXiv eprint
@@ -449,6 +817,69 @@ async function evictAll(env: WorkerEnv, now: number) {
   while (after !== null) after = await evictExpired(env, now, after);
 }
 
+// A work OpenAlex types an article and Crossref a book: Crossref's type takes
+// it out of every lane, and a reader's like keeps it in the store. OpenAlex
+// types it an article again at each retry.
+const LIKED_BOOK = listedWork(7, '2026-10-31', {
+  doi: 'https://doi.org/10.5555/liked-book',
+  primary_topic: { id: 'https://openalex.org/T10181', display_name: 'Natural Language Processing Techniques' },
+  topics: [{ id: 'https://openalex.org/T10181', display_name: 'Natural Language Processing Techniques' }],
+});
+const BOOK_RETRIES = [
+  { retry: 'that does not ask Crossref, after a counted enrichment', firstNight: {}, nextNight: {}, misses: 0, crossrefCalls: 0 },
+  {
+    retry: 'whose Crossref call fails, after an interrupted first enrichment',
+    firstNight: { semanticScholar: () => new Response('{}', { status: 429 }) },
+    nextNight: { crossref: () => new Response('{}', { status: 500 }) },
+    misses: -1,
+    crossrefCalls: 1,
+  },
+];
+for (const { retry, firstNight, nextNight, misses, crossrefCalls } of BOOK_RETRIES) {
+  test(`a retry ${retry} keeps the book type Crossref gave a liked work, which stays out of every lane`, async t => {
+    let answers: Parameters<typeof recoveryProviders>[1] = firstNight;
+    const asked = recoveryProviders(t, {
+      openAlex: () => Response.json({ results: [LIKED_BOOK] }),
+      crossref: () => (answers.crossref ?? (() => Response.json({ message: { items: [{ DOI: '10.5555/liked-book', type: 'book' }] } })))(),
+      semanticScholar: () => (answers.semanticScholar ?? (() => Response.json([])))(),
+    });
+    const { env, db } = await listedCorpus([LIKED_BOOK]);
+    const [{ id }] = db.prepare('SELECT id FROM works').all() as Array<{ id: number }>;
+    await keepLiked(env.PAPER_STORE!, [id], NIGHT);
+    assert.deepEqual(laneRows(db), ['econ.gen', 'topic:T10181']);
+
+    await enrichPending(env, 50, NIGHT);
+    // In no lane, the work stays in the store for the like.
+    await evictAll(env, NIGHT);
+    const first = stored(db)['openalex:W4500000007'];
+    assert.deepEqual([first.paper.publicationType, first.misses, laneRows(db)], ['book', misses, []]);
+
+    answers = nextNight;
+    asked.length = 0;
+    assert.deepEqual((await enrichPending(env, 50, NIGHT + DAY_MS)).workIds, [id]);
+    assert.equal(askedOf(asked, 'api.openalex.org').length, 1);
+    assert.equal(askedOf(asked, 'api.crossref.org').length, crossrefCalls);
+    assert.deepEqual([stored(db)['openalex:W4500000007'].paper.publicationType, laneRows(db)], ['book', []]);
+  });
+}
+
+test('a retry keeps no book type that OpenAlex gave: once OpenAlex types the work an article again, it is filed again', async t => {
+  let openAlexType = 'book';
+  recoveryProviders(t, {
+    openAlex: () => Response.json({ results: [{ ...LIKED_BOOK, type: openAlexType }] }),
+    crossref: () => Response.json({ message: { items: [{ DOI: '10.5555/liked-book', type: 'journal-article' }] } }),
+  });
+  const { env, db } = await listedCorpus([LIKED_BOOK]);
+  await enrichPending(env, 50, NIGHT);
+  await enrichPending(env, 50, NIGHT + DAY_MS);
+  assert.deepEqual([stored(db)['openalex:W4500000007'].paper.publicationType, laneRows(db)], ['book', []]);
+
+  openAlexType = 'article';
+  await enrichPending(env, 50, NIGHT + 3 * DAY_MS);
+  const { paper } = stored(db)['openalex:W4500000007'];
+  assert.deepEqual([paper.publicationType, paper.sources.enrichedBy.includes('crossref'), laneRows(db)], ['article', false, ['topic:T10181']]);
+});
+
 test('a paper OpenAlex marks retracted leaves its lanes, and no later listing of it files it again while the store keeps it', async t => {
   openAlexAnswers(t, [RETRACTED_WORK]);
   const { binding, db } = testD1();
@@ -505,8 +936,12 @@ for (const [order, works] of [['first', [RETRACTED_WORK, EPRINT_WORK]], ['last',
 
 // OpenAlex can also hold the journal's article apart, without the arXiv
 // location, so that the arXiv id finds only the unretracted eprint. Synthetic:
-// the captured work without its arXiv location.
-const JOURNAL_ONLY_WORK = { ...RETRACTED_WORK, locations: RETRACTED_WORK.locations.slice(0, 1) };
+// the captured work without its arXiv location and with an evidence field.
+const JOURNAL_ONLY_WORK = {
+  ...RETRACTED_WORK,
+  locations: RETRACTED_WORK.locations.slice(0, 1),
+  study_designs: [{ id: 'https://openalex.org/study-designs/systematic-review' }],
+};
 
 // When the arXiv id finds nothing, the retraction is all OpenAlex gave: the
 // paper is not OpenAlex-enriched, and it is asked again like any miss.
@@ -538,11 +973,12 @@ for (const [found, arxivAnswer, enrichedByOpenAlex] of [['an unretracted eprint'
     assert.deepEqual(filters, ['locations.landing_page_url', 'doi'], 'one call by arXiv id, one by the journal DOI');
     const { paper, enrichedAt, misses } = stored(db)['ads:2018Natur.556...74Z'];
     assert.equal(paper.publicationStatus, 'retracted');
+    assert.equal(paper.studyType, 'systematic-review');
     assert.ok(enrichedAt);
     assert.equal(paper.sources.enrichedBy.includes('openalex'), enrichedByOpenAlex);
     assert.equal(misses, enrichedByOpenAlex ? 0 : 1);
     assert.deepEqual(laneRows(db), []);
-    assert.deepEqual((await readNotableCandidates(binding, [NOTABLE_LANE], NOW)).candidates, []);
+    assert.deepEqual(await (await readNotableCandidates(binding, [NOTABLE_LANE], NOW)).offered(), []);
   });
 }
 

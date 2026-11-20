@@ -28,8 +28,19 @@ const STORE_TIMEOUT_MS = 3_500;
 // and then shows the error, about 10 s after the token.
 const FIRST_SCREEN_TIMEOUT_MS = 10_000;
 
+/** A requested follow whose lane has not finished its first harvest, as the request named it. */
+export interface LoadingFollow { type: string; canonicalId: string }
+
 export interface CorpusPageRequest {
   categories?: string[];
+  /** Whole areas of the app's taxonomy, each served as its own lane. */
+  areas?: string[];
+  /**
+   * Serve exactly the lanes named, with the reader's liked and rejected papers
+   * left on the page: a custom feed. Its answer says which follows are still
+   * loading. A request that names nothing servable is refused (LANES_REQUIRED).
+   */
+  exact?: boolean;
   /**
    * The reader's interest groups (planInterestGroups), each ranked by its own
    * examples. With them, `categories` is their union and `positiveIds` names
@@ -42,6 +53,7 @@ export interface CorpusPageRequest {
   excludedIds?: string[];
   page: number;
   pageSize: number;
+  /** `recent` unless named; a custom feed asks for `daily` or `relevance` (corpusRequestOf). */
   order?: string;
   // The papers the reader has seen (`feedSeenIds`), sent with `skipsSeen`: a
   // Worker that skips them answers with the next papers of the reader's
@@ -53,6 +65,9 @@ export interface CorpusPageRequest {
   // With `seen`, a first page goes on with the walk of the order the Worker
   // kept for the same request (continuesWalk in src/context/feed-pagination.ts).
   continues?: boolean;
+  // With `seen`, the run a page belongs to (RecentRun's `walk`): a Worker that
+  // reads it keeps a walk of the daily order for each run. Others ignore it.
+  walk?: string;
   /**
    * Rank by the likes only once the corpus has fetched and embedded the ones
    * it lacks, which can take seconds: for More like this, never a feed page.
@@ -92,11 +107,21 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
     throw sourceResponseError('/store/papers', response.status, refusal);
   }
-  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown } | null;
+  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown; loading?: unknown; more?: unknown } | null;
   // The Worker always answers a list, empty when nothing matches.
   const papers = answer?.papers;
   if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
-  return { papers, skipsSeen: answer?.skipsSeen === true };
+  const more = typeof answer?.more === 'boolean' ? answer.more : undefined;
+  return { papers, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more };
+}
+
+/** The follows an exact answer says are still loading; a Worker that does not say any answers none. */
+function loadingFollowsOf(value: unknown): LoadingFollow[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry: unknown) => {
+    const { type, canonicalId } = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
+    return typeof type === 'string' && typeof canonicalId === 'string' ? [{ type, canonicalId }] : [];
+  });
 }
 
 /**
@@ -105,6 +130,19 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  */
 export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]) {
   return [...new Set([...groups.flatMap(group => group.positiveIds), ...positiveIds])].slice(0, SEMANTIC_PROFILE_POSITIVE_CAP);
+}
+
+// The copy a request too long drops first: the oldest example the group
+// holding the most shares with another group, which keeps it; none when no
+// two groups share one.
+function sharedCopy(groups: Array<{ positiveIds: string[] }>) {
+  const holders = new Map<string, number>();
+  for (const group of groups) for (const id of new Set(group.positiveIds)) holders.set(id, (holders.get(id) ?? 0) + 1);
+  const shared = (id: string) => holders.get(id)! > 1;
+  const holding = groups.filter(group => group.positiveIds.some(shared));
+  if (holding.length === 0) return null;
+  const group = holding.reduce((most, next) => (next.positiveIds.length > most.positiveIds.length ? next : most));
+  return { group, id: group.positiveIds.findLast(shared)! };
 }
 
 /**
@@ -130,11 +168,18 @@ function cutFollowText<T>(value: T, max: number): T {
  * before it page by number. A request asks for it explicitly, so a Worker
  * that skips seen papers pages by number for bundles that send `seen` only
  * for notable papers.
+ * An `exact` request's answer says which of its follows are still `loading`,
+ * a Worker that does not say, none; and whether the Worker's ranking holds
+ * papers after this page (`more`), left unset unless the Worker sends a boolean.
  */
-export function fetchCorpusPage({ categories = [], groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage(request: CorpusPageRequest & { exact: true }, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean; loading: LoadingFollow[]; more?: boolean }>;
+export function fetchCorpusPage(request: CorpusPageRequest, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean }>;
+export function fetchCorpusPage({ categories = [], areas = [], exact = false, groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, walk, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = servedFollows(follows).map(({ follow }) => follow);
   const body = {
     categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
+    ...(areas.length ? { areas } : {}),
+    ...(exact ? { exact } : {}),
     // Only the follows the Worker reads travel (`servedFollows`): the first
     // MAX_FOLLOWED_JOURNALS journals and FEED_MAX_FOLLOWS other follows with a
     // lane. A topic follow that is one of the app's categories has none; it is asked for as that category. When no follow
@@ -157,19 +202,35 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
     page,
     pageSize,
     order,
-    ...(seen ? { seen: feedSeenFilter(seen), skipsSeen: true, ...(notable > 0 ? { notable } : {}), ...(continues ? { continues } : {}) } : {}),
+    ...(seen ? { seen: feedSeenFilter(seen), skipsSeen: true, ...(notable > 0 ? { notable } : {}), ...(continues ? { continues } : {}), ...(walk ? { walk } : {}) } : {}),
     ...(waitForLikes ? { waitForLikes } : {}),
   };
   while (body.excludedIds.length && new TextEncoder().encode(JSON.stringify(body.excludedIds)).byteLength > 6_000) body.excludedIds.pop();
   // Trim new signals before they can push the existing request over 16 KiB.
-  // Trim rejections first so the exclusion snapshot stays stable as they change.
+  // First the copies of an example several groups hold, while one group keeps
+  // it (`sharedCopy`): every established group holds the likes of the areas
+  // the reader never picked (planInterestGroups), so with ten areas and long
+  // ids their copies alone would leave no room for rejections or exclusions.
+  // Then rejections, so the exclusion snapshot stays stable as they change.
   // A grouped request carries each example twice, so with long ids it can
   // still be over. Then examples go: first those of no group, then the oldest
   // of the group holding the most, so each group keeps its newest longest.
   // An example leaves the flat list and every group together, so both rank by
   // the same ones.
-  while (new TextEncoder().encode(JSON.stringify(body)).byteLength > 16_000) {
-    if (body.negativeIds?.length) body.negativeIds.pop();
+  // `page`, and with `seen` also `notable` and `continues`, can change
+  // between the pages reading one kept order, so they count at their longest:
+  // pages that differ only in them trim the same signals, and a later page,
+  // or a first page that `continues`, is served from the order the first one
+  // kept instead of ranking again. A page whose fields are a few bytes longer
+  // would otherwise drop one more signal than the first. A custom feed's
+  // refresh walks with `seen` and, once none is left unseen, asks by number
+  // without it (ENG-197); the two keep their orders under different keys, so
+  // they may trim different signals.
+  const pageFields = { page: Number.MAX_SAFE_INTEGER, ...(seen ? { notable: 99, continues: true } : {}) };
+  while (new TextEncoder().encode(JSON.stringify({ ...body, ...pageFields })).byteLength > 16_000) {
+    const copy = body.groups ? sharedCopy(body.groups) : null;
+    if (copy) copy.group.positiveIds = copy.group.positiveIds.filter(id => id !== copy.id);
+    else if (body.negativeIds?.length) body.negativeIds.pop();
     else if (body.excludedIds.length) body.excludedIds.pop();
     else if (body.groups && body.positiveIds.length) {
       const grouped = new Set(body.groups.flatMap(group => group.positiveIds));
@@ -185,7 +246,8 @@ export function fetchCorpusPage({ categories = [], groups, follows = [], positiv
       body.follows.pop();
     } else break;
   }
-  return askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
+  const answer = askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
+  return exact ? answer : answer.then(({ papers, skipsSeen }) => ({ papers, skipsSeen }));
 }
 
 /**

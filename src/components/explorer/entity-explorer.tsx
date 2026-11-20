@@ -23,7 +23,7 @@ interface VisitRecord {
   settledWikiRequestKey: string; loadedWikiImageUrl: string;
   recentImpact: RecentImpact | null;
 }
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -40,6 +40,7 @@ import {
   Lightbulb,
   MagnifyingGlass,
   MapPin,
+  Plus,
   SealCheck,
   ShareNetwork,
   SlidersHorizontal,
@@ -86,6 +87,7 @@ import OrcidStamp from './orcid-stamp.tsx';
 import CareerTimeline from './career-timeline.tsx';
 import OrcidLinks from './orcid-links.tsx';
 import { foldMotion } from './explorer-fold.ts';
+import OrcidBiography from './orcid-biography.tsx';
 import { careerStops } from './career-stops.ts';
 import ExplorerHeroTop from './explorer-hero-top.tsx';
 import { Button } from '../ui/button.tsx';
@@ -101,6 +103,11 @@ import { Switch } from '../ui/switch.tsx';
 import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
+import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
+import { newFeedId } from '../../services/custom-feeds-store.ts';
+import { CustomFeedError, feedShortcutPlan, ingredientFromFollow } from '../../utils/custom-feeds.ts';
+import { customFeedPath } from '../../utils/feed-tabs.ts';
+import { createFollowEntity } from '../../utils/following.ts';
 import { toastFollowRefused } from '../following/follow-refused-toast.ts';
 import { actionStart } from '../ui/toast.ts';
 import { useFeed } from '../../context/feed-context.tsx';
@@ -160,38 +167,40 @@ function wikimediaImage(url: string | null | undefined) {
   return host === 'wikimedia.org' || host.endsWith('.wikimedia.org') ? safe : '';
 }
 
-// Up to the last ten years of an author's output, from OpenAlex's per-year
-// counts, ending this year. Inside the span OpenAlex reports, a missing year
-// is a year with none; before its earliest year nothing is known, so the
-// chart starts there instead of drawing zeros. This year is still running:
-// its bar is lighter.
+// The last ten years of an author's output, from OpenAlex's per-year counts,
+// ending this year, always as ten slots so a short career draws its bars at
+// the size a long one does. Inside the span OpenAlex reports, a missing year
+// is a year with none; before its earliest year nothing is known, so that
+// slot stays empty, marked with a dash rather than a zero. This year is still
+// running: its bar is lighter.
 const ACTIVITY_YEARS = 10;
 function AuthorActivity({ counts }: { counts: Array<{ year: number; works_count: number }> }) {
   const [currentYear] = useState(() => new Date().getFullYear());
   const byYear = new Map(counts.map(count => [count.year, count.works_count]));
   const lastYear = currentYear;
-  const firstYear = Math.max(lastYear - ACTIVITY_YEARS + 1, Math.min(...counts.map(count => count.year)));
-  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => firstYear + i);
-  const values = years.map(year => byYear.get(year) ?? 0);
-  const max = Math.max(...values, 1);
-  const summary = years.map((year, i) => `${year}: ${values[i]}`).join(', ');
+  const firstSlot = lastYear - ACTIVITY_YEARS + 1;
+  const firstKnown = Math.max(firstSlot, Math.min(...counts.map(count => count.year)));
+  const years = Array.from({ length: ACTIVITY_YEARS }, (_, i) => firstSlot + i);
+  const values = years.map(year => (year < firstKnown ? null : byYear.get(year) ?? 0));
+  const max = Math.max(...values.map(value => value ?? 0), 1);
+  const summary = years.flatMap((year, i) => (values[i] === null ? [] : [`${year}: ${values[i]}`])).join(', ');
   return (
-    <figure className="ehc-activity" style={{ '--years': years.length }} aria-label={`Papers per year, ${years[0]} to ${lastYear}. ${summary}`}>
+    <figure className="ehc-activity" style={{ '--years': years.length }} aria-label={`Papers per year, ${firstKnown} to ${lastYear}. ${summary}`}>
       <div className="ehc-activity-head" aria-hidden="true">
         <span>{'Papers per year'}</span>
-        <span>{`${years[0]}–${lastYear}`}</span>
+        <span>{`${firstKnown}–${lastYear}`}</span>
       </div>
       <div className="ehc-activity-bars" aria-hidden="true">
         {values.map((value, i) => (
           <span
             key={years[i]}
-            className={years[i] === currentYear ? 'is-running' : undefined}
-            style={{ '--v': value / max, '--i': i }}
+            className={value === null ? 'is-unknown' : years[i] === currentYear ? 'is-running' : undefined}
+            style={{ '--v': (value ?? 0) / max, '--i': i }}
           />
         ))}
       </div>
       <div className="ehc-activity-counts" aria-hidden="true">
-        {values.map((value, i) => <span key={years[i]}>{value}</span>)}
+        {values.map((value, i) => <span key={years[i]} className={value === null ? 'is-unknown' : undefined}>{value ?? '–'}</span>)}
       </div>
     </figure>
   );
@@ -324,6 +333,7 @@ export default function EntityExplorer({
   const { trackEvent } = useAnalyticsConsent();
   const [searchParams] = useSearchParams();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
+  const { feeds: customFeeds, status: customFeedsStatus, createFeed, openFeedEditor } = useCustomFeeds();
   const handleSaveToList = useQuickSave(onSaveToList, 'explorer');
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
@@ -462,6 +472,7 @@ export default function EntityExplorer({
   // repeat it.
   const [authorsOpened, setAuthorsOpened] = useState(() => Boolean(resumed?.authorsOpened));
   const [expandedSummary, setExpandedSummary] = useState(false);
+  const [expandedBiography, setExpandedBiography] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
   const [projectSummaryExpandedHeight, setProjectSummaryExpandedHeight] = useState(0);
   const [isProjectSummaryExpandable, setIsProjectSummaryExpandable] = useState(false);
@@ -649,10 +660,11 @@ export default function EntityExplorer({
   // loads, and a ref would be read once as null and never again.
 
   const heroBodyRef = useRef<HTMLDivElement | null>(null);
+  const [, remeasureHero] = useReducer((count: number) => count + 1, 0);
   useHeightSettle(
     heroBodyRef,
     // Everything that changes this box's height and is worth a movement.
-    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage],
+    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, expandedBiography],
     // A gentle ease-in-out rather than the hook's expo-out default. What
     // travels here is everything under the hero — the tab strip, the list —
     // and on a phone a 268px ORCID arrival on the expo-out spent 70px of it
@@ -765,6 +777,27 @@ export default function EntityExplorer({
   }), [authorIdentityUnverified, entity, entityDisplayName, entityOfficialName, id, type]);
   const entityIsFollowing = Boolean(!publicMode && followEntity && isFollowing(followEntity));
   const entityFollowPending = Boolean(!publicMode && followEntity && isFollowPending(followEntity));
+  // What "Make it a feed" puts in the feed, and the feed's name: null on pages
+  // no feed can be made of (institutions, projects, an author without an
+  // OpenAlex id, and the sources that offer no Follow).
+  const feedSource = useMemo(() => {
+    const followed = followEntity ? createFollowEntity(followEntity) : null;
+    const ingredient = followed ? ingredientFromFollow(followed) : null;
+    return followed && ingredient ? { ingredient, name: followed.displayName } : null;
+  }, [followEntity]);
+  // The visit whose feed is being created. Kept per visit, and read through a
+  // ref after the write, so a feed finishing after the reader moved to another
+  // page, or left the Explorer, neither shows busy there nor takes them away.
+  const [creatingFeedFor, setCreatingFeedFor] = useState<string | null>(null);
+  const liveVisitRef = useRef<string | null>(visitKey);
+  // The id a feed made from this visit is created under, kept until it lands,
+  // so a retry after a write that outran its deadline but landed finds that
+  // feed instead of adding a second one. Read only in the press handler.
+  const shortcutFeedIdRef = useRef<{ visit: string; id: string } | null>(null);
+  useEffect(() => {
+    liveVisitRef.current = visitKey;
+    return () => { liveVisitRef.current = null; };
+  }, [visitKey]);
 
   // Only overlay state belongs to this deferred reset. The load below owns
   // ORCID; clearing it here could overwrite
@@ -781,6 +814,7 @@ export default function EntityExplorer({
       setActiveTab('papers');
       setAuthorsOpened(false);
       setExpandedSummary(false);
+      setExpandedBiography(false);
       setParticipantsExpanded(false);
     }, 0);
     return () => clearTimeout(timer);
@@ -832,6 +866,7 @@ export default function EntityExplorer({
       setOrcidInfo(null);
       setIsLoadingOrcid(type === 'author' && Boolean(bornWith?.orcid || extractOrcid(id)));
       setExpandedSummary(false);
+      setExpandedBiography(false);
       setIsProjectSummaryExpandable(false);
       setResolvingParticipant(null);
       if (!resuming) setRecentImpact(null);
@@ -1558,6 +1593,44 @@ export default function EntityExplorer({
     }));
   };
 
+  const creatingFeed = creatingFeedFor === visitKey;
+  // A signed-in press waits for the account's feeds: until then it cannot
+  // know which names are taken or how much of each limit is used.
+  const feedsPending = !publicMode && customFeedsStatus !== 'ready';
+  const handleMakeFeed = async () => {
+    if (!feedSource || creatingFeed) return;
+    if (publicMode) {
+      requestAccount();
+      return;
+    }
+    if (feedsPending) return;
+    const plan = feedShortcutPlan(feedSource.ingredient, feedSource.name, customFeeds);
+    if (plan.kind === 'edit') {
+      openFeedEditor({ preset: plan.preset });
+      return;
+    }
+    const visit = visitKey;
+    if (shortcutFeedIdRef.current?.visit !== visit) shortcutFeedIdRef.current = { visit, id: newFeedId() };
+    const feedId = shortcutFeedIdRef.current.id;
+    setCreatingFeedFor(visit);
+    try {
+      const feed = await createFeed(plan.input, feedId);
+      if (shortcutFeedIdRef.current?.id === feedId) shortcutFeedIdRef.current = null;
+      if (liveVisitRef.current === visit) void navigate(customFeedPath(feed.id));
+    } catch (error) {
+      // Another device took the name or filled the eight meanwhile: the
+      // window settles it, as when the account was known to be full.
+      if (error instanceof CustomFeedError && (error.code === 'taken' || error.code === 'feed-limit')) {
+        if (liveVisitRef.current === visit) openFeedEditor({ preset: plan.input });
+        return;
+      }
+      console.error('Error creating a feed from the Explorer', error);
+      toast.error('The feed could not be created');
+    } finally {
+      setCreatingFeedFor(current => (current === visit ? null : current));
+    }
+  };
+
   const heroActions = (followEntity || publicEntityUrl || heroLinks.length > 0) && (
     <div className="ehc-actions">
       {followEntity && (
@@ -1583,6 +1656,26 @@ export default function EntityExplorer({
             </Button>
           )}
         />
+      )}
+      {feedSource && (
+        <>
+          {/* Disabled but focusable while the feed is written, so focus
+              stays on it; the status beside it says so aloud. */}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={creatingFeed || feedsPending}
+            focusableWhenDisabled={creatingFeed}
+            aria-busy={creatingFeed || undefined}
+            onClick={() => { void handleMakeFeed(); }}
+          >
+            {creatingFeed
+              ? <CircleNotch size={16} className="ehc-spinner" aria-hidden="true" />
+              : <Plus size={16} aria-hidden="true" />}
+            {'Make it a feed'}
+          </Button>
+          <span className="sr-only" role="status">{creatingFeed ? 'Creating the feed…' : ''}</span>
+        </>
       )}
       {heroLinks.length > 0 && !usesSheet && !(isPhone && publicEntityUrl) && (
         <div className="ehc-links">
@@ -2377,6 +2470,7 @@ export default function EntityExplorer({
               {career.length > 0 && (
                 <CareerTimeline
                   career={career}
+                  onHeightChange={remeasureHero}
                   onOrganization={(stop) => {
                     void findInstitution({ rorUrl: stop.ror, name: stop.organization }).then((inst) => {
                       if (inst) navigateToEntity('institution', inst.id);
@@ -2387,7 +2481,7 @@ export default function EntityExplorer({
               {orcidInfo.biography && (
                 <section>
                   <h2 className="project-section-title">About</h2>
-                  <p className="orcid-biography">{orcidInfo.biography}</p>
+                  <OrcidBiography text={orcidInfo.biography} expanded={expandedBiography} onToggle={() => setExpandedBiography((value) => !value)} />
                 </section>
               )}
               {orcidLinks.length > 0 && (

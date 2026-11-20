@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { encodePaperKey, parsePaperKey } from '../utils/public-navigation.ts';
 import { openAlexClient } from './open-alex-client.ts';
-import { loadPaperByIdentity } from './paper-lookup.ts';
+import { fetchOpenReviewPaper, loadPaperByIdentity } from './paper-lookup.ts';
 
 // PAP-88: the public paper page opens a DOI as one OpenAlex work, which is
 // free and never refused by the Worker's budget. It used to ask for a works
@@ -55,4 +55,46 @@ test('a paper opened by DOI is one request for the work by DOI: found, not found
   answering(() => Response.json({ error: 'Service unavailable' }, { status: 503 }));
   await assert.rejects(loadPaperByIdentity(doiKey('10.1000/down')), (error: { status?: number }) => error.status === 503);
   assert.equal(urls.length, 1, 'asked once');
+});
+
+test('an OpenReview key is never asked of OpenAlex or arXiv', async t => {
+  const realFetch = openAlexClient.fetchImpl;
+  t.after(() => { openAlexClient.fetchImpl = realFetch; });
+  const asked: string[] = [];
+  openAlexClient.fetchImpl = async url => { asked.push(String(url)); return new Response('{}'); };
+  // `node --test` has no Worker origin configured, so the Worker request is
+  // refused before it leaves; what this pins is who was asked.
+  await assert.rejects(
+    loadPaperByIdentity(parsePaperKey(encodePaperKey('openreview', '5pShDP8LSm')!)!),
+    { code: 'WORKER_ORIGIN_NOT_ALLOWED' },
+  );
+  assert.deepEqual(asked, []);
+});
+
+// Synthetic, shaped like the `{ notes }` the Worker's `/sources/openreview` answers.
+test('a paper opened by OpenReview id is one request to the Worker: found, not found, or a failure the page can retry', async () => {
+  const asked: string[] = [];
+  const through = (response: () => Response) => ({
+    apiBase: 'https://api.papertok.app',
+    fetchImpl: (async (url: RequestInfo | URL) => { asked.push(String(url)); return response(); }) as typeof fetch,
+  });
+  const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  const paper = await fetchOpenReviewPaper('5pShDP8LSm', through(() => jsonResponse({
+    notes: [{
+      id: '5pShDP8LSm',
+      forum: '5pShDP8LSm',
+      content: { title: { value: 'Position: AI Development Should Prioritize Cognitive Security' }, authors: { value: ['Batu El'] } },
+    }],
+  })));
+  assert.deepEqual(asked, ['https://api.papertok.app/sources/openreview?id=5pShDP8LSm']);
+  assert.equal(paper?.id, 'openreview:5pShDP8LSm');
+  assert.equal(encodePaperKey(paper), encodePaperKey('openreview', '5pShDP8LSm'), 'the paper is the one the key names');
+
+  assert.equal(await fetchOpenReviewPaper('missingNote1', through(() => jsonResponse({ notes: [], count: 0 }))), null);
+
+  await assert.rejects(
+    fetchOpenReviewPaper('5pShDP8LSm', through(() => jsonResponse({ code: 'UPSTREAM_FAILED', upstreamStatus: 403 }, 502))),
+    (error: Error & { status?: number }) => error.status === 502,
+  );
 });

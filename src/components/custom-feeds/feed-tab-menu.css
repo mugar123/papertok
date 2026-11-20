@@ -1,0 +1,34 @@
+/* A feed tab's menu (feed-tab-menu.tsx): the context menu on a desktop, the
+   drawer of rail-menu rows on a phone. */
+
+/* Delete feed is the one command that loses something. */
+.feed-tab-menu-danger,
+.pc-share-row.feed-tab-menu-danger,
+.feed-tab-menu-danger svg,
+.pc-share-row.feed-tab-menu-danger svg {
+  color: var(--accent-danger);
+}
+
+/* A move past either end of the line. The row stays in place, so the four
+   commands keep their order, and says it is unavailable by more than its
+   colour: it is a disabled button. */
+.feed-tab-menu-sheet .pc-share-row:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.feed-tab-menu-sheet .pc-share-row:disabled svg {
+  color: var(--text-tertiary);
+}
+
+.feed-tab-menu-sheet .pc-share-row:disabled:active {
+  background: none;
+}
+
+/* The feed's name heads the drawer, cut like its tab when long. */
+.feed-tab-menu-title span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

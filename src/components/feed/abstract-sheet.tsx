@@ -17,7 +17,8 @@ import './abstract-sheet.css';
  * column is bottom-anchored and short, the unfolded panel scrolls inside a
  * box a few lines tall, and reading it there is a thumb fight. A clipped
  * abstract opens here instead: a bottom sheet with the title and the whole
- * text, at the reader's own measure, dismissed by a swipe or the X. Mounted
+ * text, at the reader's own measure, dismissed by a swipe or the X. The
+ * card's title opens it too, clipped abstract or not. Mounted
  * by the card as `{showAbstractSheet && <AbstractSheet/>}`; `open` flips on
  * the frame after mount (usePopupOpenOnMount) so the drawer actually arrives,
  * and the card unmounts it once the leave has played (`onOpenChangeComplete`).
@@ -39,11 +40,15 @@ export default function AbstractSheet({ paper, onClose }: { paper: Paper; onClos
             <span className="abstract-sheet-kicker">{areaLabelForPaper(paper)}</span>
             <DrawerTitle render={<h3 />} className="abstract-sheet-title"><ScientificText>{paper?.title}</ScientificText></DrawerTitle>
           </div>
+          {/* `shrink-0`: the heading's flex basis is its title's whole width,
+              so the row shares its shortfall with this button. Beside a
+              seven-line title WebKit shrinks it to under 6px, glyph included:
+              the global `svg { max-width: 100% }` leaves it no minimum. */}
           <DrawerClose
             ref={closeRef}
-            render={<Button variant="ghost" size="icon-sm" aria-label={'Close'} />}
+            render={<Button variant="ghost" size="icon" className="shrink-0" aria-label={'Close'} />}
           >
-            <X size={18} />
+            <X size={20} />
           </DrawerClose>
         </header>
         <DrawerBody className="abstract-sheet-body" data-base-ui-swipe-ignore>

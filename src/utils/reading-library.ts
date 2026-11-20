@@ -3,6 +3,7 @@ declare const document: { createElement(tag: 'a'): CitationDownload; body: { app
 
 import type { Paper } from '../models/paper.ts';
 import { storedAbstractSource, storedClassification } from '../models/paper.ts';
+import { storedPaperEvidence } from '../models/paper-evidence.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 
 function authorName(author: Paper['authors'][number] | undefined) {
@@ -22,12 +23,17 @@ function authorName(author: Paper['authors'][number] | undefined) {
 export const STORED_SUMMARY_CAP = 4000;
 export const LEGACY_STORED_SUMMARY_CAP = 1000;
 export const STORED_AUTHOR_CAP = 20;
+/**
+ * How much of the text a `savedPapers` document keeps (the rules allow 1,000),
+ * and an interaction record without a copy kept (`paperAbstract`).
+ */
+export const SAVED_SUMMARY_CAP = 500;
 
 /**
  * The text a stored copy or an interaction keeps of a paper: its `summary`
  * where one was built, else its `abstract`, all a corpus paper carries.
  */
-export function abstractExcerpt(paper: Partial<Paper> = {}, chars = 500) {
+export function abstractExcerpt(paper: Partial<Paper> = {}, chars = SAVED_SUMMARY_CAP) {
   return (paper.summary || paper.abstract || '').substring(0, chars);
 }
 
@@ -39,6 +45,7 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     title: typeof paper.title === 'string' ? paper.title : '',
     authors: (paper.authors || []).slice(0, STORED_AUTHOR_CAP),
     ...storedClassification(paper),
+    ...storedPaperEvidence(paper),
     published: paper.published || paper.publicationDate || '',
     year: paper.year || (paper.published ? new Date(paper.published).getFullYear() : null),
     summary,
@@ -46,6 +53,8 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     arxivId: paper.arxivId || '',
     doi: paper.doi || '',
     journal: paper.journal || paper.venue || '',
+    venueId: paper.venueId || '',
+    sourceName: paper.venueId && paper.sourceName || '',
     pdfUrl: paper.pdfUrl || paper.openAccessPdfUrl || '',
     landingPageUrl: paper.landingPageUrl || paper.url || '',
     // A list shows the retraction the card showed (ENG-84). Only a retraction
@@ -53,6 +62,23 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     // an earlier copy stored.
     ...(paper.publicationStatus === 'retracted' && { publicationStatus: 'retracted' as const }),
   };
+}
+
+/**
+ * The copy an interaction record without a `paper` map yields. Saves before
+ * 2026-10-21 (PAP-60) kept only the title, three authors, the card's category
+ * and the start of its text. The category was often the one the feed asked
+ * for, so it gives no field, and the record's timestamp is when the paper was
+ * saved, so the publication date stays unknown. With neither, the lists read
+ * the paper's `savedPapers` document (`copyHoldsPaperMetadata`).
+ */
+export function copyOfRecordWithoutCopy(
+  id: string,
+  record: { paperTitle?: string; paperAuthors?: Paper['authors']; paperAbstract?: string },
+) {
+  return serializeLibraryPaper({
+    id, title: record.paperTitle || '', authors: record.paperAuthors || [], summary: record.paperAbstract || '',
+  });
 }
 
 function cleanBibValue(value: unknown) {

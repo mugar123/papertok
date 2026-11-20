@@ -20,7 +20,7 @@ import {
   WarningCircle,
   X,
 } from '@phosphor-icons/react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchAuthors,
   searchInstitutions,
@@ -97,7 +97,7 @@ const OPENALEX_BUDGET_PAUSE_NOTE = "Searches resume by 00:00 UTC at the latest. 
 // topics fall back to the local taxonomy rather than fail.
 function pageSearchSources(language: string): SearchProviders {
   return {
-    // OpenAlex and arXiv, merged and ranked by title match
+    // OpenAlex, arXiv and OpenReview, merged and ranked by title match
     // (paper-search-service.ts): OpenAlex alone could not answer "llama 2".
     papers: (query, signal) => searchPapersAcrossSources(query, { signal }),
     authors: (query, signal) => searchAuthors(query, { signal, throwOnError: true })
@@ -259,12 +259,12 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const handleSaveToList = useQuickSave(onSaveToList, 'search');
   
   // Seeded from the URL, so a search is a place you can be sent to. The
-  // palette needs this for the one paper in fifty that carries neither a DOI
-  // nor an arXiv id: it has no public paper URL of its own, so the row hands
-  // the reader to this page with the query intact rather than to a dead link.
-  // The search effect below already keys on `query`, so seeding it is the
-  // whole of the wiring.
+  // palette needs this for a paper with no identifier the paper page can
+  // resolve: it has no public paper URL of its own, so the row hands the
+  // reader to this page with the query intact rather than to a dead link, and
+  // with the paper itself, which opens below.
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
   const [isSearching, setIsSearching] = useState(() => Boolean(searchParams.get('q')?.trim()));
   const [hasSearched, setHasSearched] = useState(false);
@@ -283,7 +283,15 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const [conceptResults, setConceptResults] = useState<SearchResults['topics']>([]);
   const [projectResults, setProjectResults] = useState<SearchResults['projects']>([]);
 
-  const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
+  // The palette hands over a paper that has no public page of its own
+  // (`searchPaperDestination`): it opens here, over the results it came from.
+  const handedPaper = (location.state as { paper?: Paper } | null)?.paper;
+  const [selectedPaper, setSelectedPaper] = useState<Paper | null>(() => handedPaper ?? null);
+  // Once only: left in the history entry, the paper would open again on every
+  // return to this page, after the reader had closed it.
+  useEffect(() => {
+    if (handedPaper) void navigate({ search: location.search }, { replace: true, state: null });
+  }, [handedPaper, location.search, navigate]);
   const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null);
   const pdfPaper = pdfOpen?.paper ?? null;
   // Back closes this PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
@@ -298,7 +306,21 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     else setPdfOpen(null);
   }, []);
   useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf');
-  const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
+  // The paper the reader came here for goes back where they chose it when it
+  // closes. Left here they were shown a results list they never asked for:
+  // they had picked the paper in the palette, over another page.
+  const [arrivedFor] = useState<Paper | null>(() => handedPaper ?? null);
+  // Once: two presses in one tick both see the paper still selected, and a
+  // second step back would leave the page the reader came from.
+  const wentBackRef = useRef(false);
+  const closeSelectedPaper = useCallback(() => {
+    if (selectedPaper && selectedPaper === arrivedFor && !wentBackRef.current) {
+      wentBackRef.current = true;
+      void navigate(-1);
+    }
+    // Cleared either way, so the overlay starts its leave at once.
+    setSelectedPaper(null);
+  }, [arrivedFor, navigate, selectedPaper]);
 
   // The paper the overlay is SHOWING, which outlives the one selected. Closing
   // sets `selectedPaper` to null to start the leave; if the card went with it,
@@ -1010,6 +1032,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
       {/* Paper Card Overlay */}
       <PaperOverlay
         open={Boolean(selectedPaper)}
+        arriving={Boolean(shownPaper) && shownPaper === arrivedFor}
         onClose={closeSelectedPaper}
         onExitComplete={() => setShownPaper(null)}
        
@@ -1022,7 +1045,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
             isSaved={savedPaperIds.has(interactionIdFor(shownPaper)!)}
             isRead={readPaperIds.has(interactionIdFor(shownPaper)!)}
             onLike={toggleLike}
-            onNotInterested={(paper) => { void markNotInterested(paper); setSelectedPaper(null); }}
+            onNotInterested={(paper) => { void markNotInterested(paper); closeSelectedPaper(); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper, _surface, menu) => setPdfOpen({ paper, menu })}

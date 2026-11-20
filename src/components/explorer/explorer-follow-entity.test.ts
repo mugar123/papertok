@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { explorerAuthorIdentityUnverified, explorerFollowEntity } from './explorer-follow-entity.ts';
 import { createFollowEntity } from '../../utils/following.ts';
+import { feedShortcutPlan, ingredientFromFollow } from '../../utils/custom-feeds.ts';
 
 /** The page's Follow for an author route, computed the way EntityExplorer does. */
 function authorFollow(routeId: string, entity: { id?: string; verified?: boolean; orcid?: string | null }, name: string) {
@@ -54,6 +55,27 @@ test('a journal can be followed from its source page; a repository or a working-
   });
   assert.equal(sourcePage({ id: 'https://openalex.org/S4306400194', type: 'repository' }, 'arXiv (Cornell University)'), null);
   assert.equal(sourcePage({ id: 'https://openalex.org/S4210171147', type: 'journal' }, 'IMF Working Paper'), null);
+});
+
+// "Make it a feed" on a source page: the feed holds the journal the page
+// follows, named after it. A page with no Follow has no feed to make.
+test('a journal page makes a feed of that journal; a repository or a working-paper series makes none', () => {
+  const feedSource = (entity: { id: string; type: string }, name: string) => {
+    const follow = explorerFollowEntity({
+      type: 'source', routeId: entity.id.split('/').pop()!, entity, authorIdentityUnverified: false, officialName: name, displayName: name,
+    });
+    const followed = follow ? createFollowEntity(follow) : null;
+    const ingredient = followed ? ingredientFromFollow(followed) : null;
+    return followed && ingredient ? { ingredient, name: followed.displayName } : null;
+  };
+  const journal = feedSource({ id: 'https://openalex.org/S23254222', type: 'journal' }, 'American Economic Review');
+  assert.deepEqual(journal?.ingredient, { kind: 'journal', id: 'S23254222', label: 'American Economic Review' });
+  assert.deepEqual(feedShortcutPlan(journal.ingredient, journal.name, []), {
+    kind: 'create',
+    input: { name: 'American Economic Review', order: 'newest', ingredients: [{ kind: 'journal', id: 'S23254222', label: 'American Economic Review' }] },
+  });
+  assert.equal(feedSource({ id: 'https://openalex.org/S4306400194', type: 'repository' }, 'arXiv (Cornell University)'), null);
+  assert.equal(feedSource({ id: 'https://openalex.org/S4210171147', type: 'journal' }, 'IMF Working Paper'), null);
 });
 
 test('no entity yet is not an unverified author, and has no Follow', () => {

@@ -232,5 +232,6 @@ export function summaryHistoryPaper(row: SummaryHistoryRow): Partial<Paper> {
     ...(identity?.type === 'doi' ? { doi: identity.value } : {}),
     ...(identity?.type === 'arxiv' ? { arxivId: identity.value } : {}),
     ...(identity?.type === 'pmid' ? { pmid: identity.value } : {}),
+    ...(identity?.type === 'openreview' ? { openReviewId: identity.value } : {}),
   };
 }

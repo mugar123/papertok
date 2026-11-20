@@ -3,14 +3,12 @@ import test from 'node:test';
 import {
   answerSlot,
   buildSectionOrder,
-  countAnnotations,
-  filterAnnotations,
   sortAnnotations,
 } from './annotation-order.ts';
 
 const SECTIONS = [{ id: 'abstract' }, { id: 'methods' }, { id: 'results' }];
 
-test('the rail reads in document order, not arrival order', () => {
+test('the notes read in document order, not arrival order', () => {
   const order = buildSectionOrder(SECTIONS);
   const sorted = sortAnnotations([
     { id: 'c', sectionId: 'results', paragraphIndex: 0 },
@@ -54,31 +52,6 @@ test('sorting does not mutate what it was given', () => {
   ];
   sortAnnotations(input, buildSectionOrder(SECTIONS));
   assert.deepEqual(input.map(item => item.id), ['b', 'a']);
-});
-
-test('a highlight you wrote on is still yours', () => {
-  const items = [
-    { id: 'mark', kind: 'user' },
-    { id: 'note', kind: 'user', note: 'algo' },
-    { id: 'answer', kind: 'ai', note: 'lo que significa' },
-  ];
-  assert.deepEqual(filterAnnotations(items, 'mine').map(i => i.id), ['mark', 'note']);
-  assert.deepEqual(filterAnnotations(items, 'ai').map(i => i.id), ['answer']);
-  assert.equal(filterAnnotations(items, 'all').length, 3);
-});
-
-test('an unknown filter shows everything rather than nothing', () => {
-  const items = [{ id: 'a', kind: 'user' }];
-  assert.equal(filterAnnotations(items, 'nonsense').length, 1);
-});
-
-test('each filter is counted with the rule that filters it', () => {
-  const counted = countAnnotations([
-    { kind: 'user' },
-    { kind: 'user' },
-    { kind: 'ai' },
-  ]);
-  assert.deepEqual(counted, { all: 3, mine: 2, ai: 1 });
 });
 
 // Where "explain this" writes its answer: the card that says the model is

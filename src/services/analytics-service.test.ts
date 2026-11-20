@@ -22,7 +22,8 @@ import {
   setAnalyticsConsent,
   startAnalyticsClient,
   trackAcquisition,
-  trackDay7Return,
+  markWeekOneReturn,
+  trackPmfSurvey,
   trackProductEvent,
 } from './analytics-service.ts';
 
@@ -174,6 +175,8 @@ test('normalizes entity identifiers and strips query strings from analytics path
 test('names the routes that reach analytics through the static list', () => {
   assert.equal(normalizeAnalyticsPath('/profile'), '/profile');
   assert.equal(normalizeAnalyticsPath('/settings/profile'), '/settings/profile');
+  assert.equal(normalizeAnalyticsPath('/settings/feeds'), '/settings/feeds');
+  assert.equal(normalizeAnalyticsPath('/recent'), '/recent');
   assert.equal(normalizeAnalyticsPath('/report'), '/report');
 });
 
@@ -190,6 +193,10 @@ test('maps unknown and malformed routes to a fixed analytics path', () => {
   // handle in it (a person) never reaches the report.
   assert.equal(normalizeAnalyticsPath('/public/user/private-handle?ref=share'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/public/entity/topic/private-key'), '/public/entity/topic/:id');
+});
+
+test('a custom feed is recorded without its id', () => {
+  assert.equal(normalizeAnalyticsPath('/feeds/abcd1234'), '/feeds/:id');
 });
 
 test('a link PaperTok makes for a paper is recorded under one fixed path', () => {
@@ -379,6 +386,34 @@ test('a session after activation says how long ago, in weeks rather than days', 
   assert.equal(await sessionAt(1000 + day), 'day_1');
   assert.equal(await sessionAt(1000 + 9 * day), 'days_7_13');
   assert.equal(await sessionAt(1000 + 400 * day), 'days_60_plus');
+});
+
+test('the survey events say how long ago this browser activated, and nothing when it has not', async t => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const day = 24 * 60 * 60 * 1000;
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ENABLED }) });
+  t.after(() => {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
+  });
+  const events: unknown[] = [];
+  const track = async (eventName: string, params?: Record<string, unknown>) => {
+    events.push([eventName, params]);
+    return true;
+  };
+
+  await trackPmfSurvey('pmf_survey_shown', { app_version: '0.3.0' }, { now: 1000, track });
+  await markActivation({ now: 1000, track: async () => true });
+  await trackPmfSurvey('pmf_survey', { disappointment: 'very', nps: 8, app_version: '0.3.0' }, { now: 1000 + 9 * day, track });
+  // The guard of the account that opened the survey reaches the client untouched.
+  const guard = () => false;
+  let forwarded: unknown;
+  await trackPmfSurvey('pmf_survey', { disappointment: 'dismissed', app_version: '0.3.0' }, { now: 1000, track: async (_name, _params, stillValid) => { forwarded = stillValid; return false; }, stillValid: guard });
+  assert.equal(forwarded, guard);
+  assert.deepEqual(events, [
+    ['pmf_survey_shown', { app_version: '0.3.0' }],
+    ['pmf_survey', { disappointment: 'very', nps: 8, app_version: '0.3.0', activation_age: 'days_7_13' }],
+  ]);
 });
 
 test('tracks acquisition once even when session storage is unavailable', async t => {
@@ -809,6 +844,17 @@ test('tracks paper identifiers but drops titles, search text and arbitrary URLs'
   }), { action: 'add', entity_type: 'journal', surface: 'other' });
 });
 
+test('a custom feed reaches analytics as counts and its order, never its name or id', () => {
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_create', {
+    topic_count: 3, author_count: 2, keyword_count: 1, feed_order: 'newest', name: 'My thesis', feed_id: 'abcd1234',
+  }, ANALYTICS_CONSENT.ENABLED), { topic_count: 3, author_count: 2, keyword_count: 1, feed_order: 'newest' });
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_open', {
+    feed_order: 'best', name: 'My thesis', feed_id: 'abcd1234',
+  }, ANALYTICS_CONSENT.ENABLED), { feed_order: 'best' });
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_delete', { name: 'My thesis', feed_id: 'abcd1234' }, ANALYTICS_CONSENT.ENABLED), {});
+  assert.deepEqual(sanitizeProductEventParams('custom_feed_open', { feed_order: 'daily' }), {});
+});
+
 test('a feed load error says why it failed with fixed labels only', () => {
   assert.deepEqual(sanitizeProductEventParams('app_error', {
     kind: 'feed_load_failed', reason: 'rejected', status: 400, error_code: 'LANES_REQUIRED', message: 'Paper store returned 400',
@@ -1016,8 +1062,8 @@ test('what a reader does in the connections map is one of six actions in the map
   assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
 });
 
-test('connections and similar are allowed surfaces for paper events', () => {
-  for (const surface of ['connections', 'similar']) {
+test('connections, similar and recent are allowed surfaces for paper events', () => {
+  for (const surface of ['connections', 'similar', 'recent']) {
     assert.deepEqual(sanitizeProductEventParams('paper_open', { surface, destination: 'pdf', position: 2 }), { surface, destination: 'pdf', position: 2 });
     assert.deepEqual(sanitizeProductEventParams('paper_view', { surface, position: 0 }), { surface, position: 0 });
     assert.deepEqual(sanitizeProductEventParams('paper_dwell', { surface, seconds: 9 }), { surface, seconds: 9 });
@@ -1142,20 +1188,34 @@ test('marks activation only after consent and only once', async () => {
   assert.deepEqual(events, ['activation']);
 });
 
-test('tracks a day-7 return at the boundary and only once', async () => {
-  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ENABLED });
-  const events: unknown[] = [];
-  const track = async (eventName: string) => {
-    events.push(eventName);
-    return true;
-  };
-  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+test('an activation waiting across an opt-out cannot seed a later return', async () => {
+  const storage = memoryStorage();
+  let release!: (accepted: boolean) => void;
+  let maySend: (() => boolean) | undefined;
+  const pending = markActivation({ storage, now: 1000, track: (_name, _params, stillValid) => {
+    maySend = stillValid;
+    return new Promise<boolean>(resolve => { release = resolve; });
+  } });
+  assert.equal(maySend?.(), true);
+  persistAnalyticsConsent(ANALYTICS_CONSENT.DENIED, storage);
+  persistAnalyticsConsent(ANALYTICS_CONSENT.ENABLED, storage);
+  assert.equal(maySend?.(), false);
+  release(true);
+  assert.equal(await pending, false);
+  assert.equal(markWeekOneReturn({ storage, now: 1000 + 168 * 3_600_000 }), false);
+});
 
-  await markActivation({ storage, now: 1000, track });
-  assert.equal(await trackDay7Return({ storage, now: 1000 + sevenDays - 1, track }), false);
-  assert.equal(await trackDay7Return({ storage, now: 1000 + sevenDays, track }), true);
-  assert.equal(await trackDay7Return({ storage, now: 1000 + sevenDays + 1, track }), false);
-  assert.deepEqual(events, ['activation', 'day_7_return']);
+test('marks only the first browser return from hour 168 up to hour 336', async () => {
+  const hour = 3_600_000;
+  for (const [elapsed, expected] of [[168 * hour - 1, false], [168 * hour, true],
+    [336 * hour - 1, true], [336 * hour, false]] as const) {
+    const storage = memoryStorage();
+    assert.equal(markWeekOneReturn({ storage, now: 1000 + elapsed }), false);
+    await markActivation({ storage, now: 1000, track: async () => true });
+    assert.equal(markWeekOneReturn({ storage, now: 1000 + elapsed }), expected);
+    assert.equal(storage.getItem('papertok_analytics_week_one_return'), expected ? 'true' : null);
+    assert.equal(markWeekOneReturn({ storage, now: 1000 + elapsed }), false);
+  }
 });
 
 /**
@@ -1174,18 +1234,12 @@ test('a mark asked for twice while the first send is still waiting leaves once',
     await loaded;
     return true;
   };
-  const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
   const activations = [markActivation({ storage, now: 1000, track }), markActivation({ storage, now: 1000, track })];
   release();
   assert.deepEqual(await Promise.all(activations), [true, false]);
 
-  const returns = [
-    trackDay7Return({ storage, now: 1000 + sevenDays, track }),
-    trackDay7Return({ storage, now: 1000 + sevenDays, track }),
-  ];
-  assert.deepEqual(await Promise.all(returns), [true, false]);
-  assert.deepEqual(events, ['activation', 'day_7_return']);
+  assert.deepEqual(events, ['activation']);
 
   const failing = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ENABLED });
   assert.equal(await markActivation({ storage: failing, now: 1000, track: async () => false }), false);
@@ -1214,6 +1268,7 @@ test('clears consent-scoped activation state when consent is denied', async t =>
     papertok_analytics_activation_at: '1000',
     papertok_analytics_activation_sent: 'true',
     papertok_analytics_day_7_return_sent: 'true',
+    papertok_analytics_week_one_return: 'true',
   });
   let consentCookie = '';
 
@@ -1244,6 +1299,7 @@ test('clears consent-scoped activation state when consent is denied', async t =>
   assert.equal(storage.getItem('papertok_analytics_activation_at'), null);
   assert.equal(storage.getItem('papertok_analytics_activation_sent'), null);
   assert.equal(storage.getItem('papertok_analytics_day_7_return_sent'), null);
+  assert.equal(storage.getItem('papertok_analytics_week_one_return'), null);
 });
 
 test('feed timing fields contain bounded measurements and deployment identifiers, never content', () => {

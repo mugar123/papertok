@@ -39,6 +39,7 @@ import { getLocalizedInstitutionName } from '../../utils/institution-localizatio
 import {
   buildSearchSectionValues,
   getSearchSectionOrder,
+  paperRowNumbers,
   resolvePreferredSearchSection,
 } from '../../utils/search-relevance.ts';
 import './search-command.css';
@@ -122,6 +123,11 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   // the page transition is the only movement left. Measured before this:
   // sheet, scrim and feed dissolved on three clocks with two empty frames in
   // the middle. Cleared on the way in, like `reset`.
+  //
+  // A pick does not hand focus back to whatever opened the palette either
+  // (`finalFocus` below): the destination takes it. Returned to an opener
+  // that survived the navigation, it left a paper dialog that had just
+  // opened and landed on the page behind it.
   const [leavingBySelect, setLeavingBySelect] = useState(false);
   const copy = COPY.en;
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
@@ -293,13 +299,13 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
           <span className="sc-paper-detail">
             <span className="sc-author">{authorDisplayName(paper.authors?.[0])}</span>
             <span className="sc-paper-numbers sc-paper-numbers--mobile">
-              {paper.authors?.length && (paper.year != null || paper.citationCount != null) ? '· ' : ''}
-              {[paper.year, paper.citationCount != null ? `${paper.citationCount.toLocaleString('en-US')} cit.` : null].filter(value => value != null).join(' · ')}
+              {paper.authors?.length && paperRowNumbers(paper) ? '· ' : ''}
+              {paperRowNumbers(paper)}
             </span>
           </span>
         </span>
         <span className="sc-paper-numbers sc-paper-numbers--desktop">
-          {[paper.year, paper.citationCount != null ? `${paper.citationCount.toLocaleString('en-US')} cit.` : null].filter(value => value != null).join(' · ')}
+          {paperRowNumbers(paper)}
         </span>
       </CommandItem>
     )),
@@ -412,7 +418,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const loadingMessage = activeSection === 'all' ? 'Searching all categories…' : `Searching ${copy[activeSection].toLowerCase()}…`;
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${manualSelection ? '' : ' sc-sheet--untouched'}${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
+    <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={leavingBySelect ? false : finalFocus} title={copy.placeholder} className={`sc-sheet${manualSelection ? '' : ' sc-sheet--untouched'}${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
       commandProps={{
         label: copy.placeholder,
         // Enter follows the first row until the user chooses another one.

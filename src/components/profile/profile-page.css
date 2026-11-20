@@ -1,0 +1,152 @@
+/* My profile (profile-page.tsx): the settings pages' shell, sections and
+   panels in one column, the ORCID iD set in mono as the machine data it is,
+   and the publications as ruled rows in the panel, as Settings lists the
+   plain-words summaries (design.md). */
+
+.my-profile-shell {
+  width: min(48rem, 100%);
+}
+
+.my-profile-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+/* Doubled class: it has to outrank the row's own muted paragraph. */
+.orcid-holder.orcid-holder {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.orcid-record-link {
+  color: var(--accent-secondary);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* The iD is the row's link to ORCID: underlined, so colour is not its only sign. */
+.orcid-record-link,
+.orcid-work-title a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.orcid-work-title a {
+  color: inherit;
+  text-decoration-color: var(--border-strong);
+}
+
+.orcid-works {
+  padding-block: calc(var(--space-5) - var(--space-2));
+}
+
+.orcid-works .list-row {
+  align-items: flex-start;
+  padding-block: var(--space-4);
+}
+
+/* A work with only ORCID's details opens nothing as a row; its title links to the DOI when it has one. */
+.orcid-work-row {
+  cursor: auto;
+}
+
+/* A work the reader added that OpenAlex did not describe: its identifier, machine data. */
+.orcid-work-identifier {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+/* A suggestion's decision, or an added work's Remove: under the authors, wrapping on a phone. */
+.orcid-work-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* A work decided during this visit keeps its place, as a line with its Undo. */
+.orcid-works .orcid-decided-row {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.orcid-works .orcid-decided-row p {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+/* Which of the reader's works a citing paper cites, under its authors. */
+.orcid-cites-line {
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+/* A coauthor: the name in the serif, the shared count as mono machine data.
+   Prefixed: they have to outrank the row's own muted paragraph. */
+.settings-row-content > p.orcid-coauthor-name {
+  margin-top: 0;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--fs-base);
+  overflow-wrap: anywhere;
+}
+
+.settings-row-content > p.orcid-coauthor-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.orcid-hidden {
+  margin-top: var(--space-4);
+}
+
+.orcid-hidden .orcid-works {
+  margin-top: var(--space-2);
+}
+
+.orcid-caret-open {
+  rotate: 180deg;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* ListRow's hover is the panel's own sunken paper here. */
+  .orcid-works .list-row:hover {
+    background: var(--bg-card);
+  }
+
+  .orcid-works .orcid-work-row:hover {
+    background: none;
+  }
+
+  .orcid-work-title a:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
+.orcid-disconnect-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6);
+}
+
+.orcid-disconnect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}

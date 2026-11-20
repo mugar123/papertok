@@ -85,7 +85,13 @@ the same Node runtime without a separate TypeScript loader.
 Use explicit relative extensions such as `./helper.ts` and `import type` for
 types. Enums, value namespaces and parameter properties are rejected. Node does
 not execute `.tsx`, so behavior that needs a test lives in a `.ts` module the
-test imports. Tests never read source files and match their text: ESLint rejects
+test imports. Wiring that only exists in React (what a provider does with its
+failures, what a route element redirects to) is tested by rendering the app's
+own code in jsdom: `tests/dom/` loads the `.tsx` modules through
+Vite's module runner, stands in for `services/firebase.ts` and for the Worker's
+`fetch`, and `renderFeed` and `renderApp` mount the provider tree and the whole
+app. Tests are still `.test.ts` files that call `createElement`, and still run
+under `node --test`. Tests never read source files and match their text: ESLint rejects
 it, and a structural rule over source belongs in `eslint.config.ts`. Deliberately
 incomplete or invalid test inputs retain their original values: local type
 assertions describe the fixture boundary, not runtime validation.
@@ -131,9 +137,17 @@ a session can finish, lints the files changed on the branch and in the working t
   bullets with the main changes; the page keeps the full list), with the page sentences behind
   each of its clauses, in `src/legal/privacy-policy.ts`. The
   app shows that summary to each signed-in account in a dialog on /feed, after onboarding,
-  once per account in that browser: the version is remembered as soon as the dialog opens, so
-  Got it, Escape, the close button, a press outside and leaving /feed all settle it. Guests and
-  accounts created at or after that time do not see it.
+  once per account: as soon as the dialog opens, the version is written to the account
+  (`users/{uid}/settings/privacyNotice`, `src/services/privacy-notice-service.ts`) and to the
+  browser, so Got it, Escape, the close button, a press outside and leaving /feed all settle it
+  on every device. A browser without a copy asks the account first: until it answers, neither
+  the dialog nor a nudge is chosen, and if the read fails the dialog stays shut for the rest
+  of the visit. Guests and accounts created at or after that time do not see it, and their
+  account is not asked; an account still onboarding waits until it finishes. Every account
+  counts as shown `PRIVACY_NOTICE_BASELINE_VERSION` (2026-11-07, which went out when only
+  the browser remembered it); leave it there. Deploy the Firestore rules for that document
+  before a frontend whose version is later than the baseline: until then the account read is
+  refused, so that version's dialog opens for nobody.
 
 For large features or recommendation changes, open an issue first so the behavior and success
 criteria can be discussed.

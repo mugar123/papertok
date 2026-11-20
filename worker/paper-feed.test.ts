@@ -10,7 +10,7 @@ import type { FollowEntity } from '../src/utils/following.ts';
 import type { FeedPlan } from '../src/context/feed-corpus-requests.ts';
 import type { PaperStoreError } from './paper-store.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
-import { database, ingestPapers, quantize } from './paper-store.ts';
+import { CORPUS_DAYS, database, evictExpired, ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
@@ -74,29 +74,55 @@ test("a reader's new follows are harvested at once up to 20 a day, however many 
 test('a reader writes at most 50 followed lanes a day, new or asked for again; past them a new follow is served from what the corpus has and is not registered', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T12:00:00Z') });
   const { db, ask } = store();
-  const searches = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
-    type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
+  // Authors known by name: each counts as one lane (a keyword counts as three, below).
+  const authors = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'author', canonicalId: `name-${from + index}`, displayName: `Author ${from + index}`,
   }));
   const journals = Array.from({ length: 10 }, (_, index) => ({ type: 'journal', canonicalId: `S${1_000 + index}`, displayName: `Journal ${index}` }));
   const registered = () => (db.prepare('SELECT COUNT(*) AS n FROM followed_lanes').get() as { n: number }).n;
   // A request brings up to 20 follows and 10 journals.
-  await ask({ follows: [...searches(0, 20), ...journals] });
+  await ask({ follows: [...authors(0, 20), ...journals] });
   assert.equal(registered(), 30);
-  await ask({ follows: searches(30, 20) });
+  await ask({ follows: authors(30, 20) });
   assert.equal(registered(), 50);
-  assert.deepEqual(await ask({ follows: searches(50, 1) }), { papers: [] });
+  assert.deepEqual(await ask({ follows: authors(50, 1) }), { papers: [] });
   assert.equal(registered(), 50);
   // Another reader's new follow is still registered.
-  await ask({ follows: searches(50, 1) }, 'reader-2');
+  await ask({ follows: authors(50, 1) }, 'reader-2');
   assert.equal(registered(), 51);
 
   // A week later, the 30 lanes the reader asks for again are written again and leave them 20 new ones.
   t.mock.timers.setTime(Date.parse('2026-10-29T12:00:01Z'));
-  await ask({ follows: [...searches(0, 20), ...journals] });
-  await ask({ follows: searches(51, 20) });
-  assert.deepEqual(await ask({ follows: searches(71, 1) }), { papers: [] });
+  await ask({ follows: [...authors(0, 20), ...journals] });
+  await ask({ follows: authors(51, 20) });
+  assert.deepEqual(await ask({ follows: authors(71, 1) }), { papers: [] });
   assert.equal(registered(), 71);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM followed_lanes WHERE requested_at = '2026-10-29T12:00:01.000Z'").get() as { n: number }).n, 50);
+});
+
+// A keyword's harvest asks OpenAlex for two or three searches on its first night
+// and each week, where another lane's asks one request. Counted as one lane,
+// 40 new keywords a day from one account kept another reader's lane 13 nights
+// from its nightly refresh; counted as three, 5 (measured 2026-11-14).
+test("a keyword counts as three of a reader's 50 lanes a day, so 16 new ones fit and a follow of another kind still fits beside them", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T12:00:00Z') });
+  const { db, ask } = store();
+  const keywords = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'topic', canonicalId: `query-${from + index}`, displayName: `Keyword ${from + index}`, metadata: { query: `keyword ${from + index}` },
+  }));
+  const author = (index: number) => ({ type: 'author', canonicalId: `name-${index}`, displayName: `Author ${index}` });
+  const registered = () => db.prepare('SELECT lane FROM followed_lanes ORDER BY lane').all().map(row => (row as { lane: string }).lane);
+  await ask({ follows: keywords(0, 16) });
+  assert.equal(registered().length, 16);
+  // Two of the 50 are left: a seventeenth keyword does not fit, and the author sent after it does.
+  await ask({ follows: [...keywords(16, 1), author(0)] });
+  assert.equal(registered().includes('query:keyword 16'), false);
+  assert.ok(registered().includes('author-name:author 0'));
+  await ask({ follows: [author(1), author(2)] });
+  assert.equal(registered().length, 18, 'one lane was left');
+  // Another reader's keywords are still registered.
+  await ask({ follows: keywords(16, 1) }, 'reader-2');
+  assert.ok(registered().includes('query:keyword 16'));
 });
 
 // Every write of a lane, new or asked for again, counts in the app's 4,000 a
@@ -160,12 +186,12 @@ test('two follows that name one lane count once against the allowances and are h
   ] });
   assert.deepEqual((runs[0] as { params: { lanes: string[] } }).params.lanes, ['author-name:author g']);
   // 49 more new lanes fit the reader's 50.
-  const searches = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
-    type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
+  const authors = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'author', canonicalId: `name-${from + index}`, displayName: `Author ${from + index}`,
   }));
-  await ask({ follows: searches(0, 20) });
-  await ask({ follows: searches(20, 20) });
-  await ask({ follows: searches(40, 9) });
+  await ask({ follows: authors(0, 20) });
+  await ask({ follows: authors(20, 20) });
+  await ask({ follows: authors(40, 9) });
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM followed_lanes').get() as { n: number }).n, 50);
 });
 
@@ -241,12 +267,18 @@ test('a liked paper arXiv answers after 2 s is still filed by the lookup after t
     if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
     else (globalThis as TestGlobals).caches = realCaches;
   });
-  const asked = async (count: number) => {
-    for (let turn = 0; arxivAsked < count; turn += 1) {
-      if (turn > 1_000) throw new Error('arXiv was never asked');
+  // Before a lookup reaches arXiv, the ledger hashes its subjects with
+  // `crypto.subtle`, which answers from a thread pool after however much real
+  // time the machine takes, so a wait is on its condition and bounded in real
+  // time (`performance` is not mocked); the mocked clock stands still meanwhile.
+  const until = async (reached: () => boolean, otherwise: string) => {
+    const giveUp = performance.now() + 10_000;
+    while (!reached()) {
+      assert.ok(performance.now() < giveUp, `${otherwise} in 10 s of real time`);
       await new Promise(resolve => setImmediate(resolve));
     }
   };
+  const asked = (count: number) => until(() => arxivAsked >= count, 'arXiv was not asked');
 
   // After the page, the lookup waits for the answer. (Each case has its own
   // store: arXiv's beat would make the second request wait for a seat.)
@@ -264,8 +296,13 @@ test('a liked paper arXiv answers after 2 s is still filed by the lookup after t
   // `{ ids }` answers inline, so it waits 2 s at most.
   const inline = store();
   const answer = inline.ask({ ids: ['2610.55555'] });
+  let answered = false;
+  answer.then(() => { answered = true; }, () => { answered = true; });
   await asked(2);
   t.mock.timers.tick(2_000);
+  // A lookup that waited for arXiv past its 2 s would never answer here: the
+  // clock moves no further until it has.
+  await until(() => answered, 'the inline lookup did not answer at its 2 s');
   assert.deepEqual((await answer).papers, []);
   t.mock.timers.tick(1_000);
 });
@@ -751,6 +788,77 @@ test('a first page that continues goes on with the walk when the load planned ot
   await ask(request(0, []));
   await ask(request(1, ids(papers.slice(0, 15))));
   assert.deepEqual(ids((await ask(request(0, [], { groups: groups(2), continues: true }))).papers), ids(papers.slice(15, 30)));
+});
+
+// Two tabs of one reader start Most recent runs with the same exclusions. When
+// their daily walks shared a key, a tab's next page went on from where the
+// other tab's run had walked to, past papers its own run was never sent
+// (ENG-198). Each run names itself (`walk`) and keeps a walk of its own.
+test('two Most recent runs of one reader each go on from their own pages', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(5);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  // A run as Most recent asks: pages by number, each with the papers the run received as seen.
+  const run = (walk: string) => {
+    const received: string[] = [];
+    let page = 0;
+    return async () => {
+      const answer = ids((await ask({ categories: ['cs.CL'], order: 'daily', page: page++, pageSize: 1, seen: feedSeenFilter(received), skipsSeen: true, walk })).papers);
+      received.push(...answer);
+      return answer;
+    };
+  };
+  const tabA = run('run-of-tab-a');
+  const tabB = run('run-of-tab-b');
+  assert.deepEqual(await tabA(), ids(papers.slice(0, 1)));
+  assert.deepEqual([await tabB(), await tabB(), await tabB()], [ids(papers.slice(0, 1)), ids(papers.slice(1, 2)), ids(papers.slice(2, 3))]);
+  assert.deepEqual(await tabA(), ids(papers.slice(1, 2)), "the first tab's second page is the paper after its own first");
+});
+
+// Only Most recent's walk (a daily walk without `exact`) is kept by the run it
+// names. Every other request, and every other value, keeps the key it had, so
+// a deploy leaves their kept orders and walks where they were.
+test('only a Most recent walk is kept by the run it names, and other requests and other values keep the key they had', async t => {
+  const entries = rankingCaches(t);
+  const { env, ask } = store();
+  await ingestPapers(env, recent(3).map(item => ({ paper: item, lanes: [] })));
+  // Where the first page of a request keeps its order.
+  const keptAt = async (body: object) => {
+    entries.clear();
+    await ask({ categories: ['cs.CL'], pageSize: 15, ...body });
+    return [...entries.keys()];
+  };
+  const entryOf = async (key: object) => {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`reader-1\n${JSON.stringify(key)}`));
+    return [`https://papertok.internal/cache/store-ranking-v5/${Buffer.from(digest).toString('hex')}`];
+  };
+  const seen = { seen: feedSeenFilter([]), skipsSeen: true };
+  const groups = [{ categories: ['cs.CL'], exampleCategories: ['cs.CL'], positiveIds: [], weight: 1 }];
+  const forYou = { groups, notable: 3, ...seen };
+  const others: Array<[string, object]> = [
+    ["For you's main page", forYou],
+    ["For you's main page leaning toward older papers", { ...forYou, order: 'relevance' }],
+    ["a custom feed's page by number", { exact: true, order: 'daily' }],
+    ["a custom feed's walk", { exact: true, order: 'daily', ...seen }],
+    ['a daily page by number', { order: 'daily' }],
+    ['a daily page with the filter for notable papers only', { order: 'daily', seen: feedSeenFilter([]) }],
+  ];
+  for (const [name, body] of others) {
+    const unnamed = await keptAt(body);
+    assert.equal(unnamed.length, 1, name);
+    assert.deepEqual(await keptAt({ ...body, walk: 'run-of-tab-a' }), unnamed, name);
+  }
+  assert.deepEqual(await keptAt(forYou), await entryOf({ follows: [], excluded: [], pageSize: 15, notable: true }));
+  const mostRecent = { order: 'daily', ...seen };
+  const unnamed = await keptAt(mostRecent);
+  assert.deepEqual(unnamed, await entryOf({ follows: [], order: 'daily', excluded: [], pageSize: 15, notable: false }));
+  const malformed = ['', 'run-of-', 'run of tab a', 'run/of/tab/a', 'rün-of-tab-a', 'a'.repeat(65), 'a'.repeat(10_000), 12_345_678, true, null, ['run-of-tab-a'], { id: 'run-of-tab-a' }];
+  for (const walk of malformed) assert.deepEqual(await keptAt({ ...mostRecent, walk }), unnamed, `walk ${JSON.stringify(walk).slice(0, 24)}`);
+  const named = await keptAt({ ...mostRecent, walk: 'run-of-tab-a' });
+  assert.notDeepEqual(named, unnamed);
+  assert.notDeepEqual(await keptAt({ ...mostRecent, walk: 'run-of-tab-b' }), named);
+  for (const walk of ['run-of-a', 'a'.repeat(64), crypto.randomUUID()]) assert.notDeepEqual(await keptAt({ ...mostRecent, walk }), unnamed, walk);
 });
 
 // A rejection or a like since the last page ranks again after the ranks the
@@ -1354,6 +1462,263 @@ test("a follow's papers reach the next page of every reader who asked for it bef
   assert.deepEqual(ids((await ask(request(2), 'reader-2')).papers), ['2610.50003']);
 });
 
+test('a follow whose lane has not finished its first harvest is named as loading, and no longer once it has', async () => {
+  const { db, ask } = store();
+  const follow = { type: 'author', canonicalId: 'https://openalex.org/A123', displayName: 'Ana Pérez' };
+  const first = await ask({ categories: ['cs.CL'], follows: [follow], exact: true });
+  assert.deepEqual(first.loading, [{ type: 'author', canonicalId: 'https://openalex.org/A123' }]);
+  assert.equal('loading' in await ask({ categories: ['cs.CL'], follows: [follow] }), false, 'not named to a request that does not ask');
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A123', '2026-10-22')").run();
+  const second = await ask({ categories: ['cs.CL'], follows: [follow], exact: true });
+  assert.equal(second.loading, undefined);
+});
+
+// A keyword lane records its weekly listing before it asks for the night's papers.
+test("a keyword whose first harvest has filed its weekly listing and not yet the night's papers is still loading", async () => {
+  const { db, ask } = store();
+  const follow = { type: 'topic', canonicalId: 'query-kagome', displayName: 'kagome superconductors', metadata: { query: 'kagome superconductors' } };
+  const at = new Date().toISOString();
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES ('query:kagome superconductors', ?, ?)").run(at, at);
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through, reading, catalogued_at) VALUES ('openalex-follows', 'query:kagome superconductors', '', 'phrase', ?)").run(at);
+  const first = await ask({ follows: [follow], exact: true });
+  assert.deepEqual(first.loading, [{ type: 'topic', canonicalId: 'query-kagome' }]);
+  db.prepare("UPDATE lane_state SET harvested_through = ? WHERE lane = 'query:kagome superconductors'").run(at);
+  assert.equal((await ask({ follows: [follow], exact: true })).loading, undefined);
+});
+
+test('an exact request that names only an area is a request', async () => {
+  const { env, ask } = store();
+  await ingestPapers(env, [{ paper: paper('2610.90001', 'A quantum error-correcting code', 1), lanes: ['quant-ph'] }]);
+  const { papers } = await ask({ areas: ['physics'], exact: true });
+  assert.deepEqual(ids(papers), ['2610.90001']);
+});
+
+test('an exact request that names only a journal is a request, served that journal and no category', async () => {
+  const { env, ask } = store();
+  await ingestPapers(env, [
+    { paper: { ...paper('2610.90011', 'A journal article', 1), publicationType: 'article' }, lanes: ['source:S123'] },
+    { paper: paper('2610.90012', 'A preprint of a category', 1), lanes: ['cs.CL'] },
+  ]);
+  const { papers } = await ask({ follows: [{ type: 'journal', canonicalId: 'S123', displayName: 'A Journal' }], exact: true });
+  assert.deepEqual(ids(papers), ['2610.90011']);
+});
+
+test('an exact request whose follows have no lane is no request, where any other request is served no papers', async () => {
+  const { ask } = store();
+  // A topic that is one of the app's categories has no lane of its own.
+  const categoryTopic = { type: 'topic', canonicalId: 'cs.CL', displayName: 'Computation and Language' };
+  await assert.rejects(ask({ follows: [categoryTopic], exact: true }), { code: 'LANES_REQUIRED' });
+  assert.deepEqual(await ask({ follows: [categoryTopic] }), { papers: [] });
+});
+
+test('an exact request keeps its order apart from the same request without it, whose key is unchanged', async t => {
+  const entries = rankingCaches(t);
+  const { env, ask } = store();
+  await ingestPapers(env, [{ paper: stored, lanes: [] }]);
+  const follow = { type: 'author', canonicalId: 'https://openalex.org/A123', displayName: 'Ana Pérez' };
+  // With a follow, a request reads no area lane: both read the same lanes.
+  await ask({ categories: ['cs.CL'], follows: [follow] }, 'reader-1');
+  const key = JSON.stringify({ lanes: ['author:A123', 'cs.CL'], order: 'recent', excluded: [], pageSize: 15, notable: false });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`reader-1\n${key}`));
+  assert.deepEqual([...entries.keys()], [`https://papertok.internal/cache/store-ranking-v5/${Buffer.from(digest).toString('hex')}`]);
+  await ask({ categories: ['cs.CL'], follows: [follow], exact: true }, 'reader-1');
+  assert.equal(entries.size, 2);
+});
+
+const MINUTE_MS = 60_000;
+
+async function evictAll(env: WorkerEnv, now: number) {
+  let after: number | null = 0;
+  while (after !== null) after = await evictExpired(env, now, after);
+}
+
+// Four days of cs.CL arrivals, 15 papers each, the newest day first and each
+// day's papers newest first: a custom feed's Newest (`exact`, `order: 'daily'`)
+// serves one day a page. The last `count` papers of a day in `late` arrived 90
+// days after their date (CORPUS_DAYS), so their rows expire `keptMinutes` from
+// now, a second apart, and the nightly eviction then drops them.
+async function arrivalDays(env: WorkerEnv, late = new Map<number, { count: number; keptMinutes: number }>()) {
+  const now = Date.now();
+  const days = [0, 1, 2, 3].map(day => Array.from({ length: 15 }, (_, index) => {
+    const { count = 0, keptMinutes = 0 } = late.get(day) ?? {};
+    const daysAgo = index >= 15 - count ? CORPUS_DAYS - (keptMinutes * MINUTE_MS - index * 1_000) / DAY_MS : day + (index + 1) / 1_440;
+    return paper(`2610.8${day}${String(index).padStart(3, '0')}`, `Paper ${index} of arrival day ${day}`, daysAgo);
+  }));
+  for (const [day, papers] of days.entries()) await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })), { now: now - day * DAY_MS });
+  return days;
+}
+
+// A custom feed's page, as the app asks for it.
+const customFeedPage = (ask: ReturnType<typeof store>['ask'], body: object) => async (page: number) => {
+  const { papers, more } = await ask({ categories: ['cs.CL'], exact: true, pageSize: 15, ...body, page });
+  return { papers: ids(papers), more };
+};
+
+const droppedFromPage: Array<[number, string]> = [[15, 'every work of the second page'], [1, 'one work of the second page']];
+for (const [count, name] of droppedFromPage) {
+  test(`an exact page asked by number says more follow when the corpus dropped ${name} from the order kept for the reader, and the last page and the one past it say none`, async t => {
+    rankingCaches(t);
+    const { env, ask } = store();
+    const days = await arrivalDays(env, new Map([[1, { count, keptMinutes: 5 }]]));
+    const page = customFeedPage(ask, { order: 'daily' });
+    const first = await page(0);
+    // The nightly eviction, 10 minutes on: the next pages are still read from
+    // the order the first page kept, which names the works it dropped.
+    await evictAll(env, Date.now() + 10 * MINUTE_MS);
+    assert.deepEqual([first, await page(1), await page(2), await page(3), await page(4)], [
+      { papers: ids(days[0]), more: true },
+      { papers: ids(days[1].slice(0, 15 - count)), more: true },
+      { papers: ids(days[2]), more: true },
+      { papers: ids(days[3]), more: false },
+      { papers: [], more: false },
+    ]);
+  });
+}
+
+test('an exact page asked by number that holds the whole of a fresh corpus says no page follows', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(15);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const page = (pageSize: number) => customFeedPage(ask, { pageSize })(0);
+  assert.deepEqual(await page(15), { papers: ids(papers), more: false });
+  assert.deepEqual(await page(20), { papers: ids(papers), more: false });
+  assert.deepEqual(await page(14), { papers: ids(papers.slice(0, 14)), more: true });
+});
+
+test("only an exact page asked by number says whether more follow: For you's pages, a request without exact and an exact walk answer as before", async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(20);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const answer = async (body: object) => {
+    const { papers: served, ...rest } = await ask({ categories: ['cs.CL'], pageSize: 15, ...body });
+    return { papers: ids(served), ...rest };
+  };
+  // For you's main page: interest groups, the seen filter and notable cards.
+  const forYou = { groups: [{ categories: ['cs.CL'], exampleCategories: ['cs.CL'], positiveIds: [], weight: 1 }], seen: feedSeenFilter([]), skipsSeen: true, notable: 3 };
+  const first = ids(papers.slice(0, 15));
+  assert.deepEqual(await answer({ exact: true }), { papers: first, more: true });
+  assert.deepEqual(await answer({ exact: true, page: 101 }), { papers: [], more: false });
+  assert.deepEqual(await answer({}), { papers: first });
+  assert.deepEqual(await answer({ page: 101 }), { papers: [] });
+  assert.deepEqual(await answer(forYou), { papers: first, skipsSeen: true });
+  assert.deepEqual(await answer({ exact: true, seen: feedSeenFilter([]), skipsSeen: true }), { papers: first, skipsSeen: true });
+});
+
+// The route serves a request without `skipsSeen` no papers past page 100.
+test('an exact page 100, the last the route serves by number, says no page follows though its order has ranks after it', async t => {
+  rankingCaches(t);
+  const { db, ask } = store();
+  const ranking = Array.from({ length: 1_530 }, (_, rank) => `2610.${String(rank).padStart(5, '0')}`);
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  db.exec('BEGIN');
+  ranking.forEach((paperId, rank) => {
+    const published = new Date(Date.now() - (rank + 1) * MINUTE_MS).toISOString();
+    insertWork.run(rank + 1, JSON.stringify({ id: paperId, title: `Paper ${rank}`, authors: [] }), published, '2099-01-01T00:00:00.000Z');
+    insertLane.run('cs.CL', rank + 1, published);
+  });
+  db.exec('COMMIT');
+  const page = customFeedPage(ask, {});
+  assert.deepEqual(await page(99), { papers: ranking.slice(1_485, 1_500), more: true });
+  assert.deepEqual(await page(100), { papers: ranking.slice(1_500, 1_515), more: false });
+  assert.deepEqual(await page(101), { papers: [], more: false });
+});
+
+// The app asks for the next page while `more` is true. On a finite corpus it
+// must turn false, and no later page may then bring a paper.
+test("following more page by page reaches the end of a custom feed's order through works the nightly eviction drops and orders ranked again, and no later page brings a paper", async t => {
+  rankingCaches(t);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const { env, ask } = store();
+  const days = await arrivalDays(env, new Map([[1, { count: 3, keptMinutes: 5 }], [2, { count: 5, keptMinutes: 25 }]]));
+  const page = customFeedPage(ask, { order: 'daily' });
+  // Ten minutes apart, each after the nightly eviction: the second page reads
+  // the first page's order, the third ranks it again, the fourth reads that.
+  const run = [];
+  for (let number = 0; ; number += 1) {
+    assert.ok(number <= 100, 'more turned false by the last page the route serves');
+    if (number > 0) {
+      t.mock.timers.tick(10 * MINUTE_MS);
+      await evictAll(env, Date.now());
+    }
+    const answer = await page(number);
+    run.push(answer);
+    if (answer.more !== true) break;
+  }
+  assert.deepEqual(run, [
+    { papers: ids(days[0]), more: true },
+    { papers: ids(days[1].slice(0, 12)), more: true },
+    { papers: ids(days[2]), more: true },
+    { papers: ids(days[3]), more: false },
+  ]);
+  const after = [await page(4)];
+  // Ranked again 22 minutes after its order, with nothing left to serve: the
+  // order it keeps is not final, so the next page ranks again too.
+  t.mock.timers.tick(12 * MINUTE_MS);
+  after.push(await page(5), await page(6));
+  // The kept order is gone: ranked from the top.
+  t.mock.timers.tick(2 * 60 * MINUTE_MS);
+  after.push(await page(7));
+  assert.deepEqual(after, Array.from({ length: 4 }, () => ({ papers: [], more: false })));
+});
+
+// A page without likes, with a rejection, decides only its first ranks
+// (`decided`): a page past them ranks again, from more vectors.
+test('following more page by page goes through every paper of an order that decided its first ranks only', async t => {
+  const entries = rankingCaches(t);
+  const { env, db, ask } = store();
+  const papers = recent(700);
+  await ingestPapers(env, [...papers, paper('2610.40001', 'Rejected paper', 30)].map(item => ({ paper: item, lanes: [] })));
+  papers.forEach(item => embed(db, item.id, [0, 1]));
+  embed(db, '2610.40001', [1, 0]);
+  const page = customFeedPage(ask, { negativeIds: ['2610.40001'], pageSize: 30 });
+  const served: string[] = [];
+  const more: Array<boolean | undefined> = [];
+  for (let number = 0; ; number += 1) {
+    assert.ok(number <= 100, 'more turned false by the last page the route serves');
+    const answer = await page(number);
+    if (number === 0) {
+      const kept = await [...entries.values()][0].clone().json<{ final: boolean; decided?: number }>();
+      assert.deepEqual({ final: kept.final, decided: kept.decided }, { final: false, decided: 500 }, 'the first page decided 500 ranks');
+    }
+    served.push(...answer.papers);
+    more.push(answer.more);
+    if (answer.more !== true) break;
+  }
+  assert.deepEqual([...served].sort(), [...ids(papers), '2610.40001'].sort(), 'every paper once');
+  assert.deepEqual(more, Array.from({ length: 24 }, (_, index) => index < 23));
+});
+
+// A follow still in its first harvest keeps the order cut to the ranks a page
+// served, so each next page ranks again after them: whether more follow is
+// told by the order that page ranks, not by the cut one it read.
+test('following more page by page while a follow is still loading goes through every paper once', async t => {
+  const entries = rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(40);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const page = customFeedPage(ask, { follows: [{ type: 'author', canonicalId: 'https://openalex.org/A123', displayName: 'Ana Pérez' }] });
+  const run = [];
+  for (let number = 0; ; number += 1) {
+    assert.ok(number <= 100, 'more turned false by the last page the route serves');
+    const answer = await page(number);
+    if (number === 0) {
+      const kept = await [...entries.values()][0].clone().json<{ ranks: unknown[]; final: boolean }>();
+      assert.deepEqual({ ranks: kept.ranks.length, final: kept.final }, { ranks: 15, final: false }, 'the first page keeps only the ranks it served');
+    }
+    run.push(answer);
+    if (answer.more !== true) break;
+  }
+  assert.deepEqual(run, [
+    { papers: ids(papers.slice(0, 15)), more: true },
+    { papers: ids(papers.slice(15, 30)), more: true },
+    { papers: ids(papers.slice(30)), more: false },
+  ]);
+  assert.deepEqual(await page(3), { papers: [], more: false });
+});
+
 // Runs `work` once, right after the corpus's next batch of reads: a page's
 // candidates, read in one batch.
 function afterNextBatch(env: WorkerEnv, work: () => Promise<void>) {
@@ -1627,20 +1992,21 @@ test('a slow page the client gives up on writes one aborted line with the steps 
   const waited: Array<Promise<unknown>> = [];
   const lines = await timedPage(t, 0, {
     waited,
-    slow: [[/JOIN work_keys k/, 1_000], [/FROM work_lanes WHERE lane = \?/, 2_600]],
-    abortAfter: /FROM work_lanes WHERE lane = \?/,
+    slow: [[/JOIN work_keys k/, 1_000], [/JOIN work_vectors v ON v\.work_id = j\.value/, 2_600]],
+    abortAfter: /JOIN work_vectors v ON v\.work_id = j\.value/,
   });
   // Only the page's follow-up (follows to register, a like to look up) is handed over, as on main.
   assert.equal((await Promise.all(waited)).filter(work => work instanceof Response).length, 0, 'the answer is not handed to waitUntil');
   assert.equal(lines.length, 1, 'the answer the Node test still reads writes no second line');
-  // Left while the first wave was still reading: that step is not finished.
+  // Left while the candidates' vectors were still being read: that step is
+  // not finished, and the first wave, which looked up the ids, is.
   assert.deepEqual(JSON.parse(lines[0]), {
     event: 'slow_feed_request',
     route: '/store/papers',
     aborted: true,
     totalMs: 3_600,
-    steps: { auth: 0, body: 0, quota: 0, keys: 1_000 },
-    counts: { lanes: 2, groups: 1 },
+    steps: { auth: 0, body: 0, quota: 0, keys: 1_000, wave1: 1_000 },
+    counts: { lanes: 2, groups: 1, candidates: 3 },
   });
 });
 
@@ -1689,15 +2055,18 @@ test("a follows page's slow read of its followed lanes is the follows step", asy
   assert.equal(JSON.parse(line).steps.follows, 1_600);
 });
 
-test('each D1 read of a slow first page is counted in its own step', async t => {
+// The ids are looked up beside the candidates, so `keys` is within `wave1`.
+// The clock here moves by each slow read in turn, where reads beside each
+// other overlap on Workers: one read is slow in each round trip.
+test('each D1 round trip of a slow first page is counted in its own step', async t => {
   const [line] = await timedPage(t, 0, {
     slow: [
       [/JOIN work_keys k/, 300],
-      [/FROM work_lanes WHERE lane = \?/, 400],
+      [/JOIN work_vectors v ON v\.work_id = j\.value/, 500],
       [/w\.paper, w\.kept_until/, 900],
     ],
   });
-  assert.deepEqual(JSON.parse(line).steps, { auth: 0, body: 0, quota: 0, keys: 300, wave1: 400, vectors: 0, rankCpu: 0, works: 900, cacheWrite: 0 });
+  assert.deepEqual(JSON.parse(line).steps, { auth: 0, body: 0, quota: 0, keys: 300, wave1: 300, vectors: 500, rankCpu: 0, works: 900, cacheWrite: 0 });
 });
 
 // The first page keeps its order; the second reads it from the cache.

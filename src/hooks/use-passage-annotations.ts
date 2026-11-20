@@ -1,11 +1,10 @@
 import type { Paper } from '../models/paper.ts';
-import type { UserHighlight } from '../services/user-highlight-service.ts';
+import type { HighlightColor, UserHighlight } from '../services/user-highlight-service.ts';
 import type { ProductAnalyticsEvent } from '../services/analytics-service.ts';
-export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
+export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; occurrence?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
 interface AnnotationOptions {
   uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
-  onQuota?: (remaining: number) => void;
   trackEvent?: (name: ProductAnalyticsEvent, params: Record<string, unknown>) => unknown;
 }
 
@@ -16,6 +15,7 @@ import {
   saveUserHighlight,
 } from '../services/user-highlight-service.ts';
 import { annotatePassage, PaperAnnotationError } from '../services/paper-annotation-service.ts';
+import { noteAIUsesLeft } from '../services/paper-rewrite-service.ts';
 
 /**
  * Everything a passage can become.
@@ -61,10 +61,13 @@ export function usePassageAnnotations({
   paperId,
   level,
   language,
-  onQuota,
   trackEvent,
 }: AnnotationOptions) {
-  const [loaded, setLoaded] = useState<PassageAnnotation[]>([]);
+  const owner = `${uid}:${paperId}`;
+  const [loaded, setLoadedState] = useState<{ owner: string; items: PassageAnnotation[] }>({ owner: '', items: [] });
+  const setLoaded = useCallback((update: (items: PassageAnnotation[]) => PassageAnnotation[]) => {
+    setLoadedState(state => ({ owner, items: update(state.owner === owner ? state.items : []) }));
+  }, [owner]);
   const [pending, setPending] = useState<PassageSelection | null>(null);
   const [busy, setBusy] = useState(IDLE);
   const [error, setError] = useState<string | null | undefined>(null);
@@ -77,16 +80,17 @@ export function usePassageAnnotations({
   // Derived rather than cleared: without a reader or a paper there is nothing to
   // show, and writing that emptiness into state from an effect would cost a
   // cascading render — and leave whatever was there on screen until it landed.
-  const annotations = uid && paperId ? loaded : EMPTY;
+  const annotations = uid && paperId && loaded.owner === owner ? loaded.items : EMPTY;
 
   useEffect(() => {
     if (!uid || !paperId) return undefined;
     let active = true;
     void listUserHighlights(uid, paperId).then(stored => {
-      if (active) setLoaded(stored);
+      if (!active) return;
+      setLoaded(current => [...stored, ...current.filter(item => !stored.some(entry => entry.id === item.id))]);
     });
     return () => { active = false; };
-  }, [paperId, uid]);
+  }, [paperId, setLoaded, uid]);
 
   // An answer in flight when the reader closes is an answer nobody will read,
   // and its use has already been spent either way.
@@ -112,7 +116,7 @@ export function usePassageAnnotations({
     setLoaded(current => current.map(item => (
       item.id === annotationId && item.fresh ? { ...item, fresh: false } : item
     )));
-  }, []);
+  }, [setLoaded]);
 
   /* One timer per annotation, because two can be created inside the same
      window — ask for an explanation, mark another passage while it writes —
@@ -136,7 +140,7 @@ export function usePassageAnnotations({
     };
   }, []);
 
-  const store = useCallback(async ({ kind, note }: { kind: UserHighlight['kind']; note?: string }) => {
+  const store = useCallback(async ({ kind, note, color }: { kind: UserHighlight['kind']; note?: string; color?: HighlightColor }) => {
     if (!uid || !pending) return null;
     const saved = await saveUserHighlight(uid, {
       paperId,
@@ -148,8 +152,10 @@ export function usePassageAnnotations({
       quote: pending.quote,
       endParagraphIndex: pending.endParagraphIndex,
       endQuote: pending.endQuote,
+      occurrence: pending.occurrence,
       kind,
       note,
+      color,
     });
     if (!saved) return null;
     setLoaded(current => [
@@ -160,21 +166,21 @@ export function usePassageAnnotations({
     ]);
     scheduleSettle(saved.id);
     return saved;
-  }, [language, level, paper?.title, paperId, pending, scheduleSettle, uid]);
+  }, [language, level, paper?.title, paperId, pending, scheduleSettle, setLoaded, uid]);
 
-  const highlight = useCallback(async () => {
-    const saved = await store({ kind: 'user' });
+  const highlight = useCallback(async (color?: HighlightColor) => {
+    const saved = await store({ kind: 'user', color });
     if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level, paper_id: paperId });
     setPending(null);
     return saved;
   }, [level, paper?.title, paperId, store, trackEvent]);
 
-  const saveNote = useCallback(async (text: string) => {
+  const saveNote = useCallback(async (text: string, color?: HighlightColor) => {
     const note = String(text || '').trim();
     if (!note) return null;
     setBusy('saving');
     try {
-      const saved = await store({ kind: 'user', note });
+      const saved = await store({ kind: 'user', note, color });
       if (saved) trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'user', paper_id: paperId });
       setPending(null);
       return saved;
@@ -206,7 +212,7 @@ export function usePassageAnnotations({
         language,
         signal: controller.signal,
       });
-      if (typeof answer.remainingUses === 'number') onQuota?.(answer.remainingUses);
+      if (uid && typeof answer.remainingUses === 'number') noteAIUsesLeft(uid, answer.remainingUses);
       const saved = await saveUserHighlight(uid, {
         paperId,
         paperTitle: paper?.title,
@@ -252,19 +258,20 @@ export function usePassageAnnotations({
     } finally {
       setBusy(IDLE);
     }
-  }, [language, level, onQuota, paper, paperId, pending, scheduleSettle, trackEvent, uid]);
+  }, [language, level, paper, paperId, pending, scheduleSettle, setLoaded, trackEvent, uid]);
 
   const remove = useCallback(async (annotationId: string) => {
-    if (!annotationId) return;
+    if (!annotationId) return false;
     // Removed from the rail first: the write is the slow part, and a card that
     // lingers after the click reads as a click that did not land. A failure
     // puts it back.
     const removed = annotations.find(item => item.id === annotationId);
     setLoaded(current => current.filter(item => item.id !== annotationId));
-    if (!uid || removed?.unsaved) return;
+    if (!uid || removed?.unsaved) return true;
     const ok = await removeUserHighlight(uid, annotationId);
     if (!ok && removed) setLoaded(current => [...current, removed]);
-  }, [annotations, uid]);
+    return ok;
+  }, [annotations, setLoaded, uid]);
 
   return {
     annotations,

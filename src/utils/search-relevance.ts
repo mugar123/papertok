@@ -1,6 +1,8 @@
 import type { Paper } from '../models/paper.ts';
 import type { EntityMetrics, OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../services/adapters/open-alex-types.ts';
 
+import { knownCitationCount } from '../models/paper.ts';
+
 // An unknown section scores 99 in getSearchSectionOrder, so a section missing
 // from here silently sinks to the bottom of every search forever.
 const DEFAULT_SECTION_ORDER = ['papers', 'topics', 'authors', 'institutions', 'projects'];
@@ -238,6 +240,17 @@ function approximatePhraseScore(query: string, value: string) {
     if (matches) best = Math.max(best, (edits ? 82 : 90) + 3 * words.length / target.length);
   }
   return best;
+}
+
+/**
+ * "2026 · 12 cit." for a paper row of the palette: the year, and the citations
+ * a source counted. A count nobody gave is left out, not printed as 0.
+ */
+export function paperRowNumbers(paper: Pick<Paper, 'year' | 'citationCount' | 'citationCountKnown'>) {
+  const citations = knownCitationCount(paper);
+  return [paper.year, citations === null ? null : `${citations.toLocaleString('en-US')} cit.`]
+    .filter(value => value != null)
+    .join(' · ');
 }
 
 /**

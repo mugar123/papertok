@@ -56,13 +56,54 @@ export function safeCatalogUrl(value: unknown) {
   }
 }
 
+const DOI_RESOLVER = /^https?:\/\/(?:dx\.)?doi\.org\//i;
+
+/**
+ * The doi.org link of a DOI, or '' when the value is not DOI-shaped or no
+ * URL can encode it.
+ *
+ * A DOI may hold any printable character, and doi.org decodes the path of a
+ * link once, so each character that means something else in a URL travels
+ * percent-encoded, once. `encodeURI` does that for spaces, `<`, `>`, `"`, `%`
+ * and the rest, but leaves `#` and `?`, which end the path where they stand:
+ * doi.org would be asked for `…3.0.co;2-` in place of `…3.0.co;2-#`. A `.` or
+ * `..` segment is the exception no encoding covers: the URL parser resolves
+ * it, written as `%2E` too, before the request leaves.
+ *
+ * A value is read in one of two ways:
+ * - a DOI given as itself is read as written. `10.1234/a%3Fb` has `%3F` among
+ *   its characters and links to `…/a%253Fb`;
+ * - a resolver link is a URL, read as doi.org reads it: the DOI is its path,
+ *   decoded once, and a `?` or `#` ends the path, so a query or fragment is
+ *   not part of the DOI (`https://doi.org/10.1000/1?noredirect` is 10.1000/1).
+ *   `https://doi.org/10.1234/a%3Fb` is 10.1234/a?b, so this function's own
+ *   link comes back unchanged. A path that does not decode (a `%` that
+ *   starts no escape, or escapes that are not UTF-8) is read as written.
+ *   Space around the DOI is not part of it, decoded or not.
+ * A provider that writes the resolver before the DOI's characters unencoded,
+ * as OpenAlex does (`…/3.0.co;2-#`), has written no URL: its adapter strips
+ * the resolver and hands the bare DOI on.
+ */
 export function safeDoiUrl(doi: unknown) {
-  const normalized = String(doi || '')
-    .trim()
-    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
-  return /^10\.\d{4,9}\/.+/.test(normalized)
-    ? `https://doi.org/${encodeURI(normalized)}`
-    : '';
+  const text = String(doi || '').trim();
+  let normalized = text.replace(DOI_RESOLVER, '');
+  if (normalized !== text) {
+    normalized = normalized.split(/[?#]/, 1)[0];
+    try {
+      normalized = decodeURIComponent(normalized);
+    } catch {
+      // A `%` that starts no escape, or escapes that are not UTF-8: the path
+      // is read as written.
+    }
+    normalized = normalized.trim();
+  }
+  if (!/^10\.\d{4,9}\/.+/.test(normalized)) return '';
+  try {
+    return `https://doi.org/${encodeURI(normalized).replace(/[#?]/g, character => encodeURIComponent(character))}`;
+  } catch {
+    // A lone surrogate has no UTF-8 form, so no link can carry the DOI.
+    return '';
+  }
 }
 
 export function isTrustedInlinePdfUrl(value: unknown) {

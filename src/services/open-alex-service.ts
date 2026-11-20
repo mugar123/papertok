@@ -1,10 +1,12 @@
-import type { OpenAlexWork, OpenAlexPage, OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from './adapters/open-alex-types.ts';
+import type { OpenAlexWork, OpenAlexPage, OpenAlexAuthor, OpenAlexInstitution, OpenAlexJournal, OpenAlexTopic } from './adapters/open-alex-types.ts';
 import type { OpenAlexJsonOptions } from './open-alex-client.ts';
 import type { OpenAlexEnrichment } from '../utils/open-alex-work.ts';
+import type { Paper } from '../models/paper.ts';
 
 type Enrichment = OpenAlexEnrichment;
 type Entity = OpenAlexAuthor | OpenAlexInstitution | OpenAlexTopic;
 type RequestOptions = { language?: string; signal?: AbortSignal | null; throwOnError?: boolean; timeoutMs?: number; limit?: number; typeahead?: boolean };
+type EnrichmentOptions = RequestOptions & { onRequestFailed?: (ids: string[], error: unknown) => void };
 type InstitutionProminence = Pick<OpenAlexInstitution, 'ror' | 'works_count' | 'cited_by_count' | 'summary_stats'>;
 type InstitutionOptions = RequestOptions & { openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<InstitutionProminence>>) => Promise<OpenAlexPage<InstitutionProminence>> };
 type WorksFilters = { peerReviewed?: boolean; category?: string; dateRange?: string };
@@ -26,7 +28,7 @@ import { openAlexTypeaheadExpression } from './open-alex-search-query.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory } from '../utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../data/open-alex-areas.ts';
-import { OPENALEX_PEER_REVIEWED_FILTER } from '../utils/publication-status.ts';
+import { OPENALEX_PEER_REVIEWED_FILTER, isListedWorkingPaperSeries } from '../utils/publication-status.ts';
 import { FOLLOWED_JOURNAL_TYPE_FILTER } from '../utils/following.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { paperReferenceFor } from '../utils/explorer-paths.ts';
@@ -38,7 +40,7 @@ import {
   getRecentImpactConfig,
   getRecentImpactPeriod,
 } from '../utils/entity-metadata.ts';
-import { OPENALEX_ENRICHMENT_SELECT, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { OPENALEX_ENRICHMENT_SELECT, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -135,7 +137,15 @@ export function isOpenAlexEnrichmentId(id: unknown): boolean {
     || /^(?:openalex:|https:\/\/openalex\.org\/)?W\d+$/i.test(value);
 }
 
-export async function enrichPapersBatch(arxivIds: string[], options: RequestOptions = {}) {
+/**
+ * A work missing from the result may be one OpenAlex does not have, or one
+ * whose request failed. `onRequestFailed` tells them apart: it is called once
+ * per failed request (network error, timeout, refusal, non-OK status or
+ * unreadable body) with the ids it asked, normalized as the result's keys are
+ * (a `doi:` id lowercased, an arXiv id without prefix or version), and the
+ * error when there was one.
+ */
+export async function enrichPapersBatch(arxivIds: string[], options: EnrichmentOptions = {}) {
   const validIds = [...new Set((Array.isArray(arxivIds) ? arxivIds : [])
     .filter(id => typeof id === 'string' && id.trim() !== '')
     .map(id => {
@@ -161,22 +171,24 @@ export async function enrichPapersBatch(arxivIds: string[], options: RequestOpti
   
   if (toFetch.length === 0) return result;
 
-  // Separate OpenAlex IDs and ArXiv IDs
+  // Separate OpenAlex IDs and ArXiv IDs, each kept as the caller's
+  // normalized id so a failed request can name the ids it asked.
   const openAlexIds: string[] = [];
   const arxivIdsOnly: string[] = [];
   const doisOnly: string[] = [];
   
   toFetch.forEach(id => {
     if (/^doi:/i.test(id)) {
-      doisOnly.push(id.slice(4));
+      doisOnly.push(id);
     } else if (id.startsWith('openalex:') || id.startsWith('https://openalex.org/') || /^W\d+$/.test(id)) {
-      openAlexIds.push(id.replace('openalex:', '').replace('https://openalex.org/', ''));
+      openAlexIds.push(id);
     } else {
       arxivIdsOnly.push(id);
     }
   });
 
-  const fetchChunk = async (filterParam: string) => {
+  const fetchChunk = async (filterParam: string, chunkIds: string[]) => {
+    const fail = (error?: unknown) => options.onRequestFailed?.(chunkIds, error);
     const url = `https://api.openalex.org/works?filter=${filterParam}&per_page=50&select=${OPENALEX_ENRICHMENT_SELECT}`;
     let response = null;
     let primaryFailed = false;
@@ -198,6 +210,7 @@ export async function enrichPapersBatch(arxivIds: string[], options: RequestOpti
       if (directError && !isOpenAlexRateLimitError(directError)) {
         console.warn('OpenAlex enrichment failed', directError);
       }
+      fail(directError ?? undefined);
       return;
     }
 
@@ -230,10 +243,13 @@ export async function enrichPapersBatch(arxivIds: string[], options: RequestOpti
              writeOpenAlexPersistent(`enrichment:openalex:${openAlexId}`, enrichment);
              result[`openalex:${openAlexId}`] = enrichment;
           });
+        } else {
+          fail();
         }
       }
     } catch (e) {
       console.error("Enrichment processing failed", e);
+      fail(e);
     }
   };
 
@@ -247,17 +263,18 @@ export async function enrichPapersBatch(arxivIds: string[], options: RequestOpti
        const cleanId = id.replace(/v\d+$/, '');
        return [`http://arxiv.org/abs/${cleanId}`, `https://arxiv.org/abs/${cleanId}`];
     }).join('|');
-    chunkRequests.push(fetchChunk(`locations.landing_page_url:${encodeURIComponent(filterIds)}`));
+    chunkRequests.push(fetchChunk(`locations.landing_page_url:${encodeURIComponent(filterIds)}`, chunk));
   }
 
   for (let i = 0; i < openAlexIds.length; i += CHUNK_SIZE) {
     const chunk = openAlexIds.slice(i, i + CHUNK_SIZE);
-    chunkRequests.push(fetchChunk(buildOpenAlexIdFilter(chunk)));
+    const workIds = chunk.map(id => id.replace('openalex:', '').replace('https://openalex.org/', ''));
+    chunkRequests.push(fetchChunk(buildOpenAlexIdFilter(workIds), chunk));
   }
 
   for (let i = 0; i < doisOnly.length; i += CHUNK_SIZE) {
     const chunk = doisOnly.slice(i, i + CHUNK_SIZE);
-    chunkRequests.push(fetchChunk(`doi:${encodeURIComponent(chunk.join('|'))}`));
+    chunkRequests.push(fetchChunk(`doi:${encodeURIComponent(chunk.map(id => id.slice(4)).join('|'))}`, chunk));
   }
 
   await Promise.all(chunkRequests);
@@ -694,6 +711,41 @@ export async function searchAuthors(query: string, options: RequestOptions = {})
     // Search authors failed
   }
   return [];
+}
+
+/** A row of OpenAlex's source autocomplete: `hint` is the host organization's name. */
+type JournalAutocompleteRow = { id?: string; display_name?: string; hint?: string | null };
+
+/**
+ * Journals by name, for the feed editor, in OpenAlex's order: one call to the
+ * source autocomplete. The editor asks at every pause in typing, so the last
+ * word is usually unfinished, and autocomplete matches it as a prefix where a
+ * search does not ("physical rev" finds Physical Review Letters). The relay
+ * also bills it as one list call instead of a ten-unit search. No name-score
+ * filter as authors get: there it reranks a hundred namesakes.
+ */
+export async function searchJournals(query: string, options: RequestOptions = {}): Promise<OpenAlexJournal[]> {
+  // The same normalisation as the author index, so variants share one cached URL.
+  const q = query.replaceAll('|', ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!q) return [];
+  const url = new URL('https://api.openalex.org/autocomplete/sources');
+  url.searchParams.set('q', q);
+  // A journal with no works would make an empty feed.
+  url.searchParams.set('filter', 'type:journal,works_count:>0');
+  try {
+    const data = await openAlexJson<OpenAlexPage<JournalAutocompleteRow>>(url.toString(), {
+      timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal: options.signal, priority: true,
+    });
+    // Autocomplete answers up to ten rows and takes no `per-page`.
+    return (data.results || []).flatMap(({ id, display_name, hint }) => (
+      // OpenAlex types the listed working-paper series as journals; the
+      // Explorer's Follow leaves them out by the same rule.
+      id && display_name && !isListedWorkingPaperSeries(id) ? [{ id, display_name, publisher: hint || null }] : []
+    )).slice(0, options.limit ?? 5);
+  } catch (error) {
+    if (options.throwOnError) throw error;
+    return [];
+  }
 }
 
 // ROR answers a search with one page of twenty. Asking for all of them and
@@ -1564,45 +1616,198 @@ export async function getAuthorsByEntity(type: string|undefined, id: string, pag
   return { authors: [], total: 0 };
 }
 
+const DOI_CHUNK_SIZE = 40;
+// The Worker's OpenAlex relay drops a parameter longer than 2,000 characters
+// (worker/openalex-api.ts), and OpenAlex then lists works without the filter,
+// so a chunk also ends before its filter grows past that.
+const DOI_FILTER_MAX_LENGTH = 1_900;
+
+/** The DOIs in chunks of at most 40 whose `doi:A|B|C` filter stays under the relay's limit. */
+function doiChunks(dois: string[]) {
+  const chunks: string[][] = [];
+  let chunk: string[] = [];
+  let length = 'doi:'.length;
+  for (const doi of dois) {
+    if (chunk.length > 0 && (chunk.length === DOI_CHUNK_SIZE || length + 1 + doi.length > DOI_FILTER_MAX_LENGTH)) {
+      chunks.push(chunk);
+      chunk = [];
+      length = 'doi:'.length;
+    }
+    length += (chunk.length > 0 ? 1 : 0) + doi.length;
+    chunk.push(doi);
+  }
+  if (chunk.length > 0) chunks.push(chunk);
+  return chunks;
+}
+
+type WorkLookupOptions = {
+  includeTopics?: boolean;
+  /** Told the identifiers of each chunk OpenAlex did not answer; the chunks that answered are still returned. */
+  onRequestFailed?: (ids: string[], error: unknown) => void;
+};
+
+/** Asks for the works of each chunk in turn, keeping every chunk that answers. */
+async function fetchWorkChunks(chunks: string[][], filterFor: (chunk: string[]) => string, { onRequestFailed, includeTopics }: WorkLookupOptions) {
+  const results: OpenAlexWork[] = [];
+  for (const chunk of chunks) {
+    const url = `https://api.openalex.org/works?filter=${filterFor(chunk)}&per-page=50`;
+    try {
+      const response = await fetchWithTimeout(url, 10000);
+      if (!response.ok) throw new Error(`OpenAlex answered ${response.status}`);
+      const data = await response.json() as OpenAlexPage<OpenAlexWork>;
+      if (data && data.results) {
+        results.push(...data.results);
+      }
+    } catch (err) {
+      if (onRequestFailed) onRequestFailed(chunk, err);
+      else console.error('OpenAlex works lookup failed', err);
+    }
+  }
+  return results.map(work => formatOpenAlexWorkAsPaper(work, includeTopics));
+}
+
 /**
  * Fetch full paper metadata from OpenAlex using a list of DOIs,
  * and format them as standard Paper objects (since they might not be on arXiv).
- * @param {string[]} dois 
+ * A chunk OpenAlex does not answer is left out and reported to `onRequestFailed`.
  */
-export async function fetchPapersByDois(dois: string[]) {
+export async function fetchPapersByDois(dois: string[], options: WorkLookupOptions = {}) {
   if (!dois || dois.length === 0) return [];
-  
+
+  // An OpenAlex filter has no escape for its `|` and `,` separators, so a DOI
+  // holding one cannot be asked for, nor one longer than a whole filter.
   const cleanDois = dois.map(doi => {
     if (doi.includes('doi.org/')) return doi.split('doi.org/')[1];
     return doi;
-  }).filter(Boolean);
-  
+  }).filter(doi => doi && !/[|,]/.test(doi) && doi.length < DOI_FILTER_MAX_LENGTH - 'doi:'.length);
+
   if (cleanDois.length === 0) return [];
-  
-  const results: OpenAlexWork[] = [];
-  const chunkSize = 40;
-  for (let i = 0; i < cleanDois.length; i += chunkSize) {
-    const chunk = cleanDois.slice(i, i + chunkSize);
-    // OpenAlex OR syntax requires the property name once: filter=doi:A|B|C
-    const filterIds = chunk.join('|');
-    const url = `https://api.openalex.org/works?filter=doi:${filterIds}&per-page=50`;
-    
+
+  // OpenAlex OR syntax requires the property name once: filter=doi:A|B|C.
+  // Each DOI is encoded, so a `#`, `&` or `+` in one stays part of it.
+  return fetchWorkChunks(doiChunks(cleanDois), chunk => `doi:${chunk.map(encodeURIComponent).join('|')}`, options);
+}
+
+/** The same for OpenAlex work ids (`W123`), fifty to a request. */
+export async function fetchPapersByOpenAlexIds(ids: string[], options: WorkLookupOptions = {}) {
+  const workIds = [...new Set(ids.filter(id => /^W\d+$/.test(id)))];
+  const chunks: string[][] = [];
+  for (let index = 0; index < workIds.length; index += 50) chunks.push(workIds.slice(index, index + 50));
+  return fetchWorkChunks(chunks, buildOpenAlexIdFilter, options);
+}
+
+const ORCID_WORKS_PAGE_SIZE = 50;
+/** How many of the works OpenAlex attributes to an ORCID iD are read, newest first. */
+export const ORCID_ATTRIBUTED_WORKS_MAX = 200;
+
+/**
+ * The works OpenAlex attributes to an ORCID iD (`author.orcid`), newest
+ * first, at most ORCID_ATTRIBUTED_WORKS_MAX of them, a page at a time with no
+ * retry. `total` is how many OpenAlex attributes in all. Rejects when the
+ * first page does not come; a later page that does not come ends the list
+ * there, with `complete: false`. `authorIds` are the OpenAlex author ids
+ * (`A123`) that carry the iD on those works, the reader's own. Kept out of
+ * the app's response cache, since they describe the reader; the relay's
+ * public answer can still come from the browser's HTTP cache for 5 minutes
+ * and from the relay's for a day.
+ */
+export async function getWorksByOrcid(orcidId: string) {
+  const papers: Paper[] = [];
+  const authorIds = new Set<string>();
+  let total = 0;
+  for (let page = 1; papers.length < ORCID_ATTRIBUTED_WORKS_MAX; page += 1) {
+    const url = `https://api.openalex.org/works?filter=author.orcid:${encodeURIComponent(orcidId)}&sort=publication_date:desc&per-page=${ORCID_WORKS_PAGE_SIZE}&page=${page}`;
+    let data: OpenAlexPage<OpenAlexWork>;
     try {
-      const response = await fetchWithTimeout(url, 10000);
-      if (response.ok) {
-        const data = await response.json() as OpenAlexPage<OpenAlexWork>;
-        if (data && data.results) {
-          results.push(...data.results);
-        }
-      }
-    } catch (err) {
-      console.error("OpenAlex fetchPapersByDois failed", err);
+      data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(url, { timeoutMs: 10_000, retries: 0, cacheTtlMs: 0 });
+    } catch (error) {
+      if (page === 1) throw error;
+      console.warn('OpenAlex stopped answering for the works of an ORCID iD', error);
+      return { papers, total, complete: false, authorIds: [...authorIds] };
     }
+    const results = Array.isArray(data?.results) ? data.results : [];
+    if (page === 1) total = Number(data?.meta?.count) || 0;
+    papers.push(...results.map(work => formatOpenAlexWorkAsPaper(work, true)));
+    for (const id of results.flatMap(work => authorIdsWithOrcid(work, orcidId))) authorIds.add(id);
+    if (results.length < ORCID_WORKS_PAGE_SIZE) break;
   }
-  
-  return results.map(work => {
-    return formatOpenAlexWorkAsPaper(work);
+  return { papers: papers.slice(0, ORCID_ATTRIBUTED_WORKS_MAX), total: Math.max(total, papers.length), complete: true, authorIds: [...authorIds] };
+}
+
+/** An OpenAlex author id in its short form (`A123`), from the id or its address. */
+export function openAlexAuthorId(value: unknown) {
+  return String(value ?? '').trim().match(/^(?:https?:\/\/openalex\.org\/)?(A\d+)$/i)?.[1].toUpperCase() ?? null;
+}
+
+/** An ORCID iD as OpenAlex writes it (`https://orcid.org/<iD>`), in its bare form. */
+function bareOrcid(value: unknown) {
+  return String(value ?? '').trim().match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i)?.[1].toUpperCase() ?? null;
+}
+
+/** The ORCID iDs of an authorship's author, bare: the one OpenAlex set and the ones it observed for them. */
+function authorOrcids(author: NonNullable<OpenAlexWork['authorships']>[number]['author']) {
+  const observed = Array.isArray(author?.observed_orcids) ? author.observed_orcids : [];
+  return [author?.orcid, ...observed].map(bareOrcid).filter((id): id is string => id !== null);
+}
+
+/** The ORCID iDs of a work's authorships, bare. */
+function authorshipOrcids(work: OpenAlexWork) {
+  return (work.authorships ?? []).flatMap(authorship => authorOrcids(authorship.author));
+}
+
+/** The author ids of a work's authorships that carry the ORCID iD `orcidId`. */
+function authorIdsWithOrcid(work: OpenAlexWork, orcidId: string) {
+  return (work.authorships ?? []).flatMap((authorship) => {
+    const id = openAlexAuthorId(authorship.author?.id);
+    return id && authorOrcids(authorship.author).includes(orcidId.toUpperCase()) ? [id] : [];
   });
+}
+
+/** How many of the newest papers citing the reader's works My profile asks for. */
+export const CITING_WORKS_PAGE_SIZE = 20;
+/** How many of the reader's works one request names; the relay drops a filter value over 2,000 characters. */
+export const CITING_WORKS_MAX_CITED = 50;
+
+/** `date` as the calendar day twelve months earlier, local time, written `YYYY-MM-DD`. */
+export function twelveMonthsBefore(date: Date) {
+  const day = new Date(date.getFullYear() - 1, date.getMonth(), date.getDate());
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+}
+
+/**
+ * The OpenAlex request for the newest papers published since `since` that
+ * cite any of `workIds` (`W123`, at most CITING_WORKS_MAX_CITED), with the
+ * fields a paper is made from and the reference list each citing work is
+ * matched against.
+ */
+export function citingWorksUrl(workIds: string[], since: string) {
+  const ids = [...new Set(workIds.filter(id => /^W\d+$/.test(id)))].slice(0, CITING_WORKS_MAX_CITED);
+  const select = [...OPENALEX_WORK_SEARCH_FIELDS, 'referenced_works'].join(',');
+  return `https://api.openalex.org/works?filter=cites:${encodeURIComponent(ids.join('|'))},from_publication_date:${since}`
+    + `&sort=publication_date:desc&per-page=${CITING_WORKS_PAGE_SIZE}&select=${select}`;
+}
+
+/** A paper citing the reader's works, with the works it references (`W123`) and its authors' ORCID iDs. */
+export interface CitingWork { paper: Paper; references: string[]; orcids: string[] }
+
+/**
+ * The newest CITING_WORKS_PAGE_SIZE papers published since `since` that cite
+ * any of `workIds`, as one request through the relay with no retry, kept out
+ * of the app's response cache like the works of the iD. `total` is how many
+ * OpenAlex lists in all. Rejects when OpenAlex does not answer.
+ */
+export async function getWorksCiting(workIds: string[], since: string) {
+  const data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(citingWorksUrl(workIds, since), { timeoutMs: 10_000, retries: 0, cacheTtlMs: 0 });
+  const results = Array.isArray(data?.results) ? data.results.filter(work => work?.id) : [];
+  return {
+    works: results.map((work): CitingWork => ({
+      paper: formatOpenAlexWorkAsPaper(work),
+      references: (work.referenced_works ?? []).map(id => String(id).split('/').pop()!.toUpperCase()).filter(id => /^W\d+$/.test(id)),
+      orcids: authorshipOrcids(work),
+    })),
+    total: Math.max(Number(data?.meta?.count) || 0, results.length),
+  };
 }
 
 /**
@@ -1612,7 +1817,7 @@ export async function fetchPapersByDois(dois: string[]) {
  * that, and are all the page ever reads.
  */
 export function slimWorksPage(data: OpenAlexPage<OpenAlexWork> | null) {
-  const papers = Array.isArray(data?.results) ? data.results.map(formatOpenAlexWorkAsPaper).filter(Boolean) : [];
+  const papers = Array.isArray(data?.results) ? data.results.map(work => formatOpenAlexWorkAsPaper(work)).filter(Boolean) : [];
   return { papers, total: data?.meta?.count || 0 };
 }
 

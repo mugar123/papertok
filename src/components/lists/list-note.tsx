@@ -1,66 +1,41 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react';
-import { CaretDown, Note } from '@phosphor-icons/react';
-import { useReducedMotion } from 'framer-motion';
-import { EASE_OUT, animateSize } from '../../utils/motion-curves.ts';
+import { Note } from '@phosphor-icons/react';
+import ListClampedText from './list-clamped-text.tsx';
 
-export default function ListNote({ note }: { note: string }) {
-  const [open, setOpen] = useState(false);
-  const [clipped, setClipped] = useState(false);
-  const boxRef = useRef<HTMLDivElement | null>(null);
-  const textRef = useRef<HTMLSpanElement | null>(null);
-  const fromHeight = useRef<number | null>(null);
-  const textId = useId();
-  const reduceMotion = useReducedMotion();
-
-  useLayoutEffect(() => {
-    const text = textRef.current;
-    if (!text) return undefined;
-    const measure = () => {
-      if (!text.isConnected || open) return;
-      setClipped(text.scrollHeight > text.clientHeight + 1);
-    };
-    measure();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(measure);
-    observer.observe(text);
-    return () => observer.disconnect();
-  }, [note, open]);
-
-  useLayoutEffect(() => {
-    const from = fromHeight.current;
-    fromHeight.current = null;
-    if (from == null || reduceMotion || !boxRef.current) return;
-    animateSize(boxRef.current, 'height', from, 200, EASE_OUT, { overflow: 'hidden' });
-  }, [open, reduceMotion]);
-
-  const expandable = clipped || open;
+/**
+ * What the reader added to a saved paper: their note and their tags, in one
+ * well under the paper's own text so the two are never read as one voice.
+ */
+export default function ListNote({ note, tags }: { note?: string; tags?: string[] }) {
+  // `role="list"`: Safari drops the list role from a `ul` without bullets.
+  const tagList = tags?.length ? (
+    <ul className="lists-paper-tags" role="list" aria-label="Your tags">
+      {tags.map((tag) => <li key={tag}>{tag}</li>)}
+    </ul>
+  ) : null;
+  if (!note) {
+    return tagList && (
+      <div className="lists-paper-note">
+        <div className="lists-paper-note-head">
+          <span className="lists-paper-note-label" aria-hidden="true">{'Your tags'}</span>
+          {tagList}
+        </div>
+      </div>
+    );
+  }
   return (
-    <div
-      ref={boxRef}
-      className={`lists-paper-note${expandable ? ' is-expandable' : ''}`}
-      data-open={open || undefined}
-    >
-      <span className="lists-paper-note-label">
-        <Note size={13} aria-hidden="true" />
-        {'Note'}
-      </span>
-      <span ref={textRef} id={textId} className="lists-paper-note-text">{note}</span>
-      {expandable && (
-        <button
-          type="button"
-          className="lists-paper-note-more"
-          aria-expanded={open}
-          aria-controls={textId}
-          onClick={(event) => {
-            event.stopPropagation();
-            fromHeight.current = boxRef.current?.offsetHeight ?? null;
-            setOpen((value) => !value);
-          }}
-        >
-          {open ? 'Show less' : 'Read more'}
-          <CaretDown size={12} weight="bold" aria-hidden="true" />
-        </button>
+    <ListClampedText
+      text={note}
+      className="lists-paper-note"
+      textClassName="lists-paper-note-text"
+      header={(
+        <div className="lists-paper-note-head">
+          <span className="lists-paper-note-label">
+            <Note size={13} aria-hidden="true" />
+            {'Your note'}
+          </span>
+          {tagList}
+        </div>
       )}
-    </div>
+    />
   );
 }

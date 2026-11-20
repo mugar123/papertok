@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-07';
+export const PRIVACY_POLICY_VERSION = '2026-11-20.9';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -53,13 +53,100 @@ export const PRIVACY_POLICY_VERSION = '2026-11-07';
  * falls after it, move the page's "Last updated" date, PRIVACY_POLICY_VERSION
  * and this instant to the merge day before merging; once Vercel reports the
  * merge live, lower this instant to that success time.
+ *
+ * Version 2026-11-12 adds custom feeds: the feeds a reader creates, kept with
+ * the account; what a request for one of those feeds sends; the papers removed
+ * from a feed, kept in the browser and sent with that feed's requests; that an
+ * author, topic, journal or keyword search put in a feed joins the list of
+ * things the catalogue collects papers for, as a follow does (journals joined
+ * the same day, without a version of their own); and the three usage events:
+ * creating or opening a feed records its order, creating one also the counts of
+ * what it holds, deleting one only that it happened, and none records its
+ * name. The text ships with the frontend pull request of custom feeds
+ * (ENG-197); the Worker half is #476. This instant follows the rule above: it
+ * stands after that merge, at the last moment the version's day allows. If the
+ * merge falls after it, move the page's "Last updated" date,
+ * PRIVACY_POLICY_VERSION and this instant to the merge day before merging; once
+ * Vercel reports the merge live, lower this instant to that success time.
+ *
+ * Version 2026-11-14 withdraws a sentence of 2026-11-12: a request for one of
+ * the reader's own feeds sent no filter of the papers they viewed, and a
+ * refresh of the feed now sends one, so the feed starts with the papers they
+ * have not seen (Nicolás chose the announcement on 2026-11-14). It also
+ * announces the metadata of the papers in the reader's lists and favorites
+ * that the browser keeps since #502. The page's mentions of journals in a
+ * feed (#493) and of the Most recent tab (#478) joined the 2026-11-12 text
+ * without a version and are not announced. The text ships with the pull
+ * request that makes a custom feed's refresh skip seen papers. This instant
+ * follows the rule above: it stands after that merge, at the last moment the
+ * version's day allows. If the merge falls after it, move the page's "Last
+ * updated" date, PRIVACY_POLICY_VERSION and this instant to the merge day
+ * before merging; once Vercel reports the merge live, lower this instant to
+ * that success time.
+ *
+ * Version 2026-11-15 adds Zotero: the encrypted key and the item and note keys
+ * kept while a reader has Zotero connected, what a send gives Zotero, and the
+ * usage event that records only whether a send worked. It takes its own
+ * version because 2026-11-14 went live with the feed refresh notice. This
+ * instant follows the rule above for a text that ships with its own pull
+ * request.
+ *
+ * Version 2026-11-20 adds ORCID: the iD and the record's name kept while a
+ * reader has ORCID connected, the access token that is not stored, and My
+ * profile, shown only to the reader, whose works the browser loads from
+ * ORCID's public API, with the works OpenAlex links to the iD and the
+ * identifiers of those the reader marks as theirs or not. It ships with the
+ * pull request that adds the ORCID routes and My profile, and this instant
+ * follows the rule above for such a text: it stands at the end of the day
+ * the merge is planned for. If the merge falls after it, move the page's
+ * "Last updated" date, PRIVACY_POLICY_VERSION and this instant to the merge
+ * day before merging, and lower it to the deployment's success time once it
+ * is live.
+ *
+ * Version 2026-11-20.2 adds the reading level, broad areas of interest and
+ * optional role linked to an account in survey analytics (#526). Since the
+ * first 20 November version, My profile also lists citing papers and frequent
+ * coauthors (#527). The survey text ships with this PR, so its provisional
+ * cutoff is the last whole second of the planned merge day. If the merge slips
+ * past the cutoff, move the date, version and cutoff to the merge day.
+ * Set the cutoff to the deployment's success time once the text is live.
+ *
+ * Version 2026-11-20.4 adds weekly save contributions from verified-email
+ * accounts, the default-on setting and how readers can exclude future saves.
+ * The text ships with #531. Use the end of the planned merge day until the
+ * deployment succeeds, then use its success time. If the merge slips to a
+ * later UTC day, update the page date, version and cutoff before merging.
+ *
+ * Version 2026-11-20.5 adds Anthropic and its processing regions. The same
+ * provisional cutoff applies until the page ships with #532.
+ *
+ * Version 2026-11-20.6 describes the browser's week-one return mark and the
+ * existing PostHog events used to measure returns. Version 2026-11-20.7 adds
+ * account and browser storage of interest priorities, mix and area levels,
+ * including guest choices awaiting sign-in. One notice covers all changes since
+ * the first 20 November version because recording it settles earlier notices.
+ * Version 2026-11-20.8 adds the optional ORCID citation lookup for weekly emails.
+ * Version 2026-11-20.9 adds the session sample for activity before a profile loads.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-07T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
+
+/**
+ * The version every account counts as already shown, whatever this browser or
+ * the account has recorded. The 2026-11-07 notice went live at 08:04Z that day
+ * when only each browser remembered it, so a reader who had seen it would have
+ * seen it again on every new browser or device. Pablo decided on 2026-11-07
+ * (ENG-196) that no account is shown it again, including one that never saw
+ * it, and that only later versions are remembered in the account. Leave this
+ * at 2026-11-07: raising it would skip a later version's notice for every
+ * account, and nothing is written to accounts for it.
+ */
+export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "Email updates, if on, also store the subjects you chose, and keep your subscription in Cloudflare Workers KV or, as it moves, a Cloudflare Durable Object of your account.",
-  "Usage analytics also records whether the app's viewer showed a paper's text, its PDF, a link or nothing, and how long the viewer stays on screen.",
+  'Anthropic may run rewrites/explanations outside the EU. Verified-email saves count per account/paper/UTC week (opt out: Settings→Privacy).',
+  'Analytics ties survey level/broad interests/answers/optional role to accounts and flags sessions with likes/saves/reads before profile load. Day 7–13 return marks stay local (PostHog visits).',
+  'Accounts keep Essential/Curiosity priorities, mix and area levels. Weekly citation mail uses ORCID on OpenAlex and My profile suggests interests, listing recent citations/coauthors unsaved.',
 ];
 
 /**
@@ -72,23 +159,33 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The two changes since 5 November: what the email subscription keeps when
-  // the digest is filled from chosen subjects, and where (ENG-163, #442); and
-  // what usage analytics records about the app's viewer (#458).
-  lead: 'Email updates',
+  lead: 'Anthropic',
   clauses: [
-    ['Email updates', /<h2>Email updates<\/h2>/],
-    ['if on', /If you turn them on, PaperTok emails you/],
-    ['store the subjects you chose', /the identifiers of the subjects you chose/],
-    ['in Cloudflare Workers KV or, as it moves', /in <strong>Cloudflare Workers KV<\/strong> or, as it moves,/],
-    ['a Cloudflare Durable Object of your account', /in a\s+<strong>Cloudflare Durable Object<\/strong> of your account/],
-    ['Usage analytics', /Usage analytics is enabled by default/],
-    ["the app's viewer", /When you open a paper in the app's viewer, they record whether it showed the paper's text/],
-    ['its PDF, a link or nothing', /its PDF, a link or nothing/],
-    ['how long the viewer stays on screen', /how long the viewer stays on screen/],
+    ['rewrites/explanations', /Paper explanations and rewrites are generated by a Claude language model/],
+    ['outside the EU', /Anthropic may process the request in any region it serves, including outside the European Union/],
+    ['Accounts keep', /This data is stored in <strong>Google Firestore<\/strong>/],
+    ['Essential/Curiosity priorities, mix and area levels', /Your Essential or Curiosity choices, feed mix and reading levels by area/],
+    ['suggests interests', /suggests feed interests from the topics of your loaded publications/],
+    ['recent citations/coauthors', /papers from the last 12 months that cite your publications/],
+    ['unsaved', /PaperTok keeps neither list/],
+    ['coauthors', /coauthors you share two or more of those works with/],
+    ['Verified-email saves', /With a verified email, your saves count by default/],
+    ['count per account/paper/UTC week', /PaperTok links your account to each paper you save once per UTC week/],
+    ['opt out: Settings→Privacy', /Turn this off in Settings → Privacy to exclude future saves/],
+    ['Analytics ties survey level/broad interests/answers/optional role to accounts', /With usage analytics on, PaperTok links survey events to your account/],
+    ['level/broad interests', /events include your reading level and broad areas of interest, such as Physics, when available/],
+    ['answers/optional role', /Submitting the survey records your answers, including your role if you chose one/],
+    ['Day 7–13 return marks stay local', /Only your browser keeps the mark for a return 7 to 13 days after your first real use/],
+    ['flags sessions with likes/saves/reads before profile load', /records once per session if you like, save or read a paper while signed in before your recommendation profile loads/],
+    ['PostHog visits', /using the first-use and visit events already sent to PostHog/],
+    ['Weekly citation mail uses ORCID on OpenAlex', /PaperTok sends your iD and the OpenAlex work identifiers it checks to OpenAlex/],
+    ['Weekly citation mail', /the weekly email can also list new papers that cite your work/],
   ],
   unsaid: [
-    [/(stor|keep)\w* (what|which|the papers) you (read|open)/i, 'the reader keeps nothing new about the reader'],
-    [/\bsince \d{1,2} [a-z]+/i, 'the summary says only what changed since the previous version'],
+    [/sent to analytics/i, 'the new preferences are not analytics fields'],
+    [/anonymous/i, 'survey events are linked to the signed-in account'],
+    [/required role/i, 'readers can skip the role question'],
+    [/stops measuring returns/i, 'the existing visit events still measure returns'],
+    [/authors can see|published totals/i, 'this release only collects contributions'],
   ],
 };

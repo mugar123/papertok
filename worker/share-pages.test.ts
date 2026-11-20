@@ -549,6 +549,44 @@ test('a page that does not exist answers 404 and noindex', async () => {
   assert.equal(canonicalOf(html), null, 'a missing page claims no canonical address');
 });
 
+test('a paper only OpenReview holds previews from its note, and one OpenReview does not have is missing', async () => {
+  const key = encodePaperKey('openreview:5pShDP8LSm')!;
+  const note = {
+    id: '5pShDP8LSm',
+    forum: '5pShDP8LSm',
+    domain: 'ICLR.cc/2026/Workshop/AIWILD',
+    pdate: Date.parse('2026-03-01T23:08:29Z'),
+    content: {
+      title: { value: 'Position: AI Development Should Prioritize Cognitive Security' },
+      abstract: { value: 'Generative AI systems designed to influence human beliefs and actions are becoming increasingly pervasive.' },
+      authors: { value: ['Batu El', 'Shiye Su'] },
+      venue: { value: 'ICLR 2026 AIWILD' },
+      pdf: { value: '/pdf/0123456789abcdef.pdf' },
+    },
+  };
+  const asked: string[] = [];
+  const loadRecord = (answer: typeof note | null) => createShareLoader({
+    openAlex: async () => { throw new Error('not asked'); },
+    openReview: async id => { asked.push(id); return answer; },
+  });
+
+  const found = await handleSharePage(shareRequest(`/share/paper/${key}`), handlerDeps({ loadRecord: loadRecord(note) }).deps);
+  const html = await found.text();
+  assert.equal(found.status, 200);
+  assert.deepEqual(asked, ['5pShDP8LSm']);
+  assert.equal(titleOf(html), 'Position: AI Development Should Prioritize Cognitive Security');
+  const seed = seedOf(html);
+  assert.equal(encodePaperKey(seed.paper), key, 'the seed is the paper the key names');
+  assert.deepEqual(seed.paper.authors, [{ name: 'Batu El' }, { name: 'Shiye Su' }]);
+  assert.equal(seed.paper.year, 2026);
+  assert.equal(seed.paper.journal, 'ICLR 2026 AIWILD');
+  assert.equal(seed.paper.landingPageUrl, 'https://openreview.net/forum?id=5pShDP8LSm');
+  assert.equal(seed.paper.pdfUrl, 'https://openreview.net/pdf/0123456789abcdef.pdf');
+
+  const missing = await handleSharePage(shareRequest(`/share/paper/${key}`), handlerDeps({ loadRecord: loadRecord(null) }).deps);
+  assert.equal(missing.status, 404);
+});
+
 // OpenAlex indexes a DOI or a PMID days after it appears, and a fresh PubMed
 // paper is half of what the Medicine feed shows. «We could not find this
 // paper» with a 404 was a regression on the generic preview it replaced, and

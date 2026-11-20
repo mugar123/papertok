@@ -47,8 +47,6 @@ flowchart TD
 
 - [index.html](index.html) contains a startup recovery screen with inline styles.
   Its initial markup keeps recovery content hidden over the page background.
-  The guard reveals loading feedback after 500 ms if React has not mounted;
-  errors appear immediately, and retry is offered on failure or a long wait.
   If the inline guard itself cannot run, CSS reveals the native fallback after
   one second so the page does not remain blank.
   With JavaScript disabled, the document shows instructions and a native reload link.
@@ -56,11 +54,11 @@ flowchart TD
   script before the generated stylesheet links, so a stalled stylesheet cannot
   delay the watchdog. Only resources marked as part of the initial app graph
   report resource-load failures; blocked optional scripts do not. The guard
-  reports startup errors or a wait longer than 15 seconds, and removes
-  the screen when React adds content to the root. Reload preserves the current
+  offers a reload immediately on failure or after 15 seconds of waiting. It
+  removes the screen when React adds content to the root. Reload preserves the current
   address; the guard does not clear storage or send telemetry. Render failures
   after startup remain owned by [GlobalErrorBoundary](src/global-error-boundary.tsx).
-- [PrivacyProvider](src/context/privacy-context.tsx) owns the privacy controls and
+- [PrivacyProvider](src/context/privacy-context.tsx) owns usage analytics consent,
   coordinates account identity before reporting effects, and renders the application independently of the optional
   [analytics effects](src/context/analytics-context.tsx). A blocked reporting
   module or SDK leaves the application available. Consent is persisted without
@@ -68,10 +66,37 @@ flowchart TD
   [Module load recovery](src/utils/module-load-recovery.ts) lets optional import
   failures settle before deciding whether an essential chunk failure needs the
   existing bounded reload. Analytics event fields and consent rules are unchanged.
+- The [Worker](worker/README.md#author-save-collection) records private author save contributions
+  according to the account's preference in Settings → Privacy.
 - [app.tsx](src/app.tsx) owns routes and provider composition.
   [AuthContext](src/context/auth-context.tsx) owns frontend identity and profile
   lifecycle. User data reaches Firestore through the browser SDK and REST
   services, with authorization enforced by [firestore.rules](firestore.rules).
+  List and favorite paper metadata is cached per Firebase UID in localStorage,
+  bounded to 1 MiB and removed at sign-out. The lists screen reads it synchronously
+  through `readListPapers`; new metadata uses the existing copy merge rules before
+  persisting. Classification versions are checked on restore. List membership,
+  notes and reading state are not part of this cache. Missing classifications
+  use provider recovery after the saved-document read answers, including when
+  no saved document exists and when the answer lands after the read's deadline.
+  A favorite with only an old interaction record can
+  recover by its provider identifier and persist the result without creating a save.
+  Recovery continues in rounds of at most 60 papers, one at a time, until the open
+  list is covered. A paper the provider answers, with or without a field, is not
+  asked again this session. A paper whose request failed is asked again in a
+  later opening; within one opening an arXiv paper costs at most 3 requests and
+  an OpenAlex paper 1, because each OpenAlex call is billed. Any round with a
+  failure holds the next round for the failure's `retry-after`, a minute at most,
+  or about 5 s and then 10 s when it gave none. A `retry-after` over a minute leaves the failed
+  papers for the next opening. Closing or reopening the list cancels a pending
+  retry. A row with an otherwise empty meta line shows a category placeholder
+  while its saved-document read is out or its paper is still waiting for a
+  provider in this opening.
+  Public-list visits keep their successful response in a tab-local cache of
+  at most 32 history entries. Back renders the cached rows before route scroll
+  restoration and revalidates in the background. A confirmed missing list clears
+  that entry; a failed refresh leaves the already-read list visible. Reloads
+  and new history entries read afresh.
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
   routes. The frontend and Worker deploy separately.
@@ -99,6 +124,59 @@ flowchart TD
   browser callers; this diagram shows the main application boundaries, not
   every outbound request.
 
+## Feed engagement
+
+For twenty-card For You summaries, filter `feed_engagement` to events where
+`cards` is set. A separate sample with only `before_profile_load = true`
+counts a signed-in reader liking, saving or recording a read on any screen
+before their interaction profile loads. The browser sends at most one per
+PostHog session. Browsers without shared storage or Web Locks skip the sample.
+
+## Week-1 retention
+
+Pablo must paste this query into a PostHog SQL insight and save it as a table.
+Each person belongs to the UTC week (Monday through Sunday) of their first
+observed `activation` across the available event history. A person returns
+if an `acquisition_view` occurs at least 168 hours and less than 336 hours
+after that activation. Both events use PostHog's resolved person identity.
+
+The table covers the eight most recent calendar weeks for which even the last
+activation has had 336 hours to return. An empty cohort has zero counts and
+a blank percentage. The total divides all returning people by all activated
+people across the eight weeks. The browser's local return flag is independent
+of this calculation.
+
+```sql
+WITH people AS (
+    SELECT person_id,
+           minIf(timestamp, event = 'activation') AS activated_at,
+           groupArrayIf(timestamp, event = 'acquisition_view') AS visits
+    FROM events
+    WHERE event = 'activation'
+       OR (event = 'acquisition_view' AND timestamp >= now() - INTERVAL 11 WEEK)
+    GROUP BY person_id
+    HAVING countIf(event = 'activation') > 0
+), weeks AS (
+    SELECT subtractWeeks(toMonday(toTimeZone(now(), 'UTC')),
+                         arrayJoin([3, 4, 5, 6, 7, 8, 9, 10])) AS week_start
+), counts AS (
+    SELECT toMonday(toTimeZone(activated_at, 'UTC')) AS cohort,
+           count() AS activated,
+           countIf(arrayExists(t -> t >= activated_at + INTERVAL 168 HOUR
+                                AND t < activated_at + INTERVAL 336 HOUR, visits)) AS returned
+    FROM people
+    GROUP BY cohort
+)
+SELECT arrayJoin([toString(w.week_start), 'Total']) AS cohort_week,
+       sum(coalesce(c.activated, 0)) AS activated_people,
+       sum(coalesce(c.returned, 0)) AS returning_people,
+       round(100.0 * returning_people / nullIf(activated_people, 0), 2) AS retention_pct
+FROM weeks AS w
+LEFT JOIN counts AS c ON c.cohort = w.week_start
+GROUP BY cohort_week
+ORDER BY cohort_week
+```
+
 ## Papers from retrieval to display
 
 ```mermaid
@@ -110,6 +188,8 @@ flowchart TD
     Corpus[("D1 · papers, lanes and vectors")]
     API["/store/papers · recency and vector similarity"]
     Feed["FeedContext · client scoring and unread queue"]
+    Custom["Custom feed page · one feed's exact lanes"]
+    Recent["Most recent page · the reader's topics by day, unseen only"]
     Signals["Preferences, follows, likes, rejections and seen papers"]
     Search["Live paper search · arXiv + OpenAlex relevance"]
     UI["Feed cards, search results and reader"]
@@ -118,6 +198,8 @@ flowchart TD
     Harvest --> Vectors --> Corpus
     Corpus --> Vectors
     Corpus --> API --> Feed --> UI
+    API --> Custom --> UI
+    API --> Recent --> UI
     Signals --> API
     Signals --> Feed
     Search --> UI
@@ -128,7 +210,7 @@ flowchart TD
     classDef view fill:#eff6ff,stroke:#2563eb,color:#172554
     class Trigger,Sources,Vectors source
     class Corpus,Signals data
-    class Harvest,API,Feed,Search logic
+    class Harvest,API,Feed,Custom,Recent,Search logic
     class UI view
 ```
 
@@ -191,8 +273,80 @@ most on the first page and one in seven on a later one. The
 [paper-store contract](worker/README.md#paper-store) says how they are chosen
 and placed. Other feed modes and guest flows
 still have live source callers; this diagram describes the corpus-backed path.
+A custom feed reads the same corpus through `POST /store/papers`.
+[custom-feeds-store.ts](src/services/custom-feeds-store.ts) keeps an account's
+feeds, at most 8, in one document, `users/{uid}/settings/customFeeds`, which
+[firestore.rules](firestore.rules) lets only its owner read or write.
+[corpusRequestOf](src/utils/custom-feeds.ts) turns a feed into its categories,
+whole `areas` and follows (research topics, authors, journals and keywords), with
+`order: 'daily'` for Newest first and `'relevance'` for Best match.
+A keyword brings the papers that have it in the title or abstract. Newest first
+places them by the day they reached the feed, and a paper from the keyword's
+weekly list of best matches of any year by its publication date. Best match
+follows that list's order, which is OpenAlex's relevance: the reader's likes
+reorder only each ten of it, and the keyword takes turns with the feed's other
+ingredients ([keyword lanes](worker/README.md#paper-store)).
+[custom-feed-pages.ts](src/utils/custom-feed-pages.ts) builds it into an `exact`
+request and
+[useCustomFeedPapers](src/components/custom-feeds/use-custom-feed-papers.ts)
+sends it: the Worker serves only those lanes and says which follows are still
+loading. The list goes on while the answer's `more` is true, also past an empty
+page, and ends when it is false; from a Worker that does not send `more`, a
+page of fewer than 15 papers ends it
+([feedPageOf](src/utils/custom-feed-pages.ts)). A feed opens on its top and
+pages by number. A refresh, from the pill, the pull, the tab pressed again or
+`Check again`, starts with the papers the reader has not seen, in the feed's
+order. Seen are the papers viewed on a card in any feed that the account or
+this browser still lists ([viewedPaperIds](src/context/feed-viewed-papers.ts);
+the account keeps the last 500), and the ones gone through in the list being
+refreshed, down to the card on screen (`passedPapers`); a paper viewed before
+those counts as unseen again. Its
+requests add `seen`, the filter Most recent sends, with those papers and what
+the run already received. When the Worker has no unseen paper
+left, the run goes on by number from the feed's top and lists no paper twice,
+so the papers already seen follow the unseen ones. Those pages repeat the
+unseen papers already listed, so the list asks for them one after another
+until one adds a paper or the feed ends, about one request for every 15 papers
+the walk listed. A refresh that finds none
+unseen shows the feed from its top with one request, and a toast says so
+([askFeedPage](src/utils/custom-feed-pages.ts)). Like For you, the feed leaves out
+retracted papers and the types `isFeedPublication` rejects, and they still
+count toward their page. [CustomFeedPage](src/components/custom-feeds/custom-feed-page.tsx)
+hands the papers from useCustomFeedPapers to the shared
+[FeedContainer](src/components/feed/feed-container.tsx) as its source. FeedContext supplies the reader's liked examples, Not interested
+papers and, for a refresh, the papers they viewed; it does not score the feed's papers.
+Most recent, at `/recent`, sends For You's main request with `order: 'daily'`
+and no notable papers, follows or exploration
+([recent-feed-pages.ts](src/utils/recent-feed-pages.ts)).
+[useRecentFeedPapers](src/components/recent/use-recent-feed-papers.ts) takes
+the reader's interest groups, Not interested papers and exclusions from
+FeedContext's `getInterestRunSignals` when a run starts. Each page's filter
+holds the papers the reader viewed on a card in any feed
+([viewedPaperIds](src/context/feed-viewed-papers.ts)), not the papers For You
+only loaded, and every paper the run already received. Each page also names
+its run with an id the run draws when it starts (`walk`), so the Worker keeps
+a walk of the daily order for each run: a run in another tab of the same
+reader does not move this one on. The id lives only in the tab's memory, with
+the run: paging, a return from a paper and Show older papers keep it; a press
+on the tab, Check again, a reload and new topics or another account start a
+new run with a new id. From a Worker that
+skips seen papers, the list ends when an answer brings a paper the filter held
+or brings no papers; a short page does not end it, because the Worker can drop
+a paper between walking the order and reading its rows. From a Worker that does
+not skip seen papers, a page shorter than 15 ends it. Its pages
+are kept for the session and forgotten at sign-out
+([account-session.ts](src/context/account-session.ts)). When the page opens
+with no kept pages for its account and topics, as after a reload, the list
+opens on its first card rather than on the card remembered for the tab. Most
+recent and custom feeds page through [useCorpusFeedPages](src/hooks/use-corpus-feed-pages.ts);
+pressing either tab again asks its page for a new run through `requestRefresh`
+with the tab's key. Like a custom feed, Most recent leaves out a paper no feed
+shows (`isFeedPublication`), which the Worker can still serve from a ranking it
+kept, and goes on past it. While either list shows nothing it asks for at most
+three more pages by itself; then, while it has more, its empty state offers the
+next pages instead of saying it is empty or caught up.
 [paper-search-service.ts](src/services/paper-search-service.ts) separately merges
-live arXiv and OpenAlex results and applies search relevance.
+live OpenAlex, arXiv and OpenReview results and applies search relevance.
 
 Missing scientific metadata stays unknown; normalization must preserve its
 provenance. See [the paper contract guidance](CONTRIBUTING.md#typescript-and-runtime-checks)

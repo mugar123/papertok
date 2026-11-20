@@ -1,4 +1,5 @@
 import type { Paper } from '../src/models/paper.ts';
+import type { OpenReviewNote } from '../src/services/open-review-service.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { EntityMetrics } from '../src/services/adapters/open-alex-types.ts';
 import type { ShareCardEntity } from './share-card.ts';
@@ -38,6 +39,7 @@ interface ProjectName { acronym?: unknown; title?: unknown }
 export interface ShareProviders {
   openAlex?: (path: string, params: Record<string, string>) => Promise<(OpenAlexWork & OpenAlexEntityRecord & { results?: OpenAlexWork[] }) | null>;
   arxiv?: (id: string) => Promise<string>;
+  openReview?: (id: string) => Promise<OpenReviewNote | null>;
   openAire?: (params: Record<string, string>) => Promise<unknown>;
   firestore?: { getDocument: (path: string) => Promise<{ exists: boolean; data?: { title?: unknown; description?: unknown; language?: unknown; papers?: Partial<Paper>[] } | null } | null> };
 }
@@ -60,6 +62,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { plainScientificText } from '../src/utils/plain-scientific-text.ts';
 import { openAireProjectParams, readOpenAirePage } from '../src/services/open-aire-records.ts';
+import { mapOpenReviewNote } from '../src/services/open-review-service.ts';
 import { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH, paperShareCardFor, shareCardFor } from './share-card.ts';
 import {
   DEFAULT_PUBLIC_ORIGIN,
@@ -489,8 +492,43 @@ function paperFromArxivFeed(xml: unknown, requestedId: string) {
   };
 }
 
-async function loadPaper(route: Extract<ShareRoute, { kind: 'paper' }>, { openAlex, arxiv }: ShareProviders) {
+// A paper only OpenReview holds: the note is the whole record, read through
+// the mapper the app's own paper page uses. The DOI and the arXiv id stay
+// empty even when the note names one: the seed has to be the paper its key
+// names, and this key is the OpenReview id.
+function paperFromOpenReviewNote(note: OpenReviewNote) {
+  const paper = mapOpenReviewNote(note);
+  const title = cleanText(paper?.title, 1000);
+  if (!paper || !title) return null;
+  const abstract = cleanText(paper.abstract, 6000);
+  const published = String(paper.published || '').slice(0, 10);
+  return {
+    title,
+    abstract: abstract.length >= MIN_ABSTRACT_LENGTH ? abstract : '',
+    authors: paper.authors
+      .map(author => cleanText(typeof author === 'string' ? author : author?.name, 160))
+      .filter(Boolean)
+      .slice(0, MAX_AUTHORS),
+    year: /^\d{4}-\d{2}-\d{2}$/.test(published) ? Number(published.slice(0, 4)) : null,
+    published: /^\d{4}-\d{2}-\d{2}$/.test(published) ? published : '',
+    doi: '',
+    arxivId: '',
+    pmid: '',
+    journal: cleanText(paper.conference, 300),
+    landingPageUrl: httpUrl(paper.landingPageUrl),
+    pdfUrl: httpUrl(paper.pdfUrl),
+    // OpenReview does not say; unknown stays unknown.
+    language: '',
+  };
+}
+
+async function loadPaper(route: Extract<ShareRoute, { kind: 'paper' }>, { openAlex, arxiv, openReview }: ShareProviders) {
   const { type, value } = route.identity;
+  if (type === 'openreview') {
+    const note = await openReview!(value);
+    const fromOpenReview = note ? paperFromOpenReviewNote(note) : null;
+    return fromOpenReview ? found({ paper: fromOpenReview }) : notFound();
+  }
   if (type === 'arxiv') {
     const bare = value.replace(/v\d+$/i, '');
     // OpenAlex first, by the landing page, as the app's own fallback asks it;
@@ -588,6 +626,7 @@ async function loadEntity(route: Extract<ShareRoute, { kind: 'entity' }>, { open
  * `providers`, all injected so the Worker owns the budgets:
  * - `openAlex(path, params)` → the JSON, or null for a 404;
  * - `arxiv(id)` → the Atom feed `id_list=id` answers;
+ * - `openReview(id)` → the submission note, or null when there is none;
  * - `openAire(params)` → the JSON of Graph's `projects`, asked with `params`;
  * - `firestore.getDocument(path)` → `{ exists, id, data }`, read anonymously
  *   so the rules decide exactly as they do for a visitor.

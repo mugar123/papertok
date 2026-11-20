@@ -5,6 +5,7 @@
 // so Tab restarts at the content instead of the top of the page.
 import { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts'
 import { routeTitle, routeLabel } from '../../utils/route-metadata.ts'
 
 export default function RouteAnnouncer() {
@@ -17,11 +18,15 @@ export default function RouteAnnouncer() {
   // remembered pathname is stable across that double-invoke because both
   // runs see the same location.pathname.
   const lastAnnouncedPath = useRef<string | null>(null)
+  // A custom feed's page is called by the feed's name, so a rename while the
+  // page is open re-runs the effect below and retitles the tab.
+  const { feeds } = useCustomFeeds()
+  const title = routeTitle(location.pathname, feeds)
+  const label = routeLabel(location.pathname, feeds)
 
   useEffect(() => {
     // The title updates on every run, including a same-route re-run caused
-    // by a language toggle or StrictMode's double-invoke.
-    const title = routeTitle(location.pathname)
+    // by a rename, a language toggle or StrictMode's double-invoke.
     if (title) document.title = title
 
     if (lastAnnouncedPath.current === null) {
@@ -35,10 +40,9 @@ export default function RouteAnnouncer() {
       return
     }
     lastAnnouncedPath.current = location.pathname
-    const label = routeLabel(location.pathname)
     if (liveRef.current) liveRef.current.textContent = label || ''
     document.getElementById('main-content')?.focus({ preventScroll: true })
-  }, [location.pathname])
+  }, [location.pathname, title, label])
 
   // Rendered persistently and empty: live regions only announce content
   // *changes*, so the node must exist before the first navigation.

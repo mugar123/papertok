@@ -160,3 +160,13 @@ test('keeps the seen-id list bounded and unique', () => {
   assert.equal(compact.length, 500);
   assert.equal(compact.at(-1), 'paper-509');
 });
+
+for (const indexedFirst of [true, false]) {
+  test(`keeps the indexed trial when the PubMed copy comes ${indexedFirst ? 'first' : 'last'}`, () => {
+    const indexed = { ...paperOf('same-paper', []), trialRegistration: 'NCT04280705', trialRegistrationSource: 'pubmed-secondary-source' as const };
+    const mentioned = { ...paperOf('same-paper', []), trialRegistration: 'NCT00000001' };
+    const [first, second] = indexedFirst ? [indexed, mentioned] : [mentioned, indexed];
+    const merged = mergeFollowingUpdatePapers([first, second])[0];
+    assert.deepEqual([merged.trialRegistration, merged.trialRegistrationSource], ['NCT04280705', 'pubmed-secondary-source']);
+  });
+}

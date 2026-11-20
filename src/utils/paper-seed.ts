@@ -1,9 +1,9 @@
 import type { Paper } from '../models/paper.ts';
 
-import { withRetractionOf } from '../models/paper.ts';
+import { withPublicationEvidenceOf } from '../models/paper.ts';
 import { getArxivArchiveArea } from '../data/category-taxonomy.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
-import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './reading-library.ts';
+import { LEGACY_STORED_SUMMARY_CAP, SAVED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './reading-library.ts';
 
 /**
  * Whether the copy of a paper a link handed over is worth painting as the
@@ -27,8 +27,10 @@ const present = (value: unknown) => (Array.isArray(value)
   ? value.length > 0
   : !(value === undefined || value === null || (typeof value === 'string' && value.trim() === '')));
 
-// A stored summary that stops exactly at a cap was cut there, not finished.
-const summaryLooksCut = (text: string) => text.length === LEGACY_STORED_SUMMARY_CAP || text.length >= STORED_SUMMARY_CAP;
+// A stored summary that stops exactly at a cap was cut there, not finished:
+// a savedPapers document's or a copy-less record's, an old copy's, a copy's.
+export const summaryLooksCut = (text: string) => text.length === SAVED_SUMMARY_CAP
+  || text.length === LEGACY_STORED_SUMMARY_CAP || text.length >= STORED_SUMMARY_CAP;
 
 /**
  * The abstract the page shows once the providers have answered, given the
@@ -98,7 +100,7 @@ export function hydrateSeededPaper(seed: Partial<Paper> | null | undefined, hydr
   // A retraction the copy states stands, as in `PaperBuilder.merge`: OpenAlex
   // or arXiv can answer from data without the retraction PubMed gave the copy.
   return {
-    ...withRetractionOf(hydrated, seed),
+    ...withPublicationEvidenceOf(hydrated, seed),
     id: keep('id'),
     title: keep('title'),
     authors: hydratedAuthors(seed.authors, hydrated.authors),

@@ -515,6 +515,7 @@
   padding: var(--space-8);
   text-align: center;
   background: var(--bg-primary);
+  /* The focus entering the state ends this fade (FeedLandmark, ENG-175). */
   animation: fadeIn 0.4s ease-out;
 }
 

@@ -10,7 +10,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
+import { privacyNoticeStatus } from '../utils/nudges.ts';
+import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -58,6 +59,8 @@ test('every section of the Spanish policy survives the translation', () => {
     'What is collected if you create an account',
     'What is public and what is not',
     'University email verification',
+    'Zotero',
+    'ORCID',
     'Email updates',
     'Analytics',
     'Scientific sources and AI features',
@@ -128,7 +131,13 @@ test('the page promises the in-app announcement to signed-in accounts and says h
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // Guests and accounts created at or after the effective time are not told (nudges.ts privacyNoticeOwed).
   assert.match(html, /the change will be announced in the application to signed-in accounts created before the change took effect/);
-  assert.match(html, /remembers that version, separately for each account/);
+  assert.match(html, /your account remembers that version, so the same announcement does not come back on this or another device/);
+  // PRIVACY_NOTICE_BASELINE_VERSION (src/legal/privacy-policy.ts) settles 2026-11-07 for every account.
+  assert.match(html, /The announcement of the 7 November 2026 change is no longer shown, including to accounts that had not seen it/);
+  // users/{uid}/settings/privacyNotice (src/services/privacy-notice-service.ts) is listed with the account's data.
+  assert.match(html, /<td>The latest version of this policy whose change announcement you were shown<\/td>/);
+  // Account deletion removes users/{uid}/settings, where the record lives (USER_SUBCOLLECTIONS in worker/account-deletion.ts).
+  assert.match(html, /That deletes [^.]*the record of the latest policy announcement you were shown/);
 });
 
 test('the in-app notice announces the version this page is dated', () => {
@@ -138,7 +147,32 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.match(PRIVACY_POLICY_VERSION, /^\d{4}-\d{2}-\d{2}(\.\d+)?$/);
   const day = new Date(`${PRIVACY_POLICY_VERSION.slice(0, 10)}T00:00:00Z`);
   const dated = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(day);
-  assert.equal(dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
+  const revision = PRIVACY_POLICY_VERSION.split('.')[1];
+  assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
+});
+
+test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.9');
+  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6', '2026-11-20.7', '2026-11-20.8']) {
+    assert.equal(privacyNoticeStatus({
+      user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
+      signedIn: true,
+      version: PRIVACY_POLICY_VERSION,
+      effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+      baseline: PRIVACY_NOTICE_BASELINE_VERSION,
+      account: { uid: 'reader', version: seen },
+      storage: null,
+    }), 'owed', seen);
+  }
+  const notice = PRIVACY_POLICY_CHANGE.join(' ');
+  assert.match(notice, /Anthropic.*rewrites\/explanations outside the EU/i);
+  assert.match(notice, /Verified-email saves count per account\/paper\/UTC week.*opt out: Settings→Privacy/i);
+  assert.match(notice, /Analytics ties survey level\/broad interests\/answers\/optional role to accounts/i);
+  assert.match(notice, /Day 7–13 return marks stay local.*PostHog visits/i);
+  assert.match(notice, /Accounts keep Essential\/Curiosity priorities, mix and area levels/i);
+  assert.match(notice, /My profile suggests interests, listing recent citations\/coauthors unsaved/i);
+  assert.match(notice, /flags sessions with likes\/saves\/reads before profile load/i);
+  assert.match(notice, /Weekly citation mail uses ORCID on OpenAlex/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
@@ -185,11 +219,12 @@ test("every clause of the in-app summary is the page's own words", () => {
 test('the page lists the notice key among what the browser keeps and what removes it, and says it is remembered once shown', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
-  // NudgeHost records the version once the dialog is open (recordPrivacyNoticeShown in utils/nudges.ts).
-  assert.match(storage, /Once the announcement of a policy change has been shown to you, this browser keeps that version under your account identifier[^.]*sign out and in again/);
+  // NudgeHost keeps the version once the dialog opens or the account's record says so
+  // (recordPrivacyNoticeShown and adoptAccountNotice in utils/nudges.ts).
+  assert.match(storage, /This browser also keeps, under your account identifier, a copy of the latest policy version whose announcement your account was shown[^.]*sign out and in again/);
   // deleteConfirmedAccount (components/settings) removes the key in the browser the account is deleted from.
-  assert.match(storage, /Clearing the site's data removes it, and so does deleting the account from Settings in this browser/);
+  assert.match(storage, /Clearing the site's data removes the copy, and so does deleting the account from Settings in this browser/);
   const changes = html.match(/<h2>Changes<\/h2>.*?<\/p>/)?.[0] ?? '';
-  assert.match(changes, /Once the announcement has been shown, this browser remembers that version[^.]*however you closed it/);
+  assert.match(changes, /Once the announcement has been shown, your account remembers that version[^.]*however you closed it/);
   assert.doesNotMatch(changes, /Hide for now/);
 });

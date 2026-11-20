@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import type { ComponentProps, MouseEvent } from 'react'
 import type { Paper } from './models/paper.ts'
 import type { ReaderMenu } from './components/feed/paper-menu.tsx'
 
@@ -29,6 +29,7 @@ import { SimilarFeedProvider } from './context/similar-feed-context.tsx'
 import { FollowingProvider } from './context/following-context.tsx'
 import { FollowingUpdatesProvider } from './context/following-updates-context.tsx'
 import { EmailNotificationsProvider } from './context/email-notifications-context.tsx'
+import { CustomFeedsProvider } from './context/custom-feeds-provider.tsx'
 import ProtectedRoute from './components/auth/protected-route.tsx'
 import FeedContainer from './components/feed/feed-container.tsx'
 import Navbar from './components/layout/navbar.tsx'
@@ -39,6 +40,10 @@ import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
 import { getPublicPaperPath, isPublicRoutePath, keepsNavbarPath, legacyPaperRedirect } from './utils/public-navigation.ts'
 import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
+// Loaded eagerly: they remove the one-time OAuth values (Zotero's verifier,
+// ORCID's code and state) from the address before routing or analytics read it.
+import './services/zotero-service.ts'
+import './services/orcid-connection-service.ts'
 import './app.css'
 
 // Only what the first paint of the feed needs loads eagerly. Everything below
@@ -59,6 +64,9 @@ import './app.css'
 // never suspend at all.
 
 const InstitutionVerification = lazyWithPreload(() => import('./components/institution/institution-verification.tsx'))
+const ZoteroCallback = lazyWithPreload(() => import('./components/zotero/zotero-callback.tsx'))
+const OrcidCallback = lazyWithPreload(() => import('./components/orcid/orcid-callback.tsx'))
+const ProfilePage = lazyWithPreload(() => import('./components/profile/profile-page.tsx'))
 const OnboardingFlow = lazyWithPreload(() => import('./components/onboarding/onboarding-flow.tsx'))
 const ListsPage = lazyWithPreload(() => import('./components/lists/lists-page.tsx'))
 const PDFViewer = lazyWithPreload(() => import('./components/pdf/pdf-viewer.tsx'))
@@ -66,8 +74,11 @@ const SaveToListModal = lazyWithPreload(() => import('./components/lists/save-to
 const SearchPage = lazyWithPreload(() => import('./components/search/search-page.tsx'))
 const EntityExplorer = lazyWithPreload(() => import('./components/explorer/entity-explorer.tsx'))
 const FollowingFeedPage = lazyWithPreload(() => import('./components/following/following-feed-page.tsx'))
+const RecentFeedPage = lazyWithPreload(() => import('./components/recent/recent-feed-page.tsx'))
+const CustomFeedPage = lazyWithPreload(() => import('./components/custom-feeds/custom-feed-page.tsx'))
 const SettingsPage = lazyWithPreload(() => import('./components/settings/settings-page.tsx'))
 const FollowingSettingsPage = lazyWithPreload(() => import('./components/settings/following-settings-page.tsx'))
+const FeedsSettingsPage = lazyWithPreload(() => import('./components/settings/feeds-settings-page.tsx'))
 const PublicPaperPage = lazyWithPreload(() => import('./components/public/public-paper-page.tsx'))
 const PublicListPage = lazyWithPreload(() => import('./components/lists/public-list-page.tsx'))
 const SearchCommand = lazyWithPreload(() => import('./components/search/search-command.tsx'))
@@ -115,8 +126,9 @@ function AppContent() {
   // it does on a desktop (2026-10-09).
   const openPdf = useCallback((paper: Paper, menu: ReaderMenu) => setPdfOpen({ paper, menu }), [])
   // The paper the list picker is open for, with the surface of the card that
-  // opened it: the picker's save carries it (forYouCardNotable).
-  const [saveModal, setSaveModal] = useState<{ paper: Paper; surface?: string } | null>(null)
+  // opened it: the picker's save carries it (forYouCardNotable). The lists
+  // page also says where focus goes on close (`finalFocus`).
+  const [saveModal, setSaveModal] = useState<{ paper: Paper; surface?: string; finalFocus?: ComponentProps<typeof SaveToListModal>['finalFocus'] } | null>(null)
   const openSaveModal = useCallback((paper: Paper, surface?: string) => setSaveModal({ paper, surface }), [])
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [authPromptReason, setAuthPromptReason] = useState('default')
@@ -164,7 +176,7 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
+  const navbarRoutes = ['/feed', '/lists', '/profile', '/recent', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/feeds']
   // The paper, list and entity pages keep the app chrome for a signed-in
   // user — reaching a paper from a list, a list from someone's shared link,
   // or an author from a card, must not feel like leaving the app. Measured
@@ -277,6 +289,7 @@ function AppContent() {
       PDFViewer.preload().catch(() => {})
       SaveToListModal.preload().catch(() => {})
       FollowingFeedPage.preload().catch(() => {})
+      RecentFeedPage.preload().catch(() => {})
       // Settings is one tap from every screen, in the account menu. Fetched
       // on first visit instead, its chunk was what a deploy most often took
       // away from an open tab: a 404 on the chunk, the forced reload in
@@ -291,6 +304,10 @@ function AppContent() {
       EntityExplorer.preload().catch(() => {})
       import('./components/reader/paper-reader.tsx').catch(() => {})
       SearchCommand.preload().catch(() => {})
+      // The palette hands a paper with no public page to the search page,
+      // which opens it on arrival. Unpreloaded, the first one slid in an
+      // empty page and showed the paper afterwards.
+      SearchPage.preload().catch(() => {})
     }
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)
@@ -305,10 +322,8 @@ function AppContent() {
     schedule(() => { PDFViewer.preload().catch(() => {}) })
   }, [])
 
-  // Not held for the idle prefetch above: a reader opened in the first seconds
-  // would still grow its uses pill late. One small request per session.
   useEffect(() => {
-    if (sessionUid) primeAIUses(sessionUid)
+    if (sessionUid) return primeAIUses(sessionUid)
   }, [sessionUid])
 
   // The href stays for assistive technology; the click is handled here rather
@@ -368,6 +383,8 @@ function AppContent() {
               ProtectedRoute sends a visitor on from there. */}
           <Route path="/" element={<Navigate to={authLoading || user ? '/feed' : '/onboarding'} replace />} />
           <Route path="/institution/verify" element={<InstitutionVerification />} />
+          <Route path="/zotero/callback" element={<ZoteroCallback />} />
+          <Route path="/orcid/callback" element={<OrcidCallback />} />
           <Route path="/login" element={<LoginRedirect />} />
           {/* Signed out, the onboarding is the welcome, and it ends in a
               sign-up: there is no guest feed. Signed in, it is the account's
@@ -408,7 +425,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <ListsPage onOpenPdf={openPdf} onEditPaper={openSaveModal} />
+                  <ListsPage key={user?.uid} onOpenPdf={openPdf} onEditPaper={(paper, finalFocus) => setSaveModal({ paper, finalFocus })} />
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -419,11 +436,38 @@ function AppContent() {
           <Route path="/research" element={<Navigate to="/feed" replace />} />
           <Route path="/report" element={<Navigate to="/feed" replace />} />
           <Route
+            path="/recent"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <RecentFeedPage
+                    onOpenPdf={openPdf}
+                    onSaveToList={openSaveModal}
+                  />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/following"
             element={
               <ProtectedRoute>
                 <PageTransition>
                   <FollowingFeedPage
+                    onOpenPdf={openPdf}
+                    onSaveToList={openSaveModal}
+                  />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          {/* A custom feed of the account's, by its id. */}
+          <Route
+            path="/feeds/:feedId"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <CustomFeedPage
                     onOpenPdf={openPdf}
                     onSaveToList={openSaveModal}
                   />
@@ -443,9 +487,18 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
-          {/* The profile page was removed with following people. Its address
-              lands on the lists, where the likes and saves it showed live. */}
-          <Route path="/profile" element={<Navigate to="/lists" replace />} />
+          {/* The account's own page, seen only by the account: its ORCID
+              connection and the publications of its ORCID record. */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <ProfilePage key={user?.uid} />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
           {/* One route per settings page; the bare address opens the first. */}
           <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
           <Route
@@ -504,6 +557,16 @@ function AppContent() {
               <ProtectedRoute>
                 <PageTransition>
                   <FollowingSettingsPage />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/feeds"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <FeedsSettingsPage />
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -611,6 +674,7 @@ function AppContent() {
           <SaveToListModal
             paper={saveModal.paper}
             surface={saveModal.surface}
+            finalFocus={saveModal.finalFocus}
             onClose={() => setSaveModal(null)}
           />
         )}
@@ -644,7 +708,9 @@ function UserScopedAppContent() {
     <FollowingProvider key={accountScopeKey(scope)}>
       <FollowingUpdatesProvider>
         <EmailNotificationsProvider>
-          <AppContent />
+          <CustomFeedsProvider>
+            <AppContent />
+          </CustomFeedsProvider>
         </EmailNotificationsProvider>
       </FollowingUpdatesProvider>
     </FollowingProvider>

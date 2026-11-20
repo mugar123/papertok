@@ -82,6 +82,9 @@ function memoryAdmin<Documents extends Record<string, FirestoreData>>(seed: Docu
         if (write.currentDocument?.exists === true && documents[key] == null) {
           throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409, 'NOT_FOUND');
         }
+        if (write.currentDocument?.exists === false && documents[key] != null) {
+          throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409, 'ALREADY_EXISTS');
+        }
         const patch = decodeFields(write.update!.fields);
         if (write.updateMask) {
           const next = { ...(documents[key] || {}) };
@@ -190,13 +193,19 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     [`users/${UID}/interactions/p1`]: { liked: true },
     [`users/${UID}/following/a1`]: { type: 'author' as const },
     [`users/${UID}/savedPapers/p1`]: { title: 'A paper' },
+    [`users/${UID}/authorMetricConsent/saves`]: { enabled: true },
+    [`users/${UID}/authorMetricReceipts/smoke`]: { paperId: 'openalex:W42' },
+    [`users/${UID}/authorMetricWeeks/saves-2026-11-23`]: { metric: 'saves', paperIds: ['openalex:W42'] },
+    'users/another-uid/authorMetricWeeks/saves-2026-11-23': { metric: 'saves', paperIds: ['openalex:W42'] },
     [`users/${UID}/settings/followingUpdates`]: { seenIds: [] },
     [`users/${UID}/profileStash/pins`]: { pinnedLists: [] },
     [`users/${UID}/aggregates/interactions`]: { schemaVersion: 1 },
     [`users/${UID}/rateLimits/comments`]: { count: 1 },
     [`users/${UID}/summaries/key.university`]: { sections: [{ kind: 'intro', paragraphs: ['Plain words.'] }] },
     [`users/${UID}/summaryHistory/key.university`]: { title: 'A paper', level: 'university' },
-    [`users/${UID}`]: { onboardingComplete: true },
+    [`users/${UID}/orcid/link`]: { stateHash: 'a-pending-orcid-state', createdAt: 1 },
+    [`users/${UID}/orcid/works`]: { mine: ['doi:10.1000/a'], notMine: ['openalex:W2'] },
+    [`users/${UID}`]: { onboardingComplete: true, orcid: { id: '0000-0002-1825-0097', name: 'Josiah Carberry', host: 'orcid.org', connectedAt: '2026-11-18T10:00:00.000Z' } },
   });
   const store = kvStore({
     [`notification:subscription:${UID}`]: JSON.stringify({
@@ -211,7 +220,8 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
 
   try {
     let result;
-    for (let i = 0; i < 12; i += 1) {
+    // One slice per stage and per seeded collection of the tree.
+    for (let i = 0; i < 16; i += 1) {
       result = await handleAccountDeletionRequest(deletionRequest(), env, {
         admin,
         fetchImpl: async (url) => {
@@ -224,6 +234,10 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     assert.ok(result);
     assert.equal(result.complete, true);
     assert.equal(result.stage, 'auth');
+    assert.equal(admin.documents[`users/${UID}/authorMetricConsent/saves`], undefined);
+    assert.equal(admin.documents[`users/${UID}/authorMetricReceipts/smoke`], undefined);
+    assert.equal(admin.documents[`users/${UID}/authorMetricWeeks/saves-2026-11-23`], undefined);
+    assert.deepEqual(admin.documents['users/another-uid/authorMetricWeeks/saves-2026-11-23'].paperIds, ['openalex:W42']);
     assert.equal(admin.documents[`papers/${PAPER_KEY}/comments/c1`], undefined);
     assert.equal(admin.documents[`papers/${PAPER_KEY}/comments/c2`].authorUid, 'other');
     assert.equal(admin.documents['reports/r1'], undefined);
@@ -242,6 +256,8 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     assert.equal(admin.documents[`users/${UID}/rateLimits/comments`], undefined);
     assert.equal(admin.documents[`users/${UID}/summaries/key.university`], undefined);
     assert.equal(admin.documents[`users/${UID}/summaryHistory/key.university`], undefined);
+    assert.equal(admin.documents[`users/${UID}/orcid/link`], undefined);
+    assert.equal(admin.documents[`users/${UID}/orcid/works`], undefined);
     assert.equal(store.data.has(`notification:subscription:${UID}`), false);
     assert.equal(store.data.has('notification:unsubscribe:tok-1'), false);
   } finally {
@@ -434,6 +450,26 @@ test('a digest turned on while the Auth delete is in flight is purged too', asyn
     else (globalThis as TestGlobals).caches = originalCaches;
     restore();
   }
+});
+
+test('an unsubscribe index a save in flight writes back after the purge is removed by the sweep after the Auth delete', async () => {
+  const store = kvStore({
+    [`notification:subscription:${UID}`]: JSON.stringify({ uid: UID, unsubscribeToken: 'tok-1', enabled: true }),
+    'notification:unsubscribe:tok-1': UID,
+  });
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
+
+  const result = await runAccountDeletionSlice(memoryAdmin(), UID, env, {
+    idToken: TOKEN,
+    fetchImpl: async () => {
+      // A settings save that read the subscription before the purge writes its link's index after it.
+      store.data.set('notification:unsubscribe:tok-1', UID);
+      return new Response('{}', { status: 200 });
+    },
+  });
+
+  assert.equal(result.complete, true);
+  assert.equal(store.data.has('notification:unsubscribe:tok-1'), false);
 });
 
 // Only the deletion's own log lines are kept. Node 22 prints the experimental

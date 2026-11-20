@@ -1,7 +1,7 @@
 import type { Paper } from '../models/paper.ts';
 
 // Reached lazily, so a unit test of this module never loads the arXiv client.
-const readArxivPapers = async (ids: string[]) => {
+export const readArxivPapers = async (ids: string[]) => {
   const { fetchPapersByIds } = await import('./arxiv-service.ts');
   return fetchPapersByIds(ids);
 };
@@ -19,7 +19,8 @@ export function isLegacyArxivId(id: string) {
   return typeof id === 'string' && LEGACY_ARXIV_ID.test(id);
 }
 
-const arxivKey = (value: unknown) => String(value || '')
+/** An arXiv id as two spellings of it compare: no prefix, no version, no case. */
+export const arxivKey = (value: unknown) => String(value || '')
   .replace(/^arxiv:/i, '')
   .replace(/v\d+$/i, '')
   .toLowerCase();

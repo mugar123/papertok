@@ -23,11 +23,16 @@ import { buildSavedPaperPayload } from '../src/utils/saved-paper-payload.ts';
 import { paperLegacyAdapter, storedClassification } from '../src/models/paper.ts';
 import { areaLabelForPaper } from '../src/utils/area-accent.ts';
 import { serializeLibraryPaper } from '../src/utils/reading-library.ts';
+import { journalExplorerLink } from '../src/utils/explorer-paths.ts';
 import { copyForMergeWrite } from '../src/utils/stored-copy-write.ts';
 import { LIST_COLORS } from '../src/utils/list-colors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
+import { CATEGORIES } from '../src/data/category-taxonomy.ts';
 import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
+import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
+import { orcidWorkDecisionWrite } from '../src/services/orcid-work-decisions-service.ts';
+import { PRIVACY_POLICY_VERSION } from '../src/legal/privacy-policy.ts';
 import {
   deleteDoc,
   deleteField,
@@ -90,6 +95,33 @@ async function reset() {
 const asAlice = () => testEnv.authenticatedContext(ALICE).firestore();
 const asBob = () => testEnv.authenticatedContext(BOB).firestore();
 const asGuest = () => testEnv.unauthenticatedContext().firestore();
+
+test('only the account owner can store a valid mix and per-area preferences', async () => {
+  await reset();
+  const ref = doc(asAlice(), 'users', ALICE);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.AI', 'quant-ph'] }));
+  const allAreas = Object.fromEntries(Object.keys(CATEGORIES).map(area => [area, { priority: 'curiosity', level: 'university' }]));
+  await assertSucceeds(updateDoc(ref, { interestMix: 'mostly-work', areaPreferences: allAreas }));
+  await assertSucceeds(updateDoc(ref, { interestMix: 'balanced', areaPreferences: { ai: { level: 'beginner' }, physics: { priority: 'essential' } } }));
+  await assertSucceeds(updateDoc(ref, { interestMix: 'half-and-half', areaPreferences: { ai: { level: 'researcher' } } }));
+  assert.deepEqual((await getDoc(ref)).data()?.areaPreferences, { ai: { level: 'researcher' } });
+  for (const invalid of [
+    { interestMix: '90/10' },
+    { interestMix: 90 },
+    { areaPreferences: [] },
+    { areaPreferences: { 'cs.AI': { priority: 'essential' } } },
+    { areaPreferences: { bio: ['curiosity'] } },
+    { areaPreferences: { ai: { priority: 'work' } } },
+    { areaPreferences: { econ: { level: 'default' } } },
+    { areaPreferences: { math: { level: null } } },
+    { areaPreferences: { 'q-fin': { level: 'researcher', extra: true } } },
+  ]) {
+    await assertFails(updateDoc(ref, invalid));
+  }
+  await assertFails(updateDoc(doc(asBob(), 'users', ALICE), { interestMix: 'balanced' }));
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE)));
+  await assertSucceeds(updateDoc(ref, { areaPreferences: {}, interestMix: deleteField() }));
+});
 
 // =========================================================================
 // Reading
@@ -487,6 +519,107 @@ test('a client cannot award itself an institution', async () => {
   await assertFails(setDoc(ref, { onboardingComplete: true, institution: INSTITUTION }));
   await assertSucceeds(setDoc(ref, { onboardingComplete: true }));
   await assertFails(setDoc(ref, { institution: INSTITUTION }, { merge: true }));
+});
+
+// The ORCID iD an ORCID sign-in proved (worker/orcid.ts) is frozen the same way.
+const ORCID = {
+  id: '0000-0002-1825-0097',
+  name: 'Josiah Carberry',
+  host: 'orcid.org',
+  connectedAt: '2026-11-18T10:00:00.000Z',
+};
+
+test('a connected ORCID iD survives the owner\'s own writes and cannot be edited or dropped', async () => {
+  await reset();
+  await seedLegacyUserDoc({ orcid: ORCID });
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.LG'] }, { merge: true }));
+  await assertFails(setDoc(ref, { orcid: { ...ORCID, id: '0000-0001-5109-3700' } }, { merge: true }));
+  await assertFails(updateDoc(ref, { 'orcid.name': 'Someone Else' }));
+  await assertFails(updateDoc(ref, { orcid: deleteField() }));
+});
+
+test('a client cannot connect an ORCID iD itself', async () => {
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  await assertFails(setDoc(ref, { onboardingComplete: true, orcid: ORCID }));
+  await assertSucceeds(setDoc(ref, { onboardingComplete: true }));
+  await assertFails(setDoc(ref, { orcid: ORCID }, { merge: true }));
+});
+
+test('the pending ORCID connection is closed to its own account', async () => {
+  // Only a hash of the state is kept there, and only the Worker reads it.
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE, 'orcid', 'link'), { stateHash: 'abc', createdAt: 1 });
+  });
+  const db = asAlice();
+  await assertFails(getDoc(doc(db, 'users', ALICE, 'orcid', 'link')));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'orcid', 'link'), { stateHash: 'mine', createdAt: 2 }));
+});
+
+// What the account said about the works OpenAlex attributes to its iD
+// (src/services/orcid-work-decisions-service.ts), written as the app writes it.
+test('an account with an ORCID iD keeps its own decisions about the works attributed to it', async () => {
+  await reset();
+  await seedLegacyUserDoc({ orcid: ORCID });
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'orcid', 'works');
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['openalex:W2'], 'notMine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['openalex:W3'], 'mine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['openalex:W3'], null), { merge: true }));
+  const stored = await assertSucceeds(getDoc(ref));
+  assert.deepEqual(stored.get('mine'), ['doi:10.1000/a']);
+  assert.deepEqual(stored.get('notMine'), ['openalex:W2']);
+
+  // Nobody else reads or writes them, and the collection is not listed.
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'orcid', 'works')));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'orcid', 'works'), orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/b'], 'mine'), { merge: true }));
+  await assertFails(getDocs(collection(db, 'users', ALICE, 'orcid')));
+  // Only the two lists of identifiers and the server's time.
+  await assertFails(setDoc(ref, { ...orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/c'], 'mine'), title: 'A paper' }, { merge: true }));
+  const connectedAt = ORCID.connectedAt;
+  await assertFails(setDoc(ref, { connectedAt, mine: [], notMine: [], updatedAt: new Date(0) }));
+  await assertFails(setDoc(ref, { connectedAt, mine: 'doi:10.1000/a', notMine: [], updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(ref, {
+    connectedAt, mine: Array.from({ length: 1001 }, (_, index) => `doi:10.1000/${index}`), notMine: [], updatedAt: serverTimestamp(),
+  }));
+});
+
+test('no decision about attributed works is kept without a connected ORCID iD', async () => {
+  // Disconnect clears the iD before it deletes the decisions, so a write that
+  // crosses it is refused rather than left behind.
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'orcid', 'works');
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  await seedLegacyUserDoc();
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
+});
+
+test('a decision counts only for the ORCID connection the account holds now', async () => {
+  // After a switch from one iD to another, a tab still showing the first
+  // cannot add its works to the second, whose decisions start empty.
+  await reset();
+  const next = { ...ORCID, id: '0000-0001-5109-3700', connectedAt: '2026-11-18T11:00:00.000Z' };
+  await seedLegacyUserDoc({ orcid: next });
+  const ref = doc(asAlice(), 'users', ALICE, 'orcid', 'works');
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  await assertFails(setDoc(ref, orcidWorkDecisionWrite(null, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  // A first write that names no connection is refused too. (A later merge without the field
+  // keeps the stored one, which is the current connection's; the client always sends it.)
+  const unbound: Record<string, unknown> = orcidWorkDecisionWrite(next.connectedAt, ['doi:10.1000/a'], 'mine');
+  delete unbound.connectedAt;
+  await assertFails(setDoc(ref, unbound, { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(next.connectedAt, ['doi:10.1000/b'], 'mine'), { merge: true }));
+  // Nor can a later write move the document back to the earlier connection.
+  await assertFails(updateDoc(ref, { mine: ['doi:10.1000/a'], updatedAt: serverTimestamp(), connectedAt: ORCID.connectedAt }));
+  const stored = await assertSucceeds(getDoc(ref));
+  assert.deepEqual(stored.get('mine'), ['doi:10.1000/b']);
+  assert.equal(stored.get('connectedAt'), next.connectedAt);
 });
 
 // =========================================================================
@@ -928,7 +1061,7 @@ test('P19: paragraphIndex is a whole number from zero to one hundred', async () 
   }
 });
 
-test('P19: level and language accept only the values the reader can pick', async () => {
+test('P19: level and language accept only the values the reader and the viewer can pick', async () => {
   await reset();
   const db = asAlice();
   await assertFails(setDoc(highlightRef(db), highlightBody({ level: 'expert' })));
@@ -938,7 +1071,7 @@ test('P19: level and language accept only the values the reader can pick', async
   // Absent, not merely wrong: dereferencing a missing key denies the write.
   await assertFails(setDoc(highlightRef(db), highlightWithout('level')));
   await assertFails(setDoc(highlightRef(db), highlightWithout('language')));
-  for (const level of ['beginner', 'university', 'researcher']) {
+  for (const level of ['beginner', 'university', 'researcher', 'full-text']) {
     await assertSucceeds(setDoc(highlightRef(db), highlightBody({ level })));
   }
   for (const language of ['es', 'en']) {
@@ -1051,7 +1184,31 @@ test('P19: the heaviest highlight a reader can write is a clean allow', async ()
     endParagraphIndex: 100,
     endQuote: 'a'.repeat(400),
     kind: 'caveat',
+    color: 'violet',
+    occurrence: 100,
   })));
+});
+
+test('P19: a highlight colour is one the viewer paints, or absent', async () => {
+  await reset();
+  const db = asAlice();
+  for (const color of ['teal', 'sky', 'violet', 'rose']) {
+    await assertSucceeds(setDoc(highlightRef(db), highlightBody({ color })));
+  }
+  await assertFails(setDoc(highlightRef(db), highlightBody({ color: 'yellow' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ color: 'red' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ color: 3 })));
+});
+
+test('P19: a later occurrence of the same words is a whole number from 1 to 100, or absent', async () => {
+  await reset();
+  const db = asAlice();
+  for (const occurrence of [1, 100]) {
+    await assertSucceeds(setDoc(highlightRef(db), highlightBody({ occurrence })));
+  }
+  for (const occurrence of [0, -1, 101, 1.5, '2']) {
+    await assertFails(setDoc(highlightRef(db), highlightBody({ occurrence })));
+  }
 });
 
 test('P19: a passage across paragraphs ends later in the same section, with its end quote', async () => {
@@ -1084,6 +1241,73 @@ test('P19: a passage across paragraphs ends later in the same section, with its 
  * Nothing could have caught that from either side alone. So this checks the
  * two together, on the shapes that actually broke.
  */
+test('only the account can change author metrics consent and only the Worker can access contributions', async () => {
+  const alice = testEnv.authenticatedContext(ALICE, { email_verified: true }).firestore();
+  const bob = testEnv.authenticatedContext(BOB).firestore();
+  const preference = doc(alice, 'users', ALICE, 'authorMetricConsent', 'saves');
+  await assertSucceeds(setDoc(doc(alice, 'users', ALICE), { onboardingComplete: true }));
+  await assertSucceeds(setDoc(preference, { enabled: true, changedAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(preference));
+  await assertFails(setDoc(preference, { enabled: false, changedAt: '2026-11-20' }));
+  await assertFails(setDoc(preference, { enabled: false, changedAt: serverTimestamp(), deleting: false }));
+  await assertFails(getDoc(doc(bob, preference.path)));
+  await assertFails(setDoc(doc(bob, preference.path), { enabled: true, changedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(preference));
+  for (const path of ['authorMetricConfig/saves', 'authorMetricAliases/sample', `users/${ALICE}/authorMetricWeeks/saves-2026-11-23`]) {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), path), { enabled: true });
+    });
+    await assertFails(getDoc(doc(alice, path)));
+    await assertFails(setDoc(doc(alice, path), { enabled: false }));
+    await assertFails(deleteDoc(doc(alice, path)));
+  }
+});
+
+test('verified owners can create immutable save receipts only after launch and before their account deletion', async () => {
+  const db = testEnv.authenticatedContext(ALICE, { email_verified: true }).firestore();
+  const path = `users/${ALICE}/authorMetricReceipts`;
+  const values = { paperId: 'openalex:W42', savedAt: serverTimestamp(), expiresAt: new Date(Date.now() + 5 * 60_000) };
+  const first = doc(db, path, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  const second = doc(db, path, 'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee');
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE), { onboardingComplete: true }));
+  const saved = doc(db, 'users', ALICE, 'savedPapers', 'openalex:W42');
+  await assertSucceeds(setDoc(saved, { title: 'A paper', savedAt: '2026-01-01T00:00:00Z' }));
+  await assertFails(updateDoc(saved, { savedAt: new Date('2026-01-02T00:00:00Z') }));
+  await assertSucceeds(updateDoc(saved, { savedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(saved, { title: 'Updated title' }));
+  await assertFails(setDoc(first, values));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'authorMetricConfig', 'saves'), { enabled: true, launchedAt: new Date() });
+  });
+  await assertFails(setDoc(first, values));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'authorMetricConfig', 'saves'), { enabled: true, launchedAt: new Date('2026-01-01') });
+  });
+  await assertFails(setDoc(first, { ...values, savedAt: new Date() }));
+  await assertFails(setDoc(first, { ...values, expiresAt: new Date() }));
+  await assertSucceeds(setDoc(first, values));
+  const consent = doc(db, 'users', ALICE, 'authorMetricConsent', 'saves');
+  await assertSucceeds(setDoc(consent, { enabled: false, changedAt: serverTimestamp() }));
+  await assertFails(setDoc(second, values));
+  await assertSucceeds(setDoc(consent, { enabled: true, changedAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(second, values));
+  await assertFails(getDoc(first));
+  await assertFails(updateDoc(first, { paperId: 'openalex:W43' }));
+  const unverified = testEnv.authenticatedContext(ALICE, { email_verified: false }).firestore();
+  await assertFails(setDoc(doc(unverified, path, 'cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee'), values));
+  const bob = testEnv.authenticatedContext(BOB, { email_verified: true }).firestore();
+  await assertFails(deleteDoc(doc(bob, first.path)));
+  await assertSucceeds(deleteDoc(first));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'users', ALICE), { authorMetricsDeleting: true });
+  });
+  await assertFails(setDoc(first, values));
+  await assertFails(deleteDoc(doc(db, 'users', ALICE)));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'authorMetricConsent', 'saves'), {
+    enabled: true, changedAt: serverTimestamp(),
+  }));
+});
+
 test('savedPapers accepts what buildSavedPaperPayload sends, for a paper missing everything optional', async () => {
   const db = asAlice();
   const savedAt = new Date().toISOString();
@@ -1146,6 +1370,28 @@ test('savedPapers accepts the abstract source buildSavedPaperPayload sends, and 
     await assertFails(setDoc(ref, { ...valid, abstractSource }))
       .catch((error: Error) => assert.fail(`${String(abstractSource)} was accepted: ${error.message}`));
   }
+});
+
+test('the reader opens a saved journal by id and still reads older copies without one', async () => {
+  await reset();
+  const id = 'openalex:W7000000001';
+  const interaction = doc(asAlice(), 'users', ALICE, 'interactions', id);
+  const legacy = { id, title: 'Monetary policy', journal: 'Am Econ Rev' };
+  await assertSucceeds(setDoc(interaction, { saved: true, paper: legacy }));
+  const older = paperLegacyAdapter((await getDoc(interaction)).data()!.paper);
+  assert.equal(older.journal, 'Am Econ Rev');
+  assert.equal(journalExplorerLink(older), null);
+
+  const paper = serializeLibraryPaper({ ...legacy, venueId: 'S23254222', sourceName: 'American Economic Review' });
+  await assertSucceeds(setDoc(interaction, { saved: true, paper: copyForMergeWrite(paper) }, { merge: true }));
+  const saved = paperLegacyAdapter((await getDoc(interaction)).data()!.paper);
+  assert.deepEqual(journalExplorerLink(saved), { name: 'American Economic Review', path: '/explorer/source/S23254222' });
+
+  const revised = serializeLibraryPaper({ ...legacy, journal: 'Another journal' });
+  await assertSucceeds(setDoc(interaction, { paper: copyForMergeWrite(revised) }, { merge: true }));
+  const updated = paperLegacyAdapter((await getDoc(interaction)).data()!.paper);
+  assert.equal(updated.journal, 'Another journal');
+  assert.equal(journalExplorerLink(updated), null);
 });
 
 // ENG-109: every write of a saved paper, and of an interaction's copy, merges
@@ -1508,4 +1754,68 @@ test('a topic that arrives late is added to the copies of a liked and saved pape
   assert.equal(copy.title, title, 'the rest of the copy is unchanged');
   assert.equal(areaLabelForPaper(paperLegacyAdapter(copy)), 'Biology');
   assert.equal(areaLabelForPaper(paperLegacyAdapter({ id, ...(await getDoc(saved)).data() })), 'Biology');
+});
+
+// =========================================================================
+// ENG-196: the account's own record of the newest privacy policy version whose
+// change notice it was shown, so the notice does not return on another device.
+// =========================================================================
+
+const privacyNoticeDoc = (db: ReturnType<typeof asAlice>, uid = ALICE) => doc(db, 'users', uid, 'settings', 'privacyNotice');
+
+test('ENG-196: the owner records and reads the privacy notice version shown, as the app writes it', async () => {
+  await reset();
+  await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), privacyNoticeRecord(PRIVACY_POLICY_VERSION), { merge: true }));
+  await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), privacyNoticeRecord('2026-12-01.2'), { merge: true }));
+  const record = await assertSucceeds(getDoc(privacyNoticeDoc(asAlice())));
+  assert.equal(record.get('shownVersion'), '2026-12-01.2');
+});
+
+test('ENG-196: no other account and no guest reads or writes it, and the client cannot delete it', async () => {
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(privacyNoticeDoc(context.firestore()), { shownVersion: '2026-12-01' });
+  });
+  await assertFails(getDoc(privacyNoticeDoc(asBob())));
+  await assertFails(getDoc(privacyNoticeDoc(asGuest())));
+  await assertFails(setDoc(privacyNoticeDoc(asBob()), privacyNoticeRecord('2026-12-02'), { merge: true }));
+  await assertFails(setDoc(privacyNoticeDoc(asGuest()), privacyNoticeRecord('2026-12-02'), { merge: true }));
+  await assertFails(deleteDoc(privacyNoticeDoc(asAlice())));
+});
+
+test('ENG-196: the record holds one policy version and nothing else, no acceptance among it', async () => {
+  await reset();
+  for (const shownVersion of ['', 'garbage', '2026-11-7', '2026-11-07.', '2026-11-07.12345', ' 2026-11-07', '2026-11-07 ', '2026-11-07.2.1', 20261107, null]) {
+    await assertFails(setDoc(privacyNoticeDoc(asAlice()), { shownVersion }));
+  }
+  await assertFails(setDoc(privacyNoticeDoc(asAlice()), {}));
+  await assertFails(setDoc(privacyNoticeDoc(asAlice()), { shownVersion: '2026-12-01', acceptedAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), { shownVersion: '2026-12-01.1234' }));
+});
+
+test('ENG-196: recording it changes nothing in the user document', async () => {
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE), { onboardingComplete: true, preferences: ['cs.AI'] });
+  });
+  await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), privacyNoticeRecord('2026-12-01'), { merge: true }));
+  assert.deepEqual((await getDoc(doc(asAlice(), 'users', ALICE))).data(), { onboardingComplete: true, preferences: ['cs.AI'] });
+});
+
+// =========================================================================
+// Custom feeds: every feed an account defines lives in one document.
+// =========================================================================
+
+test('custom feeds: the owner keeps up to eight feeds in one document, and nobody else reads or writes it', async () => {
+  await reset();
+  const feed = (n: number) => ({ id: `abcd123${n}`, name: `Feed ${n}`, order: 'newest', ingredients: [{ kind: 'category', id: 'quant-ph' }] });
+  const mine = doc(asAlice(), 'users', ALICE, 'settings', 'customFeeds');
+  await assertSucceeds(setDoc(mine, { feeds: [1, 2, 3, 4, 5, 6, 7, 8].map(feed), updatedAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(mine));
+  await assertFails(setDoc(mine, { feeds: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(feed), updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(mine, { feeds: [], updatedAt: serverTimestamp(), extra: true }));
+  await assertFails(setDoc(mine, { feeds: 'none', updatedAt: serverTimestamp() }));
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'settings', 'customFeeds')));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'settings', 'customFeeds'), { feeds: [], updatedAt: serverTimestamp() }));
+  await assertFails(getDoc(doc(asGuest(), 'users', ALICE, 'settings', 'customFeeds')));
 });

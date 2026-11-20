@@ -1,4 +1,5 @@
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import type { AbstractRetries } from './paper-enrichment.ts';
 import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
 import type { UpstreamError } from './provider-runtime.ts';
@@ -16,7 +17,10 @@ const EMBED_STEP_PAPERS = 256;
 // 25 to 50 papers per OpenAlex call: a step of 500 is about 20 calls, and a
 // run's ENRICH_STEPS about 3,000 units of the nightly run's 3,700 of the
 // harvest's share of the day (provider-runtime.ts). A larger backlog drains
-// over the next runs.
+// over the next runs. Each step takes the new papers first, then OpenAlex's
+// misses, then the retries of young papers still without an abstract, which
+// are counted for at most ABSTRACT_RETRY_UNITS (300) of those units a run, a
+// count the calls sent can pass, then the 14-day refresh (paper-enrichment.ts).
 //
 // The steps of a run execute in one Worker invocation until a wait longer than
 // the Workflows engine's 5-minute grace period, so every step's subrequests
@@ -31,7 +35,8 @@ export const ENRICH_STEPS = 150;
 // Followed lanes harvested a run, the longest due first: a lane is due from
 // its last harvest or, never harvested, from when it was first followed, and
 // the most recently written comes first among lanes due from the same time. A
-// followed search costs ten units, an entity one, of the 700 a day the
+// keyword lane costs ten units a night and twenty or thirty on the nights of
+// its first and weekly listings, an entity one, of the 700 a day the
 // nightly refresh of followed lanes may spend (paper-sources.ts); once they
 // are spent, the run's other OpenAlex followed lanes wait and keep their turn.
 // A harvest that fails otherwise is the lane's turn too (`harvestFollowedLane`).
@@ -157,11 +162,12 @@ async function followedJobs(db: D1Database, now: number) {
   // lane_state's key starts with the source: naming the followed lanes'
   // sources lets each lane's row be read by key. A lane whose last turn
   // failed is due from when it may be asked again, behind the lanes
-  // harvested before then.
+  // harvested before then. A keyword lane that filed its weekly listing and
+  // not yet a night's papers has a row with no harvest ('').
   const { results } = await db.prepare(`SELECT f.lane FROM followed_lanes f
     LEFT JOIN lane_state s ON s.source IN (SELECT value FROM json_each(?)) AND s.lane = f.lane
     WHERE f.requested_at >= ? AND (f.retry_at IS NULL OR f.retry_at <= ?)
-    ORDER BY COALESCE(f.retry_at, s.harvested_through, f.registered_at), f.requested_at DESC LIMIT ?`)
+    ORDER BY COALESCE(f.retry_at, NULLIF(s.harvested_through, ''), f.registered_at), f.requested_at DESC LIMIT ?`)
     .bind(JSON.stringify(FOLLOWED_SOURCES), daysFromNow(-FOLLOWED_LANE_DAYS, now), new Date(now).toISOString(), FOLLOWED_LANES_PER_RUN)
     .all<{ lane: string }>();
   return results.map(row => followedLaneJob(row.lane)).filter(Boolean) as LaneJob[];
@@ -268,8 +274,13 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)), started));
 
   await phase('enrich', async () => {
+    // What the run's abstract retries may still do, from one batch to the
+    // next; the first batch starts them with their whole allowance.
+    let retries: AbstractRetries | undefined;
     for (let batch = 0; batch < ENRICH_STEPS; batch += 1) {
-      const enriched = await step.do(`enrich ${batch}`, PAGE_STEP, () => enrichPending(env, ENRICH_STEP_PAPERS));
+      const allowed = retries;
+      const enriched = await step.do(`enrich ${batch}`, PAGE_STEP, () => enrichPending(env, ENRICH_STEP_PAPERS, Date.now(), allowed));
+      retries = enriched.retries;
       for (let start = 0; start < enriched.workIds.length; start += EMBED_STEP_PAPERS) {
         const ids = enriched.workIds.slice(start, start + EMBED_STEP_PAPERS);
         await step.do(`embed enriched ${batch}:${start}`, PAGE_STEP, () => embedWorks(env, ids, undefined));

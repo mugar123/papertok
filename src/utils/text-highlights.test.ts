@@ -7,7 +7,7 @@ import {
   resolveHighlightRanges,
   segmentTextChunk,
 } from './text-highlights.ts';
-import { normalizeLatexText, normalizeSavedLatexText } from './latex.ts';
+import { displayProse, normalizeLatexText, normalizeSavedLatexText } from './latex.ts';
 
 test('resolves a quote to a range in normalized space', () => {
   const text = 'The model reduced error by 12%.';
@@ -17,6 +17,47 @@ test('resolves a quote to a range in normalized space', () => {
   // normalizeLatexText escapes the percent sign on both sides, so the quote
   // still matches and the range covers it.
   assert.ok(ranges[0].end > ranges[0].start);
+});
+
+test('resolves a saved quote containing adjacent percent signs', () => {
+  const text = 'Our lexer recognizes %% as a section boundary.';
+  const plan = buildHighlightPlan(text, [{ quote: String.raw`recognizes \%% as a section boundary` }]);
+  assert.deepEqual(plan.filter(chunk => chunk.type === 'mark').map(chunk => displayProse(chunk.value)), [
+    'recognizes %% as a section boundary',
+  ]);
+});
+
+test('maps a quote starting at the second percent through a font wrapper', () => {
+  const plan = buildHighlightPlan(String.raw`The %% \textbf{boundary} precedes $x$.`, [{ quote: '% boundary' }]);
+  assert.deepEqual(plan.map(chunk => [chunk.type, displayProse(chunk.value)]), [
+    ['text', 'The %'], ['mark', '% boundary'], ['text', ' precedes '], ['math', 'x'], ['text', '.'],
+  ]);
+});
+
+test('keeps an exact percent quote on its original occurrence', () => {
+  const text = String.raw`First literal %% boundary. Second literal \%\% boundary.`;
+  const plan = buildHighlightPlan(text, [{ quote: String.raw`literal \%\% boundary` }]);
+  assert.deepEqual(plan.map(chunk => [chunk.type, displayProse(chunk.value)]), [
+    ['text', 'First literal %% boundary. Second '], ['mark', 'literal %% boundary'], ['text', '.'],
+  ]);
+});
+
+test('resolves a saved quote cut midway through a percent escape', () => {
+  const prefix = 'Adjacent %% ' + 'a'.repeat(383) + ' 5';
+  const text = prefix + '% more';
+  const quote = String.raw`Adjacent \%\% ` + 'a'.repeat(383) + ' 5\\';
+  assert.equal(quote.length, 400);
+  const mark = buildHighlightPlan(text, [{ quote }]).find(chunk => chunk.type === 'mark');
+  assert.equal(displayProse(mark?.value ?? ''), prefix);
+});
+
+test('prefers the rendered wrapper when matching equivalent percent escapes', () => {
+  const text = String.raw`First \\textbf{literal %% boundary}. Second \textbf{literal %% boundary}.`;
+  const quote = String.raw`\textbf{literal \%\% boundary}`;
+  const plan = buildHighlightPlan(text, [{ quote }]);
+  assert.deepEqual(plan.map(chunk => [chunk.type, displayProse(chunk.value)]), [
+    ['text', String.raw`First \\textbf{literal %% boundary}. Second `], ['mark', 'literal %% boundary'], ['text', '.'],
+  ]);
 });
 
 test('drops quotes the model did not copy verbatim', () => {
@@ -407,4 +448,9 @@ test('a plan with overlapping marks still concatenates back to the text and carr
   assert.equal(math!.source, 'user', 'the pending selection paints the formula');
   assert.deepEqual(math!.under, ['ai']);
   assert.ok(plan.every(item => item.type === 'text' || Array.isArray(item.under)));
+});
+
+test('a mark carries the colour of the highlight that drew it', () => {
+  const plan = buildHighlightPlan('Small errors pile up by the fifth turn.', [{ quote: 'errors pile up', source: 'user', kind: 'user', id: 'h1', color: 'violet' }]);
+  assert.deepEqual(plan.filter(item => item.type === 'mark').map(item => [item.id, item.color]), [['h1', 'violet']]);
 });

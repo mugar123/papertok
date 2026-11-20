@@ -9,6 +9,8 @@ export const EASE_OUT_QUAD = Object.freeze([0.25, 0.46, 0.45, 0.94] as const); /
 // The CSS duration tokens, in seconds for framer-motion.
 export const MOTION_BASE_S = 0.2; // --motion-base
 export const MOTION_SHEET_S = 0.3; // --motion-sheet
+// The 120ms of --transition-fast, for a leave that should not hold up what follows it.
+export const MOTION_FAST_S = 0.12;
 
 // A box whose size `auto` cannot interpolate: it travels from the size it had
 // (`from`, measured before the change) to the one it lands on, unless the two

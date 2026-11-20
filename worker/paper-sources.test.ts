@@ -96,6 +96,58 @@ test('an OAI page yields its live records with v1 as the publication date', () =
   }]);
 });
 
+// arXiv announces a paper within about four days of its v1. A record the set
+// lists later is a revision, which brought a paper back to a full lane that had
+// trimmed it, dated today and kept two weeks on top of its day-by-day feed.
+test('an OAI record of a paper submitted more than a week before is filed with no arrival; a recent one arrives today', async t => {
+  // The start of a three-second period the harvest may take.
+  const now = Date.UTC(2026, 10, 3, 0, 0, 3);
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const day = 86_400_000;
+  const record = (arxivId: string, title: string, submitted: number) => `<record>
+      <header><identifier>oai:arXiv.org:${arxivId}</identifier><datestamp>2026-11-02</datestamp><setSpec>cs</setSpec></header>
+      <metadata><arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/">
+        <id>${arxivId}</id>
+        <version version="v1"><date>${new Date(submitted).toUTCString()}</date></version>
+        <version version="v2"><date>${new Date(now - day).toUTCString()}</date></version>
+        <title>${title}</title><authors>Ana Pérez</authors><categories>cs.LG</categories>
+        <abstract>We study ${title.toLowerCase()} in depth.</abstract>
+      </arXivRaw></metadata>
+    </record>`;
+  const revised = record('2609.01234', 'Gradient noise in wide networks', now - 50 * day);
+  const fresh = record('2611.00001', 'Sparse mixtures of experts', now - 2 * day);
+  t.mock.method(globalThis, 'fetch', async () => new Response(`<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><ListRecords>${revised}${fresh}</ListRecords></OAI-PMH>`));
+  const { binding, db } = testD1();
+  const env = { PAPER_STORE: binding } as Parameters<typeof harvestArxivPage>[0];
+  const evictAll = async () => {
+    let after: number | null = 0;
+    while (after !== null) after = await evictExpired(env, now, after);
+  };
+  const inLane = (arxivId: string) => db.prepare(`SELECT l.arrived FROM work_lanes l JOIN work_keys k ON k.work_id = l.work_id
+    WHERE l.lane = 'cs.LG' AND k.key = 'arxiv:${arxivId}'`).all().map(row => (row as { arrived: string | null }).arrived);
+  // The revised paper, filed when it was announced, then trimmed from a full lane.
+  await ingestPapers(env, [{ paper: arxivRecordPaper(parseOaiPage(`<OAI-PMH><ListRecords>${revised}</ListRecords></OAI-PMH>`).papers[0]), lanes: [] }], { now: now - 49 * day });
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  db.exec('BEGIN');
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) {
+    const published = new Date(now - id * 10_000).toISOString();
+    insertWork.run(1_000_000 + id, JSON.stringify({ id: `2611.${String(id).padStart(5, '0')}`, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run('cs.LG', 1_000_000 + id, published);
+  }
+  db.exec('COMMIT');
+  await evictAll();
+  assert.deepEqual(inLane('2609.01234'), [], 'trimmed from the full lane');
+
+  assert.equal((await harvestArxivPage(env, { set: 'cs', from: '2026-11-02' })).listed, 2);
+  assert.deepEqual(inLane('2609.01234'), [null], 'the revision is no arrival');
+  assert.deepEqual(inLane('2611.00001'), [new Date(now).toISOString()], 'a paper announced on time arrives today');
+  const daily = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], order: 'daily', pageSize: 2 }), { now });
+  assert.equal(daily.some(paper => paper.id === '2609.01234'), false, "the revision is not on top of the lane's day-by-day feed");
+  await evictAll();
+  assert.deepEqual(inLane('2609.01234'), [], 'the lane trims it again');
+});
+
 test('a page past the last record is empty rather than an error', () => {
   const xml = '<OAI-PMH><error code="noRecordsMatch">No records</error></OAI-PMH>';
   assert.deepEqual(parseOaiPage(xml), { papers: [], resumptionToken: '' });
@@ -236,7 +288,8 @@ function relay(t: import('node:test').TestContext, answer: (url: URL) => unknown
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     urls.push(url);
-    return Response.json(answer(url));
+    const body = answer(url);
+    return body instanceof Response ? body : Response.json(body);
   });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
   t.after(() => {
@@ -248,6 +301,19 @@ function relay(t: import('node:test').TestContext, answer: (url: URL) => unknown
   return { urls, env };
 }
 const filtersOf = (url: URL) => url.searchParams.get('filter')!.split(',');
+
+test('an Atom error entry leaves the arXiv corpus lane unharvested', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 3, 0, 0, 3) });
+  const xml = readFileSync(new URL('./test-support/arxiv-error.xml', import.meta.url), 'utf8');
+  const { urls, env } = relay(t, () => new Response(xml));
+  const { db, binding } = testD1();
+  const job = { source: 'arxiv-search', lane: 'author-name:Example' } as const;
+  await assert.rejects(harvestLane({ ...env, PAPER_STORE: binding }, job), /arXiv API error/);
+  assert.deepEqual(db.prepare('SELECT harvested_through FROM lane_state WHERE source = ? AND lane = ?').all(job.source, job.lane), []);
+  assert.equal(urls.length, 1);
+});
+// What a keyword lane's request searches titles and abstracts for.
+const keywordSearchOf = (url: URL) => filtersOf(url).find(filter => filter.startsWith('title_and_abstract.search:'));
 
 test('the working-paper series lane asks OpenAlex for the series in the window and files unreviewed Economics cards', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
@@ -275,6 +341,21 @@ test('the working-paper series lane asks OpenAlex for the series in the window a
     assert.equal(areaLabelForPaper(paper), 'Economics', paper.id);
     assert.deepEqual([paper.primaryCategory, ...(paper.categories || [])].filter(category => getCategoryArea(category!)), []);
   }
+});
+
+test('a work whose DOI no link can carry leaves the rest of its page to the lane', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  // Synthetic: the middle work has no landing page of its own and a lone
+  // surrogate in its DOI, which no URL can encode.
+  const { env } = relay(t, () => ({ results: [
+    seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, null),
+    { ...seriesWork('W7222541626', '10.65864/jochq5qfxv\uD800', 'report', CESIFO, null), primary_location: { is_published: true, source: { id: `https://openalex.org/${CESIFO.id}`, display_name: CESIFO.display_name, type: 'journal' } } },
+    seriesWork('W7220380262', '10.3386/w35873', 'report', NBER, null),
+  ] }));
+  const { items } = await SOURCES['openalex-series'].fetchPage(env, { lane: 'series:working-papers', page: 1, since: '', waits: { seconds: 0 } });
+  assert.deepEqual(items.map(({ paper }) => paper.id), ['openalex:W7221947410', 'openalex:W7222541626', 'openalex:W7220380262']);
+  // It keeps the link OpenAlex gave, as before.
+  assert.equal(items[1].paper.landingPageUrl, 'https://doi.org/10.65864/jochq5qfxv\uD800');
 });
 
 test("every series the lane names is on the review rule's list, so its journal articles carry the Working paper tag", () => {
@@ -554,6 +635,77 @@ test("an area's journal lane asks one page of 200 a night, and two on its first 
   assert.deepEqual(urls.map(url => [url.searchParams.get('page'), url.searchParams.get('per-page')]), [['1', '200'], ['2', '200']]);
   await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-areas', lane: 'area:physics' });
   assert.equal(urls.length, 3, 'a later run reads the newest page only');
+});
+
+test("a lane's first harvest files its papers with no arrival; a paper a later harvest brings arrives at that run", async t => {
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const article = (id: string) => ({ ...closedPhysicsArticle, id: `https://openalex.org/W${id}`, doi: `https://doi.org/10.1/${id}`, title: `Journal article ${id} on high-harmonic spectroscopy` });
+  let listed = [article('7000001'), article('7000002')];
+  const { env } = relay(t, () => ({ results: listed }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  const arrivals = () => (db.prepare("SELECT w.paper ->> '$.id' AS id, l.arrived FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = 'area:physics' ORDER BY id").all() as Array<{ id: string; arrived: string | null }>)
+    .map(row => [row.id, row.arrived]);
+  await harvestLane(store, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.deepEqual(arrivals(), [['openalex:W7000001', null], ['openalex:W7000002', null]]);
+  const later = first + 86_400_000;
+  t.mock.timers.setTime(later);
+  listed = [article('7000003'), ...listed];
+  await harvestLane(store, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.deepEqual(arrivals(), [['openalex:W7000001', null], ['openalex:W7000002', null], ['openalex:W7000003', new Date(later).toISOString()]]);
+});
+
+// A followed author's lane lists the author's newest papers every night. One a
+// busy category trimmed came back to that category as an arrival of the night:
+// kept past the lane's limit and on top of its day-by-day feed every 15 days.
+test("a followed author's nightly listing gives a paper a busy category trimmed no arrival there", async t => {
+  const day = 86_400_000;
+  const tonight = Date.parse('2026-11-01T03:00:00Z');
+  const paper = arxivRecordPaper({
+    arxivId: '2610.00500', title: 'Sparse attention for long documents', abstract: 'We make attention sparse for long documents and study its cost.',
+    authors: ['Ana Pérez'], categories: ['cs.LG'], doi: '10.1000/sparse', journalRef: null, comments: null,
+    published: '2026-10-01T12:00:00.000Z', updated: '2026-10-01T12:00:00.000Z',
+  });
+  const { env } = relay(t, () => ({ results: [{
+    id: 'https://openalex.org/W7000000500', doi: 'https://doi.org/10.1000/sparse', title: paper.title, type: 'preprint', publication_date: '2026-10-01', publication_year: 2026,
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Pérez' }, institutions: [] }],
+    primary_location: { is_oa: true, landing_page_url: 'https://arxiv.org/abs/2610.00500', version: 'submittedVersion', is_published: false, source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv', type: 'repository', is_core: false } },
+    locations: [], open_access: { is_oa: true, oa_status: 'green', oa_url: 'https://arxiv.org/abs/2610.00500' }, cited_by_count: 0,
+  }] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  const evictAll = async (now: number) => {
+    let after: number | null = 0;
+    while (after !== null) after = await evictExpired(store, now, after);
+  };
+  const inCategory = () => (db.prepare(`SELECT l.arrived FROM work_lanes l JOIN work_keys k ON k.work_id = l.work_id
+    WHERE l.lane = 'cs.LG' AND k.key = 'arxiv:2610.00500'`).all() as Array<{ arrived: string | null }>).map(row => row.arrived);
+  // Announced on 10-03; the author's lane had its first load on 10-10.
+  await ingestPapers(store, [{ paper, lanes: [] }], { now: Date.parse('2026-10-03T03:00:00Z') });
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES ('author:A1', '2026-10-31T00:00:00.000Z', '2026-10-10T03:00:00.000Z')").run();
+  await ingestPapers(store, [{ paper, lanes: ['author:A1'] }], { now: Date.parse('2026-10-10T03:00:00Z'), firstLoad: 'author:A1' });
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A1', '2026-10-10T03:00:00.000Z')").run();
+  // cs.LG fills with newer papers and trims it.
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published, arrived) VALUES (?, ?, ?, ?)');
+  db.exec('BEGIN');
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) {
+    const published = new Date(Date.parse('2026-10-05T00:00:00Z') + id * 500_000).toISOString();
+    insertWork.run(1_000_000 + id, JSON.stringify({ id: `2610.9${String(id).padStart(4, '0')}`, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertLane.run('cs.LG', 1_000_000 + id, published, new Date(Date.parse(published) + 2 * day).toISOString());
+  }
+  db.exec('COMMIT');
+  await evictAll(Date.parse('2026-10-31T03:00:00Z'));
+  assert.deepEqual(inCategory(), [], 'trimmed from the full lane');
+
+  t.mock.timers.enable({ apis: ['Date'], now: tonight });
+  await harvestLane(store, { source: 'openalex-follows', lane: 'author:A1' });
+  assert.deepEqual(inCategory(), [null], 'filed again with no arrival');
+  await evictAll(tonight);
+  assert.deepEqual(inCategory(), [], 'and trimmed again');
+  const first = await readFeedPage(store, parseFeedRequest({ categories: ['cs.LG'], exact: true, order: 'daily', pageSize: 1 }), { now: tonight });
+  assert.deepEqual(first.map(item => item.id), [`2610.9${String(FEED_CANDIDATE_LIMIT).padStart(4, '0')}`], 'the newest arrival heads the day');
 });
 
 // ─── ChemRxiv's Chemistry preprints ───
@@ -897,6 +1049,29 @@ test('a journal article that adds a coauthor, an institution, a topic or a conce
       const page = await readFeedPage(store, parseFeedRequest({ categories: [], follows: [follow] }));
       assert.deepEqual(page.map(paper => [paper.doi, paper.peerReviewed]), [[gmmArticle.doi.slice('https://doi.org/'.length), true]], `${name}: ${follow.canonicalId}`);
     }
+  }
+});
+
+test("a lane a journal article's upgrade adds arrives with the listing that brought the article, or with no arrival on the lane's first load", async () => {
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  const workingPaper = mapOpenAlexWork({ ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, null), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' })!;
+  // The upgrade follows the listing: the lane being loaded, or every lane,
+  // gives no arrival, and another lane's first load dates only this week's
+  // articles (gmmArticle is dated 2026-10-14, ten days before the listing).
+  for (const [firstLoad, published, arrived] of [
+    [undefined, '2026-10-14', new Date(first + 86_400_000).toISOString()],
+    ['econ.EM', '2026-10-22', new Date(first + 86_400_000).toISOString()],
+    ['econ.EM', '2026-10-14', null],
+    ['author:A5000000777', '2026-10-22', null],
+    [true, '2026-10-22', null],
+  ] as const) {
+    const article = mapOpenAlexWork({ ...gmmArticle, publication_date: published, authorships: [...gmmArticle.authorships, { author: { id: 'https://openalex.org/A5000000777', display_name: 'Ben Coauthor' }, institutions: [] }] })!;
+    const { binding, db } = testD1();
+    const store = { PAPER_STORE: binding } as Parameters<typeof ingestPapers>[0];
+    db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A5000000777', ?)").run(new Date(first).toISOString());
+    await ingestPapers(store, [{ paper: workingPaper, lanes: ['series:working-papers'] }], { now: first });
+    await ingestPapers(store, [{ paper: article, lanes: ['econ.EM'] }], { now: first + 86_400_000, firstLoad });
+    assert.deepEqual((db.prepare("SELECT arrived FROM work_lanes WHERE lane = 'author:A5000000777'").all() as Array<{ arrived: string | null }>).map(row => row.arrived), [arrived], `firstLoad: ${firstLoad}, published ${published}`);
   }
 });
 
@@ -1613,6 +1788,17 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   assert.equal(terms.length, 0, 'a finished backfill asks nothing more');
 });
 
+test("a lane's backfill files the older papers it reads with no arrival", async t => {
+  const { env } = pubmedListing(t);
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
+  await backfillLane(store, { source: 'pubmed', lane: 'bio.zoo' });
+  const arrivals = (db.prepare("SELECT arrived FROM work_lanes WHERE lane = 'bio.zoo'").all() as Array<{ arrived: string | null }>).map(row => row.arrived);
+  assert.ok(arrivals.length > 0, 'filed under the lane');
+  assert.deepEqual(arrivals, arrivals.map(() => null));
+});
+
 // `/sources/pubmed` turns away a query over 500 characters (`safeSourceQuery`).
 test("every PubMed lane's query, a backfill's included, fits the route's 500 characters", async t => {
   const { urls, env } = relay(t, url => (url.pathname.endsWith('/esearch.fcgi') ? { esearchresult: { count: '0', idlist: [] } } : { result: {} }));
@@ -1732,6 +1918,27 @@ test("a project lane whose OpenAIRE answer is not a Graph page fails its turn in
   assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 0);
 });
 
+/**
+ * Lets `work` finish on the mocked clock. Real event-loop turns let work that
+ * takes real time finish (the quota ledger hashes its key on a thread pool).
+ * After each turn every pending mocked timer runs and the clock moves to the
+ * furthest, so `work` must wait on one timer at a time. Ticking the clock
+ * while turns pass counts a slow hash as waiting: a CI run measured 222 s for
+ * a lane that waits 60 s.
+ */
+async function settleOnMockedClock<T>(t: import('node:test').TestContext, work: Promise<T>) {
+  let settled = false;
+  work.then(() => { settled = true; }, () => { settled = true; });
+  // `performance` is not mocked: work that never settles fails here, by name.
+  const giveUp = performance.now() + 10_000;
+  while (!settled) {
+    assert.ok(performance.now() < giveUp, 'the work did not settle in 10 s of real time');
+    await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.runAll();
+  }
+  return work;
+}
+
 test("a lane whose source's minute is full waits for the next minute instead of failing", async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.parse('2026-10-21T05:21:00Z') });
   const { urls, env } = relay(t, () => ({ esearchresult: { idlist: [] } }));
@@ -1739,15 +1946,8 @@ test("a lane whose source's minute is full waits for the next minute instead of 
   const { binding, db } = testD1();
   // A reader's PubMed search takes this minute's one request.
   assert.equal((await handlePubmed(new Request('https://papertok.internal/sources/pubmed?q=heart'), env)).status, 200);
-  let settled = false;
-  const harvest = harvestLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'med.cardio' }).finally(() => { settled = true; });
-  // The route refuses with a 60 s retry-after; let the clock run until the
-  // lane settles, letting the ledger answer within each second.
-  for (let second = 0; !settled && second < 15 * 60; second += 1) {
-    for (let turn = 0; turn < 20; turn += 1) await new Promise(resolve => setImmediate(resolve));
-    t.mock.timers.tick(1_000);
-  }
-  await harvest;
+  // The route refuses with a 60 s retry-after, which the lane waits out.
+  await settleOnMockedClock(t, harvestLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'med.cardio' }));
   assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all().map(row => ({ ...row })), [{ source: 'pubmed', lane: 'med.cardio' }]);
 });
@@ -1761,17 +1961,10 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   Object.assign(env, { PUBMED_GLOBAL_MINUTE_LIMIT: '1' });
   const { binding, db } = testD1();
   const started = Date.now();
-  let settled = false;
-  const harvest = harvestLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'med.cardio' })
-    .then(() => null, (error: unknown) => error)
-    .finally(() => { settled = true; });
-  // The lane step's timeout (paper-harvest.ts) is ten minutes; run the clock
-  // past it, letting the ledger answer within each second.
-  for (let second = 0; !settled && second < 15 * 60; second += 1) {
-    for (let turn = 0; turn < 20; turn += 1) await new Promise(resolve => setImmediate(resolve));
-    t.mock.timers.tick(1_000);
-  }
-  const refusal = await harvest;
+  // The lane step's timeout (paper-harvest.ts) is ten minutes; the clock shows
+  // how long the lane waited before it ended.
+  const refusal = await settleOnMockedClock(t, harvestLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'med.cardio' })
+    .then(() => null, (error: unknown) => error));
   assert.ok(refusal instanceof SourceRefused, 'the lane ends for this run once it has waited out one minute');
   assert.ok(Date.now() - started <= 2 * 60_000, `the lane took ${(Date.now() - started) / 1000} s`);
   assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
@@ -1787,9 +1980,12 @@ test("followed searches stop at their part of the nightly run's OpenAlex share, 
   const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
-  const followedSearch = (newFollow = false) => SOURCES['openalex-follows'].fetchPage(env, { lane: 'query:graph neural networks', page: 1, since: '', waits: { seconds: 0 }, newFollow });
+  const { binding } = testD1();
+  const followedSearch = (newFollow = false) => harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-follows', lane: 'query:graphs', newFollow });
   // A search is ten list calls: the nightly refresh of followed lanes may spend 700 of the harvest's 4,000.
-  for (let call = 0; call < 70; call += 1) await followedSearch();
+  // A keyword's first harvest is two searches, its weekly listing and the
+  // night's novelties; a later one that day is the novelties alone.
+  for (let harvest = 0; harvest < 69; harvest += 1) await followedSearch();
   await assert.rejects(followedSearch(), (error: Error & { retryAfterSeconds?: number }) => (error.retryAfterSeconds ?? 0) > 60);
   await assert.rejects(SOURCES.openaire.fetchPage(env, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } }), SourceRefused);
   assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 70);
@@ -1837,8 +2033,10 @@ test("category and notable lanes stop at 3,000 of the harvest's OpenAlex units, 
   assert.equal(openAlexCalls(), 3_000);
 
   // The nightly refresh's 700 and the new follows' 300, ten units a search.
-  const followedSearch = (newFollow: boolean) => SOURCES['openalex-follows'].fetchPage(env, { ...request, lane: 'query:graph neural networks', newFollow });
-  for (let call = 0; call < 70; call += 1) await followedSearch(false);
+  // A keyword's first harvest is two searches, and a later one that day is one.
+  const { binding } = testD1();
+  const followedSearch = (newFollow: boolean) => harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-follows', lane: 'query:graphs', newFollow });
+  for (let harvest = 0; harvest < 69; harvest += 1) await followedSearch(false);
   for (let call = 0; call < 30; call += 1) await followedSearch(true);
   assert.equal(openAlexCalls(), 3_100);
 
@@ -1861,6 +2059,18 @@ test('a paper a reader liked, looked up by id, stays for them whatever its age, 
   assert.equal(db.prepare('SELECT id FROM works').all().length, 1, 'the next eviction keeps it');
 });
 
+test("a recent paper a reader liked, looked up by id, is filed under its lanes with no arrival, so it does not top other readers' day-by-day feeds", async t => {
+  const now = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const { env } = relay(t, () => splicingWork);
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as WorkerEnv;
+  await ingestPaperIds(store, ['W7222916812'], { keepUntil: daysFromNow(KEEP_LIKED_DAYS, now), now });
+  const lanes = db.prepare('SELECT lane, arrived FROM work_lanes').all() as Array<{ lane: string; arrived: string | null }>;
+  assert.ok(lanes.length > 0, 'filed under its lanes');
+  assert.deepEqual(lanes.map(row => row.arrived), lanes.map(() => null));
+});
+
 // PAP-88: readers' searches and profile lists stop at 60 % of the day's
 // OpenAlex ceiling, their card batches at 80 %. A followed author, search or
 // project asks OpenAlex in those same shapes, and a run started by a new follow
@@ -1880,16 +2090,16 @@ test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the ha
   const readers = share('enrichment') + 50;
   await spendElsewhere(readers);
   await follows('author:A5023888391');
-  await follows('query:graph neural networks');
+  await harvestLane({ ...env, PAPER_STORE: testD1().binding }, { source: 'openalex-follows', lane: 'query:graphs' });
   await SOURCES.openaire.fetchPage(env, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } });
   assert.deepEqual(
-    urls.filter(url => url.hostname === 'api.openalex.org').map(url => (url.searchParams.has('search') ? 'search' : url.searchParams.get('filter')!.split(':')[0])),
-    ['author.id', 'search', 'doi'],
+    urls.filter(url => url.hostname === 'api.openalex.org').map(url => (keywordSearchOf(url) ? 'search' : url.searchParams.get('filter')!.split(':')[0])),
+    ['author.id', 'search', 'search', 'doi'],
   );
 
-  // An author page, a search and a DOI list: 12 units. The rest of the
-  // harvest's tier goes elsewhere.
-  await spendElsewhere(share('feed') - readers - 12);
+  // An author page, a keyword's two searches and a DOI list: 22 units. The
+  // rest of the harvest's tier goes elsewhere.
+  await spendElsewhere(share('feed') - readers - 22);
   await assert.rejects(follows('author:A5000000001'), SourceRefused);
   Object.assign(env, { PDF_RATE_LIMIT_SECRET: 'test-only-pdf-rate-limit-key-32-bytes' });
   const opened = await handleOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=1', {
@@ -1939,6 +2149,219 @@ test("a followed journal's lane asks OpenAlex for the journal's articles and rev
   assert.deepEqual(items.map(item => [item.paper.title, item.lanes]), [['Macroeconomic models of inequality: a review', ['source:S2764697018']]]);
   assert.equal(url.searchParams.get('per-page'), '100');
   assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+});
+
+// ─── Keyword lanes: a followed search, and a custom feed's keyword ───
+
+// A keyword lane has two listings in titles and abstracts: the 50 best matches
+// of any year, once a week, whose order the lane keeps as each paper's rank,
+// and the 20 best matches of the last 90 days, every night (Nicolás,
+// 2026-11-14). A weekly listing has no publication window.
+const KEYWORD_NIGHT = Date.parse('2026-11-10T03:00:00Z');
+const NIGHT_MS = 86_400_000;
+const isCatalogue = (url: URL) => !filtersOf(url).some(filter => filter.startsWith('from_publication_date:'));
+const keywordWork = (id: string, date: string) => ({
+  ...journalArticle(`W${id}`, `10.1000/keyword.${id}`, `Study ${id} of a charge density wave in a kagome superconductor`, date, JBES,
+    `Study ${id} reports a charge density wave in a kagome superconductor and how it competes with the superconducting state.`),
+  publication_year: Number(date.slice(0, 4)),
+});
+const keywordId = (id: string) => `openalex:W${id}`;
+// What each of the lane's listings returns tonight; a phrase names 30 papers unless `count` says otherwise.
+function keywordLane(t: import('node:test').TestContext, listings: { catalogue?: () => unknown[]; novelties?: () => unknown[]; count?: (url: URL) => number }) {
+  t.mock.timers.enable({ apis: ['Date'], now: KEYWORD_NIGHT });
+  const { urls, env } = relay(t, url => ({
+    meta: { count: listings.count?.(url) ?? 30 },
+    results: (isCatalogue(url) ? listings.catalogue?.() : listings.novelties?.()) ?? [],
+  }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  return {
+    urls,
+    db,
+    harvest: (lane: string) => harvestLane(store, { source: 'openalex-follows', lane }),
+    onNight: (night: number) => t.mock.timers.setTime(KEYWORD_NIGHT + (night - 1) * NIGHT_MS),
+    rows: (lane: string) => (db.prepare("SELECT w.paper ->> '$.id' AS id, l.rank, l.arrived FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = ? ORDER BY id").all(lane) as Array<{ id: string; rank: number | null; arrived: string | null }>)
+      .map(row => ({ ...row })),
+    state: (lane: string) => db.prepare("SELECT harvested_through, reading, catalogued_at FROM lane_state WHERE source = 'openalex-follows' AND lane = ?").get(lane) as
+      { harvested_through: string; reading: string | null; catalogued_at: string | null } | undefined,
+  };
+}
+
+test('a keyword lane asks titles and abstracts for the phrase, and keeps the phrase when it fills a screen', async t => {
+  const { urls, harvest, state } = keywordLane(t, { count: () => 22 });
+  await harvest('query:quadratic funding');
+  const [catalogue, novelties] = urls;
+  assert.deepEqual(filtersOf(catalogue), ['title_and_abstract.search:"quadratic funding"', 'is_retracted:false', 'type:article|review|conference-paper|preprint']);
+  assert.equal(catalogue.searchParams.get('sort'), 'relevance_score:desc');
+  assert.equal(catalogue.searchParams.get('per-page'), '50');
+  assert.equal(catalogue.searchParams.has('search'), false);
+  assert.equal(novelties.searchParams.get('per-page'), '20');
+  assert.equal(novelties.searchParams.get('sort'), 'relevance_score:desc');
+  assert.ok(filtersOf(novelties).includes('title_and_abstract.search:"quadratic funding"'));
+  assert.ok(filtersOf(novelties).includes('from_publication_date:2026-08-12'), 'the last 90 days');
+  assert.equal(urls.length, 2);
+  assert.equal(state('query:quadratic funding')?.reading, 'phrase');
+});
+
+test('a phrase with fewer than 20 papers falls back to loose words, for both listings', async t => {
+  const { urls, harvest, state } = keywordLane(t, { count: url => (keywordSearchOf(url)!.includes('"') ? 2 : 38) });
+  await harvest('query:lmsr prediction markets');
+  assert.deepEqual(urls.map(keywordSearchOf), [
+    'title_and_abstract.search:"lmsr prediction markets"',
+    'title_and_abstract.search:lmsr prediction markets',
+    'title_and_abstract.search:lmsr prediction markets',
+  ]);
+  assert.deepEqual(urls.map(isCatalogue), [true, true, false]);
+  assert.equal(state('query:lmsr prediction markets')?.reading, 'words');
+});
+
+test('a one-word keyword is not asked as a phrase', async t => {
+  const { urls, harvest } = keywordLane(t, {});
+  await harvest('query:kagome');
+  assert.equal(urls.length, 2);
+  assert.ok(urls.every(url => filtersOf(url).includes('title_and_abstract.search:kagome')));
+});
+
+test('the any-age listing ranks its papers and none of them arrives as news, on the first night or a later week', async t => {
+  let catalogue = [keywordWork('2015', '2015-03-02'), keywordWork('2019', '2019-06-11')];
+  const { harvest, onNight, rows } = keywordLane(t, { catalogue: () => catalogue });
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(rows('query:kagome superconductors'), [
+    { id: keywordId('2015'), rank: 1, arrived: null },
+    { id: keywordId('2019'), rank: 2, arrived: null },
+  ]);
+  onNight(8);
+  catalogue = [keywordWork('2012', '2012-09-20'), keywordWork('2015', '2015-03-02')];
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(rows('query:kagome superconductors'), [
+    { id: keywordId('2012'), rank: 1, arrived: null },
+    { id: keywordId('2015'), rank: 2, arrived: null },
+    { id: keywordId('2019'), rank: null, arrived: null },
+  ]);
+});
+
+test('the catalogue is listed once a week and the novelties every night', async t => {
+  const { urls, harvest, onNight } = keywordLane(t, {});
+  const callsPerNight: number[] = [];
+  for (const night of [1, 2, 8]) {
+    onNight(night);
+    const before = urls.length;
+    await harvest('query:kagome superconductors');
+    callsPerNight.push(urls.length - before);
+  }
+  assert.deepEqual(callsPerNight, [2, 1, 2]);
+});
+
+// The nightly run reaches a lane a few minutes earlier or later each night.
+test('a catalogue listed late one night is due again a week on, though the run reaches it earlier that night', async t => {
+  const { urls, harvest } = keywordLane(t, {});
+  t.mock.timers.setTime(KEYWORD_NIGHT + 40 * 60_000);
+  await harvest('query:kagome superconductors');
+  t.mock.timers.setTime(KEYWORD_NIGHT + 7 * NIGHT_MS);
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(urls.map(isCatalogue), [true, false, true, false]);
+});
+
+test('a novelty published this week arrives today; one that enters the list late, or with the first load, keeps its publication date', async t => {
+  const published = (daysBefore: number, night: number) => new Date(KEYWORD_NIGHT + (night - 1 - daysBefore) * NIGHT_MS).toISOString().slice(0, 10);
+  let novelties = [keywordWork('7001', published(1, 1))];
+  const { harvest, onNight, rows } = keywordLane(t, { novelties: () => novelties });
+  await harvest('query:kagome superconductors');
+  onNight(2);
+  novelties = [keywordWork('7002', published(1, 2)), keywordWork('7003', published(40, 2)), ...novelties];
+  await harvest('query:kagome superconductors');
+  const tonight = new Date(KEYWORD_NIGHT + NIGHT_MS).toISOString();
+  assert.deepEqual(rows('query:kagome superconductors').map(row => [row.id, row.arrived]), [
+    [keywordId('7001'), null],
+    [keywordId('7002'), tonight],
+    [keywordId('7003'), null],
+  ]);
+});
+
+// For a niche keyword the 50 best matches of any year hold nearly every new paper.
+test('a paper published this week that is also among the best matches of any year arrives on the night both list it', async t => {
+  let listed: unknown[] = [];
+  const { harvest, onNight, rows } = keywordLane(t, { catalogue: () => [...listed, keywordWork('2015', '2015-03-02')], novelties: () => listed });
+  await harvest('query:kagome superconductors');
+  onNight(8);
+  listed = [keywordWork('7008', '2026-11-16')];
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(rows('query:kagome superconductors'), [
+    { id: keywordId('2015'), rank: 2, arrived: null },
+    { id: keywordId('7008'), rank: 1, arrived: new Date(KEYWORD_NIGHT + 7 * NIGHT_MS).toISOString() },
+  ]);
+});
+
+test('a keyword nothing can be searched for finishes its turn without asking OpenAlex', async t => {
+  const { urls, harvest, state } = keywordLane(t, {});
+  await harvest('query:+++');
+  assert.equal(urls.length, 0);
+  assert.ok(state('query:+++')?.harvested_through);
+});
+
+test('a keyword with filter syntax in it is asked as plain words', async t => {
+  const { urls, harvest } = keywordLane(t, { count: () => 0 });
+  await harvest('query:p|q, tcp:ip');
+  assert.deepEqual(urls.map(keywordSearchOf), ['title_and_abstract.search:"p q tcp ip"', 'title_and_abstract.search:p q tcp ip', 'title_and_abstract.search:p q tcp ip']);
+  assert.ok(urls.every(url => filtersOf(url).filter(filter => filter.startsWith('type:')).length === 1));
+  assert.ok(urls.every(url => filtersOf(url).length === (isCatalogue(url) ? 3 : 5)), 'no clause beside the search, the retraction, the types and the window');
+});
+
+test('an empty catalogue still lists the novelties and ends the first harvest', async t => {
+  const { urls, harvest, state } = keywordLane(t, { count: () => 0 });
+  await harvest('query:lsmr prediction markets');
+  assert.deepEqual(urls.map(isCatalogue), [true, true, false]);
+  assert.ok(state('query:lsmr prediction markets')?.harvested_through);
+});
+
+test("a weekly listing that fails leaves the ranks and still files the night's novelties", async t => {
+  let failing = false;
+  let novelties: unknown[] = [];
+  const { harvest, onNight, rows, state } = keywordLane(t, {
+    catalogue: () => { if (failing) throw new Error('OpenAlex is down'); return [keywordWork('2015', '2015-03-02')]; },
+    novelties: () => novelties,
+  });
+  await harvest('query:kagome superconductors');
+  const night1 = new Date(KEYWORD_NIGHT).toISOString();
+  onNight(8);
+  failing = true;
+  novelties = [keywordWork('7008', '2026-11-16')];
+  const warned = t.mock.method(console, 'warn', () => undefined);
+  await harvest('query:kagome superconductors');
+  assert.equal(warned.mock.callCount(), 1);
+  assert.deepEqual(rows('query:kagome superconductors').map(row => [row.id, row.rank]), [[keywordId('2015'), 1], [keywordId('7008'), null]]);
+  assert.equal(state('query:kagome superconductors')?.catalogued_at, night1, 'due again the next night');
+  assert.equal(state('query:kagome superconductors')?.harvested_through, new Date(KEYWORD_NIGHT + 7 * NIGHT_MS).toISOString());
+});
+
+test("a first harvest whose night's request fails keeps its weekly listing, which the next harvest does not ask again", async t => {
+  let failing = true;
+  const { urls, harvest, rows, state } = keywordLane(t, {
+    catalogue: () => [keywordWork('2015', '2015-03-02')],
+    novelties: () => { if (failing) throw new Error('OpenAlex is down'); return []; },
+  });
+  await assert.rejects(harvest('query:kagome superconductors'));
+  assert.deepEqual(rows('query:kagome superconductors'), [{ id: keywordId('2015'), rank: 1, arrived: null }]);
+  assert.deepEqual({ ...state('query:kagome superconductors') }, { harvested_through: '', reading: 'phrase', catalogued_at: new Date(KEYWORD_NIGHT).toISOString() });
+  failing = false;
+  const before = urls.length;
+  await harvest('query:kagome superconductors');
+  assert.deepEqual(urls.slice(before).map(isCatalogue), [false]);
+  assert.ok(state('query:kagome superconductors')?.harvested_through);
+});
+
+test("a keyword's first weekly listing that fails leaves the lane unharvested", async t => {
+  const { harvest, state } = keywordLane(t, { catalogue: () => { throw new Error('OpenAlex is down'); } });
+  await assert.rejects(harvest('query:kagome superconductors'));
+  assert.equal(state('query:kagome superconductors'), undefined);
+});
+
+test('a followed author is still harvested by date, 50 a page', async t => {
+  const { urls, harvest } = keywordLane(t, {});
+  await harvest('author:A1');
+  assert.equal(urls[0].searchParams.get('sort'), 'publication_date:desc');
+  assert.equal(urls[0].searchParams.get('per-page'), '50');
+  assert.equal(keywordSearchOf(urls[0]), undefined);
 });
 
 // ─── Notable papers: the most-cited articles of an admitted leaf's last ten years ───

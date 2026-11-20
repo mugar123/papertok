@@ -20,10 +20,20 @@ interface ModelRequest {
   signal: AbortSignal;
 }
 type ModelSectionEvent = { type: 'section'; section: RewriteSection }
-  | { type: 'end'; rawText: string; finishReason: string; firstTextAtMs: number; droppedSections: number };
+  | { type: 'end'; rawText: string; finishReason: string; firstTextAtMs: number; droppedSections: number; servedModel?: string };
 interface SsePayload extends AIProviderPayload {
   choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
+  type?: string;
+  delta?: { type?: string; text?: unknown; stop_reason?: unknown };
+  content_block?: { type?: string; to?: { model?: unknown } };
+  message?: { model?: unknown };
+  usage?: { iterations?: Array<{ type?: unknown }> };
 }
+/**
+ * `model` is the model an Anthropic event names: the one that opened the stream,
+ * or, with `fallback`, the one that took over.
+ */
+type SseEvent = { text: string; finishReason: string; model?: string; fallback?: boolean };
 
 
 /**
@@ -46,6 +56,8 @@ interface SsePayload extends AIProviderPayload {
 
 import {
   AIExplanationError,
+  activeAIProvider,
+  anthropicProviderError,
   bytesToBase64,
   cleanText,
   escapeLatexBackslashesInJson,
@@ -53,6 +65,7 @@ import {
   getDailyQuotaReset,
   getProviderRetry,
   classifyGeminiError,
+  isAIProviderConfigured,
   nanProviderError,
   normalizeExplanationLanguage,
   normalizePaperForExplanation,
@@ -62,12 +75,11 @@ import {
   shouldRefundAIQuota,
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
+import { anthropicModel, buildAnthropicRequest, createAnthropicClient } from './anthropic-client.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import {
   NAN_CHAT_COMPLETIONS_URL,
   buildNanChatBody,
-  isNanConfigured,
-  isNanPrimary,
   nanHeaders,
   nanModel,
   nanPdfPart,
@@ -107,7 +119,7 @@ const HIGHLIGHT_KINDS = new Set(['finding', 'method', 'caveat', 'number']);
 const REWRITE_LEVELS = {
   beginner: {
     label: 'Beginner',
-    thinkingLevel: 'low',
+    thinkingLevel: 'low' as const,
     wordBudget: 1_200,
     maxOutputTokens: 12_000,
     instruction: `Register: plain-language writing for a curious reader with no training in the field.
@@ -118,7 +130,7 @@ const REWRITE_LEVELS = {
   },
   university: {
     label: 'University',
-    thinkingLevel: 'low',
+    thinkingLevel: 'low' as const,
     wordBudget: 2_000,
     maxOutputTokens: 24_000,
     instruction: `Register: university student in the broad field, not the specialty.
@@ -129,7 +141,7 @@ const REWRITE_LEVELS = {
   },
   researcher: {
     label: 'Researcher',
-    thinkingLevel: 'medium',
+    thinkingLevel: 'medium' as const,
     wordBudget: 3_000,
     maxOutputTokens: 24_000,
     instruction: `Register: a researcher in the field.
@@ -406,23 +418,54 @@ const OPENAI_FINISH_REASONS: Readonly<Partial<Record<string, string>>> = Object.
   content_filter: 'SAFETY',
 });
 
+/** Anthropic's stop reasons, normalized the same way. */
+const ANTHROPIC_FINISH_REASONS: Readonly<Partial<Record<string, string>>> = Object.freeze({
+  end_turn: 'STOP',
+  stop_sequence: 'STOP',
+  max_tokens: 'MAX_TOKENS',
+  refusal: 'SAFETY',
+});
+
 /**
  * Extracts the text delta from one SSE line.
  *
  * Deliberately line-based rather than frame-based. Splitting on a blank line
  * means agreeing with the server about its line endings, and a CRLF stream
  * never contains two consecutive newlines — the events would never be seen at
- * all. Gemini and NaN both put one complete JSON object on each `data:` line,
- * so a line is a sufficient unit. NaN's is the OpenAI chunk, where a reasoning
- * delta travels apart from the answer and is not part of the rewrite.
+ * all. Gemini, NaN and Anthropic all put one complete JSON object on each `data:`
+ * line, so a line is a sufficient unit. NaN's is the OpenAI chunk, where a
+ * reasoning delta travels apart from the answer and is not part of the rewrite.
+ * Anthropic's text is in `content_block_delta` events and its stop reason in
+ * `message_delta`; a thinking delta and the other events carry neither.
  */
-export function parseSseEvent(line: unknown) {
+export function parseSseEvent(line: unknown): SseEvent | null {
   const trimmed = String(line || '').trim();
   if (!trimmed.startsWith('data:')) return null;
   const payload = trimmed.slice(5).trim();
   if (!payload || payload === '[DONE]') return null;
   try {
     const parsed: SsePayload = JSON.parse(payload);
+    if (parsed?.type === 'content_block_delta') {
+      return { text: parsed.delta?.type === 'text_delta' && typeof parsed.delta.text === 'string' ? parsed.delta.text : '', finishReason: '' };
+    }
+    if (parsed?.type === 'message_delta') {
+      const reason = cleanText(parsed.delta?.stop_reason, 40);
+      // The served-by signal: it covers a turn sticky routing sent straight to
+      // the fallback model, which has no `fallback` block.
+      const fallback = Array.isArray(parsed.usage?.iterations)
+        && parsed.usage.iterations.some(entry => entry?.type === 'fallback_message');
+      return { text: '', finishReason: ANTHROPIC_FINISH_REASONS[reason] || reason.toUpperCase(), ...(fallback ? { fallback } : {}) };
+    }
+    if (parsed?.type === 'message_start') {
+      return { text: '', finishReason: '', model: cleanText(parsed.message?.model, 100) };
+    }
+    // A fallback model takes over from the one that declined. It continues the
+    // text that model had written, so this changes who is writing, not the text.
+    if (parsed?.type === 'content_block_start' && parsed.content_block?.type === 'fallback') {
+      return { text: '', finishReason: '', fallback: true, model: cleanText(parsed.content_block.to?.model, 100) };
+    }
+    // A stream that fails after it began carries the failure as an event, not a status.
+    if (parsed?.type === 'error') return { text: '', finishReason: 'ERROR' };
     if (Array.isArray(parsed?.choices)) {
       const choice = parsed.choices[0];
       const content = choice?.delta?.content;
@@ -440,6 +483,16 @@ export function parseSseEvent(line: unknown) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Why a stream produced no section. A provider that reported an error after it
+ * began is an outage, which the refund predicate gives the use back for; a model
+ * that said nothing and one that said something unparseable are different fixes.
+ */
+function emptyRewriteCode(rawLength: number, finishReason: string) {
+  if (rawLength === 0 && finishReason === 'ERROR') return 'AI_UNAVAILABLE';
+  return rawLength === 0 ? 'AI_EMPTY_RESPONSE' : 'AI_INVALID_RESPONSE';
 }
 
 /** Splits an SSE byte stream into lines, tolerating LF and CRLF endings. */
@@ -472,6 +525,12 @@ export async function* streamModelSections(upstreamBody: { getReader(): Pick<Rea
   let rawText = '';
   let finishReason = '';
   let firstTextAtMs = 0;
+  // Anthropic only: who wrote the text. A fallback model continues what the
+  // model that declined had written, so the text and the assembler run on across
+  // the switch; only the name of the model changes.
+  let openedBy = '';
+  let tookOver = '';
+  let fellBack = false;
 
   try {
     for (;;) {
@@ -481,6 +540,12 @@ export async function* streamModelSections(upstreamBody: { getReader(): Pick<Rea
       for (const line of splitLines(chunk)) {
         const event = parseSseEvent(line);
         if (!event) continue;
+        if (event.fallback) {
+          fellBack = true;
+          tookOver = event.model || tookOver;
+        } else if (event.model) {
+          openedBy = event.model;
+        }
         finishReason = event.finishReason || finishReason;
         const delta = event.text;
         if (!delta) continue;
@@ -494,7 +559,17 @@ export async function* streamModelSections(upstreamBody: { getReader(): Pick<Rea
     for (const section of assembler.flush()) {
       yield { type: 'section', section };
     }
-    yield { type: 'end', rawText, finishReason, firstTextAtMs, droppedSections: assembler.dropped };
+    // `openedBy` alone is not a fallback: an alias comes back under its resolved
+    // name. Sticky routing opens the stream on the fallback model, which is why
+    // the served-by signal can stand without a `fallback` block.
+    yield {
+      type: 'end',
+      rawText,
+      finishReason,
+      firstTextAtMs,
+      droppedSections: assembler.dropped,
+      ...(fellBack && (tookOver || openedBy) ? { servedModel: tookOver || openedBy } : {}),
+    };
   } finally {
     // A consumer that stops pulling — the pump, because its own reader hung up —
     // used to just drop the lock and leave the provider streaming into nobody.
@@ -643,6 +718,7 @@ function replayCachedRewrite(cached: CachedRewrite, level: string, language: str
  * into the same `error` line.
  */
 async function requestModelStream({ provider, ...request }: ModelRequest & { provider: string }) {
+  if (provider === 'anthropic') return requestAnthropicStream(request);
   return provider === 'nan' ? requestNanStream(request) : requestGeminiStream(request);
 }
 
@@ -689,6 +765,38 @@ async function requestNanStream({ env, paper, level, source, model, signal }: Mo
     throw nanProviderError(upstream, payload);
   }
   return upstream;
+}
+
+/**
+ * Claude reads the paper the way NaN does: the extracted text, or the PDF as a
+ * `document` block when there is none. The SDK's raw response keeps the SSE body
+ * `streamModelSections` already reads, and a refusal arrives in it as
+ * `stop_reason: "refusal"`, a `SAFETY` finish that is never cached. `effort` is
+ * the level's own thinking depth.
+ */
+async function requestAnthropicStream({ env, paper, level, source, model, signal }: ModelRequest) {
+  const config = REWRITE_LEVELS[level];
+  const prompt = buildRewritePrompt(paper, level);
+  const content = source.text
+    ? `${prompt}\n\n${formatPaperTextForPrompt(source.text, { truncated: source.truncated })}`
+    : [
+      { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: source.pdfBase64! } },
+      { type: 'text' as const, text: prompt },
+    ];
+  try {
+    return await createAnthropicClient(env).beta.messages.create({
+      ...buildAnthropicRequest({
+        model,
+        effort: config.thinkingLevel,
+        maxTokens: config.maxOutputTokens,
+        system: buildRewriteSystemInstruction(),
+        content,
+      }),
+      stream: true,
+    }, { signal }).asResponse();
+  } catch (error) {
+    throw anthropicProviderError(error);
+  }
 }
 
 async function requestGeminiStream({ env, paper, level, language, source, model, signal }: ModelRequest) {
@@ -755,12 +863,13 @@ async function requestGeminiStream({ env, paper, level, language, source, model,
 const RETRY_ON_FALLBACK_MODEL = new Set(['AI_BUSY', 'AI_UNAVAILABLE', 'AI_QUOTA_EXHAUSTED']);
 
 /**
- * What the model is handed. Gemini reads the PDF itself. NaN gets the text
- * Workers AI extracted, and the PDF only when that failed: NaN reads it too,
- * but at about 45 s before the first token instead of two or three.
+ * What the model is handed. Gemini reads the PDF itself. NaN and Claude get the
+ * text Workers AI extracted, and the PDF only when that failed: NaN reads it too,
+ * but at about 45 s before the first token instead of two or three, and Claude
+ * bills a PDF page as its text plus an image, which costs more than the text alone.
  */
 async function paperSourceFor(provider: string, env: WorkerEnv, pdfData: Uint8Array<ArrayBuffer>): Promise<RewriteSource> {
-  if (provider !== 'nan') return { pdfBase64: bytesToBase64(pdfData) };
+  if (provider === 'gemini') return { pdfBase64: bytesToBase64(pdfData) };
   const extracted = await extractPaperText(env, pdfData);
   if (extracted.text) return { text: extracted.text, truncated: extracted.truncated, textReason: '' };
   return { pdfBase64: bytesToBase64(pdfData), textReason: extracted.reason };
@@ -822,10 +931,10 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
     let pdfMs = 0;
     let pdfBytes = 0;
     let upstreamStatus = 0;
-    // What the model was handed, for NaN: how much extracted text, or why it
-    // got the PDF instead — the one fact that explains a slow first section.
+    // What the model was handed, unless it is Gemini: how much extracted text, or
+    // why it got the PDF instead — the one fact that explains a slow first section.
     let source: RewriteSource | null = null;
-    const sourceFields = () => (provider === 'nan'
+    const sourceFields = () => (provider !== 'gemini'
       ? {
         textChars: source?.text ? source.text.length : 0,
         ...(source?.textReason ? { textReason: source.textReason } : {}),
@@ -935,8 +1044,9 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         upstream = await askModel(model);
       } catch (error) {
         // `AI_FALLBACK_MODEL` names a Gemini model, which NaN would refuse
-        // with a 404 after a second wait.
-        const fallback = provider === 'nan' ? '' : cleanText(env.AI_FALLBACK_MODEL, 100);
+        // with a 404 after a second wait. Anthropic's own fallback runs
+        // server-side, inside the same call.
+        const fallback = provider === 'gemini' ? cleanText(env.AI_FALLBACK_MODEL, 100) : '';
         const worthRetrying = error instanceof AIExplanationError
           && RETRY_ON_FALLBACK_MODEL.has(error.code)
           && fallback
@@ -963,6 +1073,9 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         finishReason = event.finishReason;
         firstTextAt = event.firstTextAtMs;
         droppedSections = event.droppedSections;
+        // Anthropic's own fallback ran inside the one request: the cache policy
+        // for a fallback model's text applies, and `done` names who wrote it.
+        if (event.servedModel) activeModel = event.servedModel;
       }
 
       // Formatting deviations are recoverable; only a silent model is not.
@@ -985,7 +1098,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
       if (sections.length === 0) {
         // Distinguish "the model said nothing" from "the model said something
         // unparseable": they need different fixes.
-        const code = rawLength === 0 ? 'AI_EMPTY_RESPONSE' : 'AI_INVALID_RESPONSE';
+        const code = emptyRewriteCode(rawLength, finishReason);
         // Runs the same predicate rather than assuming the answer: today it says
         // no for both — the provider did read the PDF and did bill for it — but
         // the rule lives in one place and this path must follow it if it moves.
@@ -1048,7 +1161,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         // and it is the only way to see it happening from the logs.
         cached: cachedWrite,
         outcome: sections.length === 0
-          ? (rawLength === 0 ? 'AI_EMPTY_RESPONSE' : 'AI_INVALID_RESPONSE')
+          ? emptyRewriteCode(rawLength, finishReason)
           : 'success',
         // Only logged when nothing parsed, to show what the model actually emitted.
         ...(sections.length === 0 && rawAll ? { rawHead: rawAll.slice(0, 400) } : {}),
@@ -1123,8 +1236,8 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
 export async function handlePaperRewrite(request: Request, env: WorkerEnv, extraHeaders: Record<string, string> = {}) {
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
-  const provider = isNanPrimary(env) ? 'nan' : 'gemini';
-  if (provider === 'nan' ? !isNanConfigured(env) : !env.GEMINI_API_KEY) {
+  const provider = activeAIProvider(env);
+  if (!isAIProviderConfigured(env, provider)) {
     throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   }
 
@@ -1143,9 +1256,11 @@ export async function handlePaperRewrite(request: Request, env: WorkerEnv, extra
   // Rewriting from an abstract would mean inventing the methods and results.
   if (!paper.pdfUrl) throw new AIExplanationError('AI_REWRITE_NEEDS_FULL_TEXT', 422);
 
-  const model = provider === 'nan'
-    ? nanModel(env)
-    : cleanText(env.AI_REWRITE_MODEL || env.AI_MODEL || DEFAULT_REWRITE_MODEL, 100) || DEFAULT_REWRITE_MODEL;
+  const model = provider === 'anthropic'
+    ? anthropicModel(env)
+    : provider === 'nan'
+      ? nanModel(env)
+      : cleanText(env.AI_REWRITE_MODEL || env.AI_MODEL || DEFAULT_REWRITE_MODEL, 100) || DEFAULT_REWRITE_MODEL;
   const cacheKey = await rewriteCacheKey(paper, level, language, model);
 
   // A reader who asks to regenerate has a copy of this rewrite saved already and

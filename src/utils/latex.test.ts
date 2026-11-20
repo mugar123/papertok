@@ -553,6 +553,19 @@ test('unwraps the standalone LaTeX document JATS wraps around every formula', ()
   );
 });
 
+test('keeps the remaining abstract when a markup section never closes', () => {
+  for (const opener of ['<!--', '<?', String.raw`\documentclass`]) {
+    const input = opener.repeat(Math.floor(50_000 / opener.length)) + 'remaining abstract';
+    assert.equal(normalizeScientificMarkup(input), input);
+  }
+  for (const opener of ['<![CDATA[', '<alternatives>', '<tex-math>']) {
+    const body = opener.repeat(Math.floor(50_000 / opener.length)) + 'remaining abstract';
+    const input = opener === '<tex-math>' ? `<alternatives>${body}</alternatives>` : body;
+    assert.equal(normalizeScientificMarkup(input), 'remaining abstract');
+  }
+  assert.equal(normalizeScientificMarkup('<span' + ' '.repeat(50_000) + 'unfinished'), '<span unfinished');
+});
+
 test('drops the markup the tag stripper cannot see', () => {
   // `SCIENTIFIC_MARKUP_TAG` requires a letter after the `<`, so everything
   // opening with `<!` or `<?` used to survive it: the CDATA markers were left

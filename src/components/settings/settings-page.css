@@ -215,7 +215,54 @@
 /* Plain-words summaries: the history's ruled rows (ListRow) in the page's
    panel, with its loading, empty and failed states set as a quiet line. */
 .settings-summaries {
-  padding-block: var(--space-1);
+  padding-block: calc(var(--space-5) - var(--space-2));
+}
+
+.settings-summaries .list-row {
+  container-type: inline-size;
+  align-items: flex-start;
+  padding-block: var(--space-4);
+}
+
+.settings-summaries .list-row-title {
+  margin-bottom: var(--space-3);
+}
+
+.settings-summaries .list-row-title-btn {
+  -webkit-line-clamp: 1;
+}
+
+.settings-summaries-date {
+  padding-top: 3px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+@container (max-width: 480px) {
+  .settings-summaries .list-row-actions {
+    position: absolute;
+    inset-inline-end: var(--space-2);
+    inset-block-end: var(--space-4);
+  }
+
+  .settings-summaries-date {
+    display: block;
+    padding-top: 0;
+    line-height: 22px;
+  }
+}
+
+.settings-summaries-level {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
+  font: 500 0.6875rem/1.5 var(--font-mono);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -344,7 +391,7 @@
 .settings-levels {
   display: grid;
   gap: var(--space-1);
-  padding: var(--space-1);
+  padding: calc(var(--space-5) - var(--space-2));
 }
 
 .settings-levels button {
@@ -353,7 +400,7 @@
   min-height: 60px;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-xl);
   color: var(--text-primary);

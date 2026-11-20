@@ -1,7 +1,11 @@
 type ScopedStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
+import type { Paper } from '../models/paper.ts';
+import { paperLegacyAdapter, readStoredClassification } from '../models/paper.ts';
+import { serializeLibraryPaper } from './reading-library.ts';
 import type { OwnList } from './own-lists.ts';
 import { MAX_VIEWED_IDS } from './interaction-profile.ts';
+import { normalizeInterestSettings, type InterestSettings } from './area-preferences.ts';
 
 const LEGACY_SEEN_PAPERS_KEY = 'papertok_seenIds';
 // Until the list held only viewed papers it held every paper a load showed, so
@@ -12,8 +16,11 @@ const SEEN_PAPERS_KEY_PREFIX = 'papertok_viewedIds:';
 const DRIFT_CHECK_KEY_PREFIX = 'papertok_profileDriftCheckedAt:';
 const FOLLOW_STATS_KEY_PREFIX = 'papertok_followStats:';
 const OWN_LISTS_KEY_PREFIX = 'papertok_ownLists:';
+const LIST_PAPERS_KEY_PREFIX = 'papertok_listPapers:';
 const OWN_PROFILE_KEY_PREFIX = 'papertok_ownProfile:';
 const ONBOARDING_KEY_PREFIX = 'papertok_onboarding:';
+const CUSTOM_FEED_DISMISSED_KEY_PREFIX = 'papertok_customFeedDismissed:';
+const PMF_SURVEY_KEY_PREFIX = 'papertok_pmfSurvey:';
 // The comments a reporter chose not to see, from when the app had comments.
 // Nothing writes it any more; sign-out still sweeps it so a list left in a
 // browser does not outlive the feature.
@@ -103,6 +110,90 @@ export function saveProfileDriftCheckedAt(userId: string, timestamp: number, sto
 export function getOwnListsStorageKey(userId: string | null | undefined) {
   if (!userId) return null;
   return `${OWN_LISTS_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
+function getListPapersStorageKey(userId: string) {
+  return `${LIST_PAPERS_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
+const LIST_PAPERS_STORAGE_BYTES = 1_048_576;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isCachedPaper(value: unknown): value is Partial<Paper> & { id: string; title: string } {
+  if (!isRecord(value) || typeof value.id !== 'string' || !value.id
+    || typeof value.title !== 'string' || !value.title) return false;
+  const textFields = ['primaryCategory', 'published', 'summary', 'arxivId', 'doi', 'journal', 'pdfUrl', 'landingPageUrl'];
+  if (textFields.some(key => value[key] !== undefined && typeof value[key] !== 'string')) return false;
+  if (value.year !== null && value.year !== undefined && (typeof value.year !== 'number' || !Number.isFinite(value.year))) return false;
+  if (typeof value.classificationVersion !== 'number') return false;
+  if (!Array.isArray(value.categories) || !value.categories.every(item => typeof item === 'string')) return false;
+  if (!Array.isArray(value.authors) || !value.authors.every(item => typeof item === 'string'
+    || (isRecord(item) && typeof item.name === 'string'
+      && ['id', 'orcid', 'fullName', 'affiliation'].every(key => item[key] === undefined || item[key] === null || typeof item[key] === 'string')))) return false;
+  if (value.primaryTopic !== undefined) {
+    const topic = value.primaryTopic;
+    if (!isRecord(topic) || typeof topic.id !== 'string'
+      || (topic.display_name !== undefined && typeof topic.display_name !== 'string')) return false;
+    for (const key of ['field', 'subfield', 'domain']) {
+      const ref = topic[key];
+      if (ref !== undefined && (!isRecord(ref) || typeof ref.id !== 'string' || typeof ref.display_name !== 'string')) return false;
+    }
+  }
+  return true;
+}
+
+function cachedAuthors(paper: Partial<Paper>) {
+  return (paper.authors || []).map(author => typeof author === 'string' ? author : ({
+    name: author.name,
+    ...(author.id && { id: author.id }),
+    ...(author.orcid && { orcid: author.orcid }),
+    ...(author.fullName && { fullName: author.fullName }),
+    ...(author.affiliation && { affiliation: author.affiliation }),
+  }));
+}
+
+/** Only paper metadata: list membership, notes and reading state remain server-owned. */
+export function readStoredListPapers(userId: string, storage?: ScopedStorage | null): Record<string, Partial<Paper>> {
+  if (!userId) return {};
+  try {
+    const raw = getStorage(storage)?.getItem(getListPapersStorageKey(userId));
+    if (!raw || raw.length * 2 > LIST_PAPERS_STORAGE_BYTES) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.papers)) return {};
+    return Object.fromEntries(parsed.papers.filter(isCachedPaper).map(paper => [paper.id, paperLegacyAdapter({
+      ...serializeLibraryPaper({ ...paper, authors: cachedAuthors(paper) }),
+      ...readStoredClassification(paper),
+    })]));
+  } catch {
+    // Storage may be blocked or contain an incomplete write from an older client.
+    return {};
+  }
+}
+
+export function saveStoredListPapers(userId: string, papers: Record<string, Partial<Paper>>, storage?: ScopedStorage | null, budgetBytes = LIST_PAPERS_STORAGE_BYTES) {
+  if (!userId) return;
+  try {
+    const target = getStorage(storage);
+    if (!target) return;
+    const entries = [];
+    let bytes = 64;
+    // Recently received papers go first. Whole entries fit or are left to the next read.
+    for (const [id, paper] of Object.entries(papers).reverse()) {
+      if (!paper.title || paper.title === id) continue;
+      const entry = serializeLibraryPaper({ ...paper, id });
+      const stored = { ...entry, authors: cachedAuthors(entry) };
+      const size = (JSON.stringify(stored).length + 1) * 2;
+      if (bytes + size > budgetBytes) continue;
+      bytes += size;
+      entries.push(stored);
+    }
+    target.setItem(getListPapersStorageKey(userId), JSON.stringify({ version: 1, papers: entries.reverse() }));
+  } catch {
+    // Full or unavailable device storage must not prevent reading the list.
+  }
 }
 
 // Written by the removed public-profile editor. Nothing writes it now;
@@ -209,7 +300,7 @@ export function getOnboardingStorageKey(userId: string | null | undefined) {
  * answer sent the account through the interest picker again. Remembering the
  * flag here lets the router keep them in the app until the document confirms.
  */
-export function readStoredOnboarding(userId: string, storage?: ScopedStorage | null): { complete: boolean; preferences: string[] } | null {
+export function readStoredOnboarding(userId: string, storage?: ScopedStorage | null): ({ complete: boolean; preferences: string[] } & InterestSettings) | null {
   const key = getOnboardingStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return null;
@@ -221,13 +312,13 @@ export function readStoredOnboarding(userId: string, storage?: ScopedStorage | n
       ? parsed.preferences.filter((value: unknown) => typeof value === 'string')
       : [];
     if (parsed.complete !== true && preferences.length === 0) return null;
-    return { complete: parsed.complete === true || preferences.length > 0, preferences };
+    return { complete: parsed.complete === true || preferences.length > 0, preferences, ...normalizeInterestSettings(parsed) };
   } catch {
     return null;
   }
 }
 
-export function saveStoredOnboarding(userId: string, state: { preferences?: unknown[]; complete?: boolean }, storage?: ScopedStorage | null) {
+export function saveStoredOnboarding(userId: string, state: { preferences?: unknown[]; complete?: boolean } & InterestSettings, storage?: ScopedStorage | null) {
   const key = getOnboardingStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target || !state) return;
@@ -241,10 +332,26 @@ export function saveStoredOnboarding(userId: string, state: { preferences?: unkn
       target.removeItem(key);
       return;
     }
-    target.setItem(key, JSON.stringify({ complete, preferences }));
+    target.setItem(key, JSON.stringify({ complete, preferences, ...normalizeInterestSettings(state) }));
   } catch {
     // Missing local memory only means the next visit waits on Firestore.
   }
+}
+
+/** One key per account for the papers removed from each of its custom feeds (custom-feed-dismissed.ts). */
+export function getCustomFeedDismissedStorageKey(userId: string | null | undefined) {
+  if (!userId) return null;
+  return `${CUSTOM_FEED_DISMISSED_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
+/**
+ * One key per account for the use that makes the survey due: the days and the
+ * papers kept on screen (pmf-survey.ts). The version it was asked for is kept
+ * in a key of its own, which sign-out does not sweep.
+ */
+export function getPmfSurveyStorageKey(userId: string | null | undefined) {
+  if (!userId) return null;
+  return `${PMF_SURVEY_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
 
 // Written by the follow counters of the removed profile page. Nothing writes
@@ -287,8 +394,11 @@ export function clearUserScopedStorage(userId: string | undefined, storage?: (Sc
     getDriftCheckStorageKey(userId),
     getFollowStatsStorageKey(userId),
     getOwnListsStorageKey(userId),
+    getListPapersStorageKey(userId),
     getOwnProfileStorageKey(userId),
     getOnboardingStorageKey(userId),
+    getCustomFeedDismissedStorageKey(userId),
+    getPmfSurveyStorageKey(userId),
     getLocalHiddenStorageKey(userId),
     LEGACY_LOCAL_HIDDEN_KEY,
     `papertok_following_${safeUserId}`,

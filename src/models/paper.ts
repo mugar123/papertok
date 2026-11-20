@@ -1,4 +1,5 @@
 import { getArxivArchiveArea } from '../data/category-taxonomy.ts';
+import { storedPaperEvidence, withPaperEvidenceOf, type StudyType } from './paper-evidence.ts';
 
 export interface PaperAuthor {
   name: string;
@@ -166,6 +167,9 @@ export interface Paper {
   publisher?: string;
   // Providers retain their vocabulary (article, report, thesis, letter, etc.).
   publicationType?: string;
+  studyType?: StudyType;
+  trialRegistration?: string;
+  trialRegistrationSource?: 'pubmed-secondary-source';
   publicationStatus?: 'preprint' | 'published' | 'accepted' | 'retracted';
   peerReviewed?: boolean;
   // True when the record shows a working paper or report
@@ -248,6 +252,17 @@ type StoredPaperInput = Omit<Partial<Paper>, 'id' | 'sources'> & {
   source?: string;
   journalRef?: string;
 };
+
+/**
+ * The citation count a source gave, or null when none did. `PaperBuilder`
+ * writes 0 for a paper nobody counted, with `citationCountKnown: false`; that
+ * zero is not a number to print.
+ */
+export function knownCitationCount(paper: Pick<Paper, 'citationCount' | 'citationCountKnown'>) {
+  const count = paper.citationCount;
+  if (typeof count !== 'number') return null;
+  return paper.citationCountKnown || count > 0 ? count : null;
+}
 
 const ARXIV_ID_PATTERN = /^(?:\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\d{7})(?:v\d+)?$/i;
 
@@ -343,16 +358,25 @@ export function storedAbstractSource(paper: Partial<Pick<Paper, 'abstract' | 'su
 }
 
 /**
- * `paper` with the retraction that `other`, another copy of the same paper,
- * records (ENG-84). No provider confirms that a paper is not retracted, so a
- * copy written before a provider reported it, or by a writer that keeps no
- * status (the `savedPapers` document), never removes it. Returns `paper`
- * itself when `other` adds nothing.
+ * Keep publication evidence from either copy of the same paper (ENG-84).
+ * The `savedPapers` document carries none of these fields.
  */
+export function withPublicationEvidenceOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
+  return withRetractionOf(withPaperEvidenceOf(paper, other), other);
+}
+
 export function withRetractionOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
   return other?.publicationStatus === 'retracted' && paper.publicationStatus !== 'retracted'
     ? { ...paper, publicationStatus: 'retracted' }
     : paper;
+}
+
+/** The interaction copy owns the journal identity because savedPapers does not store it. */
+export function withJournalOf(paper: Partial<Paper>, interaction: Partial<Paper>) {
+  const journal = interaction.journal || (interaction.venueId ? undefined : paper.journal);
+  const { venueId, sourceName } = interaction;
+  if (paper.journal === journal && paper.venueId === venueId && paper.sourceName === sourceName) return paper;
+  return { ...paper, journal, venueId, sourceName };
 }
 
 const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) && getArxivArchiveArea(value) !== null;
@@ -367,8 +391,9 @@ const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) &&
  * Europe PMC, PubMed and the other specialist cards, a concept name on
  * OpenAlex's (PAP-60). Only an old copy stored under a bare arXiv id with a
  * list of arXiv categories is still evidence: the list is arXiv's own, primary
- * first. Every other old copy has no field until the paper page asks a
- * provider (`hydrateSeededPaper`).
+ * first. Every other old copy has no field until a provider is asked: by the
+ * paper page (`hydrateSeededPaper`), or by a list for a saved paper
+ * (`readPaperFields`).
  */
 export function readStoredClassification(copy: Omit<StoredPaperInput, 'sources'>) {
   // Only OpenAlex fills a topic, so it was never a requested category.
@@ -427,7 +452,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
     doi = doi.replace('https://doi.org/', '');
   }
 
-  const journal = legacyPaper.journalRef || openAlexData.journal || '';
+  const journal = legacyPaper.journal || legacyPaper.journalRef || openAlexData.journal || '';
 
   // arXiv links are derived only for an arXiv paper; anything else keeps the
   // links it was stored with, or the DOI resolver, or nothing.
@@ -456,10 +481,13 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
     title: legacyPaper.title || 'Untitled',
     abstract: legacyPaper.summary || legacyPaper.abstract || 'No abstract available.',
     ...(abstractSource && { abstractSource }),
+    ...storedPaperEvidence(legacyPaper),
     authors,
     arxivId: arxivId || undefined,
     doi: doi || undefined,
     journal: journal || undefined,
+    venueId: legacyPaper.venueId || undefined,
+    sourceName: legacyPaper.venueId && legacyPaper.sourceName || undefined,
     year,
     publicationType: legacyPaper.publicationType || 'preprint',
     publicationStatus: legacyPaper.publicationStatus || 'preprint',

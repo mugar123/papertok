@@ -10,6 +10,7 @@ import {
   readPapersByIds, reserveFeedRequest,
 } from './paper-store.ts';
 import { followedLaneJob, ingestPaperIds } from './paper-sources.ts';
+import { isKeywordLane } from './keyword-lanes.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -54,14 +55,25 @@ const NEW_LANES_HARVESTED_PER_DAY = 2_000;
 // and the wait they add, to about 14 days' worth. A request reads at most 20
 // follows and 10 journals (`servedFollows` in src/utils/follow-lanes.ts) and a
 // lane asked for again is written once in FOLLOW_REFRESH_MS at most, so the
-// follows a reader asks for again take at most 30 of their 50 on any day, and
-// none on most days, leaving 20 for new ones. Past it a new
+// follows a reader asks for again take at most 30 of their 50 on any day
+// (more when they are keywords, below), and none on most days, leaving 20 for
+// new ones. Past it a new
 // follow is not added: of the lanes nobody follows, only an OpenAlex topic's
 // holds papers (paper-store.ts `recordLanes`), so any other new follow has an
 // empty lane until a later request writes it. A lane asked for again keeps its
 // last write.
 const LANES_WRITTEN_PER_READER = 50;
 const LANES_WRITTEN_PER_DAY = 4_000;
+// What a keyword lane counts of both, new or asked for again: its harvest asks
+// OpenAlex for two or three searches on its first night and each week
+// (paper-sources.ts `harvestKeywordLane`), where another lane's asks one
+// request. Counted as one lane, an account following 40 new keywords a day
+// kept another reader's lane 13 nights from its nightly refresh; counted as
+// three, 5, where a followed search's one request a night had kept it 6
+// (measured 2026-11-14). A reader's 50 are 16 keywords a day, and following
+// 20 of them takes 60 on the day all fall due, so four are written a day late.
+const KEYWORD_LANE_WRITES = 3;
+const lanesWritten = (lane: string) => (isKeywordLane(lane) ? KEYWORD_LANE_WRITES : 1);
 
 /**
  * Liked papers the corpus cannot rank against yet, fetched and embedded: only
@@ -96,11 +108,13 @@ interface FollowedLane { lane: string; requested_at: string; harvested: number }
 /**
  * The asked lanes some reader already follows, and whether each has finished
  * its first harvest: a lane's harvest records how far it got (`lane_state`)
- * once it has filed its papers.
+ * once it has filed its papers. A keyword lane's row exists from its weekly
+ * listing on, with no harvest (`harvested_through` '') until the night's
+ * papers are filed too.
  */
 async function readFollowedLanes(env: FeedEnv, lanes: string[]): Promise<FollowedLane[]> {
   if (lanes.length === 0) return [];
-  const { results } = await database(env).prepare(`SELECT f.lane, f.requested_at, s.lane IS NOT NULL AS harvested FROM json_each(?) j
+  const { results } = await database(env).prepare(`SELECT f.lane, f.requested_at, COALESCE(s.harvested_through, '') != '' AS harvested FROM json_each(?) j
     JOIN followed_lanes f ON f.lane = json_extract(j.value, '$[0]')
     LEFT JOIN lane_state s ON s.source = json_extract(j.value, '$[1]') AND s.lane = f.lane`)
     .bind(JSON.stringify(lanes.map(lane => [lane, followedLaneJob(lane)?.source ?? null])))
@@ -109,20 +123,28 @@ async function readFollowedLanes(env: FeedEnv, lanes: string[]): Promise<Followe
 }
 
 /**
- * Reserves a unit a lane for as many of `lanes`, in order, as the allowance
- * has left. All of them in one reservation, or, when that is refused, the
- * number the refusal says is left, in a second one. The app sends every follow
- * with each page, so lanes refused together would come back with every request
+ * Reserves each lane's units (`unitsOf`, one unless told otherwise) for as
+ * many of `lanes`, in order, as the allowance has left. All of them in one
+ * reservation, or, when that is refused, the lanes that fit in what the
+ * refusal says is left, in a second one: a lane that does not fit is passed
+ * over, and a later one that does is taken. The app sends every follow with
+ * each page, so lanes refused together would come back with every request
  * that day and keep the reader's last units from being used.
  */
-async function reserveLanes(env: FeedEnv, allowance: Omit<QuotaRequest, 'amount'>, lanes: string[]) {
+async function reserveLanes(env: FeedEnv, allowance: Omit<QuotaRequest, 'amount'>, lanes: string[], unitsOf: (lane: string) => number = () => 1) {
   const ledger = env.REQUEST_QUOTA_LEDGER ?? null;
-  const whole = await reserveRequestQuota(ledger, { ...allowance, amount: lanes.length });
+  const unitsFor = (taken: string[]) => taken.reduce((units, lane) => units + unitsOf(lane), 0);
+  const whole = await reserveRequestQuota(ledger, { ...allowance, amount: unitsFor(lanes) });
   if (whole.accepted) return lanes;
   if (whole.subjectUsage === undefined || whole.globalUsage === undefined) return [];
-  const left = Math.min(allowance.subjectLimit - whole.subjectUsage, allowance.globalLimit - whole.globalUsage);
-  if (left <= 0) return [];
-  return (await reserveRequestQuota(ledger, { ...allowance, amount: left })).accepted ? lanes.slice(0, left) : [];
+  let left = Math.min(allowance.subjectLimit - whole.subjectUsage, allowance.globalLimit - whole.globalUsage);
+  const fitting = lanes.filter(lane => {
+    if (unitsOf(lane) > left) return false;
+    left -= unitsOf(lane);
+    return true;
+  });
+  if (fitting.length === 0) return [];
+  return (await reserveRequestQuota(ledger, { ...allowance, amount: unitsFor(fitting) })).accepted ? fitting : [];
 }
 
 /**
@@ -154,7 +176,7 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
     subject: `uid:${uid}`,
     subjectLimit: LANES_WRITTEN_PER_READER,
     globalLimit: LANES_WRITTEN_PER_DAY,
-  }, unwritten);
+  }, unwritten, lanesWritten);
   if (written.length === 0) return waiting;
   const at = new Date(now).toISOString();
   await db.prepare(`INSERT INTO followed_lanes (lane, requested_at, registered_at) SELECT value, ?, ? FROM json_each(?) WHERE true
@@ -225,16 +247,13 @@ async function settlesWithin(work: Promise<unknown>, ms: number) {
       new Promise<false>(resolve => { timer = setTimeout(resolve, ms, false); }),
     ]);
   } finally {
-    clearTimeout(timer!);
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
 const LOOKUP_MAX_IDS = 30;
-// The app keeps a page's request under 16,000 bytes and sends the follows
-// the page reads (20, plus up to 10 journals: `servedFollows`). Bundles
-// before that send every follow as stored, with no `seen` filter: this holds
-// about 160 followed authors or 101 followed searches (worker/README.md), and
-// past it a 413 leaves their feed without the follows' papers.
+// Older bundles send every follow as stored. Leave room above the app's
+// 16,000-byte trimming target for those requests (worker/README.md).
 const MAX_BODY_BYTES = 20_480;
 
 function readBody<T>(request: Request) {
@@ -249,7 +268,9 @@ function readBody<T>(request: Request) {
  * follows and likes, or with `ids`, the corpus's copies of those papers. A
  * page asked with `seen` and `skipsSeen` says `skipsSeen`: it passed over the
  * papers the filter holds, so the app has no later page to try for unseen
- * ones.
+ * ones. An exact page asked by number (without `skipsSeen`) says whether a
+ * later page can still bring papers (`more`): its order holds ranks past it,
+ * and the route serves a later page (FEED_LAST_PAGE).
  */
 export async function handleCorpusFeed(
   request: Request,
@@ -258,7 +279,7 @@ export async function handleCorpusFeed(
   // Work the page does not wait for; awaited when nothing can outlive the response.
   later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
   timings?: FeedTimings,
-): Promise<{ papers: Paper[]; skipsSeen?: true }> {
+): Promise<{ papers: Paper[]; skipsSeen?: true; more?: boolean; loading?: Array<{ type: string; canonicalId: string }> }> {
   const bodyRead = Date.now();
   const body = await readBody<FeedRequestBody & { ids?: unknown }>(request).finally(() => timings?.since('body', bodyRead));
   // The reservation, timed on its own while the follows are read beside it.
@@ -282,8 +303,9 @@ export async function handleCorpusFeed(
   }
   const query = parseFeedRequest(body);
   if (query.categories.length === 0 && query.follows.length === 0) {
-    // Follows that are all categories, or name nothing a lane serves, have no papers of their own.
-    if (Array.isArray(body?.follows) && body.follows.length > 0) return { papers: [] };
+    // Follows that are all categories, or name nothing a lane serves, have no
+    // papers of their own. An exact request is served nothing else, so it asks for nothing.
+    if (!query.exact && Array.isArray(body?.follows) && body.follows.length > 0) return { papers: [] };
     throw new PaperStoreError('LANES_REQUIRED', 400);
   }
   // Two follows can name one lane, such as two authors known by the same name.
@@ -298,7 +320,15 @@ export async function handleCorpusFeed(
     lanes.length ? readFollowedLanes(env, lanes).finally(() => timings?.since('follows', followsRead)) : [],
   ]);
   const harvestedBefore = new Set(followed.filter(row => row.harvested).map(row => row.lane));
-  if (query.page > FEED_LAST_PAGE) return { papers: [] };
+  // For a request that asks for it (`exact`), the asked follows with no papers
+  // yet because their lane, asked for the first time or still in its first
+  // harvest, had not finished it: named only when there are some.
+  const loading = query.exact
+    ? query.follows.filter(follow => !harvestedBefore.has(follow.lane)).map(({ type, canonicalId }) => ({ type, canonicalId }))
+    : [];
+  const loadingField = loading.length ? { loading } : {};
+  const saysMore = query.exact && !query.skipsSeen;
+  if (query.page > FEED_LAST_PAGE) return { papers: [], ...(saysMore ? { more: false } : {}), ...loadingField };
   // Only a first page of categories looks up liked papers: the follows asked
   // beside it, and later pages, would repeat the same lookup.
   const looksUp = query.page === 0 && query.follows.length === 0 && query.positiveIds.length > 0;
@@ -316,6 +346,7 @@ export async function handleCorpusFeed(
   if (waitsForLikes) timings?.since('likesWait', waited);
   const cache = rankingCache(identity.uid);
   let kept: [string, KeptRanking, number] | null = null;
+  let ranksLeft = false;
   const papers = await readFeedPage(env, query, {
     cache: cache && {
       get: key => cache.get(key),
@@ -335,6 +366,7 @@ export async function handleCorpusFeed(
       update: (key, ranking, keptMs) => cache.put(key, ranking, keptMs),
     },
     timings,
+    ranksLeft: left => { ranksLeft = left; },
   });
   // Otherwise after the page, not before it: a lookup can take seconds
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
@@ -349,5 +381,10 @@ export async function handleCorpusFeed(
   ]).then(async ([waiting, added]) => {
     if ((kept?.[1].final || kept?.[1].decided !== undefined) && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
-  return { papers, ...(query.skipsSeen ? { skipsSeen: true as const } : {}) };
+  return {
+    papers,
+    ...(query.skipsSeen ? { skipsSeen: true as const } : {}),
+    ...(saysMore ? { more: ranksLeft && query.page < FEED_LAST_PAGE } : {}),
+    ...loadingField,
+  };
 }

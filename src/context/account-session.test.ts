@@ -3,8 +3,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { adoptOnboardedProfile, closeAccountSession, openAccountSession } from './account-session.ts';
 import { resetAccountWarmup } from '../services/account-warmup.ts';
+import { changeDismissed, readDismissed } from '../utils/custom-feed-dismissed.ts';
+import { customFeedPagesCache, feedPagesKey } from '../utils/custom-feed-pages.ts';
 import { readGuestInterests, saveGuestInterests } from '../utils/guest-interests.ts';
 import { ownListsCache } from '../utils/profile-session-caches.ts';
+import { recentPagesCache, recentPagesKey, recentRunsCache } from '../utils/recent-feed-pages.ts';
 import { readSeenPaperIds, readStoredLists, readStoredOnboarding, saveSeenPaperIds, saveStoredLists, saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
 
 function deviceStorage() {
@@ -96,6 +99,33 @@ test('after A signs out, B signing in on the same device finds nothing of A\'s',
   assert.equal(ownListsCache.get('account-b'), undefined);
 });
 
+test('a sign-out takes the pages of the account\'s custom feeds out of the session', t => {
+  freshSession(t);
+  const key = feedPagesKey('account-a', { id: 'abcd1234', name: 'Thesis', order: 'newest', ingredients: [{ kind: 'category', id: 'quant-ph' }] });
+  customFeedPagesCache.set(key, { papers: [], page: 0, hasMore: false, loading: [] });
+  closeAccountSession('account-a', deviceStorage());
+  assert.equal(customFeedPagesCache.get(key), undefined);
+});
+
+test('a sign-out takes the account\'s Most recent pages and run out of the session', t => {
+  freshSession(t);
+  const key = recentPagesKey('account-a', ['cs.AI']);
+  recentPagesCache.set(key, { papers: [], page: 0, hasMore: false, loading: [] });
+  recentRunsCache.set(key, { plan: { groups: [], unassignedPositiveIds: [], positiveIds: [], dormantCategories: [], interestProgress: {}, coldAdded: [] }, negativeIds: [], excludedIds: [], received: ['p1'], walk: 'run-1' });
+  closeAccountSession('account-a', deviceStorage());
+  assert.equal(recentPagesCache.get(key), undefined);
+  assert.equal(recentRunsCache.get(key), undefined);
+});
+
+test('a sign-out forgets the papers removed from a custom feed that storage could not keep', t => {
+  freshSession(t);
+  const full = { ...deviceStorage(), setItem: () => { throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); } };
+  changeDismissed('account-a', 'abcd1234', () => ['p1'], full);
+  assert.deepEqual(readDismissed('account-a', 'abcd1234', full), ['p1'], 'kept for the session');
+  closeAccountSession('account-a', full);
+  assert.deepEqual(readDismissed('account-a', 'abcd1234', full), [], 'the next account on this device does not get it');
+});
+
 test('signing back in after a sign-out reads the account\'s lists again', async t => {
   freshSession(t);
   const storage = deviceStorage();
@@ -111,10 +141,36 @@ test('signing back in after a sign-out reads the account\'s lists again', async 
 
 test('a profile that already holds its interests spends the guest answer waiting on this device', () => {
   const storage = deviceStorage();
-  saveGuestInterests({ areas: ['physics'], topics: [] }, storage);
+  saveGuestInterests({ areas: ['physics'], topics: [], areaPreferences: { physics: { priority: 'curiosity' } } }, storage);
 
-  adoptOnboardedProfile('account-a', ['cs.AI', 'cs.LG'], storage);
+  adoptOnboardedProfile('account-a', ['cs.AI', 'cs.LG'], {}, storage);
 
   assert.deepEqual(readStoredOnboarding('account-a', storage), { complete: true, preferences: ['cs.AI', 'cs.LG'] });
   assert.equal(readGuestInterests(storage), null, 'the next new account on this device is not seeded with A\'s pick');
+});
+
+test('switching accounts on one device loads each account’s own interest settings', async t => {
+  freshSession(t);
+  const storage = deviceStorage();
+  let signedIn = 'account-a';
+  const devices = { storage, currentUid: () => signedIn, readLists: async () => listsSnapshot([]) };
+  saveStoredOnboarding('account-b', { complete: true, preferences: ['quant-ph'] }, storage);
+  saveGuestInterests({
+    areas: ['ai', 'physics'],
+    areaPreferences: { ai: { priority: 'curiosity' } },
+    interestMix: 'half-and-half',
+  }, storage);
+  const answer = readGuestInterests(storage);
+  assert.ok(answer);
+  adoptOnboardedProfile('account-a', ['cs.AI', 'quant-ph'], answer, storage);
+  assert.deepEqual(openAccountSession('account-a', devices), {
+    complete: true,
+    preferences: ['cs.AI', 'quant-ph'],
+    interestMix: 'half-and-half',
+    areaPreferences: { ai: { priority: 'curiosity' } },
+  });
+
+  signedIn = 'account-b';
+  assert.deepEqual(openAccountSession('account-b', devices), { complete: true, preferences: ['quant-ph'] });
+  assert.equal(readGuestInterests(storage), null);
 });

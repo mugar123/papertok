@@ -119,7 +119,7 @@ function Segment({ dashed, column }: { dashed: boolean; column: number }) {
   );
 }
 
-export default function CareerTimeline({ career, onOrganization }: { career: CareerStop[]; onOrganization: (stop: CareerStop) => void }) {
+export default function CareerTimeline({ career, onOrganization, onHeightChange }: { career: CareerStop[]; onOrganization: (stop: CareerStop) => void; onHeightChange: () => void }) {
   const id = useId();
   const [expanded, setExpanded] = useState(true);
   // Only records the reader lets out of the fold start gray.
@@ -128,25 +128,32 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
   const listRef = useRef<HTMLOListElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const reduce = useReducedMotion();
+  const lastHeight = useRef<number | null>(null);
   useLayoutEffect(() => {
     const list = listRef.current;
     const body = bodyRef.current;
     if (!list || !body) return undefined;
-    let last: number | null = null;
     const measure = () => {
       const { paddingLeft, paddingRight } = getComputedStyle(list);
       setLineWidth(list.clientWidth - parseFloat(paddingLeft) - parseFloat(paddingRight));
       const next = list.offsetHeight;
-      if (next === last) return;
-      if (last === null) body.style.height = `${next}px`;
-      else animate(body, { height: `${next}px` }, reduce ? { duration: 0 } : MOVE);
-      last = next;
+      if (lastHeight.current === null || next === lastHeight.current) return;
+      lastHeight.current = next;
+      void animate(body, { height: `${next}px` }, reduce ? { duration: 0 } : MOVE).then(onHeightChange);
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(list);
     return () => observer.disconnect();
-  }, [reduce]);
+  }, [reduce, onHeightChange]);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const body = bodyRef.current;
+    if (lineWidth === null || lastHeight.current !== null || !list || !body) return;
+    lastHeight.current = list.offsetHeight;
+    body.style.height = `${lastHeight.current}px`;
+    onHeightChange();
+  }, [lineWidth, onHeightChange]);
 
   const capacity = lineWidth === null ? Infinity : Math.max(3, Math.floor((lineWidth + STOP_GAP_PX) / (STOP_MIN_PX + STOP_GAP_PX)));
   const tooLong = career.length > capacity;

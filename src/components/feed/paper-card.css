@@ -30,7 +30,6 @@
   padding: clamp(16px, 3dvh, 40px);
   background: var(--bg-secondary);
   overflow: hidden;
-  -webkit-tap-highlight-color: transparent;
   /* `translate`, not `transform`: `cardSlideUp` animates transform on
      the sheet inside, and the two compose instead of one
      replacing the other. The only thing that moves a card from out here is
@@ -71,7 +70,9 @@
      text well in it. The abstract is the only thing here that can be any
      length, so the abstract is the only thing that scrolls — see
      `.pc-abstract`, which yields space to its siblings and takes the overflow
-     on itself. */
+     on itself. The exception is a card with the publisher's page, whose
+     head rows yield after the panel and scroll in their own box
+     (`.pc-head-rows`). */
   overflow-x: hidden;
   overflow-y: hidden;
   /* A property because the glyph in the head reads it: it may rise into this
@@ -352,13 +353,26 @@
    owns the step between that rule and the abstract (it used to be the
    authors' bottom margin) so that its own bottom edge IS the rule, which is
    what the glyph below stands on. A flex column like the body, so the pieces
-   keep the margins they had as the body's items. */
+   keep the margins they had as the body's items. The step is a property of
+   the body because a card with the publisher's page moves it into the slot
+   (`.pc-action-publisher`, below). */
 .pc-head {
   position: relative;
   isolation: isolate;
   display: flex;
   flex-direction: column;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--pc-head-step);
+}
+
+/* The rows of the head, without the glyph: the box that scrolls on a card
+   with the publisher's page. None of them gives way, as in the body. */
+.pc-head-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.pc-head-rows > * {
+  flex-shrink: 0;
 }
 
 /* The field's glyph stands on the authors' rule, a step of clear ground above
@@ -454,10 +468,13 @@
   /* Without this the body refuses to go below its content height, and a long
      abstract pushes the action row out of a sheet that no longer scrolls. */
   min-height: 0;
+  /* The step between the authors' rule and the abstract (`.pc-head`). */
+  --pc-head-step: var(--space-4);
 }
 
 /* Only the abstract gives way. Every other row keeps the height its content
-   asks for.
+   asks for, except on a card with the publisher's page, whose head rows give
+   way after the panel and scroll (`.pc-action-publisher`, below).
 
    This is not belt-and-braces, it is the load-bearing half of letting the body
    shrink. Flex items default to `flex-shrink: 1`, and `.pc-title` carries
@@ -513,6 +530,24 @@
   color: var(--area-accent, var(--text-primary));
   font: inherit;
   font-weight: var(--fw-semibold);
+}
+
+.pc-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.pc-evidence a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 24px;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 button.pc-masthead-field:focus-visible {
@@ -764,6 +799,33 @@ button.pc-topics-pop-item:focus-visible {
   overflow: hidden;
 }
 
+/* The title as a button (a phone: it opens the abstract sheet). The heading
+   stops clipping so the button's focus ring is not cut, and the clamp moves
+   to a span inside the button, at whatever count the title has here: WebKit
+   does not clamp a button that is itself the `-webkit-box`. */
+.pc-title--opens {
+  display: block;
+  overflow: visible;
+}
+
+.pc-title-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-align: left;
+  -webkit-line-clamp: inherit;
+}
+
+.pc-title-text {
+  display: -webkit-box;
+  -webkit-line-clamp: inherit;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* ── Authors ── */
 .pc-authors {
   display: flex;
@@ -843,7 +905,9 @@ button.pc-topics-pop-item:focus-visible {
   overflow: hidden;
   position: relative;
   margin-bottom: var(--space-4);
-  /* The one part of the card that yields. Everything else — kicker, badges,
+  /* The part of the card that yields. On a card with the publisher's page
+     it yields first, and the head's rows give way after it
+     (`.pc-action-publisher`, below). Everything else — kicker, badges,
      title, authors, actions — keeps its natural height; the abstract fills
      whatever is left, and the graph fills the same room when it takes its
      place (`.pc-slot`), so switching never resizes the block. */
@@ -910,14 +974,104 @@ button.pc-topics-pop-item:focus-visible {
   background: var(--bg-card);
 }
 
+/* The panel is as tall as the rows around it leave it: 165px under a
+   four-line title on the signed-out paper page at 360x640, where Petri, the
+   heading and two lines take 194px. The state gives way before it is cut: its
+   padding goes down to 8px and Petri shrinks with the panel. The panel can be
+   a size container because its height never comes from its content
+   (`.pc-abstract`, `.pc-sheet`). */
 .pc-abstract:has(> .pc-abstract-empty) {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  container: abstract-panel / size;
+}
+
+/* What is still too tall scrolls inside the panel, like the map's empty state
+   (`.graph-empty`). The scroller fills the panel, and the state's auto
+   margins center it while it fits and fall to 0 when it does not, so the
+   heading stays at the top and the rest is a drag away. A state that fits has
+   no scroll range, and a drag that begins on it is the feed's, as before.
+   The state holds words only. The publisher's page it names is a control of
+   the action row (`.pc-action-publisher`), which does not yield its height:
+   this panel can be 0px tall, and nothing reaches a link in it then. */
+.pc-abstract-empty {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-block: auto;
+  overflow-y: auto;
+}
+
+/* A scrolling state takes the keyboard's focus itself in Chrome, so the arrow
+   keys can move it: the feed leaves them to it (feed-arrow-keys.ts). The
+   panel would clip a ring drawn around it, so the ring is drawn inside. */
+.pc-abstract-empty:focus-visible {
+  outline-offset: -2px;
+}
+
+.pc-abstract-empty .empty-state {
+  min-height: 0;
+  margin-block: auto;
+  padding-block: var(--space-2);
+}
+
+.pc-abstract-empty .empty-state-art {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pc-abstract-empty .petri {
+  min-height: 0;
+}
+
+/* Petri is decoration: in a panel under 10rem she would be less than 3rem
+   tall above two lines, so the state is its words, with no padding of its
+   own.
+   The words can be taller than a panel this short, and here the scroller is
+   a whole number of pixels tall, centered by its auto margins. At 32.578px
+   over a 68.375px state, Chrome scrolled the state 35px and then kept every
+   later drag up without moving anything, so a swipe that began on the panel
+   never reached the feed. At 32px the feed takes the drag once the state is
+   at its end. A taller panel is not rounded: the pixel would come off Petri
+   as she shrinks. */
+@container abstract-panel (max-height: 10rem) {
+  .pc-abstract-empty {
+    max-height: round(down, 100cqh, 1px);
+  }
+
+  .pc-abstract-empty .empty-state {
+    padding-block: 0;
+  }
+
+  .pc-abstract-empty .empty-state-art {
+    display: none;
+  }
+}
+
+/* At 740x360 the same page leaves the panel 74px under a two-line title, and
+   the heading and two lines fit it only without the gap between them (68px).
+   Under a three-line title (48px) the state scrolls 21px, and under a
+   four-line title (21px) it scrolls 48px. */
+@container abstract-panel (max-height: 5rem) {
+  .pc-abstract-empty .empty-state-body {
+    margin-top: 0;
+  }
 }
 
 .petri.pc-abstract-empty-petri .onboarding-petri-body {
   animation: none;
+}
+
+/* A panel can be shorter than a line: the signed-in paper page at 740x360
+   leaves it 7.5px under a three-line title and 0px under a four-line one.
+   While the keyboard's focus is on the state it is 1.5rem tall, so the focus
+   is never on a scroller out of sight. On a card with no DOI it is drawn over
+   the top of the action row. On a card with the publisher's page the slot
+   keeps that height, and the head's rows give way to it (below). */
+.pc-abstract:has(> .pc-abstract-empty):has(:focus-visible) {
+  min-height: 1.5rem;
 }
 
 /* Expanded, it takes the space the rest of the card is not using and scrolls
@@ -955,6 +1109,15 @@ button.pc-topics-pop-item:focus-visible {
   height: min(100%, 860px);
 }
 
+.pc-rewrite-hint {
+  color: var(--text-secondary);
+  flex-basis: 100%;
+}
+
+.pc-rewrite-hint:empty {
+  position: absolute;
+}
+
 .pc-action-bar {
   display: flex;
   align-items: center;
@@ -962,6 +1125,60 @@ button.pc-topics-pop-item:focus-visible {
   flex-wrap: wrap;
   margin-top: auto;
   padding-top: var(--space-4);
+}
+
+/* A card with the publisher's page keeps its action row on the card at every
+   size, and covers nothing with it. When the rows above the action row are
+   taller than the card (a four-line title on a phone on its side, text at
+   200%), the row used to be pushed past the sheet's foot, which cut it; held
+   at the foot instead, it covered the authors and the title. Now these give
+   way, in turn, and the row stays where it is:
+   1. the panel, as on every card: the slot asks for no height of its own and
+      takes what the other rows leave;
+   2. the step under the authors' rule, which moves into the slot for that;
+   3. on a phone, the lead over the kicker when it holds no figure;
+   4. the head's rows, which then scroll in what is left of them. A drag, or
+      the focus on the authors' button, brings the rest into view.
+   The slot clips what it no longer has room for: the step and the panel's
+   border would otherwise be drawn across the row's buttons. The glyph is
+   outside the scrolling box, which does not clip it. The box reaches 4px
+   past its rows, so their focus rings are not cut, and keeps 4px of them in
+   view when the focus scrolls it. */
+.pc-body:has(.pc-action-publisher) > .pc-slot {
+  overflow: clip;
+}
+
+.pc-body:has(.pc-action-publisher) > .pc-slot:not(.pc-slot--morphing) {
+  flex-basis: 0;
+}
+
+.pc-body:has(.pc-action-publisher) .pc-slot-track {
+  margin-top: var(--pc-head-step);
+}
+
+.pc-body:has(.pc-action-publisher) > .pc-head {
+  flex-shrink: 1;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+.pc-body:has(.pc-action-publisher) .pc-head-rows {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 4px 0;
+  margin: -4px -4px 0;
+  scroll-padding-block: 4px;
+}
+
+.pc-body:has(.pc-action-publisher) .pc-lead:empty {
+  flex-shrink: 1;
+  min-height: 0;
+}
+
+/* While the keyboard is on the state, the slot keeps the state's height
+   (`.pc-abstract`, above) and the head's rows give it up. */
+.pc-body:has(.pc-action-publisher) > .pc-slot:has(.pc-abstract-empty:focus-visible) {
+  flex: 1 0 auto;
 }
 
 /* Two fixed slots, so neither reading action moves: the Read label can
@@ -977,7 +1194,46 @@ button.pc-topics-pop-item:focus-visible {
   margin-right: auto;
 }
 
-.pc-action-primary > button {
+/* The publisher's page of a card with no abstract is the row's last control
+   (paper-card.tsx): the second slot, or beside "Read in plain words" its
+   glyph alone in a 40px column at every width, named on the link. With its
+   label, as a third 14rem slot, the three shared the 40rem column, and a
+   visitor's "Read in plain words" with its lock was cut from 641px to about
+   1216px wide. Source and "Read in plain words" keep their 14rem slots
+   where the row has room for them; with large text in a narrower row they
+   share it with the glyph. The row draws no lock at any width: beside the
+   glyph it cut a visitor's "Read in plain words" at 200% text, and the
+   button keeps "Needs a free account" as its description. The link adds no
+   line to the row, except on a phone row too narrow for the three (below). */
+.pc-action-primary--three {
+  grid-template-columns: repeat(2, minmax(0, 14rem)) auto;
+}
+
+.pc-action-primary--three .pc-action-lock {
+  display: none;
+}
+
+.pc-action-primary--three > .pc-action-publisher {
+  width: 40px;
+  padding-inline: 0;
+}
+
+.pc-action-primary--three > .pc-action-publisher > :is(.pc-action-label, .pc-action-label--short) {
+  display: none;
+}
+
+/* While the feed still asks a source for the abstract, the publisher's page
+   holds its place in the row unseen (paper-card.tsx), so the row and the
+   rows that give way to it have the shape they keep when the wait ends with
+   none. Added only then, the link took a three-control row on a phone at
+   200% text to two lines, and "Read in plain words" landed where Source had
+   been. Hidden, it is out of the tab order, the accessibility tree and the
+   reach of a tap. */
+.pc-action-publisher--pending {
+  visibility: hidden;
+}
+
+.pc-action-primary > :is(button, a) {
   min-width: 0;
 }
 
@@ -1306,7 +1562,6 @@ button.pc-topics-pop-item:focus-visible {
   box-shadow: var(--shadow-xl);
   transition: transform var(--motion-sheet) var(--ease-drawer), height 0.28s var(--ease-out-expo);
   will-change: transform, opacity;
-  -webkit-tap-highlight-color: transparent;
 }
 
 /* Wider than a phone it is a centred dialog (related-papers-sheet.tsx): no
@@ -1373,8 +1628,8 @@ button.pc-topics-pop-item:focus-visible {
     margin-bottom: var(--space-2);
   }
 
-  .pc-sheet[data-connections] .pc-head {
-    margin-bottom: var(--space-2);
+  .pc-sheet[data-connections] .pc-body {
+    --pc-head-step: var(--space-2);
   }
 
   .pc-sheet[data-connections] .pc-authors {
@@ -2695,8 +2950,8 @@ button.pc-topics-pop-item:focus-visible {
       margin-bottom: var(--space-2);
     }
 
-    .pc-head {
-      margin-bottom: var(--space-2);
+    .pc-body {
+      --pc-head-step: var(--space-2);
     }
 
     .pc-authors {
@@ -2710,15 +2965,6 @@ button.pc-topics-pop-item:focus-visible {
     /* Five 52px buttons at the usual step fill the ~310px card edge to edge. */
     .pc-side-actions {
       gap: var(--space-2);
-    }
-
-    /* Petri is decoration; on a card this short the state is its words. */
-    .pc-abstract-empty .empty-state {
-      padding-block: var(--space-2);
-    }
-
-    .pc-abstract-empty .petri {
-      display: none;
     }
   }
 }
@@ -2734,8 +2980,8 @@ button.pc-topics-pop-item:focus-visible {
     margin-bottom: var(--space-3);
   }
 
-  .pc-head {
-    margin-bottom: var(--space-3);
+  .pc-body {
+    --pc-head-step: var(--space-3);
   }
 
   .pc-authors {
@@ -2787,6 +3033,63 @@ button.pc-topics-pop-item:focus-visible {
   .pc-action-primary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
+  }
+
+  /* The row of a card with the publisher's page measures itself against its
+     words (`action-row` below). A container query's `em` is the row's own
+     text size, so it follows the browser's text setting, and its width is
+     what the sheet and the rail leave the row. */
+  .pc-action-bar:has(.pc-action-publisher) {
+    container: action-row / inline-size;
+  }
+
+  /* With two controls, Source and the publisher's page share the row while
+     both words fit: "Publisher" needs 42px plus 4.5em. In a narrower row the
+     link is its glyph alone in a 40px column, named on the link
+     (paper-card.tsx): with its word it cut "Publisher" at 390px with text
+     at 200%. */
+  @container action-row (max-width: calc(94px + 9em)) {
+    .pc-action-primary:not(.pc-action-primary--three) {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .pc-action-primary:not(.pc-action-primary--three) > .pc-action-publisher {
+      width: 40px;
+      padding-inline: 0;
+    }
+
+    .pc-action-primary:not(.pc-action-primary--three) > .pc-action-publisher > .pc-action-label--short {
+      display: none;
+    }
+  }
+
+  /* Beside "Read in plain words" the publisher's page is its glyph alone in
+     a 40px column, as on a wider screen: three equal slots cut "Simple" and
+     "Publisher" at 375px with text at 150%. In a row wide enough for the
+     three (124px plus 7.75em) they share one line. In a narrower one Source
+     is on the first line and the other two on the second, in the order the
+     keyboard reaches them: side by side, the two reading actions cut
+     "Simple" at 360px with text at 200%, and at 150% on a screen short
+     enough for the rail. Source keeps out of the glyph's column, which is
+     where the rail comes down beside a row that tall: across the whole
+     line, the rail covered its end at 360x640 with text at 150%. As on a
+     wider screen, the row draws no lock. */
+  .pc-action-primary--three {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pc-action-primary--three > :is(.pc-action-read, .pc-action-simple) {
+    grid-column: 1;
+  }
+
+  @container action-row (width > calc(124px + 7.75em)) {
+    .pc-action-primary--three {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+    }
+
+    .pc-action-primary--three > :is(.pc-action-read, .pc-action-simple) {
+      grid-column: auto;
+    }
   }
 
   .pc-sheet {
@@ -2846,7 +3149,23 @@ button.pc-topics-pop-item:focus-visible {
     margin-right: calc(var(--space-5) - 72px);
   }
 
-  .pc-action-primary > button {
+  /* On a short screen the rail, centred on the card under the 52px bar,
+     comes down over the end of the row, where the publisher's page is.
+     Signed in, the rail measures 240px + 3em tall from 100% to 200% text,
+     and the row's top is 4.5em over the screen's foot, so the two meet on a
+     screen shorter than 292px + 12em. An `em` media query follows the
+     browser's font size, which grows the rail and lifts the row. That row
+     then stops short of the rail by the rail's own offset, which clears its
+     54px buttons at any text size. Its narrower width decides, as any
+     width does, whether the publisher's page keeps its word (`action-row`,
+     above). */
+  @media (max-height: calc(292px + 12em)) {
+    .pc-action-bar:has(.pc-action-publisher) {
+      margin-right: var(--space-2);
+    }
+  }
+
+  .pc-action-primary > :is(button, a) {
     padding-inline: 12px;
   }
 
@@ -2899,7 +3218,7 @@ button.pc-topics-pop-item:focus-visible {
     gap: var(--space-2);
   }
 
-  .pc-action-primary > button {
+  .pc-action-primary > :is(button, a) {
     padding-inline: 10px;
   }
 }

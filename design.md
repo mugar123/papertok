@@ -210,6 +210,9 @@ that only the data is allowed to pick.
   tied to a field. Each has a `-soft` surface and a `-line` border in
   `variables.css`. **Like** (`accent-like`) and **Save** (`accent-save`) colour
   the rail's own states.
+  The reader may also pick `accent-teal`, `accent-sky`, `accent-violet` or
+  `accent-rose` for a highlight in a paper's full text, as an alternative to
+  the default yellow; their `-soft` surfaces paint the mark.
 - **Link Blue** (`link-blue`): the secondary accent, for links in running text.
 
 ### Tertiary
@@ -248,7 +251,8 @@ Set `--area-accent` from the field with the `getAreaGradient()` helper pattern
 
 **Rule 3 — The Yellow Thread Rule.** `--brand-yellow` marks only: the
 **engraved button's plate** (landing and onboarding only), the **active nav or
-tab item**, the **AI reading action** and **user highlights**. Nothing else. The
+tab item**, the **AI reading action** and **user highlights** (their default
+colour; the full-text viewer also offers four action accents). Nothing else. The
 focus ring is the ink.
 
 **The No New Hex Rule.** All tokens live in `src/styles/variables.css`. Do not
@@ -299,15 +303,19 @@ full-height cards; each card is a sheet of type with an action rail beside it.
 
 - **Breakpoints in use:** 1080px (figure clippings appear above it), 900px
   (the card becomes the whole screen and the rail overlays its right edge),
-  768px (navbar height steps down), 640px (phone type and sheet sizes), 600px
-  (`useIsPhone`: menus and popovers become bottom drawers).
+  768px (navbar height steps down), 720px (the full-text viewer's notes
+  sidebar covers the text instead of pushing it), 640px (phone type and sheet
+  sizes), 600px (`useIsPhone`: menus and popovers become bottom drawers), 440px
+  (the viewer's bottom bar shows its toggles as icons when it holds Notes).
 - **The navbar** is 64px on desktop and 52px on a phone (`--nav-height`,
   `--nav-height-mobile`); `--nav-total` adds the top safe-area inset in one
   place, and everything that offsets from the bar reads it.
 - **The card on a phone** is top-anchored: kicker, chips, title and authors
   under the bar, the abstract filling the middle, the actions at the foot where
-  the thumb is. Only the abstract yields height; on a tablet the column stops at
-  a 40rem reading measure.
+  the thumb is. Only the abstract yields height, except on a card with the
+  publisher's page, whose head rows yield after the panel and scroll (Cards /
+  Containers, "A card with no abstract"). On a tablet the column stops at a
+  40rem reading measure.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 
@@ -415,6 +423,35 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   (`.pc-body::before`, `.ehc-info::before`).
 - **Stat block:** mono tabular-nums value over a mono uppercase label, in a
   ruled grid (`.ehc-stats-grid`).
+- **A card with no abstract** (`feed/paper-card.tsx`): the abstract's panel
+  holds the shared empty state, "No abstract to show" and one sentence, which
+  scrolls inside a panel too short for it. When the paper has a DOI the
+  sentence ends "Try the publisher's page." and the action row's last control
+  is `Publisher's page` ("Publisher" on a phone), an `outline` link to the
+  DOI in a new tab. The link is in the row and not in the sentence because
+  the panel is the first row to yield, down to 0px. When the rows above the
+  action row are taller than the card, the head's rows give way after the
+  panel and scroll, and the action row stays whole at the sheet's foot,
+  covering nothing. Beside `Read in plain words` the link is its
+  `ArrowSquareOut` glyph alone at every width, named and titled "Publisher's
+  page (opens in a new tab)", so Source and `Read in plain words` keep their
+  slots where the row has room for them, and that row draws no lock at any
+  width. On a phone it is also the glyph alone, with the same name, in a row
+  too narrow for its word beside Source. Beside Source it has no title: in
+  most rows its word shows, and a title would only repeat the name. On a
+  phone the three share a line when they fit;
+  otherwise Source takes the first line and the other two the second. On a
+  screen short enough for the rail to reach the
+  row, the row stops short of the rail. While the feed still asks a source
+  for the abstract, the link holds its place in the row unseen, so the row
+  keeps its shape when the wait ends with no abstract.
+- **Settings › Feeds** (`settings/feeds-settings-page.tsx`), reached from
+  Discovery: a `New feed` button over the reader's feeds in tab order, as
+  ruled rows. Each row has the feed's name in the serif, its ingredients on one
+  mono line cut with an ellipsis, and ghost `Edit`, `Move up`, `Move down` and
+  `Delete` buttons, each named for its feed. These buttons do what the tab's
+  menu does, so no command needs a right click or a long press. A move at an
+  end is disabled, and a saved move is announced with the feed's new position.
 
 ### Inputs / Fields
 - **Style:** a hairline frame on paper, near-square.
@@ -425,9 +462,16 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 
 ### Navigation
 - **Navbar:** flat paper bar, 64px, a hairline under it. Tabs are Inter with the
-  active one marked by a sliding yellow rule (the brand thread). Pressing the
-  active feed tab reloads that feed, and on a touch screen a sideways swipe on
-  the feed moves between For you and Following. The search bar
+  active one marked by a sliding yellow rule (the brand thread): For you, Most
+  recent (`ClockCounterClockwise`) and Following with their icons, then the
+  reader's own feeds by name (cut with an ellipsis at 12rem) in the reader's
+  order, then a "+" that opens New feed.
+  The tabs are one scrolling line at every width (The One Scrolling Line
+  Rule): the line gives up its width before the search field does, the mark
+  and the account never shrink, an end fades only while more tabs lie past it, and the current tab is
+  scrolled into view. Pressing the active feed tab reloads that feed, and on a touch
+  screen a sideways swipe on the feed moves to the next or previous tab,
+  through every feed in the line. The search bar
   sits on paper and takes Ink Wash on hover; ⌘K / Ctrl+K or `/` opens the
   command palette, which grows from its own centre. On `/search` the bar holds
   the search page's own field and scope instead, and the shortcut focuses it;
@@ -435,6 +479,12 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   "Search" picker beside the mark: a drawer on a phone, a menu up to 768px.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
   Sunken Paper when highlighted.
+- **A feed tab's menu** (`custom-feeds/feed-tab-menu.tsx`): Edit feed, Move
+  left, Move right and Delete feed, with Delete feed in `--accent-danger`. A
+  right click, the menu key or Shift+F10 opens it under the tab as a context
+  menu; on a phone a half-second hold opens the same four as a drawer of 52px
+  rows headed by the feed's name. Move left is disabled on the first custom
+  tab and Move right on the last.
 
 ### Overlays
 - **`dialog.tsx`:** the centred modal over the flat scrim; Base UI owns focus,
@@ -442,6 +492,23 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 - **`dropdown-menu.tsx` / Base UI Menu:** a `role="menu"` of commands, opening
   from its trigger. The share menu is the model: the link first, then each
   destination by name.
+- **`context-menu.tsx`:** the same menu, opened by a right click on its
+  trigger. A context menu is never the only way to an action: its commands
+  also live in a visible control elsewhere.
+- **The feed window** (`custom-feeds/feed-dialog.tsx`): New feed and Edit
+  feed are one form, a dialog on a desktop and a bottom drawer on a phone,
+  opening on the Name field. Below the name, the chosen ingredients are
+  removable chips, each with its kind in mono, above one search for topics,
+  authors, journals and a keyword, and suggestions from the reader's own topics. The
+  order is two radio cards, Newest first and Best match for you. A limit or a
+  taken name is said in a line inside the form.
+- **Delete confirmation** (`custom-feeds/delete-feed-dialog.tsx`): an alert
+  dialog titled with the feed's name and one sentence saying likes and saved
+  papers stay, with `outline` Cancel and `destructive` Delete feed. While it
+  deletes, both buttons wait and nothing closes it; a refusal leaves it open
+  and says so in an error toast. Once deleted, focus goes to the tab or the
+  Settings row that takes the feed's place; a feed deleted while its page is
+  open sends the reader to For you.
 - **`drawer.tsx`:** the bottom sheet a thumb dismisses (swipe, snap points). On
   a phone a menu becomes a drawer of 52px rows.
 - **`popover.tsx`**, **`sheet.tsx`**, **`tooltip.tsx`**, **`tabs.tsx`**
@@ -465,10 +532,12 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   palette's or the list's line. Other errors, those of an action
   taken inside the open overlay, and those raised as an overlay plays its
   leave, appear at once. Signing out, or into another
-  account, puts away the error toasts on screen and those with an action,
-  such as an Undo, whose action would act for the reader now, and the
-  palette's and the Follows list's refusal line; the refusal of a press made
-  before it that settles later is not shown. An overlay opened while
+  account, puts away the error toasts on screen, those with an action,
+  such as an Undo, whose action would act for the reader now, the notice
+  that a custom feed's sources are still loading, which can name the
+  account's searches, and the palette's and the Follows list's refusal
+  line; the refusal of a press made before it that settles later is not
+  shown. An overlay opened while
   focus is in the toasts, as from "Add to list", keeps focus as they leave
   and returns it on close to the control used before the toasts. Popovers,
   tooltips, selects and dropdown menus sit beside their control, so they do
@@ -507,7 +576,11 @@ another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
-new tab.
+new tab. The plain-words reader uses the same dock (`pdf/paper-info.tsx`) with
+Contents, the reading level, Annotations, AI highlights and the original
+paper, and without the card's options, which it has no card to take from. Its
+notes are the full-text reader's notes panel and its selection opens the same
+highlight editor, whose second way out is Explain this to me.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
 institution, project, topic or journal can be followed: the Explorer header, beside a
@@ -515,6 +588,9 @@ Share glyph drawn the same way in the neutral rail, and search results. It is
 an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
 40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press
 like Like and Save; "Follow" is its name and its `title` says Following once on.
+On pages a feed can be made from (an area, a topic, a keyword search, an author
+with an OpenAlex id, a followable journal), the Explorer header also carries a text button after
+Share, `Make it a feed`: an `outline` `sm` button with a `Plus` glyph.
 
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square
@@ -522,12 +598,37 @@ An error, a not-found or an empty result is a glyph on a `56px` tinted square
 serif heading, one sentence saying what to do, and the way out as labelled
 `Button`s. Never an emoji, never a bare icon button as the only exit.
 
+Most recent (`recent/recent-feed-page.tsx`) has three states of its own. A
+reader with no topics gets Petri with the flask, "No topics yet" and an `Open
+Settings` button to Discovery. When nothing unseen is left, "You're all caught
+up" sits under a `Checks` glyph with `Go to For you` and an `outline` `Check
+again` that loads the list again. While it checks, the state stays, the button
+is busy and keeps the focus, and the sentence adds "Checking for new papers…",
+then "No new papers yet." if the check found none. The same heading, without
+Check again, ends a list that had cards. When the list stopped asking for pages
+by itself while it has more, "Nothing new so far" sits under a `Tray` glyph
+with `Go to For you` and an `outline` `Show older papers` that loads the next
+pages of the same list, busy in the same way, with "Loading older papers…",
+then "Those were not new to you either." if they brought none.
+
+A custom feed's refresh starts with the papers the reader has not seen
+(ARCHITECTURE.md says which count as seen). When
+it finds none it shows the feed from its top again and says why in a toast,
+"No unseen papers in this feed" with "Showing it from the top.", shown for the
+account like the notice of sources still loading.
+
+When a custom feed (`custom-feeds/custom-feed-page.tsx`) stopped asking for
+pages by itself while it has more, it shows "Nothing to show yet" under a
+`Tray` glyph with `Show more papers` and an `outline` `Edit feed`. Its load runs
+under the feed's wait; the focus waits there, then goes to the first card, or
+back to the button while the feed still has more.
+
 The startup recovery screen in `index.html` is the one status screen drawn before
 the app's CSS, fonts and JavaScript load. It has to stand on its own, so it is the
 one documented exception to the No New Hex Rule. It copies the token values it
 uses into local custom properties with the tokens' own names, sets type in system
-fonts and draws Petri inline: thinking while PaperTok loads or is slow, upset
-when it fails. A change to those tokens or to `petri-frame.tsx`,
+fonts and draws Petri inline. The screen stays quiet during normal startup.
+Petri looks thoughtful for a long wait or the native fallback and upset on failure. A change to those tokens or to `petri-frame.tsx`,
 `petri-thinking.tsx` or `petri-upset.tsx` needs the same change there.
 
 ## Do's and Don'ts

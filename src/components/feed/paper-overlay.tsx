@@ -1,4 +1,5 @@
 import type { PropsWithChildren } from 'react';
+import { useRef } from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
@@ -26,9 +27,18 @@ import './paper-overlay.css';
  * `onExitComplete` is the end of that exit, and callers need it: dropping the
  * card the moment `open` goes false left the surface fading out over nothing
  * for 200ms. It is `onOpenChangeComplete(false)` from the primitive, the same
- * signal `PaperReader` and `SelectionMenu` already listen to.
+ * signal `PaperReader` already listens to.
+ *
+ * `arriving` is for a card that is open when its page mounts because the
+ * reader came to the page for it: the frame is opaque from its first frame,
+ * so the page underneath is never seen through the fade.
+ *
+ * `finalFocus` is asked on close where focus goes, given the closing popup: an
+ * element, true for whatever opened the card, or false to leave focus alone.
+ * The lists page needs it when the card's row left while the card was open.
  */
-export default function PaperOverlay({ open, onClose, onExitComplete, label, children }: PropsWithChildren<{ open: boolean; onClose: () => void; onExitComplete?: () => void; label?: string }>) {
+export default function PaperOverlay({ open, onClose, onExitComplete, label, finalFocus, arriving, children }: PropsWithChildren<{ open: boolean; onClose: () => void; onExitComplete?: () => void; label?: string; finalFocus?: (overlay: HTMLElement | null) => HTMLElement | boolean; arriving?: boolean }>) {
+  const popupRef = useRef<HTMLDivElement | null>(null);
   return (
     <Dialog
       open={Boolean(open)}
@@ -36,11 +46,13 @@ export default function PaperOverlay({ open, onClose, onExitComplete, label, chi
       onOpenChangeComplete={(nextOpen) => { if (!nextOpen) onExitComplete?.(); }}
     >
       <DialogContent
-        className="paper-overlay"
+        className={arriving ? 'paper-overlay paper-overlay--arriving' : 'paper-overlay'}
         overlayClassName="paper-overlay-scrim"
         showClose={false}
         closeLabel={'Back'}
         aria-label={label || ('Publication details')}
+        ref={popupRef}
+        finalFocus={finalFocus && (() => finalFocus(popupRef.current))}
       >
         <div className="paper-overlay-surface">
           {/* Top-left, and an arrow rather than a cross: this is a place the

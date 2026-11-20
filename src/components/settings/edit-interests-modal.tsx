@@ -1,15 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import { CATEGORIES } from '../../data/categories.ts';
+import { areasForInterests, type InterestSettings } from '../../utils/area-preferences.ts';
+import { AreaPreferenceFields, InterestMixField } from '../onboarding/area-preference-fields.tsx';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { Button } from '../ui/button.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../ui/select.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 import { Toggle } from '../ui/toggle.ts';
-import { interestsSaveRefusal } from './interests-save-refusal.ts';
+import { saveSelectedInterests } from './interests-save-refusal.ts';
 import './settings-sheet.css';
 import './edit-interests-modal.css';
 
@@ -24,27 +26,33 @@ import './edit-interests-modal.css';
  * select above the topics: the field you are in, and a menu of every field
  * with how many of its topics you picked.
  */
-export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { userPreferences, updatePreferences } = useAuth();
+export default function EditInterestsModal({ isOpen, onClose, suggested, onSaved, finalFocus }: {
+  isOpen: boolean;
+  onClose: () => void;
+  suggested?: string[];
+  onSaved?: () => void;
+  finalFocus?: () => HTMLElement | null;
+}) {
+  const { userPreferences, interestSettings, updatePreferences } = useAuth();
   const [selected, setSelected] = useState(new Set<string>());
+  const [settings, setSettings] = useState<InterestSettings>({});
   const [isSaving, setIsSaving] = useState(false);
   const [activeArea, setActiveArea] = useState(() => Object.keys(CATEGORIES)[0]);
   const isPhone = useIsPhone();
 
-  // Initialize selection when modal opens
-  useEffect(() => {
-    if (isOpen && userPreferences) {
-      const timeoutId = setTimeout(() => {
-        setSelected(new Set(userPreferences));
-        const firstFollowed = Object.keys(CATEGORIES).find(areaKey => (
-          Object.keys(CATEGORIES[areaKey].subcategories).some(subKey => userPreferences.includes(subKey))
-        ));
-        setActiveArea(firstFollowed || Object.keys(CATEGORIES)[0]);
-      }, 0);
-      return () => clearTimeout(timeoutId);
+  const ready = isOpen && userPreferences !== null;
+  const [initialized, setInitialized] = useState(false);
+  if (ready !== initialized) {
+    setInitialized(ready);
+    if (ready) {
+      setSelected(new Set([...userPreferences, ...(suggested ?? [])]));
+      setSettings(interestSettings);
+      const firstArea = Object.keys(CATEGORIES).find(areaKey => (
+        Object.keys(CATEGORIES[areaKey].subcategories).some(id => (suggested ?? userPreferences).includes(id))
+      ));
+      setActiveArea(firstArea ?? Object.keys(CATEGORIES)[0]);
     }
-    return undefined;
-  }, [isOpen, userPreferences]);
+  }
 
   const toggleSubcategory = (subKey: string) => {
     setSelected((prev) => {
@@ -73,16 +81,25 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
     });
   };
 
+  const visit = useRef(0);
+  const closeEditor = () => {
+    visit.current += 1;
+    onClose();
+  };
+
   const handleSave = async () => {
-    const refusal = interestsSaveRefusal(selected.size);
-    if (refusal) {
-      toast.error(refusal, { id: 'eim-error' });
-      return;
-    }
+    const savingVisit = visit.current;
     setIsSaving(true);
     try {
-      await updatePreferences(Array.from(selected));
-      onClose();
+      const refusal = await saveSelectedInterests(selected, ids => updatePreferences(ids, settings));
+      if (refusal) {
+        toast.error(refusal, { id: 'eim-error' });
+        return;
+      }
+      if (savingVisit === visit.current) {
+        onSaved?.();
+        closeEditor();
+      }
     } catch (error) {
       console.error('Error saving preferences:', error);
       toast.error('We could not save your changes. Try again.', { id: 'eim-error' });
@@ -92,6 +109,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   };
 
   const counted = (areaKey: string) => Object.keys(CATEGORIES[areaKey].subcategories).filter(k => selected.has(k)).length;
+  const selectedAreas = areasForInterests(selected);
 
   /** One field's topics, with its count and its Select all. */
   const fieldTopics = (areaKey: string) => {
@@ -112,6 +130,9 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
             {allSelected ? 'Deselect all' : 'Select all'}
           </Button>
         </div>
+        {selectedAreas.includes(areaKey) && (
+          <AreaPreferenceFields area={areaKey} name={area.label} settings={settings} onChange={setSettings} showReadingLevel />
+        )}
         <div className="eim-subcats">
           {Object.entries(area.subcategories).map(([subKey, sub]) => {
             const isSelected = selected.has(subKey);
@@ -134,6 +155,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
 
   const footer = (
     <div className="eim-footer">
+      <InterestMixField areas={selectedAreas} settings={settings} onChange={setSettings} />
       <span className="eim-selected-count">
         {`${selected.size} selected ${selected.size === 1 ? 'interest' : 'interests'}`}
       </span>
@@ -152,8 +174,8 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   if (isPhone) {
     const area = CATEGORIES[activeArea];
     return (
-      <Drawer open={isOpen} onOpenChange={nextOpen => { if (!nextOpen) onClose(); }}>
-        <DrawerContent className="settings-sheet is-tall" overlayClassName="settings-sheet-backdrop">
+      <Drawer open={isOpen} onOpenChange={nextOpen => { if (!nextOpen) closeEditor(); }}>
+        <DrawerContent finalFocus={finalFocus} className="settings-sheet is-tall" overlayClassName="settings-sheet-backdrop">
           <DrawerHandle />
           <div className="settings-sheet-head">
             <DrawerTitle render={<h2 />}>{'Interests'}</DrawerTitle>
@@ -190,8 +212,9 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={nextOpen => { if (!nextOpen) onClose(); }} modal>
+    <Dialog open={isOpen} onOpenChange={nextOpen => { if (!nextOpen) closeEditor(); }} modal>
       <DialogContent
+        finalFocus={finalFocus}
         className="eim-modal"
         overlayClassName="eim-overlay"
         closeLabel={'Close'}

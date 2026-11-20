@@ -9,10 +9,12 @@ export interface OpenAlexWork {
   doi?: string | null;
   ids?: { doi?: string | null; pmid?: string | null; [key: string]: string | null | undefined };
   abstract_inverted_index?: Record<string, number[]> | null;
-  authorships?: Array<{ raw_author_name?: string; author?: { id?: string | null; display_name?: string }; institutions?: Array<{ id?: string; display_name?: string; ror?: string | null }> }>;
+  authorships?: Array<{ raw_author_name?: string; author?: { id?: string | null; display_name?: string; orcid?: string | null; observed_orcids?: string[] }; institutions?: Array<{ id?: string; display_name?: string; ror?: string | null }> }>;
+  is_authors_truncated?: boolean;
   publication_year?: number | null;
   publication_date?: string;
   type?: string;
+  study_designs?: Array<{ id?: string; display_name?: string }> | null;
   is_retracted?: boolean;
   primary_location?: OpenAlexLocation | null;
   best_oa_location?: OpenAlexLocation | null;
@@ -28,6 +30,7 @@ export interface OpenAlexWork {
 }
 
 export interface OpenAlexLocation {
+  doi?: string | null;
   id?: string;
   pdf_url?: string | null;
   landing_page_url?: string | null;
@@ -82,6 +85,13 @@ export interface OpenAlexAuthor extends EntityMetrics {
   concepts?: PaperSubject[];
   verified?: boolean;
   counts_by_year?: Array<{ year: number; works_count: number; cited_by_count?: number }>;
+}
+
+/** A journal found by name: `publisher` is the name of the organization hosting it. */
+export interface OpenAlexJournal {
+  id: string;
+  display_name: string;
+  publisher: string | null;
 }
 
 export interface OpenAlexTopic extends Partial<PaperSubject>, EntityMetrics {

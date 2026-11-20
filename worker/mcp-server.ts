@@ -95,7 +95,7 @@ const TOOLS = [
   {
     name: 'get_paper',
     title: 'Get a paper',
-    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two) and arXiv answers, otherwise on OpenAlex; any other id is looked up on OpenAlex. When OpenAlex does not return the paper either, the error is arXiv's, and a refusal by the pacing is PROVIDER_RATE_LIMITED with retryAfterSeconds. An OpenAlex answer has an openalex:W… id and concept names in categories, and arXiv's the arXiv id and arXiv categories, so a search result can come back with another id or other categories. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
+    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two). If pacing refuses the lookup or the arXiv relay fails, the tool asks OpenAlex. If the relay returns an unreadable feed or an Atom error entry, the tool returns UPSTREAM_UNAVAILABLE without a fallback. Other identifiers are looked up on OpenAlex. When OpenAlex does not return the paper either, the error is arXiv's, and a refusal by the pacing is PROVIDER_RATE_LIMITED with retryAfterSeconds. An OpenAlex answer has an openalex:W… id and concept names in categories, and arXiv's the arXiv id and arXiv categories, so a search result can come back with another id or other categories. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
     inputSchema: { type: 'object', properties: { id: PAPER_ID_SCHEMA }, required: ['id'], additionalProperties: false },
     annotations: READ_ONLY,
   },
@@ -171,7 +171,11 @@ function paperIdentity(value: unknown) {
   }
   const identity = getPaperIdentity(text, undefined);
   const separator = identity.indexOf(':');
-  return separator > 0 ? { type: identity.slice(0, separator), value: identity.slice(separator + 1) } : null;
+  // An OpenReview forum id is an address in the app, where the paper page
+  // asks OpenReview for it. `get_paper` asks OpenAlex and arXiv, which hold
+  // no such id, so here it is not an id at all.
+  if (separator <= 0 || identity.startsWith('openreview:')) return null;
+  return { type: identity.slice(0, separator), value: identity.slice(separator + 1) };
 }
 
 function doiArgument(value: unknown) {
@@ -365,7 +369,8 @@ async function searchOpenAlex(query: string, since: string, caller: Request, env
     'per-page': MAX_RESULTS,
     select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   }, caller, env);
-  const { results = [] } = await response.json<{ results?: OpenAlexWork[] }>();
+  const { results } = await response.json<{ results?: OpenAlexWork[] }>();
+  if (!Array.isArray(results)) throw new ToolFailure({ code: 'UPSTREAM_UNAVAILABLE' });
   return results.map(work => mapOpenAlexWork(work));
 }
 
@@ -461,7 +466,12 @@ async function getArxivPaper(arxivId: string, caller: Request, env: WorkerEnv) {
   try {
     papers = await arxivPapers({ id_list: arxivId, max_results: 1 }, caller, env);
   } catch (error) {
-    if (!(error instanceof ToolFailure) || error.details.code === 'INVALID_ARGUMENTS') throw error;
+    if (!(error instanceof ToolFailure)) {
+      // The relay answered but its body was unreadable. Report it without a billed fallback.
+      captureWorkerException(error);
+      throw new ToolFailure({ code: 'UPSTREAM_UNAVAILABLE' });
+    }
+    if (error.details.code === 'INVALID_ARGUMENTS') throw error;
     const work = await ask(handleAgentOpenAlex, '/openalex/works', {
       filter: `locations.landing_page_url:http://arxiv.org/abs/${arxivId}|https://arxiv.org/abs/${arxivId}`,
       per_page: 1,

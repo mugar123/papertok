@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deleteConfirmedAccount } from './delete-confirmed-account.ts';
 import { readPrivacyNoticeAck, rememberPrivacyNotice } from '../../utils/nudges.ts';
+import { pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown } from '../../utils/pmf-survey.ts';
 
 const fakeStorage = () => {
   const map = new Map<string, string>();
@@ -56,6 +57,23 @@ test('this browser forgets the privacy notice of the deleted account only, even 
   });
   assert.equal(readPrivacyNoticeAck('uid-a', storage), null);
   assert.equal(readPrivacyNoticeAck('uid-b', storage), '2026-10-26', 'the account that holds the session now');
+});
+
+test('this browser forgets which survey version the deleted account was shown, and only that account', async () => {
+  const storage = fakeStorage();
+  for (const uid of ['uid-a', 'uid-b']) {
+    recordPmfSurveyShown({ uid, signedInUid: uid, surveyOpen: true, version: '0.3.0', storage, track: () => Promise.resolve(true) });
+    for (const day of ['2026-11-18', '2026-11-19', '2026-11-20']) recordPmfSurveyDay(uid, new Date(`${day}T10:00:00`), '0.3.0', storage);
+  }
+  await deleteConfirmedAccount({
+    reauthenticate: () => Promise.resolve('uid-a'),
+    onSignedIn: () => {},
+    deleteAccount: () => Promise.resolve(),
+    onDeleted: () => {},
+    storage,
+  });
+  assert.equal(pmfSurveyDue('uid-a', '0.3.0', storage), true, 'nothing here says the deleted account was asked');
+  assert.equal(pmfSurveyDue('uid-b', '0.3.0', storage), false, 'the account that holds the session now');
 });
 
 test('a deletion that fails forgets nothing: the account still exists and has read this version', async () => {

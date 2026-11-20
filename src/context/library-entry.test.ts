@@ -7,8 +7,8 @@ import { serializeLibraryPaper } from '../utils/reading-library.ts';
 import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
 import { reviewTagForPaper } from '../utils/paper-status.ts';
 import { hydrateSeededPaper } from '../utils/paper-seed.ts';
-import { listPaperFromCopies } from '../components/lists/list-paper-copies.ts';
-import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
+import { listPaperFromCopies } from '../utils/list-paper-copies.ts';
+import { libraryAfterRead, libraryAfterLoad, libraryCopyOf, libraryAfterInteraction, loadedAfterLoad, loadedAfterInteraction, readLaterChange, withLibraryCopy } from './library-entry.ts';
 
 const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const wakefield = { id: 'pmid:9500320', title: 'Ileal-lymphoid-nodular hyperplasia', journal: 'Lancet', publicationType: 'article' as const };
@@ -107,8 +107,8 @@ test('a like or a save in this session keeps its retraction through a later mark
   const liked = serializeLibraryPaper(retracted);
   // Nothing loaded for the paper yet, or the copy stored before the refresh.
   for (const [label, before] of [['nothing loaded', {}], ['an unmarked copy loaded', { [wakefield.id]: loadedCopy(unmarked) }]] as const) {
-    const papers = loadedWithRetractionOf(before, wakefield.id, liked);
-    const library = libraryWithRetractionOf({}, wakefield.id, liked);
+    const papers = loadedAfterInteraction(before, wakefield.id, liked);
+    const library = libraryAfterInteraction({}, wakefield.id, liked);
     const readLater = withLibraryCopy(library, wakefield.id, serializeLibraryPaper(unmarked), { readLater: true }, papers[wakefield.id]);
     assert.deepEqual(listTags(readLater), ['retracted', 'retracted'], `liked, then Read later: ${label}`);
     const read = withLibraryCopy(library, wakefield.id, serializeLibraryPaper(unmarked), { readAt: '2026-10-29T11:00:00.000Z' }, papers[wakefield.id]);
@@ -118,23 +118,67 @@ test('a like or a save in this session keeps its retraction through a later mark
 
 test('a like or a save in this session adds its retraction to an entry an earlier mark wrote', () => {
   const marked = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readLater: true });
-  const liked = libraryWithRetractionOf(marked, wakefield.id, serializeLibraryPaper(retracted));
+  const liked = libraryAfterInteraction(marked, wakefield.id, serializeLibraryPaper(retracted));
   assert.deepEqual(listTags(liked), ['retracted', 'retracted']);
   assert.equal(liked[wakefield.id].readLater, true);
 });
 
-test('a like or a save of a copy no provider called retracted changes nothing in memory', () => {
+test('a repeated interaction reuses its copy when the journal and retraction are unchanged', () => {
   const marked = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readLater: true });
   const papers = { [wakefield.id]: loadedCopy(unmarked) };
-  assert.equal(libraryWithRetractionOf(marked, wakefield.id, serializeLibraryPaper(unmarked)), marked);
-  assert.equal(loadedWithRetractionOf(papers, wakefield.id, serializeLibraryPaper(unmarked)), papers);
-  assert.deepEqual(loadedWithRetractionOf({}, wakefield.id, serializeLibraryPaper(unmarked)), {});
+  assert.equal(libraryAfterInteraction(marked, wakefield.id, serializeLibraryPaper(unmarked)), marked);
+  assert.equal(loadedAfterInteraction(papers, wakefield.id, serializeLibraryPaper(unmarked)), papers);
+  assert.deepEqual(loadedAfterInteraction({}, wakefield.id, serializeLibraryPaper(unmarked))[wakefield.id], papers[wakefield.id]);
+});
+
+test('a library read keeps an intervening save, then accepts a newer server journal', () => {
+  const before = { personalLibrary: {}, libraryPapers: {} };
+  const old = loadedCopy({ ...wakefield, venueId: 'S23254222', sourceName: 'First journal' });
+  const revised = serializeLibraryPaper({ ...wakefield, journal: 'Another journal' });
+  const current = { ...before, libraryPapers: loadedAfterInteraction({}, wakefield.id, revised) };
+  const entries = withLibraryCopy({}, wakefield.id, old, { readLater: true });
+  const papers = { [wakefield.id]: old };
+  const merged = libraryAfterRead(current, before, entries, papers, false);
+  assert.equal(merged.personalLibrary[wakefield.id].readLater, true);
+  for (const paper of [merged.personalLibrary[wakefield.id].paper, merged.libraryPapers[wakefield.id]]) {
+    assert.equal(paper.journal, 'Another journal');
+    assert.ok(!paper.venueId);
+  }
+  const refreshed = libraryAfterRead(merged, merged, entries, papers, false);
+  assert.equal(refreshed.personalLibrary[wakefield.id].paper.venueId, 'S23254222');
+  assert.equal(refreshed.libraryPapers[wakefield.id].sourceName, 'First journal');
+});
+
+test('an earlier save acknowledgement keeps the journal of a later read mark', () => {
+  const saved = serializeLibraryPaper({ ...wakefield, venueId: 'S23254222' });
+  const later = serializeLibraryPaper({ ...wakefield, journal: 'Another journal' });
+  const read = withLibraryCopy({}, wakefield.id, later, { readAt: '2026-10-29T11:00:00.000Z' });
+  const library = libraryAfterInteraction(read, wakefield.id, saved, undefined);
+  assert.equal(library[wakefield.id].paper.journal, 'Another journal');
+  assert.ok(!library[wakefield.id].paper.venueId);
 });
 
 test('a library entry no copy called retracted reads as before', () => {
   const read = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readAt: '2026-10-29T11:00:00.000Z' }, loadedCopy(unmarked));
   assert.equal('publicationStatus' in read[wakefield.id].paper, false);
   assert.notEqual(listTags(read)[0], 'retracted');
+});
+
+test('saving a revised journal replaces the link on both copies held by the reader', () => {
+  const old = loadedCopy({ ...wakefield, venueId: 'S23254222', sourceName: 'First journal' });
+  const revised = serializeLibraryPaper({ ...wakefield, journal: 'Another journal' });
+  const papers = loadedAfterInteraction({ [wakefield.id]: old }, wakefield.id, revised);
+  const marked = withLibraryCopy({}, wakefield.id, old, { readLater: true });
+  const library = libraryAfterInteraction(marked, wakefield.id, revised, marked[wakefield.id]);
+  for (const entries of [{}, library]) {
+    const copy = libraryCopyOf(entries, papers, wakefield.id);
+    assert.ok(copy);
+    const paper = paperLegacyAdapter(copy);
+    assert.equal(paper.journal, 'Another journal');
+    assert.equal(paper.venueId, undefined);
+    assert.equal(paper.sourceName, undefined);
+  }
+  assert.equal(library[wakefield.id].readLater, true);
 });
 
 // A Read later change stamps its copy through readLaterStamp (ENG-156), which
@@ -163,7 +207,7 @@ test('a removal from Read later, shown once accepted, keeps the retraction', () 
 });
 
 test('Read later keeps the retraction a like in this session stored, with no entry yet', () => {
-  const loaded = loadedWithRetractionOf({}, wakefield.id, serializeLibraryPaper(retracted))[wakefield.id];
+  const loaded = loadedAfterInteraction({}, wakefield.id, serializeLibraryPaper(retracted))[wakefield.id];
   const readLater = readLaterChange(wakefield.id, undefined, {
     copy: serializeLibraryPaper(unmarked), readLater: true, updatedAt: '2026-10-30T09:00:00.000Z', late: false, loaded,
   }).show({});

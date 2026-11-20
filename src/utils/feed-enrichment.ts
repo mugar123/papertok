@@ -1,4 +1,5 @@
 import type { Paper } from '../models/paper.ts';
+import { trialRegistrationFromAbstract } from '../models/paper-evidence.ts';
 
 import { PaperBuilder } from '../services/paper-builder.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
@@ -23,10 +24,12 @@ export function getMissingAbstractDois(papers: Paper[]) {
     .map(paper => normalizeDoi(paper.doi)).filter(Boolean))].sort();
 }
 
-// A paper whose abstract a recovered record may fill: an OpenAlex or PubMed
-// paper without one, unless its type has none (`typeHasAbstract`). Europe PMC
-// mirrors PubMed, so for a PubMed paper the publisher's record is the next source.
-const RECOVERED_PRIMARIES = new Set(['openalex', 'pubmed']);
+// A paper whose abstract a recovered record may fill: one without an abstract
+// from a source that lists such papers (OpenAlex, PubMed, NASA ADS, Europe
+// PMC, CORE, OSTI, NASA's report server), unless its type has none
+// (`typeHasAbstract`). Europe PMC mirrors PubMed, so for a PubMed paper the
+// publisher's record is the next source.
+const RECOVERED_PRIMARIES = new Set(['openalex', 'pubmed', 'nasa-ads', 'europepmc', 'core', 'osti', 'nasa-ntrs']);
 const awaitsAbstract = (paper: Paper) => RECOVERED_PRIMARIES.has(paper.sources.primary)
   && !hasUsableAIAbstract(paper.abstract) && typeHasAbstract(paper.publicationType);
 
@@ -88,8 +91,11 @@ export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
       .find(({ abstract }) => abstract);
     if (!recovered) return paper;
     changed = true;
-    // Recovery supplies only text; it must not replace publication or access metadata.
-    return PaperBuilder.merge(paper, { abstract: recovered.abstract, abstractSource: recovered.credit }, recovered.source);
+    return PaperBuilder.merge(paper, {
+      abstract: recovered.abstract,
+      abstractSource: recovered.credit,
+      trialRegistration: trialRegistrationFromAbstract(recovered.abstract),
+    }, recovered.source);
   });
   return changed ? merged : papers;
 }

@@ -5,14 +5,13 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
-  BookOpen,
   CaretDown,
   Check,
   CircleNotch,
   Compass,
-  Flask,
   GearSix,
   GraduationCap,
+  LinkBreak,
   LinkSimple,
   PencilSimple,
   ShieldCheck,
@@ -25,9 +24,12 @@ import { toastError } from '../ui/toast.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
+import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
+import { usePageRestored } from '../../hooks/use-page-restored.ts';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
+import { readAuthorMetricsConsent, writeAuthorMetricsConsent } from '../../services/author-metrics-service.ts';
 import { emailServiceState } from '../../utils/email-health.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paper-rewrite-service.ts';
 import { CATEGORIES } from '../../data/categories.ts';
@@ -40,11 +42,14 @@ import InstitutionPill from '../institution/institution-pill.tsx';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import EditInterestsModal from './edit-interests-modal.tsx';
 import SummaryHistory from './summary-history.tsx';
+import { LEVEL_DETAILS } from './reading-levels.ts';
 import { FollowingSheet } from './following-settings-page.tsx';
 import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
+import { ZoteroMark } from '../pdf/zotero-button.tsx';
+import { connectZotero, disconnectZotero, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
 import { GithubMark } from '../ui/github-mark.tsx';
 import { Label } from '../ui/label.tsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
@@ -60,29 +65,11 @@ import './settings-page.css';
  */
 const SETTINGS_PAGES = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
-  { slug: 'discovery', label: 'Discovery', summary: 'Follows and interests', Icon: Compass },
+  { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },
   { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
-  { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics', Icon: ShieldCheck },
+  { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics and author statistics', Icon: ShieldCheck },
 ];
-
-const LEVEL_DETAILS = {
-  beginner: {
-    label: 'Beginner',
-    description: 'Clear language and context from first principles',
-    Icon: BookOpen,
-  },
-  university: {
-    label: 'University',
-    description: 'Academic rigor without assuming specialization',
-    Icon: GraduationCap,
-  },
-  researcher: {
-    label: 'Researcher',
-    description: 'Methods, limitations, and technical detail',
-    Icon: Flask,
-  },
-};
 
 const SETTINGS_COPY = {
   title: 'Settings',
@@ -95,6 +82,9 @@ const SETTINGS_COPY = {
   loadingFollowing: 'Loading the content you follow...',
   followingDescription: 'Entities that influence your recommendations',
   editFollowing: 'Edit follows',
+  feeds: 'Feeds',
+  feedsDescription: 'Feeds you made from topics, authors, journals and keywords',
+  editFeeds: 'Edit feeds',
   interests: 'Interests',
   interestsDescription: 'Subcategories used to train your feed',
   selectedAreas: 'Selected areas',
@@ -170,6 +160,66 @@ function RowAction({ label, text = label, Icon, variant = 'outline', ...props }:
       <Icon size={15} aria-hidden="true" />
       {text}
     </Button>
+  );
+}
+
+/** Keyed by the account where it is used, so a new account starts from an unchecked state. */
+function ZoteroSection({ uid }: { uid: string }) {
+  const [status, setStatus] = useState<ZoteroStatus | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    zoteroStatus().then(next => { if (live) setStatus(next); }, () => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, []);
+
+  usePageRestored(() => setBusy(false));
+
+  async function connectOrDisconnect() {
+    setBusy(true);
+    try {
+      if (status?.connected) {
+        await disconnectZotero();
+        setStatus({ connected: false, username: null, sentAt: null });
+        toast.success('Zotero is disconnected.');
+        setBusy(false);
+      } else {
+        await connectZotero(uid, null);
+      }
+    } catch (error) {
+      setBusy(false);
+      toastError(getUiErrorMessage(error, 'ZOTERO_FAILED'));
+    }
+  }
+
+  const description = failed ? 'The Zotero connection could not be checked. You can still connect it.'
+    : !status ? 'Checking your Zotero connection…'
+      : status.connected ? `Connected${status.username ? ` as ${status.username}` : ''}. Papers you send while reading go to your personal library.`
+        : 'Send the papers you read, with your highlights, to your Zotero library.';
+
+  return (
+    <section className="settings-section" aria-labelledby="settings-zotero-heading">
+      <SectionHeading id="settings-zotero-heading" title="Zotero" description={description} />
+      <div className="settings-list">
+        <div className="settings-row settings-row-side">
+          <div className="settings-row-content">
+            <h3 className="settings-method-name"><ZoteroMark size={16} />Zotero</h3>
+          </div>
+          {(status || failed) && (
+            <RowAction
+              Icon={status?.connected ? LinkBreak : LinkSimple}
+              label={status?.connected ? 'Disconnect Zotero' : 'Connect Zotero'}
+              text={status?.connected ? 'Disconnect' : 'Connect'}
+              onClick={() => { void connectOrDisconnect(); }}
+              disabled={busy}
+              focusableWhenDisabled
+            />
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -339,6 +389,8 @@ function ProfileAccountPage() {
         </div>
       </section>
 
+      {user && <ZoteroSection key={user.uid} uid={user.uid} />}
+
       <section className="settings-section" aria-labelledby="settings-danger-heading">
         <SectionHeading id="settings-danger-heading" title={copy.dangerZone} description={copy.dangerZoneDescription} />
         <div className="settings-list">
@@ -366,25 +418,96 @@ function ProfileAccountPage() {
 
 function PrivacyPage() {
   const { consent: analyticsConsent, updateConsent: updateAnalyticsConsent } = useAnalyticsConsent();
+  const { user } = useAuth();
 
   return (
-    <section className="settings-section" aria-labelledby="settings-analytics-heading">
-      <SectionHeading id="settings-analytics-heading" title={copy.usageAnalytics} description={copy.usageAnalyticsDescription} />
+    <>
+      <section className="settings-section" aria-labelledby="settings-analytics-heading">
+        <SectionHeading id="settings-analytics-heading" title={copy.usageAnalytics} description={copy.usageAnalyticsDescription} />
+        <div className="profile-fields">
+          <Label className="profile-switch">
+            <span className="profile-switch-copy">
+              <span className="profile-switch-label">{copy.analyticsToggleLabel}</span>
+              <span className="profile-switch-hint">{copy.analyticsHint}</span>
+            </span>
+            <Switch
+              className="settings-toggle"
+              checked={analyticsConsent !== ANALYTICS_CONSENT.DENIED}
+              aria-label={copy.analyticsToggleLabel}
+              onCheckedChange={checked => { void updateAnalyticsConsent(
+                checked ? ANALYTICS_CONSENT.ENABLED : ANALYTICS_CONSENT.DENIED,
+              ); }}
+            />
+          </Label>
+        </div>
+      </section>
+      {user && <AuthorMetricsSetting key={user.uid} uid={user.uid} />}
+    </>
+  );
+}
+
+function AuthorMetricsSetting({ uid }: { uid: string }) {
+  const hintId = useId();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('Loading your preference…');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    void readAuthorMetricsConsent(uid).then(value => {
+      if (!active) return;
+      setEnabled(value);
+      setStatus('');
+    }, () => {
+      if (active) setStatus('Could not load your preference.');
+    });
+    return () => { active = false; };
+  }, [uid, attempt]);
+
+  async function change(value: boolean) {
+    setSaving(true);
+    setStatus('Saving your preference…');
+    try {
+      await writeAuthorMetricsConsent(uid, value);
+      setEnabled(value);
+      setStatus('Preference saved.');
+    } catch {
+      setStatus('Could not save your preference. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const label = "Count my saves in weekly paper totals";
+  return (
+    <section className="settings-section" aria-labelledby="settings-author-metrics-heading">
+      <SectionHeading id="settings-author-metrics-heading" title="Author statistics" />
       <div className="profile-fields">
         <Label className="profile-switch">
           <span className="profile-switch-copy">
-            <span className="profile-switch-label">{copy.analyticsToggleLabel}</span>
-            <span className="profile-switch-hint">{copy.analyticsHint}</span>
+            <span className="profile-switch-label">{label}</span>
+            <span className="profile-switch-hint" id={hintId}>
+              On by default once your email is verified. Turn off to exclude future saves.
+            </span>
           </span>
           <Switch
             className="settings-toggle"
-            checked={analyticsConsent !== ANALYTICS_CONSENT.DENIED}
-            aria-label={copy.analyticsToggleLabel}
-            onCheckedChange={checked => { void updateAnalyticsConsent(
-              checked ? ANALYTICS_CONSENT.ENABLED : ANALYTICS_CONSENT.DENIED,
-            ); }}
+            checked={enabled === true}
+            aria-label={label}
+            aria-describedby={hintId}
+            disabled={enabled === null}
+            aria-disabled={saving || undefined}
+            onCheckedChange={value => { if (!saving) void change(value); }}
           />
         </Label>
+        <div role="status">{status}</div>
+        {enabled === null && status.startsWith('Could not') && (
+          <Button variant="outline" onClick={() => {
+            setStatus('Loading your preference…');
+            setAttempt(previous => previous + 1);
+          }}>Try again</Button>
+        )}
       </div>
     </section>
   );
@@ -394,6 +517,7 @@ function DiscoveryPage() {
   const navigate = useNavigate();
   const { userPreferences } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
+  const { feeds: customFeeds, status: feedsStatus } = useCustomFeeds();
   const [isInterestsOpen, setIsInterestsOpen] = useState(false);
   const [isFollowingOpen, setIsFollowingOpen] = useState(false);
   const isPhone = useIsPhone();
@@ -423,6 +547,17 @@ function DiscoveryPage() {
               <p>{followingLoading && followedEntities.length === 0 ? copy.loadingFollowing : copy.followingDescription}</p>
             </div>
             <RowAction Icon={PencilSimple} label={copy.editFollowing} text={copy.edit} onClick={() => { if (isPhone) setIsFollowingOpen(true); else void navigate('/settings/following'); }} />
+          </div>
+
+          <div className="settings-row settings-row-side">
+            <div className="settings-row-content">
+              <h3 className="settings-row-title-line">
+                {copy.feeds}{' '}
+                {feedsStatus === 'ready' && <span className="settings-count">({customFeeds.length})</span>}
+              </h3>
+              <p>{copy.feedsDescription}</p>
+            </div>
+            <RowAction Icon={PencilSimple} label={copy.editFeeds} text={copy.edit} onClick={() => { void navigate('/settings/feeds'); }} />
           </div>
 
           <div className="settings-row settings-row-side">
