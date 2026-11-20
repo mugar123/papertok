@@ -103,7 +103,7 @@ function policyVersionRank(version: string | null) {
   return match ? { day: match[1], suffix: Number(match[2] ?? 0) } : null;
 }
 
-function policyVersionCovers(acknowledged: string | null, version: string) {
+export function policyVersionCovers(acknowledged: string | null, version: string) {
   const had = policyVersionRank(acknowledged);
   const owed = policyVersionRank(version);
   if (!had || !owed) return acknowledged === version;
