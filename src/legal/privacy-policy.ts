@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-20.2';
+export const PRIVACY_POLICY_VERSION = '2026-11-20.5';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -127,9 +127,7 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  'Survey events include your reading level and broad areas of interest when available. With usage analytics on, PaperTok links survey events to your account.',
-  'Submitting the survey records your answers, including your role if you chose one.',
-  'My profile also lists recent papers that cite your work and your frequent coauthors. PaperTok keeps neither list.',
+  'Only your browser keeps the mark for a return 7 to 13 days after your first real use. PaperTok measures these returns using the first-use and visit events already sent to PostHog.',
 ];
 
 /**
@@ -142,17 +140,12 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  lead: 'your reading level and broad areas of interest',
+  lead: 'Only your browser keeps the mark',
   clauses: [
-    ['your reading level and broad areas of interest when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
-    ['With usage analytics on, PaperTok links survey events to your account', /With usage analytics on, PaperTok links survey events to your account/],
-    ['Submitting the survey records your answers, including your role if you chose one', /Submitting the survey records your answers, including your role if you chose one/],
-    ['recent papers that cite your work', /papers from the last 12 months that cite your publications/],
-    ['your frequent coauthors', /coauthors you share two or more of those works with/],
-    ['PaperTok keeps neither list', /PaperTok keeps neither list/],
+    ['Only your browser keeps the mark for a return 7 to 13 days after your first real use', /Only your browser keeps the mark for a return 7 to 13 days after your first real use/],
+    ['using the first-use and visit events already sent to PostHog', /using the first-use and visit events already sent to PostHog/],
   ],
   unsaid: [
-    [/anonymous/i, 'survey events are linked to the signed-in account'],
-    [/required role/i, 'readers can skip the role question'],
+    [/stops measuring returns/i, 'the existing visit events still measure returns'],
   ],
 };
