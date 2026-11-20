@@ -6,7 +6,7 @@ import { corpusRequestOf, ingredientKey, type CustomFeed, type FeedIngredient } 
 import { SEMANTIC_PROFILE_POSITIVE_CAP } from './feed-interactions.ts';
 import { recentSeenIds } from './recent-feed-pages.ts';
 import { createSessionCache } from './session-cache.ts';
-import { mergeFeedEvidence } from './feed-enrichment.ts';
+import { mergeFeedEvidence } from '../models/paper-evidence.ts';
 
 // The pages a custom feed has been served, merged into one list, and the
 // decisions its page makes from them: what to ask the corpus for, whether the

@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Paper } from '../models/paper.ts';
+import { mergeFeedEvidence } from '../models/paper-evidence.ts';
 import {
   abstractsInFlight,
   getOpenAlexEnrichmentId,
   joinNotablePage,
   mergeFeedAbstracts,
-  mergeFeedEvidence,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   notablePlaces,

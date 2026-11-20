@@ -124,7 +124,7 @@ import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
 import { saveRollbacks, takeBacksOnProfile } from './save-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
-import { withPaperEvidenceOf } from '../models/paper-evidence.ts';
+import { mergeFeedEvidence, withPaperEvidenceOf } from '../models/paper-evidence.ts';
 import { abstractExcerpt, copyOfRecordWithoutCopy, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
@@ -159,7 +159,6 @@ import {
   cardsGivenTopic,
   getOpenAlexEnrichmentId,
   mergeFeedAbstracts,
-  mergeFeedEvidence,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   preserveFeedAbstracts,

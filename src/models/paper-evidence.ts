@@ -52,3 +52,22 @@ export function withPaperEvidenceOf<T extends Partial<Paper>>(paper: T, other: P
     ? paper
     : { ...paper, studyType, trialRegistration, trialRegistrationSource };
 }
+
+/** Keep evidence from later batches even when their duplicate cards are dropped. */
+export function mergeFeedEvidence(shown: Paper[], incoming: Paper[]) {
+  const evidence = new Map<string, Paper>();
+  for (const paper of incoming) {
+    if (!paper.studyType && !paper.trialRegistration) continue;
+    evidence.set(paper.id, withPaperEvidenceOf(paper, evidence.get(paper.id)));
+  }
+  if (!evidence.size) return shown;
+  let changed = false;
+  const merged = shown.map(paper => {
+    const record = evidence.get(paper.id);
+    if (!record) return paper;
+    const next = withPaperEvidenceOf(paper, record);
+    changed ||= next !== paper;
+    return next;
+  });
+  return changed ? merged : shown;
+}
