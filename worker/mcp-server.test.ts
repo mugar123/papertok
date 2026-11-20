@@ -115,9 +115,9 @@ interface RpcAnswer {
   error?: { code: number; message: string };
 }
 
-async function withUpstream<T>(upstream: Upstream, run: (calls: string[]) => Promise<T>) {
+async function withUpstream<T>(upstream: Upstream, run: (calls: string[]) => Promise<T>, cacheFailure?: 'read' | 'write' | 'evict') {
   const calls: string[] = [];
-  const taxonomy = new Map<string, Response>();
+  const taxonomy = new Map<string, { response: Response; expires: number }>();
   const originalFetch = globalThis.fetch;
   const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async input => {
@@ -127,10 +127,19 @@ async function withUpstream<T>(upstream: Upstream, run: (calls: string[]) => Pro
   };
   (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => taxonomy.get(String(request instanceof Request ? request.url : request))?.clone(),
+      match: async request => {
+        const key = String(request instanceof Request ? request.url : request);
+        const entry = taxonomy.get(key);
+        if (entry && cacheFailure === 'read') throw new Error('Cache read failed');
+        if (cacheFailure === 'evict' || (entry && Date.now() >= entry.expires)) taxonomy.delete(key);
+        return taxonomy.get(key)?.response.clone();
+      },
       put: async (request, response) => {
         const url = String(request instanceof Request ? request.url : request);
-        if (new URL(url).pathname.startsWith('/mcp/taxonomy/')) taxonomy.set(url, response.clone());
+        if (!new URL(url).pathname.startsWith('/mcp/taxonomy/')) return;
+        if (cacheFailure === 'write') throw new Error('Cache write failed');
+        const maxAge = response.headers.get('cache-control')?.match(/\bmax-age=(\d+)/i);
+        if (maxAge) taxonomy.set(url, { response: response.clone(), expires: Date.now() + Number(maxAge[1]) * 1000 });
       },
     },
   };
@@ -1524,6 +1533,121 @@ test('one OpenAlex work has one id, whichever tool and identifier found it', asy
       assert.equal((answer.result?.structuredContent?.paper as { id: string }).id, listed.id, id);
     }
   });
+});
+
+test('OpenAlex works sharing a DOI keep their own search taxonomy', async () => {
+  const topic = { id: 'T42', display_name: 'Materials' };
+  const work = (id: string) => ({ ...OPENALEX_WORK, id: `https://openalex.org/${id}`, ids: { openalex: `https://openalex.org/${id}` } });
+  await withUpstream(url => {
+    if (url.includes('search=')) return Response.json({ results: [{ ...work('W1001'), topics: [topic] }] });
+    return Response.json(work(new URL(url).pathname.split('/').at(-1)!));
+  }, async calls => {
+    await callTool(routeEnv(), 'search_papers', { query: 'materials', sources: ['openalex'] });
+    for (const id of ['W1002', 'W1001']) {
+      const { answer } = await callTool(routeEnv(), 'get_paper', { id });
+      const paper = answer.result?.structuredContent?.paper as Record<string, unknown>;
+      assert.equal(paper.id, `openalex:${id}`);
+      assert.deepEqual(paper.topics, id === 'W1001' ? [topic] : undefined);
+      assert.deepEqual(paper.categories, id === 'W1001' ? ['Materials'] : undefined);
+    }
+    assert.equal(calls.length, 3);
+  });
+});
+
+test('a deduplicated search cannot lend one OpenAlex work the arXiv identifier of another', async () => {
+  const works = [
+    { ...OPENALEX_WORK, topics: [{ id: 'T42', display_name: 'Materials' }] },
+    { ...OPENALEX_LAB_PREPRINT, doi: OPENALEX_WORK.doi },
+  ];
+  await withUpstream(url => url.includes('search=')
+    ? Response.json({ results: works })
+    : new Response(arxivFeed(ARXIV_LAB_ENTRY)), async calls => {
+    const search = await callTool(routeEnv(), 'search_papers', { query: 'materials', sources: ['openalex'] });
+    const [listed] = search.answer.result?.structuredContent?.papers as Array<{ arxivId: string }>;
+    assert.equal(listed.arxivId, '2603.01234');
+    const { answer } = await callTool(routeEnv(), 'get_paper', { id: listed.arxivId });
+    const paper = answer.result?.structuredContent?.paper as Record<string, unknown>;
+    assert.deepEqual(paper.categories, ['cond-mat.mes-hall']);
+    assert.equal(paper.topics, undefined);
+    assert.equal(calls.length, 2);
+  });
+});
+
+test('two OpenAlex works sharing a DOI cannot exchange classifications through an arXiv search hit', async () => {
+  const works = [
+    { ...OPENALEX_WORK, topics: [{ id: 'T42', display_name: 'Materials' }] },
+    { ...OPENALEX_LAB_PREPRINT, doi: OPENALEX_WORK.doi },
+  ];
+  const preprint = ARXIV_LAB_ENTRY.replace('</entry>', '<arxiv:doi>10.1234/example.2026.1</arxiv:doi></entry>');
+  let searches = 0;
+  await withUpstream(url => {
+    if (url.startsWith('https://export.arxiv.org/')) return new Response(arxivFeed(preprint));
+    if (url.includes('search=')) return Response.json({ results: ++searches === 1 ? [works[0]] : works });
+    return Response.json(OPENALEX_WORK);
+  }, async calls => {
+    await callTool(routeEnv(), 'search_papers', { query: 'materials' });
+    await callTool(routeEnv(), 'search_papers', { query: 'graphene' });
+    const arxiv = await callTool(routeEnv(), 'get_paper', { id: '2603.01234' });
+    assert.equal((arxiv.answer.result?.structuredContent?.paper as Record<string, unknown>).topics, undefined);
+    const work = await callTool(routeEnv(), 'get_paper', { id: 'W4400000001' });
+    const paper = work.answer.result?.structuredContent?.paper as Record<string, unknown>;
+    assert.equal(paper.primaryCategory, undefined);
+    assert.deepEqual(paper.categories, ['Materials']);
+    assert.equal(calls.length, 6);
+  });
+});
+
+test('cached OpenAlex evidence rules out a conflicting arXiv record with the same DOI', async () => {
+  const topic = { id: 'T42', display_name: 'Materials' };
+  const work = { ...OPENALEX_WORK, ids: { ...OPENALEX_WORK.ids, arxiv: 'arxiv:2603.01234v2' }, topics: [topic] };
+  await withUpstream(url => {
+    if (url.startsWith('https://export.arxiv.org/')) return new Response(arxivFeed(ARXIV_PREPRINT_ENTRY));
+    return Response.json(url.includes('search=') ? { results: [work] } : OPENALEX_WORK);
+  }, async calls => {
+    for (const source of ['openalex', 'arxiv']) {
+      await callTool(routeEnv(), 'search_papers', { query: 'materials', sources: [source] });
+    }
+    const { answer } = await callTool(routeEnv(), 'get_paper', { id: 'W4400000001' });
+    const paper = answer.result?.structuredContent?.paper as Record<string, unknown>;
+    assert.deepEqual(paper.topics, [topic]);
+    assert.deepEqual(paper.categories, ['Materials']);
+    assert.equal(paper.arxivId, undefined);
+    assert.equal(calls.length, 3);
+  });
+});
+
+test('missing, expired, evicted and unavailable taxonomy entries leave the provider lookup usable', async () => {
+  for (const scenario of ['miss', 'expiry', 'evict', 'read', 'write'] as const) {
+    await withUpstream(url => {
+      if (url.includes('search=')) return Response.json({ results: [{ ...OPENALEX_WORK, topics: [{ id: 'T42', display_name: 'Materials' }] }] });
+      return Response.json(OPENALEX_WORK);
+    }, async calls => {
+      const lookup = async () => {
+        const { answer } = await callTool(routeEnv(), 'get_paper', { id: 'W4400000001' });
+        const paper = answer.result?.structuredContent?.paper as Record<string, unknown>;
+        assert.equal(paper.title, OPENALEX_WORK.title, scenario);
+        return paper.categories;
+      };
+      if (scenario !== 'miss') {
+        const { answer } = await callTool(routeEnv(), 'search_papers', { query: 'materials', sources: ['openalex'] });
+        const papers = answer.result?.structuredContent?.papers as Array<{ categories?: string[] }>;
+        assert.deepEqual(papers[0].categories, ['Materials'], scenario);
+      }
+      if (scenario === 'expiry') {
+        const clock = mock.method(Date, 'now', () => EVEN_ARXIV_PERIOD + 599_999);
+        try {
+          assert.deepEqual(await lookup(), ['Materials']);
+          clock.mock.mockImplementation(() => EVEN_ARXIV_PERIOD + 600_000);
+          assert.equal(await lookup(), undefined);
+        } finally {
+          clock.mock.restore();
+        }
+      } else {
+        assert.equal(await lookup(), undefined, scenario);
+      }
+      assert.equal(calls.length, scenario === 'miss' ? 1 : scenario === 'expiry' ? 3 : 2);
+    }, scenario === 'miss' || scenario === 'expiry' ? undefined : scenario);
+  }
 });
 
 test('a single-source search can supply taxonomy to the other provider through their shared DOI', async () => {

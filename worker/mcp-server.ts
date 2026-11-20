@@ -368,42 +368,87 @@ function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstr
 
 type SearchTaxonomy = Pick<Partial<Paper>, 'categories' | 'primaryCategory' | 'arxivId' | 'concepts' | 'topics' | 'primaryTopic'>;
 
-function taxonomyKeys(paper: Paper, source: 'openalex' | 'arxiv', caller: Request) {
-  const ids = new Set([
-    getPaperIdentity(paper.id, undefined),
-    getPaperIdentity('arxiv', paper.arxivId || ''),
-    getPaperIdentity('doi', paper.doi || ''),
-  ]);
-  return [...ids].filter(Boolean).map(id => new URL(`/mcp/taxonomy/${source}/${encodeURIComponent(id)}`, caller.url).href);
+function taxonomyIdentity(paper: Partial<Paper>) {
+  return {
+    openalex: getPaperIdentity('openalex', paper.id || ''),
+    arxiv: getPaperIdentity('arxiv', paper.arxivId || '').replace(/v\d+$/, ''),
+    pmid: getPaperIdentity('pmid', paper.pmid || ''),
+    doi: getPaperIdentity('doi', paper.doi || ''),
+  };
 }
 
-// Keep each provider's evidence separately so a later single-source search
-// cannot displace the other provider's classification.
-async function rememberTaxonomy(paper: Paper, arxivPapers: Array<Partial<Paper> | null>, caller: Request) {
-  const save = async (source: 'openalex' | 'arxiv', taxonomy: SearchTaxonomy) => {
-    await Promise.all(taxonomyKeys(paper, source, caller).map(key =>
-      caches.default.put(key, Response.json(taxonomy, { headers: { 'cache-control': 'public, max-age=600' } }))));
+type TaxonomyIdentity = ReturnType<typeof taxonomyIdentity>;
+type TaxonomySource = 'openalex' | 'arxiv';
+
+// A DOI can be an alias for either of two different provider records.
+function sameTaxonomyRecord(left: TaxonomyIdentity, right: TaxonomyIdentity) {
+  let matched = false;
+  for (const kind of ['openalex', 'arxiv', 'pmid', 'doi'] as const) {
+    if (!left[kind] || !right[kind]) continue;
+    if (left[kind] !== right[kind]) return false;
+    matched = true;
+  }
+  return matched;
+}
+
+function combinedIdentity(original: TaxonomyIdentity, matched: TaxonomyIdentity): TaxonomyIdentity {
+  return {
+    openalex: original.openalex || matched.openalex,
+    arxiv: original.arxiv || matched.arxiv,
+    pmid: original.pmid || matched.pmid,
+    doi: original.doi || matched.doi,
   };
+}
+
+// A merged search can hide two distinct works behind one DOI. Exclude any
+// alias the original records disagree about from cache keys and crosslinks.
+function ambiguousTaxonomyAliases(records: Array<Partial<Paper> | null>) {
+  const seen = new Map<string, TaxonomyIdentity>();
+  const ambiguous = new Set<string>();
+  for (const record of records) {
+    if (!record) continue;
+    const identity = taxonomyIdentity(record);
+    for (const alias of Object.values(identity).filter(Boolean)) {
+      const previous = seen.get(alias);
+      if (previous && !sameTaxonomyRecord(previous, identity)) ambiguous.add(alias);
+      else seen.set(alias, previous ? combinedIdentity(previous, identity) : identity);
+    }
+  }
+  return ambiguous;
+}
+
+const TAXONOMY_CACHE_HEADERS = { 'cache-control': 'public, max-age=600' };
+
+function taxonomyKey(caller: Request, source: TaxonomySource | 'ambiguous', alias: string) {
+  return new URL(`/mcp/taxonomy/v2/${source}/${encodeURIComponent(alias)}`, caller.url).href;
+}
+
+async function rememberTaxonomy(record: Partial<Paper>, ambiguous: Set<string>, caller: Request) {
+  const source = record.sources?.primary;
+  if (source !== 'openalex' && source !== 'arxiv') return;
+  const identity = taxonomyIdentity(record);
+  if (!identity[source]) return;
+  const taxonomy: SearchTaxonomy = source === 'arxiv'
+    ? { arxivId: record.arxivId, primaryCategory: record.primaryCategory, categories: record.categories }
+    : { concepts: record.concepts, topics: record.topics, primaryTopic: record.primaryTopic };
+  if (!taxonomy.primaryCategory && !taxonomy.concepts?.length && !taxonomy.topics?.length && !taxonomy.primaryTopic) return;
+
   try {
-    const preprint = arxivPapers.find(record => record?.id === paper.arxivId);
-    if (preprint?.primaryCategory) {
-      await save('arxiv', { arxivId: preprint.arxivId, primaryCategory: preprint.primaryCategory, categories: preprint.categories });
-    }
-    if (paper.concepts?.length || paper.topics?.length || paper.primaryTopic) {
-      await save('openalex', { arxivId: paper.arxivId, concepts: paper.concepts, topics: paper.topics, primaryTopic: paper.primaryTopic });
-    }
+    const aliases = Object.values(identity).filter(id => id && !ambiguous.has(id));
+    await Promise.all(aliases.map(alias => caches.default.put(taxonomyKey(caller, source, alias),
+      Response.json({ identity, taxonomy }, { headers: TAXONOMY_CACHE_HEADERS }))));
   } catch {
     // A failed edge write leaves the provider lookup usable.
   }
 }
 
-async function cachedTaxonomy(paper: Paper, source: 'openalex' | 'arxiv', caller: Request) {
-  for (const key of taxonomyKeys(paper, source, caller)) {
+async function cachedTaxonomy(identity: TaxonomyIdentity, source: TaxonomySource, caller: Request) {
+  for (const alias of Object.values(identity).filter(Boolean)) {
     try {
-      const hit = await caches.default.match(key);
-      if (!hit) continue;
-      const taxonomy = await hit.json<SearchTaxonomy>();
-      if (!paper.arxivId || !taxonomy.arxivId || taxonomy.arxivId === paper.arxivId) return taxonomy;
+      const hit = await caches.default.match(taxonomyKey(caller, source, alias));
+      if (!hit || await caches.default.match(taxonomyKey(caller, 'ambiguous', alias))) continue;
+      const entry = await hit.json<{ identity: TaxonomyIdentity; taxonomy: SearchTaxonomy }>();
+      if (sameTaxonomyRecord(identity, entry.identity)) return entry;
     } catch {
       // The search record may be unavailable at this edge.
     }
@@ -412,10 +457,15 @@ async function cachedTaxonomy(paper: Paper, source: 'openalex' | 'arxiv', caller
 }
 
 async function detailPaper(paper: Paper, caller: Request) {
-  const [arxiv, openalex] = await Promise.all([
-    paper.primaryCategory ? undefined : cachedTaxonomy(paper, 'arxiv', caller),
-    cachedTaxonomy(paper, 'openalex', caller),
-  ]);
+  const identity = taxonomyIdentity(paper);
+  const primary = paper.sources.primary === 'arxiv' ? 'arxiv' : 'openalex';
+  const own = await cachedTaxonomy(identity, primary, caller);
+  // The provider's earlier record can identify a preprint or work omitted in
+  // detail. Check those identifiers too before accepting the other source.
+  const other = await cachedTaxonomy(own ? combinedIdentity(identity, own.identity) : identity,
+    primary === 'arxiv' ? 'openalex' : 'arxiv', caller);
+  const arxiv = (primary === 'arxiv' ? undefined : other)?.taxonomy;
+  const openalex = (primary === 'openalex' ? own : other)?.taxonomy;
   const concepts = paper.concepts?.length ? paper.concepts : openalex?.concepts;
   const topics = paper.topics?.length ? paper.topics : openalex?.topics;
   const openAlexNames = subjectNames(concepts, topics);
@@ -520,7 +570,8 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
   }
   const foundBy = (source: string) => settled.flatMap((outcome, index) => (sources[index] === source && outcome.status === 'fulfilled' ? outcome.value : []));
   const preprints = foundBy('arxiv');
-  const ranked = mergeRankedPapers(query, foundBy('openalex'), preprints, { limit });
+  const works = foundBy('openalex');
+  const ranked = mergeRankedPapers(query, works, preprints, { limit });
   const papers: ReturnType<typeof publicPaper>[] = [];
   let bytes = 0;
   for (const record of ranked) {
@@ -530,7 +581,17 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
     papers.push(paper);
     bytes += size;
   }
-  await Promise.all(ranked.slice(0, papers.length).map(record => rememberTaxonomy(record, preprints, caller)));
+  const ambiguous = ambiguousTaxonomyAliases([...works, ...preprints]);
+  // Older and concurrent searches may have cached this alias before the
+  // collision became known. A separate marker also covers those entries.
+  await Promise.all([...ambiguous].map(alias => caches.default.put(taxonomyKey(caller, 'ambiguous', alias),
+    new Response('ambiguous', { headers: TAXONOMY_CACHE_HEADERS })).catch(() => undefined)));
+  await Promise.all(ranked.slice(0, papers.length).map(async paper => {
+    const work = works.find(record => record?.id === paper.id);
+    const preprint = preprints.find(record => record && record.id === paper.arxivId);
+    if (work) await rememberTaxonomy(work, ambiguous, caller);
+    if (preprint) await rememberTaxonomy(preprint, ambiguous, caller);
+  }));
   const left = ranked.length - papers.length;
   return { query, papers, unavailable, ...(left > 0 ? { omitted: { papers: left } } : {}) };
 }
