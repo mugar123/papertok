@@ -12,10 +12,13 @@ interface AnnotationCall {
 
 import {
   AIExplanationError,
+  activeAIProvider,
+  anthropicProviderError,
   classifyGeminiError,
   cleanText,
   getDailyQuotaReset,
   getProviderRetry,
+  isAIProviderConfigured,
   nanProviderError,
   normalizeExplanationLanguage,
   releaseAIQuota,
@@ -23,13 +26,12 @@ import {
   shouldRefundAIQuota,
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
+import { anthropicAnswer, anthropicModel, buildAnthropicRequest, createAnthropicClient } from './anthropic-client.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import {
   NAN_CHAT_COMPLETIONS_URL,
   buildNanChatBody,
   chatCompletionText,
-  isNanConfigured,
-  isNanPrimary,
   nanHeaders,
   nanModel,
 } from './nan-client.ts';
@@ -172,36 +174,68 @@ function annotationCall({ provider, env, model, prompt }: AnnotationCall) {
   };
 }
 
+/** Gemini's and NaN's call: one fetch, the answer in the envelope each provider uses. */
+async function fetchAnnotationNote({ provider, env, model, prompt, signal }: AnnotationCall & { signal: AbortSignal }) {
+  const call = annotationCall({ provider, env, model, prompt });
+  const response = await fetch(call.url, {
+    method: 'POST',
+    signal,
+    headers: call.headers,
+    body: JSON.stringify(call.body),
+  });
+  const payload = await response.json<AIProviderPayload & NanCompletion>().catch(() => ({}));
+  if (!response.ok && provider === 'nan') throw nanProviderError(response, payload);
+  if (!response.ok) {
+    const code = classifyGeminiError(response.status, payload);
+    throw new AIExplanationError(
+      code,
+      code === 'AI_NOT_CONFIGURED' ? 503 : response.status === 429 ? 429 : 502,
+      code,
+      code === 'AI_QUOTA_EXHAUSTED'
+        ? { ...getDailyQuotaReset(), scope: 'provider' }
+        : code === 'AI_BUSY'
+          ? getProviderRetry(payload, response.headers.get('retry-after'))
+          : null,
+    );
+  }
+  return provider === 'nan'
+    ? cleanAnnotationNote(chatCompletionText(payload))
+    : parseAnnotationPayload(payload);
+}
+
+/**
+ * Claude thinks before it answers, and those tokens count against `max_tokens`:
+ * the 600 the other providers get could be spent before the first word. The
+ * answer itself is still cut to `MAX_NOTE_CHARS`.
+ */
+async function anthropicAnnotationNote({ env, model, prompt, signal }: AnnotationCall & { signal: AbortSignal }) {
+  let message;
+  try {
+    message = await createAnthropicClient(env).beta.messages.create(
+      buildAnthropicRequest({ model, effort: 'low', maxTokens: 2_000, content: prompt }),
+      { signal },
+    );
+  } catch (error) {
+    throw anthropicProviderError(error);
+  }
+  const { text, refusal } = anthropicAnswer(message);
+  if (refusal) {
+    // Declined by Anthropic's safety classifier: deterministic, so not retryable
+    // and not a use to give back. The category is for the logs, not the reader.
+    const declined = new AIExplanationError('AI_EMPTY_RESPONSE', 502);
+    declined.detail = `refusal:${refusal}`;
+    throw declined;
+  }
+  return cleanAnnotationNote(text);
+}
+
 async function requestAnnotation({ provider, env, model, prompt, language, timeoutMs }: AnnotationCall & { language: string; timeoutMs: number }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   try {
-    const call = annotationCall({ provider, env, model, prompt });
-    const response = await fetch(call.url, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: call.headers,
-      body: JSON.stringify(call.body),
-    });
-    const payload = await response.json<AIProviderPayload & NanCompletion>().catch(() => ({}));
-    if (!response.ok && provider === 'nan') throw nanProviderError(response, payload);
-    if (!response.ok) {
-      const code = classifyGeminiError(response.status, payload);
-      throw new AIExplanationError(
-        code,
-        code === 'AI_NOT_CONFIGURED' ? 503 : response.status === 429 ? 429 : 502,
-        code,
-        code === 'AI_QUOTA_EXHAUSTED'
-          ? { ...getDailyQuotaReset(), scope: 'provider' }
-          : code === 'AI_BUSY'
-            ? getProviderRetry(payload, response.headers.get('retry-after'))
-            : null,
-      );
-    }
-    const note = provider === 'nan'
-      ? cleanAnnotationNote(chatCompletionText(payload))
-      : parseAnnotationPayload(payload);
+    const answer = provider === 'anthropic' ? anthropicAnnotationNote : fetchAnnotationNote;
+    const note = await answer({ provider, env, model, prompt, signal: controller.signal });
     console.info('AI annotation', JSON.stringify({
       provider,
       model,
@@ -222,6 +256,7 @@ async function requestAnnotation({ provider, env, model, prompt, language, timeo
       model,
       language,
       outcome: normalized.code,
+      ...(normalized.detail ? { detail: normalized.detail } : {}),
       durationMs: Date.now() - startedAt,
     }));
     throw normalized;
@@ -251,14 +286,16 @@ export async function handlePassageAnnotation(request: Request, env: WorkerEnv) 
   if (quote.length < 8) throw new AIExplanationError('AI_INVALID_REQUEST', 400);
   const context = cleanText(payload.context, 4_000) || quote;
   const paper = { title: cleanText(payload?.paper?.title, 1_000) };
-  const provider = isNanPrimary(env) ? 'nan' : 'gemini';
-  if (provider === 'nan' ? !isNanConfigured(env) : !env.GEMINI_API_KEY) {
+  const provider = activeAIProvider(env);
+  if (!isAIProviderConfigured(env, provider)) {
     throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   }
 
-  const model = provider === 'nan'
-    ? nanModel(env)
-    : cleanText(env.AI_ANNOTATION_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
+  const model = provider === 'anthropic'
+    ? anthropicModel(env)
+    : provider === 'nan'
+      ? nanModel(env)
+      : cleanText(env.AI_ANNOTATION_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
   // Reserved before the call and handed back by the same predicate /ai/rewrite
   // uses, so a provider outage never costs the reader a use.
   const quota = await reserveAIQuota(env, account.uid, { unlimited: account.unlimitedAI });

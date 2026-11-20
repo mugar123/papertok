@@ -350,3 +350,196 @@ test('NaN chosen without a NaN key is not configured, and costs nothing', async 
   assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_NOT_CONFIGURED');
   assert.deepEqual(ledger.actions, []);
 });
+
+/* Anthropic, the provider since 2026-11-19. */
+
+const ANTHROPIC = { AI_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test-key' };
+
+type AnthropicCall = {
+  url: string;
+  headers: Headers;
+  body: { model: string; max_tokens: number; messages: Array<{ content: string }>; output_config: { effort: string }; fallbacks: string; temperature?: number; top_p?: number };
+};
+
+/** Stands in for api.anthropic.com behind the real SDK, and records what it was asked. */
+async function withAnthropic<Result>(reply: (call: AnthropicCall, signal: AbortSignal | null | undefined) => Response | Promise<Response>, callback: () => Promise<Result>) {
+  const originalFetch = globalThis.fetch;
+  const calls: AnthropicCall[] = [];
+  globalThis.fetch = async (url, options) => {
+    const call = { url: String(url), headers: new Headers(options!.headers), body: JSON.parse(options!.body as string) };
+    calls.push(call);
+    return reply(call, options!.signal);
+  };
+  try {
+    return { result: await callback(), calls };
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+const anthropicMessage = (fields: Record<string, unknown>) => new Response(JSON.stringify({
+  id: 'msg_test',
+  type: 'message',
+  role: 'assistant',
+  model: 'claude-opus-5-5',
+  stop_sequence: null,
+  stop_details: null,
+  usage: { input_tokens: 10, output_tokens: 10 },
+  ...fields,
+}), { status: 200, headers: { 'content-type': 'application/json' } });
+
+const anthropicSaid = (text: string) => () => anthropicMessage({
+  content: [{ type: 'text', text }],
+  stop_reason: 'end_turn',
+});
+
+const anthropicError = (status: number, type: string, message: string) => () => new Response(
+  JSON.stringify({ type: 'error', error: { type, message } }),
+  { status, headers: { 'content-type': 'application/json' } },
+);
+
+async function errorCode(response: Response) {
+  return (await response.json<{ code: string }>()).code;
+}
+
+test('with Claude as the provider the passage goes to Claude at low effort, without sampling parameters', async () => {
+  const ledger = recordingLedger();
+  const { result: response, calls } = await withAnthropic(
+    anthropicSaid('**It means** the length stops being one number.'),
+    () => withCachedIdentity(() => reportApi.fetch(annotationRequest(), annotationEnv(ledger, ANTHROPIC))),
+  );
+
+  assert.equal(response.status, 200);
+  const payload = await response.json<{ note: string; model: string; remainingUses: number; language: string }>();
+  // The same cleaning as every provider's answers: no markdown in a margin.
+  assert.equal(payload.note, 'It means the length stops being one number.');
+  assert.equal(payload.model, 'claude-opus-5-5');
+  assert.equal(payload.remainingUses, 6);
+  assert.deepEqual(ledger.actions, ['reserve']);
+
+  assert.equal(calls.length, 1);
+  const [call] = calls;
+  assert.match(call.url, /^https:\/\/api\.anthropic\.com\/v1\/messages/);
+  assert.equal(call.headers.get('authorization'), 'Bearer sk-ant-test-key');
+  assert.equal(call.body.model, 'claude-opus-5-5');
+  assert.equal(call.body.output_config.effort, 'low');
+  // Claude's server-side fallback answers a request its classifier declined.
+  assert.equal(call.body.fallbacks, 'default');
+  assert.match(call.headers.get('anthropic-beta')!, /server-side-fallback-2026-07-01/);
+  // These models reject sampling parameters.
+  assert.equal('temperature' in call.body, false);
+  assert.equal('top_p' in call.body, false);
+  assert.match(call.body.messages[0].content, /that quantity stops being a number/);
+});
+
+test('ANTHROPIC_MODEL switches every call to another Claude model', async () => {
+  const ledger = recordingLedger();
+  const { result: response, calls } = await withAnthropic(
+    anthropicSaid('It means the length is no longer one number.'),
+    () => withCachedIdentity(() => reportApi.fetch(
+      annotationRequest(),
+      annotationEnv(ledger, { ...ANTHROPIC, ANTHROPIC_MODEL: 'claude-haiku-5-5' }),
+    )),
+  );
+
+  assert.equal((await response.json<{ model: string }>()).model, 'claude-haiku-5-5');
+  assert.equal(calls[0].body.model, 'claude-haiku-5-5');
+});
+
+test('a refusal by Claude is not an answer, and the use stays spent', async () => {
+  const ledger = recordingLedger();
+  const { result: response } = await withAnthropic(
+    () => anthropicMessage({
+      content: [],
+      stop_reason: 'refusal',
+      stop_details: { type: 'refusal', category: 'cyber', explanation: null },
+    }),
+    () => withCachedIdentity(() => reportApi.fetch(annotationRequest(), annotationEnv(ledger, ANTHROPIC))),
+  );
+
+  assert.equal(response.status, 502);
+  assert.equal(await errorCode(response), 'AI_EMPTY_RESPONSE');
+  // Anthropic read the request and declined it: giving the use back would make
+  // asking again free.
+  assert.deepEqual(ledger.actions, ['reserve']);
+});
+
+test('an overloaded Claude hands the use back and is asked once', async () => {
+  const ledger = recordingLedger();
+  const { result: response, calls } = await withAnthropic(
+    anthropicError(529, 'overloaded_error', 'Overloaded'),
+    () => withCachedIdentity(() => reportApi.fetch(annotationRequest(), annotationEnv(ledger, ANTHROPIC))),
+  );
+
+  assert.equal(response.status, 502);
+  assert.equal(await errorCode(response), 'AI_BUSY');
+  assert.deepEqual(ledger.actions, ['reserve', 'release']);
+  // No SDK retries: one overload must not become three paid requests.
+  assert.equal(calls.length, 1);
+});
+
+test('a rate-limited Claude says when to come back', async () => {
+  const ledger = recordingLedger();
+  const { result: response } = await withAnthropic(
+    () => new Response(JSON.stringify({ type: 'error', error: { type: 'rate_limit_error', message: 'Rate limited' } }), {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '12' },
+    }),
+    () => withCachedIdentity(() => reportApi.fetch(annotationRequest(), annotationEnv(ledger, ANTHROPIC))),
+  );
+
+  assert.equal(response.status, 429);
+  const payload = await response.json<{ code: string; quota: { retryAfterSeconds: number } }>();
+  assert.equal(payload.code, 'AI_BUSY');
+  assert.equal(payload.quota.retryAfterSeconds, 12);
+  assert.deepEqual(ledger.actions, ['reserve', 'release']);
+});
+
+test('a key Claude rejects is reported as not configured, and the use comes back', async () => {
+  const ledger = recordingLedger();
+  const { result: response } = await withAnthropic(
+    anthropicError(401, 'authentication_error', 'invalid x-api-key'),
+    () => withCachedIdentity(() => reportApi.fetch(annotationRequest(), annotationEnv(ledger, ANTHROPIC))),
+  );
+
+  assert.equal(response.status, 503);
+  assert.equal(await errorCode(response), 'AI_NOT_CONFIGURED');
+  assert.deepEqual(ledger.actions, ['reserve', 'release']);
+});
+
+test('a Claude that never answers is cut off at the annotation budget', async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const ledger = recordingLedger();
+  let reachedClaude!: () => void;
+  const reached = new Promise<void>(resolve => { reachedClaude = resolve; });
+  const { result: response } = await withAnthropic(
+    (_call, signal) => new Promise<Response>((_resolve, reject) => {
+      signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      reachedClaude();
+    }),
+    async () => {
+      const answer = withCachedIdentity(() => reportApi.fetch(annotationRequest(), annotationEnv(ledger, ANTHROPIC)));
+      await reached;
+      context.mock.timers.tick(14_000);
+      return answer;
+    },
+  );
+
+  assert.equal(response.status, 504);
+  assert.equal(await errorCode(response), 'AI_TIMEOUT');
+  // The provider may well have been working on it: the use is not refunded.
+  assert.deepEqual(ledger.actions, ['reserve']);
+});
+
+test('Claude chosen without an Anthropic key is not configured, and costs nothing', async () => {
+  const ledger = recordingLedger();
+  const response = await withCachedIdentity(() => reportApi.fetch(
+    annotationRequest(),
+    // A key from another provider in the Anthropic slot fails closed too.
+    annotationEnv(ledger, { ...ANTHROPIC, ANTHROPIC_API_KEY: 'sk-test-key' }),
+  ));
+
+  assert.equal(response.status, 503);
+  assert.equal(await errorCode(response), 'AI_NOT_CONFIGURED');
+  assert.deepEqual(ledger.actions, []);
+});

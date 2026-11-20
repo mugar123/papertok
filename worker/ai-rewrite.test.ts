@@ -624,7 +624,7 @@ async function withRewriteHarness<Result>({ pdf = readablePdf, provider }: Harne
       put: async (): Promise<unknown> => undefined,
     },
   };
-  const isProvider = (url: RequestInfo<unknown,CfProperties<unknown>>|URL) => ['generativelanguage.googleapis.com', 'api.nan.builders']
+  const isProvider = (url: RequestInfo<unknown,CfProperties<unknown>>|URL) => ['generativelanguage.googleapis.com', 'api.nan.builders', 'api.anthropic.com']
     .some(host => String(url).includes(host));
   globalThis.fetch = async (url, options) => (isProvider(url)
     ? provider!(url, options)
@@ -2088,4 +2088,276 @@ test('NaN chosen without a NaN key is not configured, even with a Gemini key', a
     handlePaperRewrite(rewriteRequest(), nanEnv({ NAN_API_KEY: '', GEMINI_API_KEY: 'gemini-test-key' })),
     error => (error as Error & { code?: string; status?: number }).code === 'AI_NOT_CONFIGURED' && (error as Error & { code?: string; status?: number }).status === 503,
   ));
+});
+
+/* ============================================================
+   Anthropic, the provider since 2026-11-19
+   ============================================================ */
+
+function anthropicEnv(overrides = {}) {
+  return {
+    AI_PROVIDER: 'anthropic',
+    ANTHROPIC_API_KEY: 'sk-ant-test-key',
+    FIREBASE_WEB_API_KEY: 'firebase-test-key',
+    AI: workersAI(),
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+    ...overrides,
+  };
+}
+
+/** One Anthropic stream event as the API frames it: an `event:` line, then its `data:` line. */
+const anthropicFrame = (event: Record<string, unknown>) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+const anthropicText = (text: string) => anthropicFrame({
+  type: 'content_block_delta',
+  index: 0,
+  delta: { type: 'text_delta', text },
+});
+const anthropicStop = (reason: string) => anthropicFrame({
+  type: 'message_delta',
+  delta: { stop_reason: reason, stop_sequence: null },
+  usage: { output_tokens: 10 },
+});
+
+const anthropicRewrite = () => sseResponse([
+  anthropicFrame({ type: 'message_start', message: { id: 'msg_test', type: 'message', role: 'assistant', content: [] } }),
+  anthropicFrame({ type: 'ping' }),
+  anthropicFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'Considering the sections.' } }),
+  anthropicText(sectionLine('intro', 'It began.')),
+  anthropicText(sectionLine('results', 'It worked.')),
+  anthropicStop('end_turn'),
+  anthropicFrame({ type: 'message_stop' }),
+]);
+
+test('reads the text of an Anthropic delta and never its thinking', () => {
+  assert.equal(extractSseTextDelta(anthropicText('Hello').split('\n')[1]), 'Hello');
+  assert.equal(extractSseTextDelta(`data: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'Let me think' } })}`), '');
+  assert.equal(extractSseTextDelta(`data: ${JSON.stringify({ type: 'ping' })}`), '');
+});
+
+test('Anthropic stop reasons are read in the words the cache decides by', () => {
+  const stop = (reason: string) => extractSseFinishReason(anthropicStop(reason).split('\n')[1]);
+  assert.equal(stop('end_turn'), 'STOP');
+  assert.equal(stop('max_tokens'), 'MAX_TOKENS');
+  assert.equal(stop('refusal'), 'SAFETY');
+  // A stream that fails after it began is never kept.
+  assert.equal(extractSseFinishReason(`data: ${JSON.stringify({ type: 'error', error: { type: 'overloaded_error' } })}`), 'ERROR');
+});
+
+test('with Claude the paper goes as extracted text at the level\'s effort, and streams in sections', async () => {
+  const store = fakeRewriteStore();
+  const state = newLedgerState();
+  const env = anthropicEnv({ AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) });
+  const asked: Array<{ url: string; headers: Headers; body: Record<string, unknown> & { messages: Array<{ content: string }> } }> = [];
+
+  const { events } = await runRewrite({
+    provider: async (url, options) => {
+      asked.push({ url: String(url), headers: new Headers(options!.headers), body: JSON.parse(options!.body as string) });
+      return anthropicRewrite();
+    },
+  }, env);
+
+  assert.equal(asked.length, 1);
+  const [call] = asked;
+  assert.match(call.url, /^https:\/\/api\.anthropic\.com\/v1\/messages/);
+  assert.equal(call.headers.get('authorization'), 'Bearer sk-ant-test-key');
+  assert.match(call.headers.get('anthropic-beta')!, /server-side-fallback-2026-07-01/);
+  assert.equal(call.body.model, 'claude-opus-5-5');
+  assert.equal(call.body.stream, true);
+  assert.equal(call.body.max_tokens, 24_000);
+  assert.deepEqual(call.body.output_config, { effort: 'low' });
+  assert.equal(call.body.fallbacks, 'default');
+  assert.equal('temperature' in call.body, false);
+  assert.equal('top_p' in call.body, false);
+  assert.match(call.body.system as string, /never extend it/);
+  // Text, not the PDF: a PDF page costs its text plus an image.
+  const userContent = call.body.messages[0].content;
+  assert.equal(typeof userContent, 'string');
+  assert.match(userContent, /JSON Lines/);
+  assert.match(userContent, /<paper>\nWe measure the cooling/);
+  assert.equal(env.AI.calls.length, 1);
+
+  const meta = events.find((event) => event.type === 'meta');
+  assert.equal(meta!.provider, 'anthropic');
+  assert.equal(meta!.model, 'claude-opus-5-5');
+  assert.deepEqual(events.filter((event) => event.type === 'section').map(event => event.kind), ['intro', 'results']);
+  assert.equal(events.at(-1)!.type, 'done');
+  assert.equal(events.at(-1)!.truncated, undefined);
+  assert.equal(store.entries.size, 1);
+  assert.equal(JSON.parse([...store.entries.values()][0].value).truncated, false);
+  assert.equal(state.release, 0);
+});
+
+test('with Claude a researcher rewrite asks for medium effort on ANTHROPIC_MODEL, and caches per model', async () => {
+  const store = fakeRewriteStore();
+  const asked: Array<{ model: string; output_config: { effort: string } }> = [];
+  const { events } = await runRewrite({
+    provider: async (_url, options) => {
+      asked.push(JSON.parse(options!.body as string));
+      return anthropicRewrite();
+    },
+  }, anthropicEnv({ ANTHROPIC_MODEL: 'claude-sonnet-5-5', AI_REWRITE_STORE: store }), { level: 'researcher' });
+
+  assert.equal(asked[0].model, 'claude-sonnet-5-5');
+  assert.equal(asked[0].output_config.effort, 'medium');
+  assert.equal(events.find((event) => event.type === 'meta')!.model, 'claude-sonnet-5-5');
+  const [key] = [...store.entries.keys()];
+  assert.match(key, /:claude-sonnet-5-5:/);
+});
+
+test('when the PDF will not convert, Claude is handed the PDF as a document block', async () => {
+  const asked: Array<{ messages: Array<{ content: Array<{ type: string; source?: { type: string; media_type: string; data: string }; text?: string }> }> }> = [];
+  const { events } = await runRewrite({
+    provider: async (_url, options) => {
+      asked.push(JSON.parse(options!.body as string));
+      return anthropicRewrite();
+    },
+  }, anthropicEnv({ AI: workersAI('', { reply: () => { throw new Error('Workers AI is down'); } }) }));
+
+  const [document, instruction] = asked[0].messages[0].content;
+  assert.equal(document.type, 'document');
+  assert.equal(document.source!.media_type, 'application/pdf');
+  assert.equal(document.source!.data, 'JVBERg==');
+  assert.match(instruction.text!, /JSON Lines/);
+  assert.equal(events.at(-1)!.type, 'done');
+});
+
+test('a refusal by Claude before any section is an empty rewrite, and the use stays spent', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([anthropicStop('refusal'), anthropicFrame({ type: 'message_stop' })]),
+  }, anthropicEnv({ AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }));
+
+  assert.equal(events.at(-1)!.type, 'error');
+  assert.equal(events.at(-1)!.code, 'AI_EMPTY_RESPONSE');
+  assert.equal(events.at(-1)!.finishReason, 'SAFETY');
+  assert.equal(store.entries.size, 0);
+  // Claude read the paper and declined: refunding would make asking again free.
+  assert.equal(state.release, 0);
+});
+
+test('a refusal by Claude mid-rewrite keeps the sections already shown, says it stopped, and is not cached', async () => {
+  const store = fakeRewriteStore();
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      anthropicText(sectionLine('intro', 'The setup.')),
+      anthropicStop('refusal'),
+    ]),
+  }, anthropicEnv({ AI_REWRITE_STORE: store }));
+
+  assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'done']);
+  assert.equal(events.at(-1)!.truncated, true);
+  assert.equal(events.at(-1)!.finishReason, 'SAFETY');
+  assert.equal(store.entries.size, 0);
+});
+
+test('an overloaded Claude is asked once, not retried on the Gemini fallback model, and the use comes back', async () => {
+  const state = newLedgerState();
+  const asked: string[] = [];
+  const { events } = await runRewrite({
+    provider: async (url) => {
+      asked.push(String(url));
+      return new Response(JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }), {
+        status: 529,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  }, anthropicEnv({ AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite', REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }));
+
+  assert.equal(asked.length, 1);
+  assert.equal(events.at(-1)!.code, 'AI_BUSY');
+  assert.equal(state.release, 1);
+});
+
+test('a key Claude rejects is not configured, and the use comes back', async () => {
+  const state = newLedgerState();
+  const { events } = await runRewrite({
+    provider: async () => new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    }),
+  }, anthropicEnv({ REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }));
+
+  assert.equal(events.at(-1)!.code, 'AI_NOT_CONFIGURED');
+  assert.equal(state.release, 1);
+});
+
+test('a Claude stream that fails after it began is not cached and says where it stopped', async () => {
+  const store = fakeRewriteStore();
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      anthropicText(sectionLine('intro', 'The setup.')),
+      anthropicFrame({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }),
+    ]),
+  }, anthropicEnv({ AI_REWRITE_STORE: store }));
+
+  assert.equal(events.at(-1)!.type, 'done');
+  assert.equal(events.at(-1)!.truncated, true);
+  assert.equal(events.at(-1)!.finishReason, 'ERROR');
+  assert.equal(store.entries.size, 0);
+});
+
+test('Claude chosen without an Anthropic key is not configured, even with a Gemini key', async () => {
+  await withRewriteHarness({
+    provider: async () => { throw new Error('an unconfigured rewrite must not reach a model'); },
+  }, () => assert.rejects(
+    handlePaperRewrite(rewriteRequest(), anthropicEnv({ ANTHROPIC_API_KEY: '', GEMINI_API_KEY: 'gemini-test-key' })),
+    error => (error as Error & { code?: string; status?: number }).code === 'AI_NOT_CONFIGURED' && (error as Error & { code?: string; status?: number }).status === 503,
+  ));
+});
+
+const fallbackBlock = () => anthropicFrame({
+  type: 'content_block_start',
+  index: 1,
+  content_block: { type: 'fallback', from: { model: 'claude-opus-5-5' }, to: { model: 'claude-opus-4-8' } },
+});
+
+test('when Claude\'s fallback model takes over before any section, only its rewrite is shown and kept', async () => {
+  const store = fakeRewriteStore();
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      // The declining model had only begun a line when it handed over.
+      anthropicText('The declining model began: '),
+      fallbackBlock(),
+      anthropicText(sectionLine('intro', 'It began.')),
+      anthropicText(sectionLine('results', 'It worked.')),
+      anthropicStop('end_turn'),
+    ]),
+  }, anthropicEnv({ AI_REWRITE_STORE: store }));
+
+  assert.deepEqual(events.filter(event => event.type === 'section').map(event => event.paragraphs![0]), ['It began.', 'It worked.']);
+  assert.equal(events.at(-1)!.type, 'done');
+  assert.equal(events.at(-1)!.truncated, undefined);
+  assert.equal(store.entries.size, 1);
+});
+
+test('when Claude\'s fallback model takes over after sections were shown, the rewrite stops there instead of repeating them', async () => {
+  const store = fakeRewriteStore();
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      anthropicText(sectionLine('intro', 'It began.')),
+      fallbackBlock(),
+      anthropicText(sectionLine('intro', 'It began.')),
+      anthropicText(sectionLine('results', 'It worked.')),
+      anthropicStop('end_turn'),
+    ]),
+  }, anthropicEnv({ AI_REWRITE_STORE: store }));
+
+  assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'done']);
+  assert.equal(events.at(-1)!.truncated, true);
+  assert.equal(events.at(-1)!.finishReason, 'SAFETY');
+  assert.equal(store.entries.size, 0);
+});
+
+test('a Claude stream that fails before any text gives the use back', async () => {
+  const state = newLedgerState();
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      anthropicFrame({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }),
+    ]),
+  }, anthropicEnv({ REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }));
+
+  assert.equal(events.at(-1)!.type, 'error');
+  assert.equal(events.at(-1)!.code, 'AI_UNAVAILABLE');
+  assert.equal(state.release, 1);
 });

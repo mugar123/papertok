@@ -13,6 +13,7 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
+import { isAnthropicConfigured } from './anthropic-client.ts';
 import { isNanConfigured } from './nan-client.ts';
 import {
   EmailNotificationError,
@@ -485,7 +486,7 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   if (url.pathname === '/health') {
     return json({
       ok: true,
-      aiConfigured: Boolean(env.GEMINI_API_KEY || isNanConfigured(env)),
+      aiConfigured: Boolean(env.GEMINI_API_KEY || isNanConfigured(env) || isAnthropicConfigured(env)),
       openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
       adsConfigured: Boolean(env.NASA_ADS_API_TOKEN),
       scopusConfigured: isScopusEgressConfigured(env),
