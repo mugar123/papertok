@@ -1,5 +1,5 @@
 import type { Paper } from '../models/paper.ts';
-import { knownCitationCount, paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withRetractionOf } from '../models/paper.ts';
+import { knownCitationCount, paperLegacyAdapter, readStoredClassification, storedAbstractSource, storedClassification, withPublicationEvidenceOf } from '../models/paper.ts';
 
 /**
  * `copy` with `other`'s authors when `other`, a copy of the same paper, lists
@@ -78,7 +78,7 @@ export function listPaperFromCopies(libraryCopy: Partial<Paper>, otherCopy: Part
   // The text the paper shows: its abstract once a copy was read back as a
   // paper, else the summary, as `paperLegacyAdapter` reads a copy.
   const text = merged.sources ? merged.abstract : merged.summary || merged.abstract;
-  const paper = withRetractionOf(
+  const paper = withPublicationEvidenceOf(
     { ...merged, abstractSource: storedAbstractSource(libraryCopy, text) ?? storedAbstractSource(otherCopy, text) },
     libraryCopy,
   );
@@ -99,8 +99,8 @@ export function listPaper(
   loadedCopy: Partial<Paper> | undefined,
 ) {
   const otherCopy = fetchedCopy ? filledFrom(fetchedCopy, loadedCopy) : loadedCopy;
-  if (!entryCopy) return otherCopy && withRetractionOf(otherCopy, loadedCopy);
-  return otherCopy ? listPaperFromCopies(withRetractionOf(entryCopy, loadedCopy), otherCopy) : entryCopy;
+  if (!entryCopy) return otherCopy && withPublicationEvidenceOf(otherCopy, loadedCopy);
+  return otherCopy ? listPaperFromCopies(withPublicationEvidenceOf(entryCopy, loadedCopy), otherCopy) : entryCopy;
 }
 
 /**
@@ -119,8 +119,8 @@ export function mergeListPaperCopies(
   Object.entries(loaded).forEach(([paperId, paper]) => {
     const known = next[paperId];
     next[paperId] = source === 'saved' || !known
-      ? withRetractionOf(filledFrom(paper, known), known)
-      : withRetractionOf(filledFrom(known, paper), paper);
+      ? withPublicationEvidenceOf(filledFrom(paper, known), known)
+      : withPublicationEvidenceOf(filledFrom(known, paper), paper);
   });
   return next;
 }

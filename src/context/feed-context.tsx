@@ -119,11 +119,12 @@ import { fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-
 import { lastVisitAfterLoad, lastVisitOnFailedReset, showsLastVisit, type LastVisit } from '../utils/feed-loading-state.ts';
 import { lastVisitCards, loadOverList, readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, forYouCardNotable, profileEvent, sampleNotableEvery } from './feed-temporal-lean.ts';
-import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
+import { libraryAfterLoad, libraryCopyOf, libraryWithPublicationEvidence, loadedAfterLoad, loadedWithPublicationEvidence, readLaterChange, withLibraryCopy } from './library-entry.ts';
 import { unmarkRead } from './unmark-read.ts';
 import { markChanges, markKey, markStartsOn, writeMark } from './write-mark.ts';
 import { saveRollbacks, takeBacksOnProfile } from './save-rollback.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
+import { withPaperEvidenceOf } from '../models/paper-evidence.ts';
 import { abstractExcerpt, copyOfRecordWithoutCopy, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
@@ -158,6 +159,7 @@ import {
   cardsGivenTopic,
   getOpenAlexEnrichmentId,
   mergeFeedAbstracts,
+  mergeFeedEvidence,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   preserveFeedAbstracts,
@@ -1459,10 +1461,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         allFetched.forEach(p => {
           const existing = uniqueMap.get(p.id);
           if (existing) {
-            existing._followedEntityMatches = mergeFollowEntityMatches(
-              existing._followedEntityMatches,
-              p._followedEntityMatches,
-            );
+            uniqueMap.set(p.id, {
+              ...withPaperEvidenceOf(existing, p),
+              _followedEntityMatches: mergeFollowEntityMatches(existing._followedEntityMatches, p._followedEntityMatches),
+            });
           } else {
             uniqueMap.set(p.id, p);
           }
@@ -1475,6 +1477,22 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
       if (requestId !== feedRequestId.current) return;
+
+      if ((!reset || keepThroughVisible) && newPapers.some(paper => paper.studyType || paper.trialRegistration)) {
+        const userId = activeUserId.current;
+        const signature = feedPreferenceSignature(userPreferences);
+        setPapers(current => {
+          if (feedSessionId.current !== activeSessionId) return current;
+          const next = mergeFeedEvidence(current, newPapers);
+          const cached = feedCache.current[activeMode];
+          if (next !== current && cached) {
+            const snapshot = { ...cached, papers: next };
+            feedCache.current[activeMode] = snapshot;
+            scheduleFeedSnapshotWrite(userId, signature, snapshot);
+          }
+          return next;
+        });
+      }
 
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
@@ -1686,7 +1704,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed, readerLean,
     calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent, user?.uid,
-    lastVisit, restoreFeedSnapshot,
+    lastVisit, restoreFeedSnapshot, scheduleFeedSnapshotWrite,
   ]);
 
   const preferencesSignatureRef = useRef<string | null>(null);
@@ -1922,8 +1940,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     const storedPaper = isCurrentlyLiked ? undefined : serializeLibraryPaper(paper);
     if (userId && storedPaper) {
-      setPersonalLibrary(current => libraryWithRetractionOf(current, paper.id, storedPaper));
-      setLibraryPapers(current => loadedWithRetractionOf(current, paper.id, storedPaper));
+      setPersonalLibrary(current => libraryWithPublicationEvidence(current, paper.id, storedPaper));
+      setLibraryPapers(current => loadedWithPublicationEvidence(current, paper.id, storedPaper));
     }
     await writeMark({
       show: (takesBack) => {
@@ -2273,8 +2291,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (userId) {
       const storedPaper = paper && serializeLibraryPaper(paper);
       if (storedPaper) {
-        setPersonalLibrary(current => libraryWithRetractionOf(current, paperId, storedPaper));
-        setLibraryPapers(current => loadedWithRetractionOf(current, paperId, storedPaper));
+        setPersonalLibrary(current => libraryWithPublicationEvidence(current, paperId, storedPaper));
+        setLibraryPapers(current => loadedWithPublicationEvidence(current, paperId, storedPaper));
       }
       try {
         const ref = interactionDocRef(userId, paperId);

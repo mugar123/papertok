@@ -8,7 +8,7 @@ import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
 import { reviewTagForPaper } from '../utils/paper-status.ts';
 import { hydrateSeededPaper } from '../utils/paper-seed.ts';
 import { listPaperFromCopies } from '../utils/list-paper-copies.ts';
-import { libraryAfterLoad, libraryCopyOf, libraryWithRetractionOf, loadedAfterLoad, loadedWithRetractionOf, readLaterChange, withLibraryCopy } from './library-entry.ts';
+import { libraryAfterLoad, libraryCopyOf, libraryWithPublicationEvidence, loadedAfterLoad, loadedWithPublicationEvidence, readLaterChange, withLibraryCopy } from './library-entry.ts';
 
 const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const wakefield = { id: 'pmid:9500320', title: 'Ileal-lymphoid-nodular hyperplasia', journal: 'Lancet', publicationType: 'article' as const };
@@ -107,8 +107,8 @@ test('a like or a save in this session keeps its retraction through a later mark
   const liked = serializeLibraryPaper(retracted);
   // Nothing loaded for the paper yet, or the copy stored before the refresh.
   for (const [label, before] of [['nothing loaded', {}], ['an unmarked copy loaded', { [wakefield.id]: loadedCopy(unmarked) }]] as const) {
-    const papers = loadedWithRetractionOf(before, wakefield.id, liked);
-    const library = libraryWithRetractionOf({}, wakefield.id, liked);
+    const papers = loadedWithPublicationEvidence(before, wakefield.id, liked);
+    const library = libraryWithPublicationEvidence({}, wakefield.id, liked);
     const readLater = withLibraryCopy(library, wakefield.id, serializeLibraryPaper(unmarked), { readLater: true }, papers[wakefield.id]);
     assert.deepEqual(listTags(readLater), ['retracted', 'retracted'], `liked, then Read later: ${label}`);
     const read = withLibraryCopy(library, wakefield.id, serializeLibraryPaper(unmarked), { readAt: '2026-10-29T11:00:00.000Z' }, papers[wakefield.id]);
@@ -118,7 +118,7 @@ test('a like or a save in this session keeps its retraction through a later mark
 
 test('a like or a save in this session adds its retraction to an entry an earlier mark wrote', () => {
   const marked = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readLater: true });
-  const liked = libraryWithRetractionOf(marked, wakefield.id, serializeLibraryPaper(retracted));
+  const liked = libraryWithPublicationEvidence(marked, wakefield.id, serializeLibraryPaper(retracted));
   assert.deepEqual(listTags(liked), ['retracted', 'retracted']);
   assert.equal(liked[wakefield.id].readLater, true);
 });
@@ -126,9 +126,9 @@ test('a like or a save in this session adds its retraction to an entry an earlie
 test('a like or a save of a copy no provider called retracted changes nothing in memory', () => {
   const marked = withLibraryCopy({}, wakefield.id, serializeLibraryPaper(unmarked), { readLater: true });
   const papers = { [wakefield.id]: loadedCopy(unmarked) };
-  assert.equal(libraryWithRetractionOf(marked, wakefield.id, serializeLibraryPaper(unmarked)), marked);
-  assert.equal(loadedWithRetractionOf(papers, wakefield.id, serializeLibraryPaper(unmarked)), papers);
-  assert.deepEqual(loadedWithRetractionOf({}, wakefield.id, serializeLibraryPaper(unmarked)), {});
+  assert.equal(libraryWithPublicationEvidence(marked, wakefield.id, serializeLibraryPaper(unmarked)), marked);
+  assert.equal(loadedWithPublicationEvidence(papers, wakefield.id, serializeLibraryPaper(unmarked)), papers);
+  assert.deepEqual(loadedWithPublicationEvidence({}, wakefield.id, serializeLibraryPaper(unmarked)), {});
 });
 
 test('a library entry no copy called retracted reads as before', () => {
@@ -163,7 +163,7 @@ test('a removal from Read later, shown once accepted, keeps the retraction', () 
 });
 
 test('Read later keeps the retraction a like in this session stored, with no entry yet', () => {
-  const loaded = loadedWithRetractionOf({}, wakefield.id, serializeLibraryPaper(retracted))[wakefield.id];
+  const loaded = loadedWithPublicationEvidence({}, wakefield.id, serializeLibraryPaper(retracted))[wakefield.id];
   const readLater = readLaterChange(wakefield.id, undefined, {
     copy: serializeLibraryPaper(unmarked), readLater: true, updatedAt: '2026-10-30T09:00:00.000Z', late: false, loaded,
   }).show({});

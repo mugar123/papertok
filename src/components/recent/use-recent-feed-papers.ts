@@ -79,7 +79,7 @@ export function useRecentFeedPapers(): {
     if (!request) return Promise.reject(new Error('Most recent has no topics to ask for.'));
     return fetchCorpusPage(request).then((answer) => {
       const { papers, hasMore, received } = settleRecentPage(answer, new Set(seen), new Set(viewedIds));
-      return { papers, hasMore, run: { ...run, received: [...run.received, ...received] } };
+      return { papers, receivedPapers: answer.papers, hasMore, run: { ...run, received: [...run.received, ...received] } };
     });
   }, [getInterestRunSignals]);
   // A paper viewed, liked or saved after it arrived stays until the next run;

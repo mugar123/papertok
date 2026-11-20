@@ -3,6 +3,15 @@
  * the Europe PMC search mapper, need beyond the type a record gives itself.
  */
 
+import { studyTypeFromIds } from '../models/paper-evidence.ts';
+
+export function medlineStudyType(types: string | readonly string[] | undefined) {
+  return studyTypeFromIds([types ?? []].flat().map(type => {
+    const id = String(type).trim().toLowerCase().replace(/\s+/g, '-');
+    return id === 'network-meta-analysis' ? 'meta-analysis' : id;
+  }));
+}
+
 // Methods in Molecular Biology is a book series of laboratory protocols.
 // PubMed and Europe PMC file it as a journal and type its chapters "Journal
 // Article" (133 of the 139 chapters in the 2026-10-20 audit), so only the

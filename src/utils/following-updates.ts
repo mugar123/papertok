@@ -1,4 +1,5 @@
 import type { Paper, PaperFollowMatch } from '../models/paper.ts';
+import { withPaperEvidenceOf } from '../models/paper-evidence.ts';
 
 import { isPlaceholderAuthorName } from '../services/paper-builder.ts';
 
@@ -86,7 +87,7 @@ function mergeFollowingUpdatePaperRecords(current: Paper, paper: Paper, updateKe
   };
   if (text.abstractSource) merged.abstractSource = text.abstractSource;
   else delete merged.abstractSource;
-  return merged;
+  return withPaperEvidenceOf(withPaperEvidenceOf(merged, current), paper);
 }
 
 export function mergeFollowingUpdatePapers(papers: Paper[] = [], limit = 60) {

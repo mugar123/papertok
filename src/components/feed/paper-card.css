@@ -532,6 +532,24 @@
   font-weight: var(--fw-semibold);
 }
 
+.pc-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.pc-evidence a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 24px;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 button.pc-masthead-field:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;

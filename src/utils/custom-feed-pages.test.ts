@@ -71,6 +71,19 @@ test('a full page the caller calls the last ends the list', () => {
   assert.equal(merged.hasMore, false);
 });
 
+test('a received record that was already seen can still supply evidence to a held card', () => {
+  const current = mergeFeedPage(null, { papers: [paperOf('trial')], hasMore: true, loading: [] }, 0);
+  const next = mergeFeedPage(current, {
+    papers: [],
+    receivedPapers: [{ ...paperOf('trial'), studyType: 'randomized-controlled-trial', trialRegistration: 'NCT04280705' }],
+    hasMore: false,
+    loading: [],
+  }, 1);
+  assert.equal(next.papers.length, 1);
+  assert.equal(next.papers[0].studyType, 'randomized-controlled-trial');
+  assert.equal(next.papers[0].trialRegistration, 'NCT04280705');
+});
+
 test('the Worker\'s `more` decides whether a custom feed goes on, whatever the page holds; from a Worker that does not say, a page with fewer papers than asked is the last', () => {
   assert.equal(feedPageOf({ papers: papersOf('p', 14), loading: [], more: true }).hasMore, true);
   assert.equal(feedPageOf({ papers: [], loading: [], more: true }).hasMore, true);

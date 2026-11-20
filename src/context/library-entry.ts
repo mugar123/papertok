@@ -1,6 +1,6 @@
 import type { Paper } from '../models/paper.ts';
 
-import { withRetractionOf } from '../models/paper.ts';
+import { withPublicationEvidenceOf } from '../models/paper.ts';
 import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 
 export interface LibraryEntry {
@@ -8,9 +8,9 @@ export interface LibraryEntry {
   note?: string; tags?: string[]; updatedAt?: string | number | null;
 }
 
-/** `copy` with a retraction the entry's copy or `loaded` records; `copy` itself when neither adds one. */
-const keepingRetraction = (copy: Partial<Paper>, entry: LibraryEntry | undefined, loaded: Partial<Paper> | undefined) => (
-  withRetractionOf(withRetractionOf(copy, entry?.paper), loaded)
+/** Keep evidence from the existing entry and the loaded interaction. */
+const keepingPublicationEvidence = (copy: Partial<Paper>, entry: LibraryEntry | undefined, loaded: Partial<Paper> | undefined) => (
+  withPublicationEvidenceOf(withPublicationEvidenceOf(copy, entry?.paper), loaded)
 );
 
 /**
@@ -30,7 +30,7 @@ export function withLibraryCopy(
   loaded?: Partial<Paper>,
 ) {
   const entry = library[paperId];
-  return { ...library, [paperId]: { ...entry, ...fields, paperId, paper: keepingRetraction(copy, entry, loaded) } };
+  return { ...library, [paperId]: { ...entry, ...fields, paperId, paper: keepingPublicationEvidence(copy, entry, loaded) } };
 }
 
 /**
@@ -51,7 +51,7 @@ export function readLaterChange(
     loaded?: Partial<Paper>;
   },
 ) {
-  const stamped = { paper: keepingRetraction(copy, previous, loaded), updatedAt };
+  const stamped = { paper: keepingPublicationEvidence(copy, previous, loaded), updatedAt };
   return {
     show: (library: Record<string, LibraryEntry>) => {
       const stamp = readLaterStamp(library[paperId], previous, stamped, { late });
@@ -63,26 +63,29 @@ export function readLaterChange(
 
 /*
  * A like or a save writes `copy` as the paper's interaction copy and rewrites
- * no library entry. A retraction `copy` records is now stored, so the two
- * helpers below add it to what the library holds in memory, as its next load
- * would hold it (ENG-84): a later mark from a card without the retraction
- * keeps it through `withLibraryCopy`, and the lists show it. Each returns its
- * input itself when `copy` adds nothing.
+ * no library entry. The helpers below keep the publication evidence that
+ * the next load would read from the interaction. A later mark from a thinner
+ * card keeps it through `withLibraryCopy`.
  */
 
-/** The library with the retraction `copy` records on the paper's entry, if it has one. */
-export function libraryWithRetractionOf(library: Record<string, LibraryEntry>, paperId: string, copy: Partial<Paper>) {
+/** Add evidence to an existing library entry. */
+export function libraryWithPublicationEvidence(library: Record<string, LibraryEntry>, paperId: string, copy: Partial<Paper>) {
   const entry = library[paperId];
-  return entry && copy.publicationStatus === 'retracted' && entry.paper.publicationStatus !== 'retracted'
-    ? { ...library, [paperId]: { ...entry, paper: withRetractionOf(entry.paper, copy) } }
-    : library;
+  if (!entry) return library;
+  const paper = withPublicationEvidenceOf(entry.paper, copy);
+  return paper === entry.paper ? library : { ...library, [paperId]: { ...entry, paper } };
 }
 
-/** The loaded interaction copies with `copy`'s retraction, or with `copy` when none was loaded. */
-export function loadedWithRetractionOf(papers: Record<string, Partial<Paper>>, paperId: string, copy: Partial<Paper>) {
+/** Keep evidence from a new interaction alongside the copies loaded from storage. */
+export function loadedWithPublicationEvidence(papers: Record<string, Partial<Paper>>, paperId: string, copy: Partial<Paper>) {
   const known = papers[paperId];
-  if (copy.publicationStatus !== 'retracted' || known?.publicationStatus === 'retracted') return papers;
-  return { ...papers, [paperId]: known ? withRetractionOf(known, copy) : copy };
+  if (!known) {
+    return copy.publicationStatus === 'retracted' || copy.studyType || copy.trialRegistration
+      ? { ...papers, [paperId]: copy }
+      : papers;
+  }
+  const paper = withPublicationEvidenceOf(known, copy);
+  return paper === known ? papers : { ...papers, [paperId]: paper };
 }
 
 /*
@@ -107,7 +110,7 @@ export function libraryAfterLoad(
 /** The loaded interaction copies after a load. */
 export function loadedAfterLoad(current: Record<string, Partial<Paper>>, papers: Record<string, Partial<Paper>>) {
   return Object.entries(papers).reduce(
-    (next, [id, copy]) => loadedWithRetractionOf(next, id, copy),
+    (next, [id, copy]) => loadedWithPublicationEvidence(next, id, copy),
     { ...papers, ...current },
   );
 }
@@ -120,5 +123,5 @@ export function loadedAfterLoad(current: Record<string, Partial<Paper>>, papers:
 export function libraryCopyOf(library: Record<string, LibraryEntry>, papers: Record<string, Partial<Paper>>, paperId: string) {
   const entryCopy = library[paperId]?.paper;
   const loaded = papers[paperId];
-  return loaded ? withRetractionOf(loaded, entryCopy) : entryCopy;
+  return loaded ? withPublicationEvidenceOf(loaded, entryCopy) : entryCopy;
 }

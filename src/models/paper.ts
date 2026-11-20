@@ -1,4 +1,5 @@
 import { getArxivArchiveArea } from '../data/category-taxonomy.ts';
+import { storedPaperEvidence, withPaperEvidenceOf, type StudyType } from './paper-evidence.ts';
 
 export interface PaperAuthor {
   name: string;
@@ -166,6 +167,9 @@ export interface Paper {
   publisher?: string;
   // Providers retain their vocabulary (article, report, thesis, letter, etc.).
   publicationType?: string;
+  studyType?: StudyType;
+  trialRegistration?: string;
+  trialRegistrationSource?: 'pubmed-secondary-source';
   publicationStatus?: 'preprint' | 'published' | 'accepted' | 'retracted';
   peerReviewed?: boolean;
   // True when the record shows a working paper or report
@@ -354,16 +358,14 @@ export function storedAbstractSource(paper: Partial<Pick<Paper, 'abstract' | 'su
 }
 
 /**
- * `paper` with the retraction that `other`, another copy of the same paper,
- * records (ENG-84). No provider confirms that a paper is not retracted, so a
- * copy written before a provider reported it, or by a writer that keeps no
- * status (the `savedPapers` document), never removes it. Returns `paper`
- * itself when `other` adds nothing.
+ * Keep publication evidence from either copy of the same paper (ENG-84).
+ * The `savedPapers` document carries none of these fields.
  */
-export function withRetractionOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
-  return other?.publicationStatus === 'retracted' && paper.publicationStatus !== 'retracted'
-    ? { ...paper, publicationStatus: 'retracted' }
-    : paper;
+export function withPublicationEvidenceOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
+  const merged = withPaperEvidenceOf(paper, other);
+  return other?.publicationStatus === 'retracted' && merged.publicationStatus !== 'retracted'
+    ? { ...merged, publicationStatus: 'retracted' }
+    : merged;
 }
 
 const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) && getArxivArchiveArea(value) !== null;
@@ -468,6 +470,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
     title: legacyPaper.title || 'Untitled',
     abstract: legacyPaper.summary || legacyPaper.abstract || 'No abstract available.',
     ...(abstractSource && { abstractSource }),
+    ...storedPaperEvidence(legacyPaper),
     authors,
     arxivId: arxivId || undefined,
     doi: doi || undefined,

@@ -16,6 +16,8 @@ import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { OPENALEX_TIER_PERCENT } from './provider-runtime.ts';
+// Captured Crossref work 10.1186/s40545-021-00394-9 with its registration paragraph.
+import crossrefTrial from './test-support/crossref-trial.fixture.json' with { type: 'json' };
 
 const NOW = Date.parse('2026-10-22T03:00:00Z');
 
@@ -193,6 +195,22 @@ async function recoveryCorpus(papers: Paper[], settings: Record<string, string> 
 }
 const vectorOf = (db: ReturnType<typeof testD1>['db'], id: number) => db.prepare('SELECT embedding FROM work_vectors WHERE work_id = ?').get(id);
 const semanticScholarCalls = (asked: Asked[]) => asked.filter(request => request.url.hostname === 'api.semanticscholar.org');
+
+test('Crossref contributes an abstract NCT ID even if the paper already has an abstract', async t => {
+  recoveryProviders(t, {
+    crossref: () => Response.json({ message: { items: [crossrefTrial] } }),
+  });
+  const paper = {
+    ...awaitingAbstract('W4410000001', '10.1186/s40545-021-00394-9'),
+    abstract: 'The source already gave the paper an abstract.',
+  };
+  const { env, db } = await recoveryCorpus([paper]);
+  await enrichPending(env, 50, NOW);
+  const updated = stored(db)[paper.id].paper;
+  assert.equal(updated.abstract, paper.abstract);
+  assert.equal(updated.trialRegistration, 'NCT04967326');
+  assert.equal(updated.studyType, undefined);
+});
 
 test("a paper without an abstract gets Crossref's, stripped of JATS markup, from the same call that brings its type; its vector is dropped and re-embedded", async t => {
   const asked = recoveryProviders(t, {
@@ -918,8 +936,12 @@ for (const [order, works] of [['first', [RETRACTED_WORK, EPRINT_WORK]], ['last',
 
 // OpenAlex can also hold the journal's article apart, without the arXiv
 // location, so that the arXiv id finds only the unretracted eprint. Synthetic:
-// the captured work without its arXiv location.
-const JOURNAL_ONLY_WORK = { ...RETRACTED_WORK, locations: RETRACTED_WORK.locations.slice(0, 1) };
+// the captured work without its arXiv location and with an evidence field.
+const JOURNAL_ONLY_WORK = {
+  ...RETRACTED_WORK,
+  locations: RETRACTED_WORK.locations.slice(0, 1),
+  study_designs: [{ id: 'https://openalex.org/study-designs/systematic-review' }],
+};
 
 // When the arXiv id finds nothing, the retraction is all OpenAlex gave: the
 // paper is not OpenAlex-enriched, and it is asked again like any miss.
@@ -951,6 +973,7 @@ for (const [found, arxivAnswer, enrichedByOpenAlex] of [['an unretracted eprint'
     assert.deepEqual(filters, ['locations.landing_page_url', 'doi'], 'one call by arXiv id, one by the journal DOI');
     const { paper, enrichedAt, misses } = stored(db)['ads:2018Natur.556...74Z'];
     assert.equal(paper.publicationStatus, 'retracted');
+    assert.equal(paper.studyType, 'systematic-review');
     assert.ok(enrichedAt);
     assert.equal(paper.sources.enrichedBy.includes('openalex'), enrichedByOpenAlex);
     assert.equal(misses, enrichedByOpenAlex ? 0 : 1);

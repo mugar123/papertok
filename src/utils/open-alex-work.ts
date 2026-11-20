@@ -1,6 +1,7 @@
 import type { Paper } from '../models/paper.ts';
 import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 
+import { studyTypeFromIds, trialRegistrationFromAbstract } from '../models/paper-evidence.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 import { usableOpenAlexAbstract } from './open-alex-abstract.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
@@ -27,6 +28,7 @@ export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
   'ids',
   'title',
   'type',
+  'study_designs',
   'publication_date',
   'publication_year',
   'authorships',
@@ -76,6 +78,7 @@ export const OPENALEX_ENRICHMENT_SELECT = [
   'locations',
   'primary_location',
   'type',
+  'study_designs',
   // `openAlexPublicationStatus` reads it. With PubMed's and Europe PMC's
   // `Retracted Publication` type, it is how a paper another source listed is
   // found to be retracted.
@@ -96,6 +99,18 @@ export const OPENALEX_ENRICHMENT_SELECT = [
 ].join(',');
 
 export type OpenAlexEnrichment = Partial<Paper> & { related_works?: string[] };
+
+function openAlexEvidence(work: OpenAlexWork, abstract: string | undefined) {
+  const designs = Array.isArray(work.study_designs) ? work.study_designs : [];
+  const studyType = studyTypeFromIds(designs.flatMap(design => typeof design?.id === 'string'
+    ? [design.id.replace(/^https:\/\/openalex\.org\/study-designs\//, '')]
+    : []));
+  const trialRegistration = trialRegistrationFromAbstract(abstract);
+  return {
+    ...(studyType && { studyType }),
+    ...(trialRegistration && { trialRegistration }),
+  };
+}
 
 /**
  * How many of a work's authorships travel into the enrichment. The select has
@@ -195,12 +210,14 @@ export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlex
     }))
     : undefined;
 
+  const abstract = usableOpenAlexAbstract(work);
   return {
     openAlexId,
     arxivId,
     enrichment: {
       ...(authors ? { authors } : {}),
-      abstract: usableOpenAlexAbstract(work),
+      abstract,
+      ...openAlexEvidence(work, abstract),
       concepts: semanticTopics,
       topics: work.topics || [],
       primaryTopic: work.primary_topic || null,
@@ -274,6 +291,7 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
     pmid: normalizePmid(work.ids?.pmid) || undefined,
     title: work.title || 'Untitled',
     abstract,
+    ...openAlexEvidence(work, abstract),
     authors,
     institutions,
     publishedDate: work.publication_date,
@@ -319,12 +337,14 @@ export function formatOpenAlexWorkAsPaper(work: OpenAlexWork, includeTopics = fa
     }])).values()];
   const categories = usableOpenAlexConcepts(work.concepts).map(c => c.display_name);
   const openAlexId = work.id!.split('/').pop()!;
+  const abstract = usableOpenAlexAbstract(work);
   
   return PaperBuilder.create({
     id: openAlexId,
     sources: { primary: 'openalex', enrichedBy: [] },
     title: work.title || 'No Title',
-    abstract: usableOpenAlexAbstract(work),
+    abstract,
+    ...openAlexEvidence(work, abstract),
     authors,
     institutions,
     year: Number(published.slice(0, 4)) || undefined,

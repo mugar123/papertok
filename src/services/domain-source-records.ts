@@ -259,6 +259,8 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
     publicationType: chapter ? 'book-chapter' : preprint ? 'preprint' : 'article',
     sourceType: chapter ? 'book-series' : undefined,
     publicationStatus: record.retracted ? 'retracted' : preprint ? 'preprint' : 'published',
+    studyType: record.studyType,
+    trialRegistration: record.trialRegistration,
     openAccess: record.openAccess,
     landingPageUrl: record.europePmcUrl
       || `https://europepmc.org/article/${encodeURIComponent(raw.source || 'MED')}/${encodeURIComponent(providerId || pmid)}`,
