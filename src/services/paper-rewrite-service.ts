@@ -53,8 +53,9 @@ const rewriteCache = new Map<string, RewriteResult>();
 let rewriteCacheAccount = 0;
 
 export type AIUses = { remainingUses: number; dailyLimit: number | null; unlimited?: boolean; resetAt?: string };
-const lastAIUses = new Map<string, AIUses>();
+const lastAIUses = new Map<string, { version: number; uses: AIUses | null }>();
 
+let quotaSequence = 0;
 const quotaChanges = new EventTarget();
 
 export function subscribeAIUses(listener: () => void) {
@@ -166,31 +167,32 @@ async function fetchRemainingAIUses({ signal }: { signal?: AbortSignal } = {}) {
  * pill instead of growing it a round trip later. The reader still asks again.
  */
 export function lastKnownAIUses(uid: string | null | undefined) {
-  return (uid && lastAIUses.get(uid)) || null;
+  return (uid && lastAIUses.get(uid)?.uses) || null;
 }
 
 export function rememberAIUses(uid: string, uses: AIUses | null) {
-  if (uses) lastAIUses.set(uid, uses);
-  else lastAIUses.delete(uid);
+  lastAIUses.set(uid, { version: ++quotaSequence, uses });
   quotaChanges.dispatchEvent(new Event('change'));
 }
 
-/**
- * Puts the answer of one read of the count into the shared state.
- *
- * `before` is what was known when the read started. A read that started at the
- * count still standing may replace it, refund included. A use spent since the
- * read started makes it stale, so it can only add what the use did not bring
- * (the limit and reset time). The counter, not the object, says whether a use
- * happened: metadata arriving from another read replaces the object and must
- * not make a later, correct read look stale.
- */
-export function settleAIUsesRead(uid: string, before: AIUses | null, fresh: AIUses | null) {
-  const current = lastKnownAIUses(uid);
-  if (before?.remainingUses === current?.remainingUses) rememberAIUses(uid, fresh);
-  else if (current && !current.resetAt && fresh) {
-    rememberAIUses(uid, { ...fresh, remainingUses: current.remainingUses });
-  }
+export function beginAIUsesRead(uid: string) {
+  const account = rewriteCacheAccount;
+  const started = ++quotaSequence;
+  return (fresh: AIUses | null) => {
+    if (account !== rewriteCacheAccount) return;
+    const current = lastAIUses.get(uid);
+    if (!current || current.version < started) {
+      // Confirming the same count supersedes older reads, but a later read
+      // can still report a refund. A changed count invalidates both.
+      const version = current?.uses?.remainingUses === fresh?.remainingUses ? started : ++quotaSequence;
+      lastAIUses.set(uid, { version, uses: fresh });
+      quotaChanges.dispatchEvent(new Event('change'));
+    } else if (current?.uses && !current.uses.resetAt && fresh) {
+      // Filling in metadata leaves reads of the current count valid.
+      current.uses = { ...fresh, remainingUses: current.uses.remainingUses };
+      quotaChanges.dispatchEvent(new Event('change'));
+    }
+  };
 }
 
 /** Records the count a use reported, for every card and reader that shows it. */
@@ -200,10 +202,10 @@ export function noteAIUsesLeft(uid: string, remainingUses: number) {
 }
 
 export async function refreshAIUses(uid: string, signal: AbortSignal) {
-  const before = lastKnownAIUses(uid);
+  const settle = beginAIUsesRead(uid);
   const fresh = await fetchRemainingAIUses({ signal });
   if (signal.aborted || !navigator.onLine) return;
-  settleAIUsesRead(uid, before, fresh);
+  settle(fresh);
 }
 
 export function primeAIUses(uid: string) {
