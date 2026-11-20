@@ -359,3 +359,11 @@ test('a follow stored by name alone is still recognised by name, whichever id th
   const verified = [{ type: 'institution' as const, canonicalId: 'I39804081', displayName: 'Sorbonne University' }];
   assert.equal(followsEntity(verified, { type: 'institution', displayName: 'Sorbonne University' }), true, 'a probe without an id is matched by name');
 });
+
+test('an id of one kind and an id of another are one institution only where a follow carries both', () => {
+  const oxfordRor = { type: 'institution' as const, id: '052gg0110', displayName: 'University of Oxford' };
+  const withBoth = [createFollowEntity({ type: 'institution', id: 'I114027177', displayName: 'University of Oxford', externalIds: { ror: '052gg0110' } })!];
+  const openAlexOnly = [createFollowEntity({ type: 'institution', id: 'I114027177', displayName: 'University of Oxford' })!];
+  assert.equal(followsEntity(withBoth, oxfordRor), true);
+  assert.equal(followsEntity(openAlexOnly, oxfordRor), false, 'nothing says the two ids are one institution');
+});

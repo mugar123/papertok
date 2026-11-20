@@ -130,10 +130,10 @@ const VERIFIED_FOLLOW_ID: Partial<Record<FollowEntity['type'], (id: string) => b
 export const isVerifiedFollowId = (type: FollowEntity['type'], id: string) => Boolean(VERIFIED_FOLLOW_ID[type]?.(id));
 
 /**
- * The ids that identify an author or an institution beyond doubt: its OpenAlex
- * id and the ORCID iD or ROR id it carries beside it. A follow without one (a
- * legacy follow stored by name) is not identified by id, and is recognised by
- * its name alone.
+ * The ids an author or an institution is identified by: its OpenAlex id and the
+ * ORCID iD or ROR id it carries beside it. Ids of different kinds count as one
+ * entity only through a follow that carries both. A follow without one (a
+ * legacy follow stored by name) is recognised by its name alone.
  */
 function verifiedFollowIds(entity: Pick<FollowEntity, 'type' | 'canonicalId' | 'externalIds'>) {
   if (entity.type !== 'author' && entity.type !== 'institution') return [];
