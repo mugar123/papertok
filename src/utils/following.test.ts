@@ -319,3 +319,43 @@ test('an empty follow list from the cache waits for the server; follows the cach
   assert.equal(followSnapshotAction(snapshot(3, false, 0), 'listed'), 'confirm');
   assert.equal(followSnapshotAction(snapshot(2, true, 1), 'listed'), 'list', 'an unfollow made offline still leaves the list');
 });
+
+// Two institutions can share a name (Universidad Nacional in several countries,
+// "Institute of Physics"), and so can two authors. Each has its own OpenAlex id.
+test('two institutions with different ids and one name are two follows', () => {
+  const first = { type: 'institution' as const, id: 'I111', displayName: 'Institute of Physics', externalIds: { ror: '02f40zc51' } };
+  const second = { type: 'institution' as const, id: 'I222', displayName: 'Institute of Physics', externalIds: { ror: '01ggx4157' } };
+
+  const followed = [createFollowEntity(first)!];
+  assert.equal(followsEntity(followed, first), true);
+  assert.equal(followsEntity(followed, second), false, 'following the first does not show the second as followed');
+
+  // Pressing the second adds it; it does not remove the first.
+  const afterSecond = planFollowToggle(followed, createFollowEntity(second)!, { list: 'listed' });
+  assert.equal(afterSecond.existing, undefined);
+  assert.deepEqual(afterSecond.next.map(follow => follow.canonicalId), ['I111', 'I222']);
+
+  // Pressing the first again removes only the first.
+  const afterFirstAgain = planFollowToggle(afterSecond.next, createFollowEntity(first)!, { list: 'listed' });
+  assert.deepEqual(afterFirstAgain.next.map(follow => follow.canonicalId), ['I222']);
+});
+
+test('two authors with different ids and one name are two follows', () => {
+  const followed = [createFollowEntity({ type: 'author', id: 'A1', displayName: 'Wei Zhang' })!];
+  assert.equal(followsEntity(followed, { type: 'author', id: 'A2', displayName: 'Wei Zhang' }), false);
+});
+
+test('an institution is the same follow under its OpenAlex id and its ROR id', () => {
+  const followed = [createFollowEntity({ type: 'institution', id: 'I111', displayName: 'University of Oxford', externalIds: { ror: 'https://ror.org/052gg0110' } })!];
+  assert.equal(followsEntity(followed, { type: 'institution', id: '052gg0110', displayName: 'Oxford' }), true);
+  assert.equal(followsEntity(followed, { type: 'institution', id: 'https://openalex.org/I111', displayName: 'Another name' }), true);
+});
+
+test('a follow stored by name alone is still recognised by name, whichever id the probe carries', () => {
+  const legacy = [{ type: 'institution' as const, canonicalId: 'sorbonne university', displayName: 'Sorbonne University' }];
+  assert.equal(followsEntity(legacy, { type: 'institution', id: 'I39804081', displayName: 'Sorbonne University' }), true);
+  assert.equal(followsEntity(legacy, { type: 'institution', id: 'I1', displayName: 'Sorbonne' }), false);
+
+  const verified = [{ type: 'institution' as const, canonicalId: 'I39804081', displayName: 'Sorbonne University' }];
+  assert.equal(followsEntity(verified, { type: 'institution', displayName: 'Sorbonne University' }), true, 'a probe without an id is matched by name');
+});

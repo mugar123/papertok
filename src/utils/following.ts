@@ -112,15 +112,53 @@ function isSameProjectNameSpelling(oneName: string, otherName: string) {
   return full.startsWith(`${head}: `);
 }
 
+const CATEGORY_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
+
+/**
+ * The provider ids `follow_change` may carry (ENG-192): an OpenAlex author or
+ * ORCID iD, an OpenAlex institution or ROR id, an OpenAlex topic or concept or
+ * one of the app's areas or categories. A project's id can be address-bar text, and a
+ * legacy or nameless follow's id is the person's name, so neither is sent.
+ */
+const VERIFIED_FOLLOW_ID: Partial<Record<FollowEntity['type'], (id: string) => boolean>> = {
+  author: id => /^A\d+$/.test(id) || /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(id),
+  institution: id => /^I\d+$/.test(id) || /^0[a-hj-km-np-tv-z0-9]{6}\d{2}$/.test(id),
+  topic: id => /^[TC]\d+$/.test(id) || CATEGORY_IDS.has(id) || getAreaLeaves(id) !== null,
+};
+
+/** Whether `id` is a provider id the type's follow is known by (not a name or address-bar text). */
+export const isVerifiedFollowId = (type: FollowEntity['type'], id: string) => Boolean(VERIFIED_FOLLOW_ID[type]?.(id));
+
+/**
+ * The ids that identify an author or an institution beyond doubt: its OpenAlex
+ * id and the ORCID iD or ROR id it carries beside it. A follow without one (a
+ * legacy follow stored by name) is not identified by id, and is recognised by
+ * its name alone.
+ */
+function verifiedFollowIds(entity: Pick<FollowEntity, 'type' | 'canonicalId' | 'externalIds'>) {
+  if (entity.type !== 'author' && entity.type !== 'institution') return [];
+  const external = entity.type === 'author' ? entity.externalIds?.orcid : entity.externalIds?.ror;
+  return [entity.canonicalId, external]
+    .map(normalizeFollowId)
+    .filter(id => isVerifiedFollowId(entity.type, id));
+}
+
 export function followsEntity(followedEntities: FollowEntity[], entity: FollowInput) {
   const normalized = createFollowEntity(entity);
   if (!normalized) return false;
   const id = normalizeFollowId(normalized.canonicalId);
   const name = normalizeFollowText(normalized.displayName);
 
+  const verifiedIds = verifiedFollowIds(normalized);
   return (followedEntities || []).some((follow) => {
     if (follow.type !== normalized.type) return false;
     if (normalizeFollowId(follow.canonicalId) === id) return true;
+    // Two entities that each carry a verified id are told apart by it: the same
+    // name is two people, or two institutions, unless an id says they are one.
+    if (verifiedIds.length > 0) {
+      const followIds = verifiedFollowIds(follow);
+      if (followIds.length > 0) return followIds.some(followId => verifiedIds.includes(followId));
+    }
     // No journal was ever stored by name, and two sources can share one.
     if (!name || normalized.type === 'journal') return false;
     const followName = normalizeFollowText(follow.displayName);
@@ -213,23 +251,6 @@ export function planFollowToggle(followedEntities: FollowEntity[], entity: Follo
   }
   return { existing, next: [...followedEntities, entity] };
 }
-
-const CATEGORY_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
-
-/**
- * The provider ids `follow_change` may carry (ENG-192): an OpenAlex author or
- * ORCID iD, an OpenAlex institution or ROR id, an OpenAlex topic or concept or
- * one of the app's areas or categories. A project's id can be address-bar text, and a
- * legacy or nameless follow's id is the person's name, so neither is sent.
- */
-const VERIFIED_FOLLOW_ID: Partial<Record<FollowEntity['type'], (id: string) => boolean>> = {
-  author: id => /^A\d+$/.test(id) || /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(id),
-  institution: id => /^I\d+$/.test(id) || /^0[a-hj-km-np-tv-z0-9]{6}\d{2}$/.test(id),
-  topic: id => /^[TC]\d+$/.test(id) || CATEGORY_IDS.has(id) || getAreaLeaves(id) !== null,
-};
-
-/** Whether `id` is a provider id the type's follow is known by (not a name or address-bar text). */
-export const isVerifiedFollowId = (type: FollowEntity['type'], id: string) => Boolean(VERIFIED_FOLLOW_ID[type]?.(id));
 
 /**
  * The `follow_change` event of a press that followed or unfollowed `entity`.
