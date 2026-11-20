@@ -17,10 +17,12 @@ test('offers the journal OpenAlex identifies, by its id and name', () => {
   });
 });
 
-test('offers no journal without a verified source id, a name, or for a working-paper series', () => {
+test('offers no journal without a verified source id, an OpenAlex source name, or for a working-paper series', () => {
   assert.equal(aboutFollowTargets({ journal: 'The Lancet' }).journal, null);
   assert.equal(aboutFollowTargets({ journal: 'The Lancet', venueId: 'not-an-id' }).journal, null);
   assert.equal(aboutFollowTargets({ venueId: 'S49861241' }).journal, null);
+  // Another provider's journal text is not OpenAlex's name for the source.
+  assert.equal(aboutFollowTargets({ venueId: 'S49861241', journal: 'Phys. Rev. Lett. 130, 041801 (2023)' }).journal, null);
   assert.equal(aboutFollowTargets({ venueId: 'S2809516038', sourceName: 'National Bureau of Economic Research' }).journal, null);
 });
 
@@ -48,8 +50,8 @@ test('offers nothing when the paper has neither a journal nor an institution', (
 
 test('following an offered journal and institution toggles through the follow model by id', () => {
   const { journal, institutions } = aboutFollowTargets({ ...lancet, institutions: [{ id: 'I114027177', displayName: 'University of Oxford' }] });
-  const followed = [createFollowEntity(institutions[0]!)!];
-  assert.equal(followsEntity(followed, institutions[0]!), true);
+  const followed = [createFollowEntity(institutions[0])!];
+  assert.equal(followsEntity(followed, institutions[0]), true);
   assert.equal(followsEntity(followed, journal!), false);
 
   const afterFollow = planFollowToggle(followed, createFollowEntity(journal!)!, { list: 'listed' });
@@ -60,5 +62,5 @@ test('following an offered journal and institution toggles through the follow mo
 
   const afterUnfollow = planFollowToggle(afterFollow.next, createFollowEntity(journal!)!, { list: 'listed' });
   assert.equal(followsEntity(afterUnfollow.next, journal!), false);
-  assert.equal(followsEntity(afterUnfollow.next, institutions[0]!), true);
+  assert.equal(followsEntity(afterUnfollow.next, institutions[0]), true);
 });

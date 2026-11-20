@@ -15,8 +15,11 @@ export const ABOUT_INSTITUTION_LIMIT = 5;
  */
 export function aboutFollowTargets(paper: Partial<Paper> | null | undefined): { journal: FollowInput | null; institutions: FollowInput[] } {
   const link = journalExplorerLink(paper);
+  // Only under OpenAlex's own name for the source: the paper's `journal` can be another provider's
+  // text, such as arXiv's journal reference, and the follow stores its name.
+  const named = link && link.name === paper?.sourceName?.trim();
   // A working-paper series has a lane of its own, so no Follow (see explorerFollowEntity).
-  const journal: FollowInput | null = link && !isListedWorkingPaperSeries(paper?.venueId)
+  const journal: FollowInput | null = link && named && !isListedWorkingPaperSeries(paper?.venueId)
     ? { type: 'journal', id: String(paper?.venueId).trim(), displayName: link.name, source: 'openalex' }
     : null;
 
