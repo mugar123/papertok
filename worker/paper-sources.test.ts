@@ -9,7 +9,7 @@ import type { ArxivRecord } from './paper-sources.ts';
 import type { Paper } from '../src/models/paper.ts';
 import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
-import { mapBioRxivPaper } from '../src/services/domain-source-records.ts';
+import { mapAdsPaper, mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers } from './leaf-filing.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
@@ -1603,8 +1603,8 @@ test("a working-paper row whose categories mix arXiv's codes with other terms ke
 
 // A batch that lists OpenAlex's working paper before its eprint merges the
 // eprint into OpenAlex's record, and `merge` takes categories only from an
-// arXiv record: the batch must still give a working-paper row stored before
-// the eprint's categories, as the reverse order does (ENG-206).
+// arXiv record: the batch must still give the stored working-paper row the
+// eprint's categories, as the reverse order does (ENG-206).
 test("a stored working-paper row takes its arXiv eprint's categories in either order, in one batch or on separate nights, and listed again", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
   const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
@@ -1651,6 +1651,27 @@ test("a stored working-paper row whose categories lost or mixed its eprint's cod
     }
     const withoutEprint = await journalRowAfter(t, [[workingPaper], [eprint], [workingPaper]], storeList);
     assert.deepEqual(categories(withoutEprint.json), ['', stored, stored], `${name}, working paper alone`);
+  }
+});
+
+// ADS copies arXiv's classes into its own list, beside its keywords, and can
+// leave some out. Its record listed alone is no eprint: it changes no
+// category of a row the eprint started, nor of one ADS started.
+test("an ADS record listed alone keeps the categories of a row the eprint or ADS started", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const ads = mapAdsPaper({
+    bibcode: '2026arXiv261001234E', title: [gmmArticle.title], author: ['Economist, Ana'], abstract: 'The ADS copy of the arXiv version of this paper.',
+    identifier: ['arXiv:2610.01234'], arxiv_class: ['econ.EM'], keyword: ['Econometrics'], doctype: 'eprint', pubdate: '2026-10-00', year: '2026',
+  })!;
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  for (const first of [eprint, ads]) {
+    const name = first.sources.primary;
+    const before = categories((await journalRowAfter(t, [[first]])).json);
+    assert.deepEqual(categories((await journalRowAfter(t, [[first], [ads]])).json), before, name);
   }
 });
 
