@@ -165,8 +165,8 @@ test('readers who saw an earlier 20 November notice are owed the cumulative upda
     }), 'owed', seen);
   }
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /Anthropic.*paper text outside the EU.*rewrites and explanations/i);
-  assert.match(notice, /ORCID.*weekly email.*My profile.*papers citing your work.*iD goes to OpenAlex/i);
+  assert.match(notice, /Anthropic.*paper text outside the EU.*for rewrites/i);
+  assert.match(notice, /ORCID.*weekly email lists papers citing your work, My profile adds frequent coauthors.*iD goes to OpenAlex/i);
   assert.match(notice, /Verified-email saves.*each paper to your account once per UTC week.*by default/i);
   assert.match(notice, /Opt out in Settings → Privacy/i);
   assert.match(notice, /analytics on.*surveys link known reading level and broad interests to your account/i);
