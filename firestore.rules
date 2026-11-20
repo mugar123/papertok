@@ -6,6 +6,22 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
+    function authorMetricAccountActive(userId) {
+      let account = /databases/$(database)/documents/users/$(userId);
+      return exists(account) && !get(account).data.get('authorMetricsDeleting', false);
+    }
+
+    function authorMetricConsentAllowsSave(userId) {
+      let consent = /databases/$(database)/documents/users/$(userId)/authorMetricConsent/saves;
+      return !exists(consent) || get(consent).data.enabled == true;
+    }
+
+    function authorMetricCollectionActive() {
+      let config = get(/databases/$(database)/documents/authorMetricConfig/saves).data;
+      return config.enabled == true && config.launchedAt is timestamp
+        && request.time >= config.launchedAt.date() + duration.value(8 - config.launchedAt.dayOfWeek(), 'd');
+    }
+
     function validString(value, maximum) {
       return value is string && value.size() <= maximum;
     }
@@ -92,7 +108,7 @@ service cloud.firestore {
     // Tolerated in a merge so the client's own writes keep working once the
     // field exists; never writable, or anyone could award themselves one.
     function serviceUserKeys() {
-      return ['institution', 'orcid'];
+      return ['institution', 'orcid', 'authorMetricsDeleting'];
     }
 
     function frozenUserKeys() {
@@ -130,11 +146,21 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /authorMetricConfig/{id} {
+      allow read, write: if false;
+    }
+
+    match /authorMetricAliases/{id} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
-      allow read, delete: if ownsUserTree(userId);
+      allow read: if ownsUserTree(userId);
+      allow delete: if ownsUserTree(userId) && !resource.data.get('authorMetricsDeleting', false);
       allow create, update: if ownsUserTree(userId)
         && request.resource.data.keys().hasOnly(userProfileKeys().concat(frozenUserKeys()))
         && frozenUserFieldsUntouched()
+        && (resource == null || !resource.data.get('authorMetricsDeleting', false))
         && (!('onboardingComplete' in request.resource.data)
           || request.resource.data.onboardingComplete is bool)
         && (!('preferences' in request.resource.data)
@@ -289,6 +315,34 @@ service cloud.firestore {
           && request.resource.data.seenIds.size() <= 500;
       }
 
+      match /authorMetricConsent/saves {
+        allow get: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && authorMetricAccountActive(userId)
+          && request.resource.data.keys().hasOnly(['enabled', 'changedAt'])
+          && request.resource.data.enabled is bool
+          && request.resource.data.changedAt == request.time;
+      }
+
+      match /authorMetricWeeks/{id} {
+        allow read, write: if false;
+      }
+
+      match /authorMetricReceipts/{receipt} {
+        allow delete: if ownsUserTree(userId);
+        allow create: if ownsUserTree(userId)
+          && request.auth.token.email_verified == true
+          && authorMetricAccountActive(userId)
+          && authorMetricConsentAllowsSave(userId)
+          && authorMetricCollectionActive()
+          && receipt.matches('[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}')
+          && request.resource.data.keys().hasOnly(['paperId', 'savedAt', 'expiresAt'])
+          && validNonEmptyString(request.resource.data.paperId, 300)
+          && request.resource.data.savedAt == request.time
+          && request.resource.data.expiresAt > request.time + duration.value(2, 'm')
+          && request.resource.data.expiresAt <= request.time + duration.value(10, 'm');
+      }
+
       // The newest privacy policy version whose change notice this account was
       // shown (src/services/privacy-notice-service.ts), so it does not return
       // on another device. A record of what was on screen, not a consent. Its
@@ -402,6 +456,10 @@ service cloud.firestore {
             'summary', 'abstractSource', 'doi', 'landingPageUrl', 'savedAt'
           ])
           && validString(request.resource.data.title, 1000)
+          && (!('savedAt' in request.resource.data)
+            || validString(request.resource.data.savedAt, 300)
+            || (resource != null && request.resource.data.savedAt == resource.data.get('savedAt', null))
+            || request.resource.data.savedAt == request.time)
           && (!('authors' in request.resource.data)
             || request.resource.data.authors is list && request.resource.data.authors.size() <= 20)
           // The classification the saved card showed (PAP-60).

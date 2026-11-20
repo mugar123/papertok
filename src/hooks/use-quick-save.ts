@@ -2,17 +2,15 @@ import type { OwnList } from '../utils/own-lists.ts';
 import type { Paper } from '../models/paper.ts';
 
 import { useCallback, useEffect, useRef } from 'react';
-import { setDoc } from 'firebase/firestore';
 import { toast } from 'sonner';
 import { useAuth } from '../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../context/privacy-context.tsx';
 import { useFeed } from '../context/feed-context.tsx';
 import { useLanguage } from '../context/language-context.tsx';
 import { readListsHoldingPaper, writeListMembership } from '../services/paper-list-membership.ts';
-import { savedPaperDocRef } from '../services/saved-paper-store.ts';
-import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
-import { copyForMergeWrite } from '../utils/stored-copy-write.ts';
+import { writeSavedPaperCopy } from '../services/saved-paper-store.ts';
 import { auth } from '../services/firebase.ts';
+import { submitAuthorSave } from '../services/author-metrics-service.ts';
 import { pickerUndoToastId } from '../components/lists/picker-undo-toast.ts';
 import { markThenConfirm, runOneAtATime, unmarkThenConfirm, writeSaveDestinations } from './quick-save-operation.ts';
 
@@ -54,13 +52,12 @@ export default function useQuickSave(onSaveToList: (paper: Paper, surface?: stri
     if (auth.currentUser?.uid !== user?.uid) return;
     const id = interactionIdFor(paper)!;
     const latest = saveState.current;
+    const alreadySaved = latest.savedPaperIds.has(id);
     // The saved document is issued before the mark, so a late OpenAlex topic
     // landing on a marked paper always finds the copy to complete (PAP-60, D6).
     await markThenConfirm({
-      alreadySaved: latest.savedPaperIds.has(id),
-      issued: user
-        ? setDoc(savedPaperDocRef(user.uid, paper.id), copyForMergeWrite(buildSavedPaperPayload(paper, new Date().toISOString())), { merge: true })
-        : null,
+      alreadySaved,
+      issued: user ? writeSavedPaperCopy(user.uid, paper, !alreadySaved && !restores) : null,
       mark: () => latest.markSaved(paper, { throwOnError: true, surface: saveSurface, restores }),
       unmark: async () => {
         if (auth.currentUser?.uid === user?.uid) await latest.unmarkSaved(paper, { rollback: true });
@@ -78,6 +75,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper, surface?: stri
         });
       },
       onSaved: () => {
+        if (user && !restores) submitAuthorSave(user.uid, paper.id);
         if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'add', surface: saveSurface, paper_id: paper.id });
       },
     });

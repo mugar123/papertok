@@ -22,6 +22,9 @@ import {
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
 import { handlePublicListRequest, PUBLIC_LIST_PATHS, PublicListApiError } from './public-list-api.ts';
 import { ACCOUNT_DELETE_PATH, AccountDeletionError, handleAccountDeletionRequest } from './account-deletion.ts';
+import { AUTHOR_METRIC_SAVE_PATH } from '../src/utils/author-metrics.ts';
+import { handleAuthorSave } from './author-metrics.ts';
+import { FirestoreAdminError } from './firestore-admin.ts';
 import { INSTITUTION_PATHS, InstitutionLinkError, handleInstitutionLinkRequest } from './institution-link.ts';
 import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAccess } from './institution-access.ts';
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
@@ -209,6 +212,18 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
         'access-control-max-age': '86400',
       },
     });
+  }
+  if (url.pathname === AUTHOR_METRIC_SAVE_PATH) {
+    const headers = { ...corsHeaders(origin, env), 'cache-control': 'no-store' };
+    if (!allowedOrigins(env).has(origin)) return new Response(null, { status: 403, headers });
+    if (request.method !== 'POST') return new Response(null, { status: 405, headers: { ...headers, allow: 'POST' } });
+    try {
+      return new Response(null, { status: await handleAuthorSave(request, env), headers });
+    } catch (error) {
+      const status = error instanceof WorkerAuthError ? error.status
+        : error instanceof FirestoreAdminError && error.status === 400 ? 400 : 503;
+      return new Response(null, { status, headers });
+    }
   }
   // Cloudflare sirve su propio robots.txt gestionado para cualquier host de
   // una zona, y por defecto dice `Allow: /`. Para una API eso esta al reves:

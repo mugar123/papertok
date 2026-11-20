@@ -1,6 +1,7 @@
 import { isServiceAccountConfigured, FirebaseServiceAccountError } from './firebase-service-account.ts';
 import type { WorkerEnv } from './env.ts';
 import type { FirestoreAdmin, FirestoreWrite } from './firestore-admin.ts';
+import { AUTHOR_METRIC_CONSENT, AUTHOR_METRIC_RECEIPTS } from '../src/utils/author-metrics.ts';
 
 type DeletionAdmin = Pick<FirestoreAdmin, 'name' | 'runQuery' | 'getDocument'> & { commit(writes: FirestoreWrite[]): Promise<unknown> };
 interface DeletionOptions { admin?: DeletionAdmin; fetchImpl?: typeof fetch; idToken?: string }
@@ -24,7 +25,10 @@ import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
 import {
   clearFieldsWrite,
   createFirestoreAdmin,
+  createWrite,
   deleteWrite,
+  encodeFields,
+  mergeWrite,
   FirestoreAdminError,
 } from './firestore-admin.ts';
 import { purgeEmailSubscription } from './email-notifications.ts';
@@ -32,6 +36,9 @@ import { purgeEmailSubscription } from './email-notifications.ts';
 export const ACCOUNT_DELETE_PATH = '/account/delete';
 
 const USER_SUBCOLLECTIONS = Object.freeze([
+  'authorMetricWeeks',
+  AUTHOR_METRIC_CONSENT,
+  AUTHOR_METRIC_RECEIPTS,
   'lists',
   'highlights',
   'interactions',
@@ -268,10 +275,6 @@ async function deleteUserTree(admin: DeletionAdmin, uid: string) {
     await commitBestEffort(admin, writes);
     return true;
   }
-  const userDoc = await admin.getDocument(['users', uid]);
-  if (userDoc) {
-    await commitBestEffort(admin, [deleteWrite(admin.name(['users', uid]))]);
-  }
   return false;
 }
 
@@ -321,6 +324,12 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   idToken,
   fetchImpl = fetch,
 }: DeletionOptions = {}) {
+  const userPath = ['users', uid];
+  const userName = admin.name(userPath);
+  const userDoc = await admin.getDocument(userPath);
+  if (userDoc && userDoc.authorMetricsDeleting !== true) {
+    await commitBestEffort(admin, [mergeWrite(userName, { authorMetricsDeleting: true })]);
+  }
   if (await deleteComments(admin, uid)) {
     return { complete: false, stage: 'comments' };
   }
@@ -348,6 +357,20 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   if (await deleteUserTree(admin, uid)) {
     return { complete: false, stage: 'userTree' };
   }
+  if (userDoc) {
+    // Keep the fence through Auth deletion, without keeping the account profile.
+    await commitBestEffort(admin, [{
+      update: { name: userName, fields: encodeFields({ authorMetricsDeleting: true }) },
+      currentDocument: { exists: true },
+    }]);
+  } else {
+    try {
+      await admin.commit([createWrite(userName, { authorMetricsDeleting: true })]);
+    } catch (error) {
+      if (!(error instanceof FirestoreAdminError) || error.status !== 409) throw error;
+      return { complete: false, stage: 'userTree' };
+    }
+  }
   // The sweep after the Auth delete removes these keys again: a save in flight
   // during this purge can write its link's index back after it.
   const subscriptionKeys = new Set<string>();
@@ -363,11 +386,12 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   // failure here would tell the reader a deleted account still exists. The log
   // only says which cleanup failed and why: it names no account, subscription
   // or share, so whatever that cleanup missed stays behind untraced.
-  const [purge, sweep] = await Promise.allSettled([
+  const [purge, sweep, fenceCleanup] = await Promise.allSettled([
     purgeAfterAuthDelete(env, uid, subscriptionKeys),
     deleteUserTree(admin, uid),
+    commitBestEffort(admin, [deleteWrite(userName)]),
   ]);
-  for (const [cleanup, outcome] of [['subscription purge', purge], ['user tree sweep', sweep]] as const) {
+  for (const [cleanup, outcome] of [['subscription purge', purge], ['user tree sweep', sweep], ['account deletion fence', fenceCleanup]] as const) {
     if (outcome.status === 'rejected') {
       const reason = outcome.reason as { code?: unknown; name?: unknown } | null;
       console.error(`Account deletion: ${cleanup} after the Auth delete failed`, String(reason?.code || reason?.name || 'unknown'));

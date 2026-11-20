@@ -151,23 +151,26 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('a reader who saw only the first 20 November notice is owed all subsequent changes', () => {
-  assert.equal(privacyNoticeStatus({
-    user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
-    signedIn: true,
-    version: PRIVACY_POLICY_VERSION,
-    effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
-    baseline: PRIVACY_NOTICE_BASELINE_VERSION,
-    account: { uid: 'reader', version: '2026-11-20' },
-    storage: null,
-  }), 'owed');
+test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
+  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4']) {
+    assert.equal(privacyNoticeStatus({
+      user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
+      signedIn: true,
+      version: PRIVACY_POLICY_VERSION,
+      effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+      baseline: PRIVACY_NOTICE_BASELINE_VERSION,
+      account: { uid: 'reader', version: seen },
+      storage: null,
+    }), 'owed', seen);
+  }
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /analytics on.*survey.*account/i);
-  assert.match(notice, /reading level and broad areas of interest/i);
-  assert.match(notice, /answers.*role if you chose one/i);
-  assert.match(notice, /My profile.*papers that cite your work.*frequent coauthors.*keeps neither list/i);
-  assert.match(notice, /only your browser.*return 7 to 13 days after your first real use/i);
-  assert.match(notice, /first-use and visit events already sent to PostHog/i);
+  assert.match(notice, /verified email.*saves link your account to each paper once per UTC week by default/i);
+  assert.match(notice, /exclude future saves in Settings → Privacy/i);
+  assert.match(notice, /analytics on.*survey events link your account.*reading level and broad interests when available/i);
+  assert.match(notice, /submitting records your answers and optional role/i);
+  assert.match(notice, /My profile.*recent citing papers.*frequent coauthors.*without keeping either list/i);
+  assert.match(notice, /only your browser marks returns 7–13 days after first use/i);
+  assert.match(notice, /measured from existing PostHog first-use and visit events/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

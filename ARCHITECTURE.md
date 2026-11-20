@@ -58,7 +58,7 @@ flowchart TD
   removes the screen when React adds content to the root. Reload preserves the current
   address; the guard does not clear storage or send telemetry. Render failures
   after startup remain owned by [GlobalErrorBoundary](src/global-error-boundary.tsx).
-- [PrivacyProvider](src/context/privacy-context.tsx) owns the privacy controls and
+- [PrivacyProvider](src/context/privacy-context.tsx) owns usage analytics consent,
   coordinates account identity before reporting effects, and renders the application independently of the optional
   [analytics effects](src/context/analytics-context.tsx). A blocked reporting
   module or SDK leaves the application available. Consent is persisted without
@@ -66,6 +66,8 @@ flowchart TD
   [Module load recovery](src/utils/module-load-recovery.ts) lets optional import
   failures settle before deciding whether an essential chunk failure needs the
   existing bounded reload. Analytics event fields and consent rules are unchanged.
+- The [Worker](worker/README.md#author-save-collection) records private author save contributions
+  according to the account's preference in Settings → Privacy.
 - [app.tsx](src/app.tsx) owns routes and provider composition.
   [AuthContext](src/context/auth-context.tsx) owns frontend identity and profile
   lifecycle. User data reaches Firestore through the browser SDK and REST
