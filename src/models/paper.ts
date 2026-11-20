@@ -366,6 +366,14 @@ export function withRetractionOf<T extends Partial<Paper>>(paper: T, other: Part
     : paper;
 }
 
+/** The interaction copy owns the journal identity because savedPapers does not store it. */
+export function withJournalOf(paper: Partial<Paper>, interaction: Partial<Paper>) {
+  const journal = interaction.journal || (interaction.venueId ? undefined : paper.journal);
+  const { venueId, sourceName } = interaction;
+  if (paper.journal === journal && paper.venueId === venueId && paper.sourceName === sourceName) return paper;
+  return { ...paper, journal, venueId, sourceName };
+}
+
 const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) && getArxivArchiveArea(value) !== null;
 
 /**

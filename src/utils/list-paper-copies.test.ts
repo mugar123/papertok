@@ -4,6 +4,7 @@ import type { Paper } from '../models/paper.ts';
 import { paperLegacyAdapter, readStoredClassification } from '../models/paper.ts';
 import { copyOfRecordWithoutCopy, serializeLibraryPaper } from './reading-library.ts';
 import { buildSavedPaperPayload } from './saved-paper-payload.ts';
+import { journalExplorerLink } from './explorer-paths.ts';
 import { reviewTagForPaper } from './paper-status.ts';
 import { sourceAttribution } from './source-attribution.ts';
 import { getCategoryLabel } from '../data/categories.ts';
@@ -22,6 +23,32 @@ const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const interactionCopy = (paper: Partial<Paper>): Partial<Paper> => throughFirestore(serializeLibraryPaper(paper));
 const savedDocument = (paper: Partial<Paper>) => paperLegacyAdapter({ id: paper.id, ...throughFirestore(buildSavedPaperPayload(paper, '2026-10-26T12:00:00.000Z')) });
 const shown = (paper: Partial<Paper>) => [paper.abstract, sourceAttribution(paper)?.label ?? null, sourceAttribution(paper)?.name ?? null];
+
+test('a re-saved paper uses the current journal even with an older copy in memory', () => {
+  const loaded = paperLegacyAdapter(interactionCopy({
+    ...card, journal: 'Am Econ Rev', venueId: 'S23254222', sourceName: 'American Economic Review',
+  }));
+  const revised = { ...card, journal: 'Another journal' };
+  const saved = savedDocument(revised);
+  const link = { name: 'American Economic Review', path: '/explorer/source/S23254222' };
+  assert.deepEqual(journalExplorerLink(listPaper(undefined, saved, loaded)), link);
+  for (const [first, second] of [['interaction', 'saved'], ['saved', 'interaction']] as const) {
+    const copies = { interaction: loaded, saved };
+    const once = mergeListPaperCopies({}, { [card.id]: copies[first] }, first);
+    const twice = mergeListPaperCopies(once, { [card.id]: copies[second] }, second);
+    assert.deepEqual(journalExplorerLink(twice[card.id]), link);
+  }
+  for (const entry of [interactionCopy(revised), revised]) {
+    const merged = listPaper(entry, undefined, loaded);
+    assert.equal(journalExplorerLink(merged), null);
+    assert.equal(merged?.journal, 'Another journal');
+    assert.ok(!merged?.sourceName);
+  }
+  const identified = interactionCopy({ ...revised, venueId: 'S123' });
+  assert.deepEqual(journalExplorerLink(listPaper(identified, undefined, loaded)), {
+    name: 'Another journal', path: '/explorer/source/S123',
+  });
+});
 
 // ENG-109. A list paper with two copies took its text from one and its
 // credit from the other, whichever named a source: the paper read after
