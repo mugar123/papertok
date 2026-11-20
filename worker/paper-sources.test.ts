@@ -1578,6 +1578,29 @@ test("a working-paper row keeps its arXiv eprint's categories through the journa
   }
 });
 
+// Europe PMC's enrichment adds MeSH terms to a row's categories beside arXiv's
+// codes. The upgrade keeps the codes, and keeps the primary only when it is
+// one of them: an unknown primary stays unknown, and the series lane's area
+// key `econ` is no arXiv category.
+test("a working-paper row whose categories mix arXiv's codes with other terms keeps the codes through the upgrade, and its primary only when it is one of them", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const mixed = ['econ.EM', 'q-fin.ST', 'Models, Economic'];
+  for (const [stored, shown] of [['econ.EM', 'econ.EM'], ['', ''], ['econ', '']]) {
+    const storeMixed = (night: number, db: ReturnType<typeof testD1>['db']) => {
+      if (night > 0) return;
+      const row = db.prepare('SELECT id, paper FROM works').get() as { id: number; paper: string };
+      db.prepare('UPDATE works SET paper = ? WHERE id = ?').run(JSON.stringify({ ...JSON.parse(row.paper) as Paper, primaryCategory: stored, categories: mixed, allCategories: mixed }), row.id);
+    };
+    const nights = [[mapOpenAlexWork(gmmWorkingPaperWork)!, gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] })], [mapOpenAlexWork(gmmArticle)!]];
+    const paper = JSON.parse((await journalRowAfter(t, nights, storeMixed)).json) as Paper;
+    assert.deepEqual(
+      [paper.peerReviewed, paper.primaryCategory, paper.categories, paper.allCategories],
+      [true, shown, ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']],
+      `stored primary ${JSON.stringify(stored)}`,
+    );
+  }
+});
+
 // arXiv's abstract recovery names arXiv among a row's sources but brings no
 // category. The series lane files a working paper under the area key 'econ',
 // with OpenAlex's concept names as its categories.

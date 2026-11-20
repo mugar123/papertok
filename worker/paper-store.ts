@@ -451,11 +451,15 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
   // The article is the merge base, so the row's own enrichments (an abstract
   // from Semantic Scholar) keep their credit only through this list.
   const enrichedBy = [...new Set([...(row.sources?.enrichedBy ?? []), ...merged.sources.enrichedBy])];
-  // `merge` takes categories only from an arXiv record, so arXiv categories on
-  // this OpenAlex row came from an eprint merged into it, and the article's
-  // concept names must not replace them (ENG-205).
-  const arxivCategories = row.categories?.length && row.categories.every(isArxivCategory)
-    ? { primaryCategory: row.primaryCategory, categories: row.categories, allCategories: row.allCategories }
+  // `merge` takes categories only from an arXiv record, so arXiv codes on this
+  // OpenAlex row came from an eprint merged into it, and the article's concept
+  // names (kept in `concepts`) must not replace them (ENG-205). MeSH terms
+  // Europe PMC added beside them stay in `biomedicalTerms`. The primary stays
+  // only when it is one of the codes: the series lane's area key `econ`
+  // passes `isArxivCategory` but is no arXiv category.
+  const arxivCodes = (row.categories ?? []).filter(isArxivCategory);
+  const arxivCategories = arxivCodes.length > 0
+    ? { primaryCategory: arxivCodes.find(code => code === row.primaryCategory) ?? '', categories: arxivCodes, allCategories: arxivCodes }
     : {};
   return storedPaper({ ...merged, ...arxivCategories, id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
 }
