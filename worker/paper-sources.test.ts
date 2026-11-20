@@ -1601,6 +1601,59 @@ test("a working-paper row whose categories mix arXiv's codes with other terms ke
   }
 });
 
+// A batch that lists OpenAlex's working paper before its eprint merges the
+// eprint into OpenAlex's record, and `merge` takes categories only from an
+// arXiv record: the batch must still give a working-paper row stored before
+// the eprint's categories, as the reverse order does (ENG-206).
+test("a stored working-paper row takes its arXiv eprint's categories in either order, in one batch or on separate nights, and listed again", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  const expected = ['econ.EM', ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']];
+  for (const [name, later] of [
+    ['working paper, then eprint, one batch', [[workingPaper, eprint]]],
+    ['eprint, then working paper, one batch', [[eprint, workingPaper]]],
+    ['working paper, then eprint, separate nights', [[workingPaper], [eprint]]],
+    ['eprint, then working paper, separate nights', [[eprint], [workingPaper]]],
+  ] as const) {
+    const nights = [[workingPaper], ...later.map(night => [...night])];
+    assert.deepEqual(categories((await journalRowAfter(t, nights)).json), expected, name);
+    assert.deepEqual(categories((await journalRowAfter(t, [...nights, ...nights.slice(1)])).json), expected, `${name}, listed again`);
+  }
+});
+
+// A stored row's list can lack the eprint's codes, as this loss left it with
+// the working paper's own list, or hold them beside MeSH terms Europe PMC's
+// enrichment added, with no primary. Listing the eprint again gives the row
+// the eprint's categories in either order; a batch without the eprint
+// changes no category, and the unknown primary stays unknown.
+test("a stored working-paper row whose categories lost or mixed its eprint's codes takes them back when the eprint is listed again", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  for (const [name, stored] of [['lost', workingPaper.categories], ['mixed', ['econ.EM', 'q-fin.ST', 'Models, Economic']]] as const) {
+    const storeList = (night: number, db: ReturnType<typeof testD1>['db']) => {
+      if (night !== 1) return;
+      const row = db.prepare('SELECT id, paper FROM works').get() as { id: number; paper: string };
+      db.prepare('UPDATE works SET paper = ? WHERE id = ?').run(JSON.stringify({ ...JSON.parse(row.paper) as Paper, primaryCategory: '', categories: stored, allCategories: stored }), row.id);
+    };
+    for (const later of [[workingPaper, eprint], [eprint, workingPaper]]) {
+      const relisted = await journalRowAfter(t, [[workingPaper], [eprint], later], storeList);
+      assert.deepEqual(categories(relisted.json), ['econ.EM', ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']], `${name}, ${later[0] === eprint ? 'eprint' : 'working paper'} first`);
+    }
+    const withoutEprint = await journalRowAfter(t, [[workingPaper], [eprint], [workingPaper]], storeList);
+    assert.deepEqual(categories(withoutEprint.json), ['', stored, stored], `${name}, working paper alone`);
+  }
+});
+
 // arXiv's abstract recovery names arXiv among a row's sources but brings no
 // category. The series lane files a working paper under the area key 'econ',
 // with OpenAlex's concept names as its categories.
