@@ -553,10 +553,14 @@ export class PaperBuilder {
     // paper and keeps its `false` (`keepsOwnFalse`) takes none of the
     // article's venue, and keeps its own classification the same way. Beside
     // a row without either, the incoming record's replace the row's.
-    const rowJournalDoi = journalRecordDoiOf(existingPaper);
+    // A cached row can identify the article after OpenAlex has already
+    // retyped the base record under that DOI. Keep the base's classification.
+    const carriedJournalDoi = enrichmentData.sources?.journalRecordDoi ?? '';
+    const rowJournalDoi = journalRecordDoiOf(existingPaper)
+      || (carriedJournalDoi && relistsJournalVersion(existingPaper, carriedJournalDoi) ? carriedJournalDoi : '');
     const incomingJournalDoi = keepsOwnFalse ? ''
       : isJournalRecord(enrichmentData) ? normalizeDoi(enrichmentData.doi)
-        : rowJournalDoi === '' ? enrichmentData.sources?.journalRecordDoi ?? ''
+        : rowJournalDoi === '' ? carriedJournalDoi
           : '';
     const rowLeads = keepsOwnFalse
       || (rowJournalDoi !== '' && !relistsJournalVersion(enrichmentData, rowJournalDoi));
