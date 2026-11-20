@@ -5,7 +5,7 @@ import type { WorkerEnv } from './env.ts';
 import type { QuotaPart } from './request-quota-ledger.ts';
 import type { FeedTimings } from './feed-timings.ts';
 
-import { PaperBuilder, isPublisherDoi } from '../src/services/paper-builder.ts';
+import { PaperBuilder, isJournalRecord } from '../src/services/paper-builder.ts';
 import { isFeedPublication, isFeedPublicationType } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
@@ -449,12 +449,12 @@ const isWorkingPaperRow = (paper: Partial<Paper>) => paper.sources?.primary === 
 
 // The evidence is one listed record, never a merged row: OpenAlex's own record
 // typed `article` in a `journal` that `openAlexPeerReviewed` calls reviewed,
-// with a publisher's DOI. Without one, the reviewed row would keep the working
+// with a publisher's DOI (`isJournalRecord`, whose topics and type `merge`
+// gives the row). Without one, the reviewed row would keep the working
 // paper's DOI and link to the unreviewed version.
 function isJournalArticleRecord(paper: Paper, raw: unknown) {
   return paper.sources?.primary === 'openalex' && /^openalex:W\d+$/i.test(paper.id)
-    && paper.peerReviewed === true && paper.workingPaper !== true && isPublisherDoi(normalizeDoi(paper.doi))
-    && openAlexIsJournalArticle(raw as OpenAlexWork | undefined);
+    && isJournalRecord(paper) && openAlexIsJournalArticle(raw as OpenAlexWork | undefined);
 }
 
 // The row as the article's record would make it with the row merged in: the
@@ -677,6 +677,10 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       // eprint brings the eprint's categories inside that record, which
       // `merge` takes none from (ENG-206).
       if (group.arxivCategories && group.paper.sources?.primary !== 'arxiv') paper = { ...paper, ...arxivCategoriesOf(group.paper) };
+      // The batch's row replaces no classification of a row a journal record
+      // leads, so OpenAlex's own listing in the batch of that record's version
+      // gives the row its topics and type (ENG-165).
+      paper = PaperBuilder.relistJournalVersion(paper, listed.values());
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }

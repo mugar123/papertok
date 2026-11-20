@@ -40,6 +40,20 @@ export interface PaperSources {
   // it merged after the mark was written still reads complete; after a
   // Worker rollback to such code, worker/README.md clears the mark.
   peerReviewedByDoiComplete?: true;
+  // Written and read only by `PaperBuilder` (`merge`, read by
+  // `relistJournalVersion` too): the normalized DOI of the
+  // journal record (`isJournalRecord`) that leads the row. The row's topics,
+  // primary topic and type are that record's, and a record of another
+  // version fills only a topic or primary topic it left empty.
+  journalRecordDoi?: string;
+  // Written and read only by `PaperBuilder` (`merge` and
+  // `relistJournalVersion`), and present only where the
+  // row shows a type its records would not give it (a journal record's, or a
+  // working paper's that keeps its `false`): the type they give it, the last
+  // a published record named. `merge` reads it, not the type shown, as review
+  // evidence (a `preprint` reopens the row's answer), so the answer follows
+  // the records while the type shown follows the record that leads.
+  recordsType?: string;
 }
 
 export interface PaperSubjectReference {
