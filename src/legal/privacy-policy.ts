@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-20';
+export const PRIVACY_POLICY_VERSION = '2026-11-20.2';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -102,6 +102,14 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20';
  * "Last updated" date, PRIVACY_POLICY_VERSION and this instant to the merge
  * day before merging, and lower it to the deployment's success time once it
  * is live.
+ *
+ * Version 2026-11-20.2 adds the reading level, broad areas of interest and
+ * optional role linked to an account in survey analytics (#526). Since the
+ * first 20 November version, My profile also lists citing papers and frequent
+ * coauthors (#527). The survey text ships with this PR, so its provisional
+ * cutoff is the last whole second of the planned merge day. If the merge slips
+ * past the cutoff, move the date, version and cutoff to the merge day.
+ * Set the cutoff to the deployment's success time once the text is live.
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
@@ -119,9 +127,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "If you connect ORCID, your ORCID iD and the name on your ORCID record are kept with your account. ORCID's access token is not stored.",
-  "My profile lists the public works of your ORCID record and is shown only to you. Your browser loads those works from ORCID directly.",
-  "My profile also suggests works OpenAlex links to your iD. Which ones you mark as yours or not is kept with your account until you disconnect.",
+  'Survey events include your reading level and broad areas of interest when available. With usage analytics on, PaperTok links survey events to your account.',
+  'Submitting the survey records your answers, including your role if you chose one.',
+  'My profile also lists recent papers that cite your work and your frequent coauthors. PaperTok keeps neither list.',
 ];
 
 /**
@@ -134,21 +142,17 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since 15 November: connecting ORCID, what is kept of it, and
-  // My profile.
-  lead: 'If you connect ORCID',
+  lead: 'your reading level and broad areas of interest',
   clauses: [
-    ['If you connect ORCID', /<td>If you connect ORCID: your ORCID iD, the name on your ORCID record/],
-    ['your ORCID iD and the name on your ORCID record are kept with your account', /ORCID then gives PaperTok your iD and the name on your ORCID record, and PaperTok keeps the two with your account/],
-    ["ORCID's access token is not stored", /ORCID also gives an access token, which PaperTok does not store\./],
-    ['My profile lists the public works of your ORCID record and is shown only to you', /My profile lists the public works of your ORCID record and is shown only to you\./],
-    ['Your browser loads those works from ORCID directly', /Your browser loads those works from ORCID's public API directly/],
-    ['My profile also suggests works OpenAlex links to your iD', /My profile suggests works that OpenAlex links to your iD/],
-    ['Which ones you mark as yours or not is kept with your account', /PaperTok keeps the work's identifier \(its DOI, or its OpenAlex id when it has none\) in one of those two lists with your account/],
-    ['until you disconnect', /Disconnecting in <strong>My profile<\/strong> deletes your iD, your name and those two lists/],
+    ['your reading level and broad areas of interest when available', /events include your reading level and broad areas of interest, such as Physics, when available/],
+    ['With usage analytics on, PaperTok links survey events to your account', /With usage analytics on, PaperTok links survey events to your account/],
+    ['Submitting the survey records your answers, including your role if you chose one', /Submitting the survey records your answers, including your role if you chose one/],
+    ['recent papers that cite your work', /papers from the last 12 months that cite your publications/],
+    ['your frequent coauthors', /coauthors you share two or more of those works with/],
+    ['PaperTok keeps neither list', /PaperTok keeps neither list/],
   ],
   unsaid: [
-    [/\bpublic profile\b|anyone|everyone/i, 'My profile is shown only to the reader'],
-    [/\bsince \d{1,2} [a-z]+/i, 'the summary says only what changed since the previous version'],
+    [/anonymous/i, 'survey events are linked to the signed-in account'],
+    [/required role/i, 'readers can skip the role question'],
   ],
 };

@@ -10,7 +10,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
+import { privacyNoticeStatus } from '../utils/nudges.ts';
+import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -146,7 +147,20 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.match(PRIVACY_POLICY_VERSION, /^\d{4}-\d{2}-\d{2}(\.\d+)?$/);
   const day = new Date(`${PRIVACY_POLICY_VERSION.slice(0, 10)}T00:00:00Z`);
   const dated = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(day);
-  assert.equal(dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
+  const revision = PRIVACY_POLICY_VERSION.split('.')[1];
+  assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
+});
+
+test('an existing reader who saw the first 20 November notice is owed the survey notice', () => {
+  assert.equal(privacyNoticeStatus({
+    user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
+    signedIn: true,
+    version: PRIVACY_POLICY_VERSION,
+    effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+    baseline: PRIVACY_NOTICE_BASELINE_VERSION,
+    account: { uid: 'reader', version: '2026-11-20' },
+    storage: null,
+  }), 'owed');
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
