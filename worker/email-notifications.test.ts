@@ -2,6 +2,7 @@ type DigestUpstream = { openAlex: { total: number; byQuery: Record<string, numbe
 import type { WorkerEnv } from './env.ts';
 import type { DigestPaper, Follow, Subscription } from './email-notifications.ts';
 import test, { type TestContext } from 'node:test';
+import { generateKeyPairSync } from 'node:crypto';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
@@ -10,6 +11,7 @@ import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { inMemorySubscriptionStores } from './test-support/email-subscriptions.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { readOpenAlexBudget, reserveOpenAlexBudget } from './provider-runtime.ts';
+import { encodeFields } from './firestore-admin.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
@@ -187,6 +189,7 @@ function emailEnvironment(kv: KVNamespace): WorkerEnv {
     NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv),
     RESEND_API_KEY: 're_test',
     RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
+    REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
     // Tests run the KV emulation of the delivery ledger, which production must
     // never fall back to silently.
     EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
@@ -496,7 +499,7 @@ test('selects unsent preview backlog inside the rolling window despite a newer l
     const result = await collectDigestPapers(digestSubscription({
       lastSentAt: '2026-08-08T07:00:00Z',
       previewItems: [backlog],
-    }), {}, { now });
+    }), { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }, { now });
 
     assert.deepEqual(result.papers.map(paper => paper.id), ['weekend-backlog']);
   } finally {
@@ -513,7 +516,7 @@ test('excludes sent preview backlog throughout the rolling freshness window', as
       lastSentAt: '2026-08-08T07:00:00Z',
       previewItems: [backlog],
       sentPaperKeys: ['id:already-sent'],
-    }), {}, { now });
+    }), { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }, { now });
 
     assert.deepEqual(result.papers, []);
   } finally {
@@ -548,7 +551,7 @@ test('uses at most one strong exploration paper when followed selection is empty
   };
 
   try {
-    const result = await collectDigestPapers(digestSubscription(), {}, { now });
+    const result = await collectDigestPapers(digestSubscription(), { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }, { now });
     assert.deepEqual(result.papers.map(paper => paper.id), ['WEXPLORE']);
     assert.equal(result.papers[0].matches!.length, 0);
   } finally {
@@ -570,7 +573,7 @@ test('a digest that finds no arXiv seat of its own does not call arXiv and reads
   const env = {
     REQUEST_QUOTA_LEDGER: {
       idFromName: (name: string) => name,
-      get: () => ({ fetch: async () => Response.json({ accepted: false, scope: 'user' }) }),
+      get: (name: string) => ({ fetch: async () => Response.json({ accepted: name.startsWith('openalex:'), scope: 'user' }) }),
     },
   } as unknown as WorkerEnv;
   const arxivTopic = { type: 'topic' as const, canonicalId: 'quant-ph', displayName: 'Quantum Physics', externalIds: {}, metadata: { categoryIds: ['quant-ph'] } };
@@ -850,12 +853,7 @@ test('scheduled digest fetches and emails papers from every followed entity type
   };
 
   try {
-    const result = await runEmailNotificationSchedule({
-      NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv),
-        RESEND_API_KEY: 're_test',
-      RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
-      EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
-    }, now.getTime());
+    const result = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
 
     assert.equal(result.sent, 1);
     assert.equal(result.failed, 0);
@@ -4183,6 +4181,220 @@ function digestScheduleHarness(subscription: Subscription = {}, dailyLimit = 290
   return { upstream, run, state: () => storedSubscriptionWithState(kv, subscriptionKey), kv };
 }
 
+const CITATION_READER = { uid: 'citation-reader', email: 'citations@example.com', displayName: 'Reader' };
+const CITATION_ORCID = '0000-0002-1825-0097';
+const CONNECTED_AT = '2026-07-10T07:00:00.000Z';
+
+function citingWork(id: number, title: string, date: string, author: { orcid?: string; observed_orcids?: string[] } = {}) {
+  return {
+    id: `https://openalex.org/W${id}`,
+    title,
+    publication_date: date,
+    authorships: [{ author: { display_name: 'Another Researcher', ...author } }],
+    primary_location: { landing_page_url: `https://example.com/papers/${id}` },
+  };
+}
+
+let citationTestKey: string | undefined;
+function citationSchedule(t: TestContext, {
+  connectedAt = CONNECTED_AT,
+  decisions = { connectedAt: CONNECTED_AT, mine: ['openalex:W14', 'doi:10.1234/self'], notMine: ['doi:10.1234/other', 'openalex:W13'] },
+  follows = [] as Follow[],
+  maxPapers = 5,
+  lastSentAt = '2026-07-20T07:00:00.000Z',
+  citing = () => Response.json({ results: [
+    citingWork(201, 'Old citation', '2026-07-20'),
+    citingWork(202, 'Third newest citation', '2026-07-23'),
+    citingWork(203, 'Primary iD self citation', '2026-07-27', { orcid: CITATION_ORCID }),
+    citingWork(14, 'Marked mine self citation', '2026-07-27'),
+    { ...citingWork(208, 'Marked mine by DOI self citation', '2026-07-27'), doi: 'https://doi.org/10.1234/self' },
+    citingWork(204, 'Newest citation', '2026-07-27'),
+    citingWork(205, 'Observed iD self citation', '2026-07-27', { observed_orcids: [`https://orcid.org/${CITATION_ORCID}`] }),
+    citingWork(206, 'Second newest citation', '2026-07-25'),
+    citingWork(207, 'Fourth citation', '2026-07-22'),
+  ] }),
+  send = () => Response.json({ id: 'citation-digest' }, { status: 201 }),
+} = {}) {
+  const { uid, email } = CITATION_READER;
+  const subscriptionKey = `notification:subscription:${uid}`;
+  const kv = createMemoryKv({ [subscriptionKey]: digestSubscription({ ...CITATION_READER, follows, lastSentAt, maxPapers }) });
+  citationTestKey ??= generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } }).privateKey;
+  const env: WorkerEnv = {
+    ...emailEnvironment(kv),
+    FIREBASE_PROJECT_ID: 'email-test',
+    FIREBASE_SERVICE_ACCOUNT_EMAIL: 'email@test.iam.gserviceaccount.com',
+    FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: citationTestKey,
+    OPENALEX_GLOBAL_DAILY_LIMIT: '100',
+  };
+  const filters: string[] = [];
+  const emails: Array<{ to: string[]; text: string; html: string }> = [];
+  let now = Date.parse('2026-07-27T07:00:00Z');
+  let currentConnection = connectedAt;
+  let profileUnavailable = false;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'oauth2.googleapis.com') return Response.json({ access_token: 'test-access-token' });
+    if (url.hostname === 'firestore.googleapis.com') {
+      if (url.pathname.endsWith(`/users/${uid}/orcid/works`)) return Response.json({ fields: encodeFields(decisions) });
+      assert.ok(url.pathname.endsWith(`/users/${uid}`));
+      if (profileUnavailable) return Response.json({}, { status: 503 });
+      return Response.json({ fields: encodeFields({ orcid: { id: CITATION_ORCID, host: 'orcid.org', connectedAt: currentConnection } }) });
+    }
+    if (url.hostname === 'api.resend.com') {
+      const body = JSON.parse(String(init?.body)) as (typeof emails)[number];
+      assert.deepEqual(body.to, [email]);
+      emails.push(body);
+      return send();
+    }
+    assert.equal(url.hostname, 'api.openalex.org');
+    const filter = url.searchParams.get('filter') || '';
+    filters.push(filter);
+    if (filter === `author.orcid:${CITATION_ORCID}`) return Response.json({ results: [
+      { id: 'https://openalex.org/W11', doi: 'https://doi.org/10.1234/mine' },
+      { id: 'https://openalex.org/W12', doi: 'https://doi.org/10.1234/other' },
+      { id: 'https://openalex.org/W13' },
+    ] });
+    if (filter.startsWith('cites:')) return citing();
+    return Response.json({ results: filter.includes('author.id:A1') ? [SCHEDULED_WORK] : [] });
+  });
+  return {
+    env, emails, filters,
+    now: () => new Date(now).toISOString(),
+    run: (window = now) => { now = window; return runEmailNotificationSchedule(env, now); },
+    state: () => storedSubscriptionWithState(kv, subscriptionKey),
+    setConnection: (value: string) => { currentConnection = value; },
+    setProfileUnavailable: (value: boolean) => { profileUnavailable = value; },
+  };
+}
+
+test('the scheduled digest sends a citation-only edition, newest first, with two metered requests', async t => {
+  const h = citationSchedule(t);
+  assert.equal((await h.run()).sent, 1);
+  assert.deepEqual(h.filters, [
+    `author.orcid:${CITATION_ORCID}`,
+    'cites:W14|W11,from_publication_date:2026-07-21,to_publication_date:2026-07-27',
+  ]);
+  const [email] = h.emails;
+  assert.match(email.html, /<h2[^>]*>Cited your work<\/h2>/);
+  assert.match(email.text, /CITED YOUR WORK/);
+  assert.match(email.text, /Newest citation[\s\S]+Second newest citation[\s\S]+Third newest citation/);
+  assert.doesNotMatch(email.text, /Old citation|self citation|Fourth citation/);
+  assert.equal((await h.state())?.lastDelivery?.paperCount, 3);
+  assert.equal((await readOpenAlexBudget(h.env, h.now())).report?.tiers.exploration.used, 2);
+});
+
+test('decisions from an earlier ORCID connection do not affect the cite filter', async t => {
+  const h = citationSchedule(t, { connectedAt: '2026-07-19T07:00:00.000Z' });
+  assert.equal((await h.run()).sent, 1);
+  assert.equal(h.filters[1], 'cites:W11|W12|W13,from_publication_date:2026-07-21,to_publication_date:2026-07-27');
+});
+
+test('citation papers share the email maximum and leave room for a followed story', async t => {
+  const h = citationSchedule(t, { follows: [digestFollow()], maxPapers: 3 });
+  assert.equal((await h.run()).sent, 1);
+  assert.match(h.emails[0].text, /A paper published before the outage[\s\S]+CITED YOUR WORK[\s\S]+Newest citation[\s\S]+Second newest citation/);
+  assert.doesNotMatch(h.emails[0].text, /Third newest citation/);
+  assert.equal((await h.state())?.lastDelivery?.paperCount, 3);
+});
+
+test('a work marked mine by DOI can be resolved from the paper store outside the attributed page', async t => {
+  const h = citationSchedule(t, {
+    decisions: { connectedAt: CONNECTED_AT, mine: ['doi:10.1234/confirmed'], notMine: [] },
+  });
+  const { db, binding } = testD1();
+  t.after(() => db.close());
+  db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)')
+    .run(1, JSON.stringify({ id: 'openalex:W15', doi: '10.1234/confirmed' }), '2025-01-01', '2027-01-01');
+  db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)').run('10.1234/confirmed', 1);
+  h.env.PAPER_STORE = binding;
+  assert.equal((await h.run()).sent, 1);
+  assert.equal(h.filters[1], 'cites:W15|W11|W12|W13,from_publication_date:2026-07-21,to_publication_date:2026-07-27');
+});
+
+test('an exhausted OpenAlex budget prevents an upstream citation request', async t => {
+  const h = citationSchedule(t);
+  await reserveOpenAlexBudget(h.env, '', { units: 60, tier: 'exploration', kind: 'list' }, h.now());
+  assert.equal((await h.run()).empty, 1);
+  assert.deepEqual(h.filters, []);
+  assert.deepEqual(h.emails, []);
+});
+
+test('the citing-works call also requires an OpenAlex budget reservation', async t => {
+  const h = citationSchedule(t);
+  await reserveOpenAlexBudget(h.env, '', { units: 59, tier: 'exploration', kind: 'list' }, h.now());
+  assert.equal((await h.run()).empty, 1);
+  assert.deepEqual(h.filters, [`author.orcid:${CITATION_ORCID}`]);
+  assert.deepEqual(h.emails, []);
+});
+
+test('a connected reader can save their email subscription with no follows or interests', async t => {
+  const h = citationSchedule(t);
+  const request = new Request('https://worker.example/notifications/preferences', {
+    method: 'PUT',
+    body: JSON.stringify({ enabled: true, follows: [], interests: [] }),
+  });
+  assert.equal((await saveSubscription(request, h.env, CITATION_READER)).enabled, true);
+  assert.equal((await h.run()).sent, 1);
+  assert.match(h.emails[0].text, /CITED YOUR WORK/);
+});
+
+test('a citing-works failure leaves the followed edition intact and spends no retry', async t => {
+  const h = citationSchedule(t, { follows: [digestFollow()], citing: () => new Response(null, { status: 503 }) });
+  assert.equal((await h.run()).sent, 1);
+  assert.equal(h.filters.filter(filter => filter.startsWith('cites:')).length, 1);
+  assert.match(h.emails[0].text, /A paper published before the outage/);
+  assert.doesNotMatch(h.emails[0].text, /CITED YOUR WORK/);
+  assert.equal((await readOpenAlexBudget(h.env, h.now())).report?.tiers.exploration.used, h.filters.length);
+});
+
+test('a timed-out citation lookup cannot be repeated by a later window that week', async t => {
+  const h = citationSchedule(t, { citing: () => { throw new DOMException('Provider timed out', 'TimeoutError'); } });
+  assert.equal((await h.run()).empty, 1);
+  assert.equal((await h.run(Date.parse('2026-07-27T11:00:00Z'))).empty, 1);
+  assert.equal(h.filters.length, 2);
+  assert.deepEqual(h.emails, []);
+});
+
+test('an ORCID-only subscription can recover from an unavailable profile read', async t => {
+  const h = citationSchedule(t);
+  h.setProfileUnavailable(true);
+  assert.equal((await h.run()).failed, 1);
+  assert.equal((await h.state())?.lastDelivery?.code, 'EMAIL_DIGEST_SOURCES_UNAVAILABLE');
+  assert.deepEqual(h.filters, []);
+  h.setProfileUnavailable(false);
+  assert.equal((await h.run(Date.parse('2026-07-27T07:40:00Z'))).sent, 1);
+  assert.match(h.emails[0].text, /CITED YOUR WORK/);
+});
+
+test('a held citation-only digest can send the next day without a second lookup', async t => {
+  let rejected = true;
+  const h = citationSchedule(t, { send: () => rejected
+    ? Response.json({ name: 'daily_quota_exceeded' }, { status: 429 })
+    : Response.json({ id: 'citation-digest' }, { status: 201 }) });
+  assert.equal((await h.run()).failed, 1);
+  rejected = false;
+  h.setProfileUnavailable(true);
+  assert.equal((await h.run(Date.parse('2026-07-28T07:00:00Z'))).failed, 1);
+  assert.equal((await h.state())?.lastDelivery?.code, 'EMAIL_PROVIDER_LIMIT');
+  h.setProfileUnavailable(false);
+  assert.equal((await h.run(Date.parse('2026-07-28T07:20:00Z'))).sent, 1);
+  assert.equal(h.filters.length, 2);
+  assert.match(h.emails[1].text, /CITED YOUR WORK/);
+});
+
+test('a changed ORCID keeps an uncertain citation delivery in the ledger without resending it', async t => {
+  const h = citationSchedule(t, { send: () => { throw new DOMException('Response lost', 'TimeoutError'); } });
+  assert.equal((await h.run()).failed, 1);
+  h.setConnection('2026-07-27T07:10:00.000Z');
+  await h.run(Date.parse('2026-07-27T07:20:00Z'));
+  const recovered = await h.run(Date.parse('2026-07-27T07:40:00Z'));
+  assert.equal(recovered.uncertain, 1);
+  assert.equal(h.emails.length, 1);
+  assert.equal(h.filters.length, 2);
+  assert.equal((await h.state())?.lastDelivery?.status, 'uncertain');
+});
+
 function weeklySubscriptionState(lastDelivery: Subscription['lastDelivery'], extra: Partial<Subscription> = {}) {
   return { enabled: true, frequency: 'weekly', lastDelivery, ...extra };
 }
@@ -6990,7 +7202,7 @@ test('a reader with follows keeps the follows digest whatever interests are stor
       lastSentAt: '2026-08-08T07:00:00Z',
       previewItems: [backlog],
       interests: ['cs.LG'],
-    }), {}, { now: Date.parse('2026-08-09T07:00:00Z') });
+    }), { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }, { now: Date.parse('2026-08-09T07:00:00Z') });
     assert.deepEqual(result.papers.map(paper => [paper.id, paper.interest]), [['weekend-backlog', undefined]]);
   } finally {
     restoreFetch();

@@ -26,6 +26,7 @@ export interface DeliveryDraftInput {
   unsubscribeUrl?: unknown;
   /** The version of the reader's subscription the draft was prepared from. */
   subscriptionVersion?: unknown;
+  orcidConnectedAt?: unknown;
   delivery?: DeliveryInput;
 }
 
@@ -159,6 +160,7 @@ function sanitizeDraft(value: DeliveryDraftInput = {}) {
     },
     unsubscribeUrl: boundedString(value.unsubscribeUrl, 1_000),
     subscriptionVersion: positiveInteger(value.subscriptionVersion),
+    ...(value.orcidConnectedAt ? { orcidConnectedAt: boundedString(value.orcidConnectedAt, 40) } : {}),
     delivery: sanitizeDelivery(value.delivery),
   };
 }

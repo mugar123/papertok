@@ -83,8 +83,8 @@ export const DEGRADED_CACHE_SECONDS = 120;
 const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 3_000;
 // The budget OpenAlex bills against is *daily* ($1/day, ~10.000 calls measured on
 // `/health/openalex`), and until now the only ceiling was per minute: 3000/min is
-// 4.320.000/day, which bounds nothing. This leaves ~2.000 calls of headroom for the
-// digest cron -- which spends outside this ledger -- and the health probe. Both
+// 4.320.000/day, which bounds nothing. This leaves ~2.000 calls of headroom for
+// spending outside the ledger, including the health probe. Both
 // ceilings count list calls, $0.0001 each; a search is reserved as ten of them,
 // so the minute's 3000 is the 300 searches it allowed when every call was one.
 // The daily one is a cap and a fallback: OpenAlex's own reading of the key
@@ -727,8 +727,8 @@ const OPENALEX_OBSERVATION_WAIT_MS = 250;
 /**
  * Files what OpenAlex reports is left of the key's day
  * (`x-ratelimit-remaining-usd`, less `OPENALEX_OBSERVATION_MARGIN`) as the
- * ceiling of the day `now` names. Spend the ledger never sees (the digest, the
- * health probe) and units reserved but never billed stop distorting the
+ * ceiling of the day `now` names. Spend outside the ledger, such as the health
+ * probe, and units reserved but never billed stop distorting the
  * ceiling at the next reading, and credit added mid-day reopens it without a
  * deploy. No reading is filed when either header is missing or unusable, or
  * when `x-ratelimit-reset` does not end that UTC day: the cap then stands, and

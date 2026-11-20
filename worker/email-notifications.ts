@@ -33,7 +33,7 @@ interface DeliveryState {
   lastCheckedAt?: string; lastSentAt?: string; lastTestAt?: string; sentPaperKeys?: string[];
   lastDelivery?: Partial<ReturnType<typeof lastDeliveryStatus>>;
   lastTestDelivery?: Partial<ReturnType<typeof lastDeliveryStatus>>;
-  heldDigest?: { papers: DigestPaper[]; sourceReport: SourceReportInput; selectedAt: string; selectionKey: string } | null;
+  heldDigest?: { papers: DigestPaper[]; citations?: DigestCitations; sourceReport: SourceReportInput; selectedAt: string; selectionKey: string } | null;
   owedCurrentWeek?: boolean;
 }
 export interface Subscription extends Partial<Preferences>, DeliveryState {
@@ -58,10 +58,12 @@ type DigestOpenAlexWork = OpenAlexWork & { keywords?: PaperSubject[]; categories
 interface OpenAlexPayload { results: DigestOpenAlexWork[] }
 export type OpenAlexRequests = Map<string, Promise<OpenAlexPayload>>;
 type OpenAlexReservation = (url: URL) => Promise<void>;
+interface DigestOrcid { id: string; connectedAt: string }
+interface DigestCitations { connectedAt: string; papers: DigestPaper[] }
 interface DeliveryOptions { test?: boolean; now?: number }
 interface CollectOptions extends DeliveryOptions { openAlexRequests?: OpenAlexRequests | null }
 // `editionAt` is when the papers were selected: a held edition keeps its own week.
-interface SendOptions extends DeliveryOptions { key?: string; sourceReport?: SourceReport; editionAt?: number }
+interface SendOptions extends DeliveryOptions { key?: string; sourceReport?: SourceReport; editionAt?: number; citations?: DigestCitations }
 interface StatusOptions { kind?: string; paperCount?: number; partial?: boolean; code?: string; sourceReport?: SourceReportInput }
 interface ProviderPayload { name?: string; code?: string; message?: string; id?: string; messageId?: string; messageIds?: string[] }
 interface DeliveryOutcome {
@@ -88,6 +90,8 @@ import { XMLParser } from 'fast-xml-parser';
 import { CATEGORIES, getAllLeafCategories, getAreaLeaves, getCategoryLabel } from '../src/data/category-taxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/area-accent.ts';
 import { DIGEST_FOLLOW_TYPES } from '../src/utils/following.ts';
+import { isValidOrcidId } from '../src/utils/orcid-id.ts';
+import { canonicalDoiOf } from '../src/utils/paper-canonical-key.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
 import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '../src/services/open-aire-records.ts';
@@ -95,9 +99,11 @@ import type { SubscriptionSlot, SubscriptionStorePayload } from './email-subscri
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
-import { openAlexCostFor } from './openalex-api.ts';
-import { reserveOpenAlexBudget } from './provider-runtime.ts';
-import { readLeafHighlights } from './paper-store.ts';
+import { createFirestoreAdmin } from './firestore-admin.ts';
+import { isServiceAccountConfigured } from './firebase-service-account.ts';
+import { addOpenAlexCredentials, openAlexCitingWorksUrl, openAlexCostFor } from './openalex-api.ts';
+import { fetchJsonWithTimeout, reserveOpenAlexBudget } from './provider-runtime.ts';
+import { readLeafHighlights, readPapersByIds } from './paper-store.ts';
 import { takeArxivSeat } from './arxiv-api.ts';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
@@ -130,6 +136,9 @@ const SCHEDULE_CURSOR_KEY = 'notification:schedule:cursor';
 const DELIVERY_LEDGER_PREFIX = 'notification:delivery-ledger:';
 const TEST_IDEMPOTENCY_WINDOW_MS = 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+const MAX_CITING_PAPERS = 3;
+const MAX_CITED_WORKS = 100;
 const DIGEST_FRESHNESS_DAYS = 10;
 // What the lead story's excerpt can draw on; the excerpt itself is shorter.
 const DIGEST_ABSTRACT_MAX_LENGTH = 600;
@@ -611,6 +620,26 @@ function sanitizeInterests(value: unknown) {
 /** Whether a subscription has something to build an edition from: follows, or else interests. */
 function hasDigestSource(subscription: Subscription | null | undefined) {
   return Boolean(subscription?.follows?.length || subscription?.interests?.length);
+}
+
+function digestFirestore(env: WorkerEnv) {
+  const signal = AbortSignal.timeout(DIGEST_SOURCE_TIMEOUT_MS);
+  return createFirestoreAdmin(env, {
+    fetchImpl: (input, init) => fetch(input, { ...init, signal }),
+  });
+}
+
+async function readDigestOrcid(env: WorkerEnv, uid: string | undefined): Promise<DigestOrcid | null> {
+  if (!uid || !isServiceAccountConfigured(env)) return null;
+  try {
+    const user = await digestFirestore(env).getDocument<{ orcid?: Partial<DigestOrcid> & { host?: string } }>(['users', uid]);
+    const orcid = user?.orcid;
+    return orcid?.host === 'orcid.org' && isValidOrcidId(orcid.id) && orcid.connectedAt
+      ? { id: orcid.id, connectedAt: orcid.connectedAt }
+      : null;
+  } catch {
+    throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  }
 }
 
 function asArray<T>(value: T | T[] | null | undefined): T[] {
@@ -1498,12 +1527,9 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     if (sync && !current?.enabled) return undefined;
     read.state = current ? await store.get<DeliveryState>(deliveryStateKey(key, current), 'json') : null;
     const existing = current ? { ...current, ...deliveryStateFromSubscription(current), ...(read.state || {}) } : null;
-    // The reader's chosen categories fill the edition while nothing it covers
-    // is followed (ENG-163); with neither there is nothing to send. Only an
-    // explicit list replaces them: a client that omits the field, because it
-    // predates interests or has not confirmed the profile yet, keeps the stored ones.
+    // A client that omits interests keeps the stored categories.
     const interests = sanitizeInterests(Array.isArray(body.interests) ? body.interests : current?.interests);
-    if (!follows.length && !interests.length) {
+    if (!follows.length && !interests.length && !await readDigestOrcid(env, identity.uid)) {
       throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
     }
     // A sync keeps the stored settings, except from a phase 1 KV record behind
@@ -1575,12 +1601,6 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   return publicSubscription({ ...subscription, ...(read.state || {}) }, identity.email);
 }
 
-function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
-  url.searchParams.set('mailto', 'app@papertok.io');
-  if (env.OPENALEX_API_KEY) url.searchParams.set('api_key', env.OPENALEX_API_KEY);
-  return url;
-}
-
 function mapOpenAlexPaper(work: DigestOpenAlexWork, follow: Follow | null) {
   const doi = cleanText(work?.doi, 300).replace(/^https?:\/\/doi\.org\//i, '');
   return sanitizePaper({
@@ -1634,9 +1654,8 @@ function openAlexRequestKey(url: string | URL) {
 // retries it would have had on its own. Without a map (the test email), every
 // call goes upstream as before. Answers stay whole and in memory for the rest
 // of the run, so the map is capped; once full, a new question is asked unshared
-// rather than pushing out an answer a later reader may still need. `reserve`
-// is the test email's ledger gate (`reserveOpenAlexForTest`), run before every
-// attempt of a request.
+// rather than pushing out an answer a later reader may still need. Reserve
+// each upstream attempt once, including retries.
 function fetchOpenAlexDigestPayload(
   url: URL,
   sourceReport: SourceReport | null | undefined,
@@ -1707,7 +1726,7 @@ async function fetchOpenAlexUpdates(follow: Follow, env: WorkerEnv, now = Date.n
   });
 }
 
-async function fetchExplorationUpdates(env: WorkerEnv, now = Date.now(), sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null) {
+async function fetchExplorationUpdates(env: WorkerEnv, now: number, sourceReport: SourceReport, openAlexRequests: OpenAlexRequests | null, reserve: OpenAlexReservation) {
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   const cutoff = new Date(now - 4 * DAY_MS).toISOString().slice(0, 10);
   const today = new Date(now).toISOString().slice(0, 10);
@@ -1718,7 +1737,7 @@ async function fetchExplorationUpdates(env: WorkerEnv, now = Date.now(), sourceR
   url.searchParams.set('sort', 'cited_by_count:desc');
   url.searchParams.set('per-page', '8');
   return trackDigestSource(sourceReport, 'openalex', async () => {
-    const payload = await fetchOpenAlexDigestPayload(url, sourceReport, openAlexRequests);
+    const payload = await fetchOpenAlexDigestPayload(url, sourceReport, openAlexRequests, undefined, reserve);
     return (payload?.results || []).map(work => mapOpenAlexPaper(work, null)).filter(Boolean);
   });
 }
@@ -1914,21 +1933,119 @@ function digestFollowsForWindow(follows: Follow[] | undefined, now = Date.now())
   return allFollows.slice(offset).concat(allFollows.slice(0, offset)).slice(0, MAX_QUERIED_FOLLOWS);
 }
 
-// A test email reserves every OpenAlex attempt in the day's ledger at the
-// exploration tier before sending it, so test emails stop together with readers'
-// searches at that tier's share of the day's ceiling and leave the tiers above
-// it theirs. `now` names the day, as it does for the test's own limits.
-async function reserveOpenAlexForTest(env: WorkerEnv, url: URL, now: number) {
+// Email shares the exploration tier with readers' searches.
+async function reserveOpenAlexForEmail(env: WorkerEnv, url: URL, now: number, test = false) {
   const { units, kind } = openAlexCostFor(url);
   const reservation = await reserveOpenAlexBudget(env, '', { units, kind, tier: 'exploration' }, new Date(now).toISOString())
-    .catch((error: unknown) => {
-      console.warn('OpenAlex ledger unreachable for a test email', error);
-      return null;
-    });
+    .catch(() => null);
   if (reservation && !reservation.error) return;
-  throw reservation?.error?.status === 429
-    ? new TestOpenAlexBudgetError('EMAIL_TEST_OPENALEX_BUDGET', 429)
-    : new TestOpenAlexBudgetError('EMAIL_UNAVAILABLE', 503);
+  const refused = reservation?.error?.status === 429;
+  if (test) {
+    throw refused
+      ? new TestOpenAlexBudgetError('EMAIL_TEST_OPENALEX_BUDGET', 429)
+      : new TestOpenAlexBudgetError('EMAIL_UNAVAILABLE', 503);
+  }
+  throw new DigestSourceError('openalex', refused ? 'EMAIL_SOURCE_OPENALEX_BUDGET' : 'EMAIL_SOURCE_OPENALEX_LEDGER_UNAVAILABLE');
+}
+
+function digestOpenAlexWorkId(value: unknown) {
+  const id = normalizeId(value).replace(/^openalex:/i, '').toUpperCase();
+  return /^W\d+$/.test(id) ? id : '';
+}
+
+function openAlexWorkDois(work: OpenAlexWork) {
+  return [work.doi, work.ids?.doi, ...(work.locations || []).map(location => location.doi)]
+    .map(doi => canonicalDoiOf(doi)).filter(Boolean);
+}
+
+function citedWorkIds(works: OpenAlexWork[], mine: Set<string>, notMine: Set<string>, resolved: Paper[]) {
+  const accepted = new Set([...mine].filter(key => key.startsWith('openalex:')).map(digestOpenAlexWorkId).filter(Boolean));
+  const attributed: string[] = [];
+  for (const paper of resolved) {
+    const id = digestOpenAlexWorkId(paper.openAlexId || paper.id);
+    const doi = canonicalDoiOf(paper);
+    if (id && !notMine.has(`doi:${doi}`)) accepted.add(id);
+  }
+  for (const work of works) {
+    const id = digestOpenAlexWorkId(work.id);
+    if (!id) continue;
+    const dois = openAlexWorkDois(work);
+    if (dois.some(doi => notMine.has(`doi:${doi}`))) accepted.delete(id);
+    else if (dois.some(doi => mine.has(`doi:${doi}`))) accepted.add(id);
+    else attributed.push(id);
+  }
+  return [...new Set([...accepted, ...attributed])]
+    .filter(id => !notMine.has(`openalex:${id.toLowerCase()}`));
+}
+
+async function collectDigestCitations(subscription: Subscription, env: WorkerEnv, orcid: DigestOrcid, now: number, weekStart: number): Promise<DigestCitations | undefined> {
+  try {
+    const uid = subscription.uid!;
+    const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+      periodKey: `email-citations:week:${utcDay(weekStart)}`,
+      subject: uid, subjectLimit: 1, globalLimit: 1, globalAmount: 0,
+      expiresAt: weekStart + WEEK_MS,
+    });
+    if (!quota.accepted) return;
+
+    const decisions = await digestFirestore(env).getDocument<{ connectedAt?: string; mine?: string[]; notMine?: string[] }>(['users', uid, 'orcid', 'works']);
+    const current = decisions?.connectedAt === orcid.connectedAt ? decisions : null;
+    const mine = new Set(Array.isArray(current?.mine)
+      ? current.mine.filter(key => typeof key === 'string').map(key => key.toLowerCase())
+      : []);
+    const notMine = new Set(Array.isArray(current?.notMine)
+      ? current.notMine.filter(key => typeof key === 'string').map(key => key.toLowerCase())
+      : []);
+    const fetchWorks = async (url: URL) => {
+      await reserveOpenAlexForEmail(env, url, now);
+      const payload = await fetchJsonWithTimeout<OpenAlexPayload>(url, { headers: { accept: 'application/json' } }, DIGEST_SOURCE_TIMEOUT_MS);
+      if (!Array.isArray(payload?.results)) throw new DigestSourceError('openalex', 'EMAIL_SOURCE_OPENALEX_INVALID_RESPONSE');
+      return payload.results;
+    };
+
+    const attributedUrl = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
+    attributedUrl.searchParams.set('filter', `author.orcid:${orcid.id}`);
+    attributedUrl.searchParams.set('select', 'id,doi,locations');
+    attributedUrl.searchParams.set('sort', 'publication_date:desc');
+    attributedUrl.searchParams.set('per-page', '200');
+    const attributed = await fetchWorks(attributedUrl);
+    const attributedDois = new Set(attributed.flatMap(openAlexWorkDois));
+    const unresolved = [...mine].filter(key => key.startsWith('doi:') && !notMine.has(key) && !attributedDois.has(key.slice(4)));
+    const resolved = env.PAPER_STORE && unresolved.length ? await readPapersByIds(env, unresolved) : [];
+    const ownedIds = new Set(citedWorkIds(attributed, mine, notMine, resolved));
+    if (!ownedIds.size) return;
+
+    const lastSent = Date.parse(subscription.lastSentAt || '');
+    // OpenAlex gives a publication date, with no time to compare on the day of the send.
+    const since = utcDay(Number.isFinite(lastSent) ? lastSent + DAY_MS : now - WEEK_MS);
+    const today = utcDay(now);
+    if (since > today) return;
+    const citingUrl = openAlexCitingWorksUrl([...ownedIds].slice(0, MAX_CITED_WORKS), env);
+    citingUrl.searchParams.set('filter', `${citingUrl.searchParams.get('filter')},from_publication_date:${since},to_publication_date:${today}`);
+    citingUrl.searchParams.set('per-page', '50');
+    const sentKeys = new Set(subscription.sentPaperKeys || []);
+    const belongsToReader = (value: unknown) => typeof value === 'string'
+      && value.replace(/^https?:\/\/orcid\.org\//i, '').toUpperCase() === orcid.id;
+    const readerOwnsWork = (work: OpenAlexWork) => {
+      const id = digestOpenAlexWorkId(work.id);
+      if (ownedIds.has(id)) return true;
+      const keys = openAlexWorkDois(work).map(doi => `doi:${doi}`);
+      return !notMine.has(`openalex:${id.toLowerCase()}`) && !keys.some(key => notMine.has(key))
+        && keys.some(key => mine.has(key));
+    };
+    const papers = mergePapers((await fetchWorks(citingUrl))
+      .filter(work => work.publication_date && work.publication_date >= since && work.publication_date <= today
+        && !readerOwnsWork(work)
+        && !work.is_authors_truncated && Array.isArray(work.authorships)
+        && !work.authorships.some(({ author }) => belongsToReader(author?.orcid)
+          || (Array.isArray(author?.observed_orcids) && author.observed_orcids.some(belongsToReader))))
+      .map(work => mapOpenAlexPaper(work, null)))
+      .filter(paper => !paperIdentityKeys(paper).some(key => sentKeys.has(key)))
+      .slice(0, MAX_CITING_PAPERS);
+    if (papers.length) return { connectedAt: orcid.connectedAt, papers };
+  } catch {
+    // Citations are optional when Firestore, the ledger or OpenAlex is unavailable.
+  }
 }
 
 // `mapWithConcurrency` settles every follow, which would turn the refusal into
@@ -2003,15 +2120,15 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   // billing readers' share and calling OpenAlex for an email that is never sent.
   // Requests already waiting on the ledger keep their own answer.
   let testRefusal: unknown = null;
-  const reserve: OpenAlexReservation | null = test ? async (url) => {
+  const reserve: OpenAlexReservation = async (url) => {
     if (testRefusal) throw testRefusal;
     try {
-      await reserveOpenAlexForTest(env, url, now);
+      await reserveOpenAlexForEmail(env, url, now, test);
     } catch (error) {
-      testRefusal ??= error;
+      if (test) testRefusal ??= error;
       throw error;
     }
-  } : null;
+  };
   const indexedFreshPromise = mapWithConcurrency(indexedFollows, 4, follow => (
     follow.type === 'project'
       ? fetchProjectUpdates(follow, env, sourceReport, openAlexRequests, reserve)
@@ -2072,7 +2189,7 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
       ...followedSelection.flatMap(paperIdentityKeys),
     ]);
     try {
-      const exploration = await fetchExplorationUpdates(env, now, sourceReport, openAlexRequests);
+      const exploration = await fetchExplorationUpdates(env, now, sourceReport, openAlexRequests, reserve);
       discovery = selectDigestPapers(exploration, {
         limit: 1,
         now,
@@ -2309,7 +2426,7 @@ const EMAIL_COPY = {
   testSubject: 'PaperTok: test email',
   testKicker: 'Test email',
   testBody: 'Your PaperTok email works. We prepare your weekly edition on Monday when there are new papers. Sending limits may delay delivery.',
-  empty: 'Your connection is ready. We have not found recent publications from what you follow yet.',
+  empty: 'We have not found recent publications for this edition.',
   closingTitle: "That's all for this edition.",
   closingBody: 'There is more waiting in your feed.',
   openInbox: 'Explore my feed',
@@ -2521,7 +2638,7 @@ function editionIndex(papers: DigestPaper[]) {
 }
 
 /** Tables and inline styles keep the digest readable across mail clients. */
-function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubscribeUrl: string, test: boolean, { now = Date.now() } = {}) {
+function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubscribeUrl: string, test: boolean, { now = Date.now(), citations = [] as DigestPaper[] } = {}) {
   const firstName = cleanText(subscription?.displayName, 160).split(' ')[0];
   const greeting = EMAIL_COPY.greeting(firstName);
   const dateline = editionDate(now);
@@ -2534,8 +2651,10 @@ function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubsc
   const rest = papers.filter(paper => paper !== lead);
   const others = [...rest.filter(paper => !isDiscovery(paper)), ...rest.filter(isDiscovery)];
   const subject = test ? EMAIL_COPY.testSubject : EMAIL_COPY.subject(editionWeek(now));
-  const preheader = test ? EMAIL_COPY.testBody : lead ? digestPreheader(papers) : EMAIL_COPY.empty;
-  const headline = papers.length ? `${EMAIL_COPY.paperCount(papers.length)} for you` : EMAIL_COPY.emptyHeadline;
+  const count = papers.length + citations.length;
+  const citationHeading = 'Cited your work';
+  const preheader = test ? EMAIL_COPY.testBody : count ? digestPreheader([...papers, ...citations]) : EMAIL_COPY.empty;
+  const headline = count ? `${EMAIL_COPY.paperCount(count)} for you` : EMAIL_COPY.emptyHeadline;
   const { ink, sheet, secondary, tertiary } = EMAIL_PALETTE;
   const { serif, sans, mono } = EMAIL_FONTS;
   const index = editionIndex(papers);
@@ -2548,7 +2667,7 @@ function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubsc
     : '';
   const stories = lead
     ? `${renderLeadStory(lead, leadLabel)}${others.length ? `${sectionHeading(EMAIL_COPY.alsoInEdition, others.length)}${renderBriefs(others)}` : ''}`
-    : `<p style="margin:0;padding:30px 0;font:400 16px/1.55 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.empty)}</p>`;
+    : count ? '' : `<p style="margin:0;padding:30px 0;font:400 16px/1.55 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.empty)}</p>`;
 
   const html = `<!doctype html><html lang="en"><head>
 <meta charset="utf-8">
@@ -2582,6 +2701,7 @@ ${lead ? `<p style="margin:16px 0 0;font:400 16px/1.6 ${sans};color:${secondary}
 ${index ? `<p style="margin:6px 0 0;font:400 16px/1.6 ${sans};color:${secondary}">${escapeHtml(index)}</p>` : ''}
 ${testNotice}
 ${stories}
+${citations.length ? `<div style="margin:30px 0 0">${sectionHeading(citationHeading)}${renderBriefs(citations)}</div>` : ''}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:2px solid ${ink}">
 <tr><td style="padding:28px 0 0">
 ${lead ? `<p style="margin:0 0 6px;font:600 22px/1.25 ${serif};color:${ink}">${escapeHtml(EMAIL_COPY.closingTitle)}</p>` : ''}
@@ -2609,8 +2729,9 @@ ${emailButton(PAPER_TOK_URL, EMAIL_COPY.openInbox)}
     `${EMAIL_COPY.nameplate.toUpperCase()}\n${dateline}`,
     [greeting, headline, ...(lead ? [introduction] : []), ...(index ? [index] : [])].join('\n'),
     ...(test ? [`${EMAIL_COPY.testKicker.toUpperCase()}\n${EMAIL_COPY.testBody}`] : []),
-    ...(lead ? [`${leadLabel.toUpperCase()}\n${storyText(lead, { isLead: true })}`] : [EMAIL_COPY.empty]),
+    ...(lead ? [`${leadLabel.toUpperCase()}\n${storyText(lead, { isLead: true })}`] : count ? [] : [EMAIL_COPY.empty]),
     ...(others.length ? [`${EMAIL_COPY.alsoInEdition.toUpperCase()} (${others.length})`, ...others.map(paper => storyText(paper))] : []),
+    ...(citations.length ? [citationHeading.toUpperCase(), ...citations.map(paper => storyText(paper))] : []),
     `${lead ? `${EMAIL_COPY.closingTitle} ` : ''}${EMAIL_COPY.closingBody}\n${EMAIL_COPY.openInbox}: ${PAPER_TOK_URL}\n\n${EMAIL_COPY.footer}\n${EMAIL_COPY.unsubscribe}: ${unsubscribeUrl}`,
   ];
   return { html, text: blocks.join('\n\n'), subject };
@@ -2760,6 +2881,7 @@ function buildDeliveryDraft(subscription: Subscription, papers: DigestPaper[], e
   now = Date.now(),
   sourceReport = createSourceReport(),
   editionAt = now,
+  citations,
 }: SendOptions = {}) {
   const workerBase = cleanText(env.WORKER_PUBLIC_URL, 500)
     || 'https://api.papertok.app';
@@ -2770,14 +2892,15 @@ function buildDeliveryDraft(subscription: Subscription, papers: DigestPaper[], e
       email: subscription.email,
       displayName: subscription.displayName,
     },
-    content: renderDigest(subscription, papers, unsubscribeUrl, test, { now: editionAt }),
+    content: renderDigest(subscription, papers, unsubscribeUrl, test, { now: editionAt, citations: citations?.papers }),
     unsubscribeUrl,
     subscriptionVersion: subscription.version ?? 0,
+    ...(citations ? { orcidConnectedAt: citations.connectedAt } : {}),
     delivery: {
       kind: test ? 'test' : 'digest',
       sentAt: new Date(now).toISOString(),
-      paperCount: papers.length,
-      paperKeys: test ? [] : papers.flatMap(paperIdentityKeys),
+      paperCount: papers.length + (citations?.papers.length || 0),
+      paperKeys: test ? [] : [...papers, ...(citations?.papers || [])].flatMap(paperIdentityKeys),
       partial: sourceReport.failed > 0,
       sources: compactSourceReport(sourceReport),
     },
@@ -2843,14 +2966,16 @@ function draftMatchesSubscription(draft: { provider?: string; subscriptionVersio
  * return the record from before the last save, and a save reopens the object,
  * raising its version, before it writes KV.
  */
-async function draftStillCurrent(env: WorkerEnv, key: string, draft: Parameters<typeof draftMatchesSubscription>[0]) {
+async function checkDraft(env: WorkerEnv, key: string, draft: Parameters<typeof draftMatchesSubscription>[0] & { orcidConnectedAt?: string }) {
   const uid = subscriptionUid(key);
+  if (draft.orcidConnectedAt
+    && (await readDigestOrcid(env, uid).catch(() => null))?.connectedAt !== draft.orcidConnectedAt) return 'orcid-changed';
   const kv = subscriptionInKv(env) ? await readKvRecord(env, uid) : null;
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
   const current = slot.subscription ? slot
     : kv && slot.migratable && kv.revision === slot.version ? kv : null;
   const subscription = current && withVersion(current);
-  return Boolean(subscription?.enabled) && draftMatchesSubscription(draft, subscription!);
+  return subscription?.enabled && draftMatchesSubscription(draft, subscription) ? 'current' : 'subscription-changed';
 }
 
 async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEnv, {
@@ -2872,7 +2997,6 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
 
     const latest = await loadSubscriptionWithState(env, key);
     if (!latest?.enabled) return { pending: true, cancelled: true };
-    if (!hasDigestSource(latest)) return { pending: true, invalid: true };
     const draft = existing.draft;
     if (!draft?.delivery) return { pending: true };
     const reservedAt = Date.parse(existing.reservedAt || '');
@@ -2898,7 +3022,11 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
     // The last check, after the reservation and right before the send: an
     // unsubscribe or a change saved before it cancels this retry and gives the
     // reservation back.
-    if (!await draftStillCurrent(env, key, reservation.draft)) {
+    const current = await checkDraft(env, key, reservation.draft);
+    // The earlier send may have reached Resend. Keep its ledger entry so an
+    // ORCID change or outage cannot turn a potentially sent edition into a new send.
+    if (current === 'orcid-changed') return { pending: true, cancelled: true };
+    if (current === 'subscription-changed') {
       await releaseEmailDelivery(env, reservationId, ledgerTime);
       return { pending: true, cancelled: true };
     }
@@ -2913,19 +3041,33 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
   sourceReport = createSourceReport(),
   editionAt = now,
+  citations,
 }: SendOptions = {}): Promise<DeliveryOutcome> {
   const provider = configuredEmailProvider(env);
   if (!provider) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const reservationId = await buildDeliveryReservationId(subscription, { test, now });
   const latest = await loadSubscriptionWithState(env, key);
-  if (!latest?.enabled || !hasDigestSource(latest)) {
+  if (!latest?.enabled || (!citations && !hasDigestSource(latest) && (!test || !await readDigestOrcid(env, latest.uid)))) {
     return { cancelled: true, invalid: Boolean(latest?.enabled) };
   }
   if (!test && !isSubscriptionDue(latest, new Date(now))) {
     return { cancelled: true };
   }
-  const currentPapers = papersForCurrentSubscription(papers, latest, test);
-  if (!test && !currentPapers.length) {
+  const maximum = latest.maxPapers || 5;
+  const selected = papersForCurrentSubscription(papers, latest, test);
+  if (citations && (await readDigestOrcid(env, latest.uid).catch(() => null))?.connectedAt !== citations.connectedAt) citations = undefined;
+  if (citations) {
+    const sentKeys = new Set(latest.sentPaperKeys || []);
+    const unsent = citations.papers.filter(paper => !paperIdentityKeys(paper).some(key => sentKeys.has(key)));
+    const citingKeys = new Set(unsent.flatMap(paperIdentityKeys));
+    const hasDistinctStory = selected.some(paper => !paperIdentityKeys(paper).some(key => citingKeys.has(key)));
+    const citingPapers = unsent.slice(0, maximum - Number(hasDistinctStory));
+    citations = citingPapers.length ? { ...citations, papers: citingPapers } : undefined;
+  }
+  const citationKeys = new Set(citations?.papers.flatMap(paperIdentityKeys));
+  const currentPapers = selected.filter(paper => !paperIdentityKeys(paper).some(key => citationKeys.has(key)))
+    .slice(0, maximum - (citations?.papers.length || 0));
+  if (!test && !currentPapers.length && !citations) {
     return { cancelled: true, reconciled: true };
   }
   const draft = buildDeliveryDraft(latest, currentPapers, env, {
@@ -2933,6 +3075,7 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
     now,
     sourceReport,
     editionAt,
+    citations,
   });
   const reservation = await reserveEmailDelivery(env, reservationId, now, draft);
   if (reservation.duplicate) {
@@ -2945,7 +3088,7 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   // The last check, right before the send: a draft goes out only while the
   // subscription is the version it was prepared from. A new address, a follow
   // removed or an unsubscribe since then cancels it.
-  if (!await draftStillCurrent(env, key, reservedDraft)) {
+  if (await checkDraft(env, key, reservedDraft) !== 'current') {
     if (reservation.duplicate) return { pending: true };
     await releaseEmailDelivery(env, reservationId, now);
     return { cancelled: true };
@@ -2978,9 +3121,11 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
   const subscription = await loadSubscriptionWithState(env, key);
   if (!subscription?.enabled) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
-  if (!hasDigestSource(subscription)) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
   const now = Date.now();
   await reserveTestEmail(env, identity.uid, now);
+  if (!hasDigestSource(subscription) && !await readDigestOrcid(env, identity.uid)) {
+    throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
+  }
   const { papers, sourceReport } = await collectDigestPapers(subscription, env, { test: true, now });
   const result = await sendDigest(subscription, papers, env, {
     test: true,
@@ -3385,7 +3530,8 @@ function isSubscriptionDue(subscription: Subscription, now: Date) {
   const lastDeliveryAt = Date.parse((subscription.lastDelivery?.at || 0) as string);
   if (!Number.isFinite(lastDeliveryAt) || lastDeliveryAt < dayStart) return true;
   const elapsed = now.getTime() - lastDeliveryAt;
-  if (subscription.lastDelivery?.status === 'invalid') return false;
+  // An ORCID connection can make a source-less subscription eligible without a preference save.
+  if (subscription.lastDelivery?.status === 'invalid') return !hasDigestSource(subscription);
   if (subscription.lastDelivery?.status === 'failed' && subscription.lastDelivery.code === 'EMAIL_PROVIDER_LIMIT') return false;
   if (subscription.lastDelivery?.status === 'empty') return elapsed >= EMPTY_RETRY_INTERVAL_MS;
   if (subscription.lastDelivery?.status === 'failed') return elapsed >= FAILURE_RETRY_INTERVAL_MS;
@@ -3528,18 +3674,9 @@ async function processLoadedSubscription(
   if (!subscription && !subscriptionInKv(env)) await deleteScheduleIndex(env, subscriptionUid(key.name));
   if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
-  if (!hasDigestSource(subscription)) {
-    const code = 'EMAIL_SUBSCRIPTION_INVALID';
-    // Recorded once. Only a save can give the record follows, so writing the same
-    // outcome again in every window spent a KV write per window and changed
-    // nothing but its timestamp.
-    if (subscription.lastDelivery?.status !== 'invalid') {
-      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code });
-    }
-    return { invalid: true, failureCodes: { [code]: 1 } };
-  }
   let sourceReport: SourceReport | undefined;
   let attemptedPapers: DigestPaper[] | undefined;
+  let citations: DigestCitations | undefined;
   let heldSelectedAt: string | undefined;
   try {
     const resumed = await resumeScheduledDelivery(subscription, env, {
@@ -3547,11 +3684,6 @@ async function processLoadedSubscription(
       key: key.name,
     });
     if (resumed) {
-      if (resumed.invalid) {
-        const code = 'EMAIL_SUBSCRIPTION_INVALID';
-        await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, heldDigest: null });
-        return { invalid: true, failureCodes: { [code]: 1 } };
-      }
       if (resumed.pending || resumed.cancelled) return { skipped: true };
       return persistScheduledDelivery(
         env, key.name, subscription, resumed, now,
@@ -3561,12 +3693,30 @@ async function processLoadedSubscription(
       );
     }
 
-    if (!isSubscriptionDue(subscription, now) || !allowsNewScheduledDelivery(now)) {
+    const hasStandardSource = hasDigestSource(subscription);
+    // A phase 1 record behind its object cannot pass the final send check.
+    if (!isSubscriptionDue(subscription, now) || !allowsNewScheduledDelivery(now) || record?.behind) {
       return { skipped: true };
     }
-    // Phase 1: preparing a digest from a held record would only call providers
-    // for a send the last check cancels.
-    if (record?.behind) return { skipped: true };
+    let orcid: DigestOrcid | null = null;
+    try {
+      orcid = await readDigestOrcid(env, subscription.uid);
+    } catch {
+      if (!hasStandardSource) {
+        // Keep the retry tied to the rejected send. The weekly lookup has already been used.
+        if (subscription.heldDigest?.citations) {
+          return { failed: true, failureCodes: { EMAIL_ORCID_PROFILE_UNAVAILABLE: 1 } };
+        }
+        throw new EmailDigestTransientError(createSourceReport());
+      }
+    }
+    if (!hasStandardSource && !orcid) {
+      const code = 'EMAIL_SUBSCRIPTION_INVALID';
+      if (subscription.lastDelivery?.status !== 'invalid') {
+        await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, heldDigest: null });
+      }
+      return { invalid: true, failureCodes: { [code]: 1 } };
+    }
 
     const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const weekStart = dayStart - ((now.getUTCDay() + 6) % 7) * DAY_MS;
@@ -3574,24 +3724,28 @@ async function processLoadedSubscription(
     const selectedAt = Date.parse(held?.selectedAt || '');
     const selectionKey = heldDigestSelectionKey(subscription);
     if (
-      held?.papers?.length
+      held && (held.papers.length || (held.citations && held.citations.connectedAt === orcid?.connectedAt))
       && held.selectionKey === selectionKey
       && Number.isFinite(selectedAt)
       && selectedAt >= weekStart - 7 * DAY_MS
       && selectedAt <= now.getTime()
     ) {
       attemptedPapers = held.papers;
+      if (held.citations?.connectedAt === orcid?.connectedAt) citations = held.citations;
       sourceReport = mergeSourceReports(createSourceReport(), held.sourceReport);
       heldSelectedAt = held.selectedAt;
     } else {
-      const collected = await collectDigestPapers(subscription, env, {
-        now: now.getTime(),
-        openAlexRequests,
-      });
-      attemptedPapers = collected.papers;
+      const collected = await collectDigestPapers(subscription, env, { now: now.getTime(), openAlexRequests })
+        .catch((error: unknown) => {
+          if (error instanceof EmailDigestTransientError) return error;
+          throw error;
+        });
+      if (orcid) citations = await collectDigestCitations(subscription, env, orcid, now.getTime(), weekStart);
+      if (collected instanceof EmailDigestTransientError && !citations) throw collected;
+      attemptedPapers = collected instanceof EmailDigestTransientError ? [] : collected.papers;
       sourceReport = collected.sourceReport;
     }
-    if (!attemptedPapers.length) {
+    if (!attemptedPapers.length && !citations) {
       await recordSubscriptionOutcome(env, key.name, subscription, 'empty', checkedAt, { sourceReport, heldDigest: null });
       return {
         empty: true,
@@ -3606,6 +3760,7 @@ async function processLoadedSubscription(
       key: key.name,
       sourceReport,
       editionAt: heldSelectedAt ? Date.parse(heldSelectedAt) : undefined,
+      citations,
     });
     if (delivery.pending) return { skipped: true, sources: compactSourceReport(sourceReport) };
     if (delivery.invalid) {
@@ -3634,9 +3789,10 @@ async function processLoadedSubscription(
         {
           code,
           sourceReport,
-          heldDigest: ['EMAIL_PROVIDER_LIMIT', 'EMAIL_PROVIDER_RATE_LIMIT'].includes(code) && attemptedPapers?.length
+          heldDigest: ['EMAIL_PROVIDER_LIMIT', 'EMAIL_PROVIDER_RATE_LIMIT'].includes(code) && (attemptedPapers?.length || citations)
             ? {
-              papers: attemptedPapers,
+              papers: attemptedPapers || [],
+              ...(citations ? { citations } : {}),
               sourceReport: compactSourceReport(sourceReport),
               selectedAt: heldSelectedAt || checkedAt,
               selectionKey: heldDigestSelectionKey(subscription),
