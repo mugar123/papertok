@@ -27,6 +27,7 @@ import { journalExplorerLink } from '../src/utils/explorer-paths.ts';
 import { copyForMergeWrite } from '../src/utils/stored-copy-write.ts';
 import { LIST_COLORS } from '../src/utils/list-colors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
+import { CATEGORIES } from '../src/data/category-taxonomy.ts';
 import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
@@ -94,6 +95,33 @@ async function reset() {
 const asAlice = () => testEnv.authenticatedContext(ALICE).firestore();
 const asBob = () => testEnv.authenticatedContext(BOB).firestore();
 const asGuest = () => testEnv.unauthenticatedContext().firestore();
+
+test('only the account owner can store a valid mix and per-area preferences', async () => {
+  await reset();
+  const ref = doc(asAlice(), 'users', ALICE);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.AI', 'quant-ph'] }));
+  const allAreas = Object.fromEntries(Object.keys(CATEGORIES).map(area => [area, { priority: 'curiosity', level: 'university' }]));
+  await assertSucceeds(updateDoc(ref, { interestMix: 'mostly-work', areaPreferences: allAreas }));
+  await assertSucceeds(updateDoc(ref, { interestMix: 'balanced', areaPreferences: { ai: { level: 'beginner' }, physics: { priority: 'essential' } } }));
+  await assertSucceeds(updateDoc(ref, { interestMix: 'half-and-half', areaPreferences: { ai: { level: 'researcher' } } }));
+  assert.deepEqual((await getDoc(ref)).data()?.areaPreferences, { ai: { level: 'researcher' } });
+  for (const invalid of [
+    { interestMix: '90/10' },
+    { interestMix: 90 },
+    { areaPreferences: [] },
+    { areaPreferences: { 'cs.AI': { priority: 'essential' } } },
+    { areaPreferences: { bio: ['curiosity'] } },
+    { areaPreferences: { ai: { priority: 'work' } } },
+    { areaPreferences: { econ: { level: 'default' } } },
+    { areaPreferences: { math: { level: null } } },
+    { areaPreferences: { 'q-fin': { level: 'researcher', extra: true } } },
+  ]) {
+    await assertFails(updateDoc(ref, invalid));
+  }
+  await assertFails(updateDoc(doc(asBob(), 'users', ALICE), { interestMix: 'balanced' }));
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE)));
+  await assertSucceeds(updateDoc(ref, { areaPreferences: {}, interestMix: deleteField() }));
+});
 
 // =========================================================================
 // Reading

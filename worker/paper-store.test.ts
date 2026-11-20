@@ -1383,6 +1383,13 @@ test('interest groups take turns on the page by weight, and a paper two groups r
   assert.deepEqual(ids([ranks(), ranks(1), ranks(11, 12, 13)], [3, 5, 1]), [1, 11, 12, 13], 'a group without papers left gives up its turns');
 });
 
+test('a 90/10 mix gives a sparse interest its turn and fills the rest of the page', () => {
+  const essential = Array.from({ length: 15 }, (_, index) => ({ workId: index + 1, lanes: [] }));
+  const curiosity = [{ workId: 101, lanes: [] }];
+  const page = interleaveByWeight([essential, curiosity], [9, 1]).slice(0, 15);
+  assert.deepEqual(page.map(candidate => candidate.workId), [1, 2, 3, 4, 5, 101, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+});
+
 // A reader of quantum physics, who liked a physics paper, and of general
 // economics, who has liked nothing there yet. The newest physics preprint is
 // the least like the liked paper, and the oldest economics preprint is a copy

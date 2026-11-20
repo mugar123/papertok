@@ -152,8 +152,8 @@ test('the in-app notice announces the version this page is dated', () => {
 });
 
 test('readers who saw an earlier 20 November notice are owed the cumulative update', () => {
-  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.6');
-  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5']) {
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.7');
+  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6']) {
     assert.equal(privacyNoticeStatus({
       user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
       signedIn: true,
@@ -165,13 +165,13 @@ test('readers who saw an earlier 20 November notice are owed the cumulative upda
     }), 'owed', seen);
   }
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /rewrites and explanations.*Anthropic.*paper text outside the EU/i);
-  assert.match(notice, /My profile.*recent citing papers.*frequent coauthors.*but keeps neither list/i);
-  assert.match(notice, /Verified-email saves.*each paper to your account once per UTC week.*by default/i);
-  assert.match(notice, /Opt out in Settings → Privacy/i);
-  assert.match(notice, /analytics on.*surveys link known reading level and broad interests to your account/i);
-  assert.match(notice, /submitted answers and optional role/i);
-  assert.match(notice, /Only browsers mark returns 7–13 days after first use.*existing PostHog first-use and visit events/i);
+  assert.match(notice, /Anthropic may process paper text outside the EU for rewrites and explanations/i);
+  assert.match(notice, /Verified-email saves count per account and paper each UTC week/i);
+  assert.match(notice, /opt out in Settings → Privacy/i);
+  assert.match(notice, /analytics on.*surveys link level, broad interests, answers and optional role to accounts/i);
+  assert.match(notice, /Only browsers mark returns 7–13 days after first use.*existing PostHog events/i);
+  assert.match(notice, /Accounts store Essential\/Curiosity priorities, mix and area levels/i);
+  assert.match(notice, /My profile suggests interests and lists citing papers and coauthors but saves neither list/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
