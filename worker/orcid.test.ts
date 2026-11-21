@@ -2,8 +2,10 @@ import type { FirestoreData, FirestoreWrite } from './firestore-admin.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
+import { FirebaseServiceAccountError } from './firebase-service-account.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 import { OrcidError, handleOrcidRequest } from './orcid.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 const ALICE = 'alice-uid';
 const BOB = 'bob-uid';
@@ -17,11 +19,16 @@ const ENV = {
   ORCID_CLIENT_ID: 'APP-TESTCLIENT0001',
   ORCID_CLIENT_SECRET: 'client-secret-for-tests',
   ORCID_ENVIRONMENT: 'production',
+  REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
 };
 // ORCID's documented example iD, whose check digit is valid.
 const IDENTIFIER = '0000-0002-1825-0097';
 const ACCESS_TOKEN = 'f5af9f51-07e6-4332-8f1a-c0c11c1e3728';
 const NOW = Date.parse('2026-11-18T10:00:00Z');
+test.beforeEach(t => {
+  t.mock.timers.enable({ apis: ['Date'], now: NOW });
+  ENV.REQUEST_QUOTA_LEDGER = inMemoryQuotaLedger().binding;
+});
 
 /** Documents in memory, each with a version that every write changes, and Firestore's preconditions. */
 function memoryAdmin(seed: Record<string, FirestoreData> = {}) {
@@ -111,6 +118,112 @@ function complete(admin: ReturnType<typeof memoryAdmin>, state: string | null, {
 }
 
 const rejectsWith = (code: string) => (error: OrcidError) => error instanceof OrcidError && error.code === code;
+
+test('each ORCID route has an hourly limit per account', async () => {
+  const admin = memoryAdmin();
+  const upstream = stubFetch(() => orcidAnswer());
+  const now = () => NOW;
+  const disconnect = () => handleOrcidRequest(request('/orcid/disconnect'), ENV, ORIGIN, { admin, now });
+  const limit = { code: 'ORCID_WRITE_LIMIT', status: 429, retryAfter: '3600' };
+  try {
+    for (let i = 0; i < 6; i++) {
+      const state = (await connect(admin)).searchParams.get('state');
+      await complete(admin, state);
+      await disconnect();
+    }
+    const writes = admin.commits.length;
+    await assert.rejects(connect(admin), limit);
+    await assert.rejects(disconnect(), limit);
+    assert.equal(admin.commits.length, writes);
+    await connect(admin, { uid: BOB });
+
+    // A pending state started in the previous hour can still be valid after
+    // Alice spends the current hour's completion allowance.
+    const state = (await connect(admin, { now: NOW - 1000 })).searchParams.get('state');
+    await assert.rejects(complete(admin, state), limit);
+    assert.equal(upstream.calls.length, 6);
+    await connect(admin, { now: NOW + 60 * 60_000 });
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('the daily write ceiling is shared across routes and accounts', async () => {
+  const admin = memoryAdmin();
+  const upstream = stubFetch(() => new Response('down', { status: 502 }));
+  const disconnect = (uid: string) => handleOrcidRequest(request('/orcid/disconnect', uid), ENV, ORIGIN, { admin, now: () => NOW });
+  try {
+    for (let i = 0; i < 498; i++) await disconnect(`reader-${i}`);
+    const state = (await connect(admin)).searchParams.get('state');
+    await assert.rejects(complete(admin, state), rejectsWith('ORCID_UNAVAILABLE'));
+    await disconnect('another-reader');
+    const limit = { code: 'ORCID_WRITE_LIMIT', status: 429, retryAfter: '50400' };
+    await assert.rejects(complete(admin, state), limit);
+    await assert.rejects(disconnect(BOB), limit);
+    assert.equal(upstream.calls.length, 1);
+    assert.equal(admin.commits.flat().length, 1498);
+    await connect(admin, { uid: BOB });
+    await connect(admin, { uid: BOB });
+    await assert.rejects(connect(admin, { uid: 'another-reader' }), limit);
+    assert.equal(admin.commits.flat().length, 1500);
+    await connect(admin, { now: NOW + 24 * 60 * 60_000 });
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('invalid state and a failed exchange leave the write allowance available', async () => {
+  const admin = memoryAdmin();
+  let available = false;
+  const upstream = stubFetch(() => available ? orcidAnswer() : new Response('down', { status: 502 }));
+  try {
+    const state = (await connect(admin)).searchParams.get('state');
+    for (let i = 0; i < 6; i++) {
+      await assert.rejects(complete(admin, 'wrong-state'), rejectsWith('ORCID_CONNECTION_EXPIRED'));
+      await assert.rejects(complete(admin, state), rejectsWith('ORCID_UNAVAILABLE'));
+    }
+    assert.equal(admin.commits.length, 1);
+    available = true;
+    await complete(admin, state);
+    assert.equal(admin.commits.length, 2);
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('without the ledger no ORCID write is attempted', async () => {
+  const admin = memoryAdmin();
+  const upstream = stubFetch(() => orcidAnswer());
+  try {
+    await assert.rejects(handleOrcidRequest(request('/orcid/connect'), { ...ENV, REQUEST_QUOTA_LEDGER: undefined }, ORIGIN, { admin }), {
+      code: 'ORCID_FAILED', status: 503,
+    });
+    assert.equal(admin.commits.length, 0);
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('a rejected first commit returns its reservation while an unknown outcome stays charged', async () => {
+  const admin = memoryAdmin();
+  const upstream = stubFetch(() => orcidAnswer());
+  const rejecting = { ...admin, async commit() {
+    throw new FirestoreAdminError('FIRESTORE_WRITE_FAILED', 502, 'PERMISSION_DENIED');
+  } };
+  const noToken = { ...admin, async commit() { throw new FirebaseServiceAccountError('SERVICE_TOKEN_REFUSED'); } };
+  const uncertain = { ...admin, async commit() { throw new Error('Response lost'); } };
+  try {
+    for (let i = 0; i < 6; i++) {
+      await assert.rejects(connect(rejecting), /PERMISSION_DENIED/);
+      await assert.rejects(connect(noToken), { code: 'SERVICE_TOKEN_REFUSED' });
+      await assert.rejects(connect(uncertain), /Response lost/);
+    }
+    await assert.rejects(connect(admin), { code: 'ORCID_WRITE_LIMIT', status: 429 });
+    assert.equal(admin.commits.length, 0);
+  } finally {
+    upstream.restore();
+  }
+});
 
 test('connecting asks ORCID to authenticate the iD and keeps only a hash of the state', async () => {
   const admin = memoryAdmin();

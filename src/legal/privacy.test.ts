@@ -150,16 +150,11 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('the current notice summarizes the 20 November policy changes', () => {
+test('the current notice describes the ORCID quota counters and their retention', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /Anthropic.*rewrites\/explanations outside the EU/i);
-  assert.match(notice, /Verified-email saves count per account\/paper\/UTC week.*opt out: Settings→Privacy/i);
-  assert.match(notice, /Analytics ties survey level\/broad interests\/answers\/optional role to accounts/i);
-  assert.match(notice, /Day 7–13 return marks stay local.*PostHog visits/i);
-  assert.match(notice, /Accounts keep Essential\/Curiosity priorities, mix and area levels/i);
-  assert.match(notice, /My profile suggests interests, listing recent citations\/coauthors unsaved/i);
-  assert.match(notice, /flags sessions with likes\/saves\/reads before profile load/i);
-  assert.match(notice, /Weekly citation mail uses ORCID on OpenAlex/i);
+  assert.match(notice, /Cloudflare counts requests to change your ORCID connection/);
+  assert.match(notice, /hashed account identifier that changes by action and hour/);
+  assert.match(notice, /scheduled for deletion one hour after the UTC day ends/);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
