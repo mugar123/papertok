@@ -215,3 +215,12 @@ test('the page lists the notice key among what the browser keeps and what remove
   assert.match(changes, /Once the announcement is shown, your account remembers that version however you close it/);
   assert.doesNotMatch(changes, /Hide for now/);
 });
+
+// src/utils/digest-consent.ts: the record is per account, never sent, kept across sign-out and
+// forgotten by deleteConfirmedAccount (components/settings/delete-confirmed-account.ts).
+test('the page says the browser keeps, per account, the welcome email wording accepted or that the yes was carried out, and where it goes', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /keeps, under your account identifier, which wording of the welcome's weekly email choice you said yes to, or that this yes was carried out/);
+  assert.match(html, /It is not sent to the server, and it stays in this browser after you sign out/);
+  assert.match(html, /removed once the subscription has started or you have turned the email on or off yourself, when you delete the account from Settings in this browser, and when you clear the site's data. If you delete the account on another device, it stays here until you clear the site's data/);
+});
