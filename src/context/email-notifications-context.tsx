@@ -12,6 +12,8 @@ export interface EmailNotificationsContextValue {
   digestSendReady: boolean;
   /** The app turned the digest off this session because there was nothing left for it to cover. */
   digestTurnedOff: boolean;
+  /** A yes from the welcome, given before the email began from sign-up, still waits for the reader's first follow. */
+  digestWaitsForFollow: boolean;
   savePreferences: (preferences: NotificationPreferences) => Promise<Required<NotificationPreferences>>;
   sendTest: (preferences?: NotificationPreferences) => Promise<Awaited<ReturnType<typeof sendEmailNotificationTest>>>;
 }
@@ -33,7 +35,7 @@ import {
   sendEmailNotificationTest,
 } from '../services/email-notification-service.ts';
 import { emailServiceState } from '../utils/email-health.ts';
-import { digestInterestsToSend, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
+import { digestInterestsToSend, digestOptInStep, digestOptInWaitsForFollow, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebase.ts';
@@ -231,14 +233,16 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   }, [applySavedPreferences, digestCovered, digestSendReady, followedEntities, items, language, notificationDataReady, sentInterests, preferences]);
 
   // A yes from the guest welcome, carried out here, to the address the account
-  // signs in with: the subscription starts with the first follow other than a
-  // journal, as the welcome promised when the reader said yes, even though a
-  // digest turned on in Settings can run on chosen categories alone. Once per
-  // session; a failure keeps the flag and the next session tries again. Once
-  // it exists — or the reader already turned email on themselves — the flag is
-  // spent, so a later unsubscribe in Settings is never undone.
+  // signs in with. An account created since the welcome began promising the
+  // email from sign-up is subscribed on its chosen topics alone; an older
+  // account's yes keeps what the welcome promised then, the first follow other
+  // than a journal (digestOptInStep). Once per session; a failure keeps the
+  // flag and the next session tries again. Once the subscription exists — or
+  // the reader already turned email on themselves — the flag is spent, so a
+  // later unsubscribe in Settings is never undone.
   const optInAttemptedFor = useRef<string | null>(null);
   const emailServiceDown = emailServiceState(health) === 'down';
+  const digestWaitsForFollow = digestOptInWaitsForFollow({ pending: emailDigestPending, accountCreated: user?.metadata?.creationTime, covered: digestCovered });
   useEffect(() => {
     if (
       !emailDigestPending
@@ -246,17 +250,25 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       || loading
       || error
       || loadedForUser.current !== userId
-      || optInAttemptedFor.current === userId
       || !notificationDataReady
       || updatesLoading
     ) return undefined;
-    if (preferences.enabled) {
+    const step = digestOptInStep({
+      waitsForFollow: digestWaitsForFollow,
+      attempted: optInAttemptedFor.current === userId,
+      enabled: preferences.enabled,
+      serviceDown: emailServiceDown,
+      hasFollows,
+      digestCovered,
+      digestSendReady,
+    });
+    if (step === 'settle') {
       optInAttemptedFor.current = userId;
       settleEmailDigestOptIn()
         .catch(settleError => console.warn('Could not settle the email digest opt-in', settleError));
       return undefined;
     }
-    if (!hasFollows || emailServiceDown) return undefined;
+    if (step === 'wait') return undefined;
     // A beat after the follow lands, like the digest sync below, so a burst
     // of follows becomes one subscription carrying all of them.
     const optInTimeout = setTimeout(() => {
@@ -266,7 +278,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         .catch(optInError => console.warn('Could not start the email digest the reader opted into', optInError));
     }, 1200);
     return () => clearTimeout(optInTimeout);
-  }, [emailDigestPending, emailServiceDown, error, hasFollows, loading, notificationDataReady, preferences, savePreferences, settleEmailDigestOptIn, updatesLoading, userId]);
+  }, [digestCovered, digestSendReady, digestWaitsForFollow, emailDigestPending, emailServiceDown, error, hasFollows, loading, notificationDataReady, preferences, savePreferences, settleEmailDigestOptIn, updatesLoading, userId]);
 
   useEffect(() => {
     if (
@@ -358,9 +370,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       enabled: localizedPreferences.enabled,
       digestCovered,
     }),
+    digestWaitsForFollow,
     savePreferences,
     sendTest,
-  }), [digestCovered, digestSendReady, digestTurnedOffFor, error, hasCitationSource, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing, userId]);
+  }), [digestCovered, digestSendReady, digestTurnedOffFor, digestWaitsForFollow, error, hasCitationSource, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing, userId]);
 
   return <EmailNotificationsContext.Provider value={value}>{children}</EmailNotificationsContext.Provider>;
 }

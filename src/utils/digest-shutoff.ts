@@ -82,3 +82,57 @@ export function digestShutoffNoticeShown({ turnedOffFor, userId, enabled, digest
 }) {
   return userId !== null && turnedOffFor === userId && !enabled && !digestCovered;
 }
+
+/**
+ * When the welcome stopped saying the email waits for the first follow and
+ * began promising it from sign-up. A yes saved by an account created before it
+ * was given under the old promise and keeps it; an account created at or after
+ * it is subscribed on its chosen topics alone. Creation time is Firebase's own
+ * record, so no profile field or rule is needed to tell the two apart.
+ */
+export const DIGEST_FROM_SIGNUP_EFFECTIVE_AT = '2026-11-25T00:00:00Z';
+
+/**
+ * Whether a saved yes to the email still waits for the reader's first follow:
+ * it is pending and either its account is older than `effectiveAt` or nothing
+ * (no topic, follow or citation source) covers the digest yet. An account
+ * whose creation time is unknown keeps the old promise rather than being
+ * subscribed on a guess.
+ */
+export function digestOptInWaitsForFollow({ pending, accountCreated, covered = true, effectiveAt = DIGEST_FROM_SIGNUP_EFFECTIVE_AT }: {
+  pending: boolean;
+  accountCreated: string | null | undefined;
+  covered?: boolean;
+  effectiveAt?: string;
+}) {
+  if (!pending) return false;
+  if (!covered) return true;
+  const created = accountCreated ? new Date(accountCreated).getTime() : Number.NaN;
+  return Number.isNaN(created) || created < new Date(effectiveAt).getTime();
+}
+
+/**
+ * What a pending yes to the email does next, once the subscription and the
+ * follows are known: `settle` when the digest is already on (the flag is
+ * spent), `subscribe` when it can start now, `wait` otherwise. An older yes
+ * starts with the first follow; a yes from an account created after
+ * `effectiveAt` starts on whatever covers the digest, the chosen topics
+ * included, once the profile read is the server's own (`digestSendReady`).
+ * Nothing is attempted twice in a session; a failed attempt leaves the flag in
+ * place, so the next session is the retry.
+ */
+export function digestOptInStep({ waitsForFollow, attempted, enabled, serviceDown, hasFollows, digestCovered, digestSendReady }: {
+  waitsForFollow: boolean;
+  attempted: boolean;
+  enabled: boolean;
+  serviceDown: boolean;
+  hasFollows: boolean;
+  digestCovered: boolean;
+  digestSendReady: boolean;
+}): 'settle' | 'subscribe' | 'wait' {
+  if (attempted) return 'wait';
+  if (enabled) return 'settle';
+  if (serviceDown) return 'wait';
+  const ready = waitsForFollow ? hasFollows : digestCovered && digestSendReady;
+  return ready ? 'subscribe' : 'wait';
+}

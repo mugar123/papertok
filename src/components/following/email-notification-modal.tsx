@@ -9,7 +9,6 @@ import {
   Envelope,
   PaperPlaneTilt,
 } from '@phosphor-icons/react';
-import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
@@ -63,7 +62,6 @@ const MAX_PAPERS_OPTIONS = [3, 5, 10].map(value => ({ value, label: String(value
  */
 export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { language } = useLanguage();
-  const { emailDigestPending } = useAuth();
   const enabledId = useId();
   const countId = useId();
   const {
@@ -77,11 +75,12 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     hasCitationSource,
     digestSendReady,
     digestTurnedOff,
+    digestWaitsForFollow,
     savePreferences,
     sendTest,
   } = useEmailNotifications();
   const { followedEntities } = useFollowing();
-  const followsNotice = emailFollowsNotice(followedEntities, emailDigestPending, digestCovered, hasCitationSource);
+  const followsNotice = emailFollowsNotice(followedEntities, digestWaitsForFollow, digestCovered, hasCitationSource);
   const [draft, setDraft] = useState(preferences);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testState, setTestState] = useState('idle');

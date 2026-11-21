@@ -133,9 +133,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [followedAuthors, setFollowedAuthors] = useState<string[]>([]);
   const [readingPreferences, setReadingPreferences] = useState<ReadingPreferences>(DEFAULT_READING_PREFERENCES);
   // A yes to the email digest given in the guest welcome, saved on the
-  // account at onboarding and waiting for the first follow: the digest is
-  // built from follows, so EmailNotificationsContext turns the subscription
-  // on then and settles this flag.
+  // account at onboarding. EmailNotificationsContext turns the subscription
+  // on and settles this flag: in the first session for an account created
+  // since the email began from sign-up, at the first follow for an older one.
   const [emailDigestPending, setEmailDigestPending] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   // Which doors this account has (F5). Kept in state rather than read from
