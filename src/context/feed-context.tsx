@@ -41,7 +41,7 @@ export interface FeedContextValue {
    */
   loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { loadType?: FeedLoadType; attempt?: FeedLoadAttempt; keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean; retriesTimeout?: boolean; listShown?: boolean }) => Promise<void>;
   /** Whether a next-page load started, or waits for the commit of the load that just ended. */
-  loadMore: (attempt?: FeedLoadAttempt) => boolean; refreshFeed: () => Promise<void>;
+  loadMore: (attempt?: FeedLoadAttempt) => boolean; refreshFeed: (attempt?: FeedLoadAttempt) => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   /** The paper ids of the examples For You plans its ranking from (likes, saves, long reads), newest first. */
   getPositiveExampleIds: () => string[];
@@ -1881,7 +1881,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }, 0);
   }, [loadPapers]);
 
-  const refreshFeed = useCallback(async () => {
+  const refreshFeed = useCallback(async (attempt?: FeedLoadAttempt) => {
     setIsRefreshing(true);
     clearCache();
     feedCache.current = {};
@@ -1894,7 +1894,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // reset=true, mode=null. FeedContainer jumps to the top for a
         // refresh, and its scroll event can arrive before the new cards and
         // name an old one: the reader is on the first card.
-        loadPapersRef.current?.(true, null)?.then(() => { visiblePaperIdRef.current = null; }),
+        loadPapersRef.current?.(true, null, undefined, { attempt })?.then(() => { visiblePaperIdRef.current = null; }),
         new Promise((resolve) => setTimeout(resolve, 800))
       ]);
     } finally {

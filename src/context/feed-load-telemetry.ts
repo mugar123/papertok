@@ -2,7 +2,7 @@ import type { ProductAnalyticsEvent } from '../services/analytics-service.ts';
 import { feedLoadFailure } from './feed-load-failure.ts';
 
 export type FeedLoadType = 'initial' | 'refresh' | 'load_more';
-export type FeedLoadAttempt = 'original' | 'automatic_retry' | 'continuation';
+export type FeedLoadAttempt = 'original' | 'automatic_retry' | 'manual_retry' | 'continuation';
 type Outcome = { result: 'success' | 'empty' | 'continued' | 'superseded'; degraded?: boolean }
   | { result: 'error'; error: unknown };
 

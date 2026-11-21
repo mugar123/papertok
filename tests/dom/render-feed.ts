@@ -105,6 +105,8 @@ export async function renderFeed({ container = false, cards = [] }: { container?
       corpus,
       /** The `app_error` events the app has sent. */
       appErrors: () => events.filter(event => event.name === 'app_error').map(event => event.params),
+      /** The `feed_load_started` events the app has sent. */
+      feedLoadsStarted: () => events.filter(event => event.name === 'feed_load_started').map(event => event.params),
       /** The feed's state and actions, as a card or screen reads them. */
       feed: () => {
         if (!feed) throw new Error('The feed provider has not rendered.');

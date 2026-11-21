@@ -57,6 +57,14 @@ test('refresh refusals retain the server version and safe error fields', () => {
   });
 });
 
+test('a retry the reader asked for is its own attempt value, kept by the event sanitizer', () => {
+  const { load, events, advance } = harness('refresh', 'manual_retry');
+  advance(300);
+  load.finish({ result: 'success', degraded: false });
+  assert.deepEqual(events.map(event => event.properties.attempt), ['manual_retry', 'manual_retry']);
+  assert.equal(events[1].properties.load_type, 'refresh');
+});
+
 test('empty, continued and superseded attempts are distinct from errors and success', () => {
   const empty = harness();
   empty.load.finish({ result: 'error', error: emptyFirstPageError() });

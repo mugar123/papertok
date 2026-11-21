@@ -185,13 +185,16 @@ an attempt. Following, Similar papers and the guest demo are not covered.
   loads (including the error screen's Try again, mode, follow or interest
   changes), `load_more` for additional pages (including the feed tail's Try
   again). Retries and skipped-page continuations keep that load type.
-- `attempt`: `original`, `automatic_retry`, or `continuation` when a page had no
-  showable paper. A short page's subsequent fill is a new `load_more` attempt.
+- `attempt`: `original`, `automatic_retry`, `manual_retry`, or `continuation` when a
+  page had no showable paper. A short page's subsequent fill is a new `load_more` attempt.
   `automatic_retry` marks the automatic retry of a failed `initial` or `refresh`
   load, and each `load_more` the feed sends by itself once a pause has passed
   after a failed load with papers on screen: a failed next page, and also a
   failed refresh that kept the papers. A next page the reader asks for again,
   by scrolling back to the end or with the tail's Try again, is `original`.
+  `manual_retry` marks a refresh the reader started with the error screen's Try
+  again or the empty screen's Check again. Explore again, pull-to-refresh, the
+  refresh pill, mode, follow and interest changes stay `original`.
 - `first_screen`: whether this attempt uses the empty-list first-screen policy;
   a first-screen timeout's automatic retry uses the shorter deadline.
 - `duration_ms`: monotonic elapsed time from the accepted attempt before requests
