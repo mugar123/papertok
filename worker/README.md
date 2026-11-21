@@ -838,7 +838,7 @@ collection group, up to five pages of 200, and logs a warning when it stops at
 that cap. A query costs one Firestore read per receipt it returns, and one read
 when it returns none. An idle day costs one read; a day with abandoned receipts
 costs one read and one delete per receipt, plus one read when the last page
-comes back empty. At the cap that is at most 1,001 reads and 1,000 deletes. The query needs the
+comes back empty. A run never exceeds 1,000 reads and 1,000 deletes. The query needs the
 collection-group index on `expiresAt` in `firestore.indexes.json`. Until that
 index is ready, Firestore refuses the query with `FAILED_PRECONDITION`: the cron
 logs the error code, deletes nothing and tries again the next day. A Worker
