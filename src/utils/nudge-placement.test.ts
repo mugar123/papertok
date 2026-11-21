@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { HOME_PLACEMENT, bindNudgePlacement, choosePlacement, clipToViewport, createNudgePlacer, type Edge, type FocusState, type Placement, type ScreenBox } from './nudge-placement.ts';
+import { HOME_PLACEMENT, bindNudgePlacement, choosePlacement, clipToViewport, createNudgePlacer, fitsOnScreen, type Edge, type FocusState, type Placement, type ScreenBox } from './nudge-placement.ts';
 
 // A 320 x 568 screen. Under the navbar the top edge starts at 64 px; the bottom edge ends at 556 px.
 const across = (top: number, bottom: number): ScreenBox => ({ left: 12, right: 308, top, bottom });
@@ -22,8 +22,8 @@ test('the panel stays at the bottom unless the focused control would sit under i
 test('with enlarged text, a control the panel would cover entirely at both edges hides it', () => {
   // The page selector after moving from the feed to Settings: under the 433 px panel at either edge.
   assert.deepEqual(choosePlacement({ target: control(338, 403), boxes: TALL }), { edge: 'bottom', hidden: true });
-  // A 320 x 320 screen: the panel is taller than the screen, so any control is entirely under it.
-  const SHORT: Record<Edge, ScreenBox> = { bottom: across(64, 308), top: across(64, 497) };
+  // A 320 x 320 screen where the panel just fits (244 px in 64-308) and covers any control at either edge.
+  const SHORT: Record<Edge, ScreenBox> = { bottom: across(64, 308), top: across(64, 308) };
   assert.deepEqual(choosePlacement({ target: control(154, 219), boxes: SHORT }), { edge: 'bottom', hidden: true });
   // Clear of one edge: no need to hide.
   assert.deepEqual(choosePlacement({ target: control(500, 540), boxes: TALL }), { edge: 'top', hidden: false });
@@ -56,16 +56,18 @@ test('a control the panel cannot cover entirely never hides it: the panel goes w
   assert.deepEqual(choosePlacement({ target: control(120, 500), boxes: TALL }), { edge: 'bottom', hidden: false }, 'the bottom covers one row less: home');
 });
 
-// A panel whose geometry follows the edge it is given, as the DOM's does.
+// A panel whose geometry follows the edge it is given, as the DOM's does: `dom.edge` is what the page would show,
+// written by both measuring and applying.
 function fakePanel({ focus, boxes }: { focus: { current: FocusState }; boxes: Record<Edge, ScreenBox> | (() => Record<Edge, ScreenBox>) }) {
-  const log = { measured: [] as Edge[], applied: [] as Placement[] };
+  const log = { measured: [] as Edge[], applied: [] as Placement[], dom: { edge: 'bottom' as Edge } };
   const placer = createNudgePlacer({
     focus: () => focus.current,
     measure: (edge) => {
+      log.dom.edge = edge;
       log.measured.push(edge);
       return (typeof boxes === 'function' ? boxes() : boxes)[edge];
     },
-    apply: (placement) => { log.applied.push(placement); },
+    apply: (placement) => { log.dom.edge = placement.edge; log.applied.push(placement); },
   });
   return { placer, log };
 }
@@ -80,18 +82,19 @@ test('focus on a control of the page places the panel, and focus going away send
   assert.deepEqual(log.applied.at(-1), HOME_PLACEMENT);
 });
 
-test('focus inside the panel keeps it where it is: the panel at the top does not jump to the bottom under the reader\'s finger', () => {
+test('focus inside the panel keeps it where it is: the panel at the top does not jump to the bottom under a finger', () => {
   const focus = { current: { kind: 'control', box: control(492, 540) } as FocusState };
   const { placer, log } = fakePanel({ focus, boxes: SMALL });
   placer.place();
   assert.deepEqual(log.applied.at(-1), { edge: 'top', hidden: false });
-  const placed = log.applied.length;
-  const measured = log.measured.length;
-  // Its own action or dismiss button takes focus.
+  const decided = log.applied.length;
+  // Its own action or dismiss button takes focus; scrolling or a resize asks for a decision again.
   focus.current = { kind: 'inside' };
   placer.place();
-  assert.equal(log.applied.length, placed, 'nothing is applied');
-  assert.equal(log.measured.length, measured, 'nothing is measured, so nothing flickers');
+  placer.place();
+  assert.equal(log.applied.length, decided + 2, 'each decision ends in an apply');
+  assert.ok(log.applied.slice(-2).every(placement => placement.edge === 'top' && !placement.hidden), 'it ends each decision where it was: at the top, shown');
+  assert.equal(log.dom.edge, 'top', 'measuring both edges left the panel at its own');
 });
 
 test('a hidden panel comes back as soon as focus moves to a control it does not cover, or leaves the page controls', () => {
@@ -169,11 +172,17 @@ function fakePage() {
   const win = new RecordingTarget();
   const frames: (() => void)[] = [];
   const cancelled: number[] = [];
+  const layout = { notify: null as { size: () => void; content: () => void } | null, stopped: 0 };
   return {
     doc,
     win,
     frames,
     cancelled,
+    layout,
+    observeLayout: (notify: { size: () => void; content: () => void }) => {
+      layout.notify = notify;
+      return () => { layout.stopped += 1; };
+    },
     requestFrame: (callback: () => void) => frames.push(callback),
     cancelFrame: (frame: number) => { cancelled.push(frame); },
     runFrame() {
@@ -269,5 +278,124 @@ test('a panel hidden for a covered control comes back when focus falls to the pa
   assert.deepEqual(log.applied.at(-1), { edge: 'bottom', hidden: true }, 'not in the middle of the event');
   page.runFrame();
   assert.deepEqual(log.applied.at(-1), HOME_PLACEMENT, 'a frame later it is shown again');
+  unbind();
+});
+
+// The 320 x 568 window at 200% text: the notice is about 436 px tall, 120-556 at the bottom edge and 64-500 at the top.
+const TALL_436: Record<Edge, ScreenBox> = { bottom: across(120, 556), top: across(64, 500) };
+
+test('a panel taller than the room between its edges is hidden, and the window growing brings it back', () => {
+  assert.equal(fitsOnScreen(TALL_436), true, '436 px fits in 64-556');
+  // The window drops to 320 px high: the bottom edge ends at 308, so the room is 64-308 = 244 px.
+  const SHORT_436: Record<Edge, ScreenBox> = { bottom: across(-128, 308), top: across(64, 500) };
+  assert.equal(fitsOnScreen(SHORT_436), false);
+  assert.deepEqual(choosePlacement({ target: control(150, 190), boxes: SHORT_436 }), { edge: 'bottom', hidden: true }, 'even for a control it does not touch');
+  // The email notice at 320 x 256 with enlarged text: about 190 px in 64-236.
+  assert.equal(fitsOnScreen({ bottom: across(46, 236), top: across(64, 254) }), false);
+  // A panel of 120 px in the same window fits.
+  assert.equal(fitsOnScreen({ bottom: across(116, 236), top: across(64, 184) }), true);
+});
+
+test('with nothing focused a panel that does not fit is hidden, and shown when the window grows', () => {
+  const focus = { current: { kind: 'none' } as FocusState };
+  const room = { current: { bottom: across(-128, 308), top: across(64, 500) } as Record<Edge, ScreenBox> };
+  const { placer, log } = fakePanel({ focus, boxes: () => room.current });
+  placer.place();
+  assert.deepEqual(log.applied.at(-1), { edge: 'bottom', hidden: true });
+  room.current = TALL_436;
+  placer.place();
+  assert.deepEqual(log.applied.at(-1), HOME_PLACEMENT);
+});
+
+test('focus inside a panel whose window shrinks under it hides the panel rather than leave its controls off screen', () => {
+  // The verifier's case: the panel is at the top and its action has focus, then the window drops from 568 to 320 px high.
+  const focus = { current: { kind: 'control', box: control(530, 560) } as FocusState };
+  const room = { current: TALL_436 };
+  const { placer, log } = fakePanel({ focus, boxes: () => room.current });
+  placer.place();
+  assert.deepEqual(log.applied.at(-1), { edge: 'top', hidden: false });
+  focus.current = { kind: 'inside' };
+  room.current = { bottom: across(-128, 308), top: across(64, 500) };
+  placer.place();
+  assert.deepEqual(log.applied.at(-1), { edge: 'top', hidden: true }, 'hidden, keeping the edge it was at');
+  // The window grows again: focus is no longer inside (hidden panels are inert), so the decision is about the page.
+  focus.current = { kind: 'none' };
+  room.current = TALL_436;
+  placer.place();
+  assert.deepEqual(log.applied.at(-1), HOME_PLACEMENT);
+});
+
+test('a layout change under a control that keeps focus, with no focus, scroll or resize, places the panel again a frame later', () => {
+  // The verifier's probe: the focused control sits at 500-565, clear of the panel at the top (64-500); then content above it
+  // changes and it is at 338-403, entirely under the panel at both edges. Nothing but the layout notice follows.
+  const focus = { current: { kind: 'control', box: control(500, 565) } as FocusState };
+  const { placer, log } = fakePanel({ focus, boxes: TALL_436 });
+  const page = fakePage();
+  const unbind = bindNudgePlacement(placer, page);
+  placer.place();
+  assert.deepEqual(log.applied.at(-1), { edge: 'top', hidden: false });
+  const before = log.applied.length;
+
+  focus.current = { kind: 'control', box: control(338, 403) };
+  assert.ok(page.layout.notify, 'the placement asked to be told of layout changes');
+  page.layout.notify?.content();
+  page.layout.notify?.content();
+  page.layout.notify?.content();
+  assert.equal(log.applied.length, before, 'not in the middle of the frame');
+  assert.equal(page.frames.length, 1, 'any number of notices cost one frame');
+  page.runFrame();
+  assert.deepEqual(log.applied.at(-1), { edge: 'bottom', hidden: true }, 'covered at both edges: hidden');
+
+  // A notice while a press is down waits for the release, like a scroll.
+  focus.current = { kind: 'control', box: control(500, 565) };
+  const held = log.applied.length;
+  page.doc.dispatchEvent(Object.assign(new Event('pointerdown'), { pointerId: 4 }));
+  page.layout.notify?.content();
+  page.runFrame();
+  assert.equal(log.applied.length, held);
+  page.doc.dispatchEvent(Object.assign(new Event('pointerup'), { pointerId: 4 }));
+  assert.deepEqual(log.applied.at(-1), { edge: 'top', hidden: false });
+
+  assert.equal(page.layout.stopped, 0);
+  unbind();
+  assert.equal(page.layout.stopped, 1, 'unbinding stops watching the layout');
+});
+
+test('a content notice decides only when a control of the page has focus, a size notice always does', () => {
+  const focus = { current: { kind: 'none' } as FocusState };
+  const room = { current: TALL_436 };
+  const { placer, log } = fakePanel({ focus, boxes: () => room.current });
+  const page = fakePage();
+  const unbind = bindNudgePlacement(placer, page);
+  placer.place();
+  const measured = log.measured.length;
+
+  // Nothing focused, or focus inside the panel: content changes cannot matter, so nothing is measured.
+  page.layout.notify?.content();
+  page.runFrame();
+  focus.current = { kind: 'inside' };
+  page.layout.notify?.content();
+  page.runFrame();
+  assert.equal(log.measured.length, measured, 'a page that changes all the time costs nothing while no control of it has focus');
+
+  // A size notice always decides: the window shrank, and the panel no longer fits.
+  focus.current = { kind: 'none' };
+  room.current = { bottom: across(-128, 308), top: across(64, 500) };
+  page.layout.notify?.size();
+  page.runFrame();
+  assert.deepEqual(log.applied.at(-1), { edge: 'bottom', hidden: true });
+
+  // A control of the page with focus: a content notice decides, and one size notice in the same frame makes it a full decision.
+  room.current = TALL_436;
+  focus.current = { kind: 'control', box: control(338, 403) };
+  page.layout.notify?.content();
+  page.runFrame();
+  assert.deepEqual(log.applied.at(-1), { edge: 'bottom', hidden: true }, 'covered at both edges');
+  focus.current = { kind: 'none' };
+  page.layout.notify?.content();
+  page.layout.notify?.size();
+  assert.equal(page.frames.length, 1, 'both ask for one frame');
+  page.runFrame();
+  assert.deepEqual(log.applied.at(-1), HOME_PLACEMENT, 'the size notice made it a full decision: shown at home');
   unbind();
 });

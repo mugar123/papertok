@@ -36,6 +36,40 @@ const LEAVE: Transition = {
   scale: { duration: 0.22, ease: EASE_OUT },
 };
 
+// What tells the placement that layout may have changed under a focused
+// control. No single cheap signal reports a control moving, so this listens to
+// the ones that cause it. Size: the page and the panel itself (a text-size
+// change, a long word wrapping, the window) and the fonts loading. Content: any
+// change to the page's elements or to the attributes that lay them out (a
+// section opening, a class, a style), a transition or animation that ends, an
+// image that loads. Changes inside the panel are ignored: the placement writes
+// there itself. Each only asks for a decision a frame later; a content notice
+// is dropped unless a control of the page has focus (placeForContent), and a
+// size notice always decides. Not a per-frame poll: that would run for as long
+// as any control has focus.
+function watchLayout(panel: HTMLElement, notify: { size: () => void; content: () => void }) {
+  const mutations = new MutationObserver((records) => {
+    if (records.some(record => !panel.contains(record.target))) notify.content();
+  });
+  mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-expanded', 'aria-hidden'] });
+  const resizes = new ResizeObserver(() => notify.size());
+  resizes.observe(panel);
+  resizes.observe(document.documentElement);
+  const content = () => notify.content();
+  const events = ['transitionend', 'animationend', 'load'];
+  events.forEach(type => document.addEventListener(type, content, true));
+  // loadingdone is sent to the font set, not to the document.
+  const fonts = document.fonts;
+  const fontsLoaded = () => notify.size();
+  fonts?.addEventListener('loadingdone', fontsLoaded);
+  return () => {
+    mutations.disconnect();
+    resizes.disconnect();
+    events.forEach(type => document.removeEventListener(type, content, true));
+    fonts?.removeEventListener('loadingdone', fontsLoaded);
+  };
+}
+
 // The panel is fixed and reserves no room, and the feed's cards fill the
 // screen, so on a small one it can sit over the control that has keyboard
 // focus (WCAG 2.4.11). utils/nudge-placement.ts decides where it goes: the
@@ -43,9 +77,10 @@ const LEAVE: Transition = {
 // hidden (inert, so nothing in it takes focus) while both would cover it
 // entirely, as with enlarged text. Here it only measures and applies. Focus is
 // never moved, and the notice is never dismissed: it comes back when focus
-// moves to a control it does not cover. Checked as focus arrives, as anything
-// scrolls and when the screen is resized; not while focus is inside the panel
-// or a pointer press is down.
+// moves to a control it does not cover. It is hidden too when it does not fit
+// on screen at all. Checked as focus arrives, as anything scrolls, when the
+// screen is resized and when the layout changes (watchLayout); a pointer press
+// holds it, and focus inside it keeps its edge.
 function useClearOfFocus() {
   const panel = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
@@ -77,6 +112,7 @@ function useClearOfFocus() {
       win: window,
       requestFrame: callback => window.requestAnimationFrame(callback),
       cancelFrame: frame => window.cancelAnimationFrame(frame),
+      observeLayout: notify => watchLayout(element, notify),
     });
   }, []);
   return panel;

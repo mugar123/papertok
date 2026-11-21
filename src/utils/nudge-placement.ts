@@ -14,6 +14,13 @@
  * it comes back by itself. A control larger than the panel, such as the page
  * container that takes focus after a route change, cannot be entirely covered
  * and never hides it.
+ *
+ * The panel is also hidden when it cannot fit on screen at all: taller than the
+ * room between the top edge and the bottom edge, as with enlarged text on a
+ * very short window. It has no height limit and no scrolling of its own, so
+ * controls of it that sit off screen could not be reached, and the notice is
+ * optional (ORCID connects in My profile, email is set in Settings). It comes
+ * back when the window grows.
  */
 
 export interface ScreenBox { top: number; bottom: number; left: number; right: number }
@@ -34,12 +41,25 @@ function overlapArea(a: ScreenBox, b: ScreenBox) {
 }
 
 /**
+ * Whether the panel fits on screen: its height is no more than the room from
+ * where the top edge starts (under the navbar) to where the bottom edge ends.
+ * Both come from the boxes it takes at each edge.
+ */
+// The panel's height cancels out of this: it is the same as the bottom edge's box starting
+// at or below where the top edge's starts. That is also why a panel still animating in (scaled,
+// shifted) does not flicker between fitting and not: both boxes move together.
+export function fitsOnScreen(boxes: Record<Edge, ScreenBox>) {
+  return boxes.bottom.bottom - boxes.bottom.top <= boxes.bottom.bottom - boxes.top.top;
+}
+
+/**
  * The placement for `target`, given the boxes the panel takes at each edge:
- * the edge that leaves it clear, the bottom first; else, when the panel
- * cannot cover it entirely at both, the edge that covers it less (the bottom
- * on a tie); else hidden.
+ * hidden when it does not fit on screen; else the edge that leaves the control
+ * clear, the bottom first; else, when the panel cannot cover it entirely at
+ * both, the edge that covers it less (the bottom on a tie); else hidden.
  */
 export function choosePlacement({ target, boxes }: { target: ScreenBox; boxes: Record<Edge, ScreenBox> }): Placement {
+  if (!fitsOnScreen(boxes)) return { edge: 'bottom', hidden: true };
   const bottom = overlapArea(target, boxes.bottom);
   const top = overlapArea(target, boxes.top);
   if (bottom === 0) return { edge: 'bottom', hidden: false };
@@ -54,28 +74,42 @@ export type FocusState = { kind: 'none' } | { kind: 'inside' } | { kind: 'contro
 
 /**
  * The panel's placement over time. `measure` puts the panel at an edge and
- * returns the box it takes, `apply` leaves it in the placement chosen.
+ * returns the box it takes, `apply` leaves it in the placement chosen; every
+ * decision ends in `apply`, so a measurement never leaves the panel at the
+ * edge it was measured at.
  *
  * Two things never move it: focus inside the panel, because pressing its own
  * button must not take it from under the pointer or the reader's finger, and
  * a pointer press, whose click must land where the press began. A change
- * asked for during a press is made when the last pointer is released.
+ * asked for during a press is made when the last pointer is released. Focus
+ * inside the panel keeps its edge, but not a panel that no longer fits on
+ * screen (the window was made smaller): its controls would be off screen, so
+ * it is hidden, which takes focus out of it.
  */
 export function createNudgePlacer({ focus, measure, apply }: { focus: () => FocusState; measure: (edge: Edge) => ScreenBox; apply: (placement: Placement) => void }) {
   const pressing = new Set<number>();
   let pending = false;
+  let current = HOME_PLACEMENT;
+  const settle = (placement: Placement) => {
+    current = placement;
+    apply(placement);
+  };
   const place = () => {
     if (pressing.size > 0) {
       pending = true;
       return;
     }
     const state = focus();
-    if (state.kind === 'inside') return;
-    if (state.kind === 'none') {
-      apply(HOME_PLACEMENT);
-      return;
+    const boxes = { bottom: measure('bottom'), top: measure('top') };
+    if (!fitsOnScreen(boxes)) {
+      settle({ edge: state.kind === 'inside' ? current.edge : 'bottom', hidden: true });
+    } else if (state.kind === 'inside') {
+      settle({ edge: current.edge, hidden: false });
+    } else if (state.kind === 'none') {
+      settle(HOME_PLACEMENT);
+    } else {
+      settle(choosePlacement({ target: state.box, boxes }));
     }
-    apply(choosePlacement({ target: state.box, boxes: { bottom: measure('bottom'), top: measure('top') } }));
   };
   /**
    * Forgets every press when \`clear\` is set, for a press whose release never
@@ -90,6 +124,16 @@ export function createNudgePlacer({ focus, measure, apply }: { focus: () => Focu
   };
   return {
     place,
+    /**
+     * For a notice that content changed, which can only matter to a control of the
+     * page that has focus: with nothing focused, or focus inside the panel, the
+     * decision depends on the panel's size and the window, which the size notices
+     * report, so nothing is measured. Keeps a page that animates all the time from
+     * costing two layouts a frame.
+     */
+    placeForContent() {
+      if (focus().kind === 'control') place();
+    },
     pointerDown(pointerId: number) {
       pressing.add(pointerId);
     },
@@ -117,19 +161,35 @@ interface Listenable {
  * with no focusin after it (a click on plain text), and a panel hidden for the
  * control it covered must come back then. A press is held from pointerdown to
  * pointerup or pointercancel, and forgotten at a context menu or when the
- * window loses focus. Returns what removes it all.
+ * window loses focus.
+ *
+ * Layout can also change under a control that keeps focus, with no focus,
+ * scroll or resize event: content above it grows, an image loads, a panel
+ * opens, a transition ends. `observeLayout` is told when the page's layout may
+ * have changed (the page connects whatever it can observe cheaply) and the
+ * panel is placed again a frame later, once however many were reported. A
+ * change of size (the window, the panel) always asks for a decision; a change
+ * of content only when a control of the page has focus.
+ * Returns what removes it all.
  */
-export function bindNudgePlacement(placer: ReturnType<typeof createNudgePlacer>, { doc, win, requestFrame, cancelFrame }: { doc: Listenable; win: Listenable; requestFrame: (callback: () => void) => number; cancelFrame: (frame: number) => void }) {
+export function bindNudgePlacement(placer: ReturnType<typeof createNudgePlacer>, { doc, win, requestFrame, cancelFrame, observeLayout }: { doc: Listenable; win: Listenable; requestFrame: (callback: () => void) => number; cancelFrame: (frame: number) => void; observeLayout: (notify: { size: () => void; content: () => void }) => () => void }) {
   let frame = 0;
   let scheduled = false;
-  const placeNextFrame = () => {
+  let full = false;
+  // `full` asks for a decision whatever has focus; otherwise only a control of the page has one made.
+  const schedule = (wantsFull: boolean) => {
+    full ||= wantsFull;
     if (scheduled) return;
     scheduled = true;
     frame = requestFrame(() => {
       scheduled = false;
-      placer.place();
+      const wasFull = full;
+      full = false;
+      if (wasFull) placer.place();
+      else placer.placeForContent();
     });
   };
+  const placeNextFrame = () => schedule(true);
   const pointerId = (event: Event) => (event as Event & { pointerId?: number }).pointerId ?? 0;
   const onFocus = () => {
     placer.place();
@@ -148,7 +208,9 @@ export function bindNudgePlacement(placer: ReturnType<typeof createNudgePlacer>,
   doc.addEventListener('contextmenu', onReleaseAll, true);
   win.addEventListener('resize', onPlace);
   win.addEventListener('blur', onReleaseAll);
+  const stopObserving = observeLayout({ size: placeNextFrame, content: () => schedule(false) });
   return () => {
+    stopObserving();
     if (scheduled) cancelFrame(frame);
     scheduled = false;
     doc.removeEventListener('focusin', onFocus);
