@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import type { WorkerEnv } from './env.ts';
 import { getConfigurationHealth } from './health-api.ts';
 import { handleRequest } from './router.ts';
+import type { TestNamespace } from './test-types.ts';
+import { inMemorySubscriptionStores } from './test-support/email-subscriptions.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 const serviceAccount = {
@@ -74,22 +76,34 @@ test('the feature flags report missing integrations and their configured counter
   assert.deepEqual(health.features, {
     ai: false, orcid: false, zotero: true, scopus: true, email: false,
     publishing: false, institutionLink: true, institutionEmailVerification: false,
-    accountDeletion: true, openReviewLookup: true, semanticScholar: true, pdf: false, mcp: false,
+    accountDeletion: false, openReviewLookup: true, semanticScholar: true, pdf: false, mcp: false,
   });
   assert.equal(health.emailConfigured, true);
   assert.equal(health.publishingConfigured, true);
-  const emailDeliveryLedger = {
+  const subscriptionStore = inMemorySubscriptionStores();
+  assert.equal(getConfigurationHealth({ ...configured, EMAIL_SUBSCRIPTIONS: subscriptionStore }).features.email, false);
+  const emailDeliveryLedger: TestNamespace = {
     idFromName() { throw new Error('Readiness must not resolve an object'); },
     get() { throw new Error('Readiness must not contact the ledger'); },
-  } as WorkerEnv['EMAIL_DELIVERY_LEDGER'];
+  };
   const quotaLedger = inMemoryQuotaLedger();
   const withLedgers = {
     ...configured,
-    EMAIL_DELIVERY_LEDGER: emailDeliveryLedger,
+    EMAIL_DELIVERY_LEDGER: emailDeliveryLedger as WorkerEnv['EMAIL_DELIVERY_LEDGER'],
     REQUEST_QUOTA_LEDGER: quotaLedger.binding,
   };
   const { features } = getConfigurationHealth(withLedgers);
-  assert.equal(features.email, true);
+  for (const source of ['kv', 'object']) {
+    const env = { ...withLedgers, EMAIL_SUBSCRIPTION_SOURCE: source };
+    const missing = getConfigurationHealth(env);
+    assert.equal(missing.emailConfigured, true);
+    assert.equal(missing.features.email, false);
+    assert.equal(missing.features.accountDeletion, false);
+    const ready = getConfigurationHealth({ ...env, EMAIL_SUBSCRIPTIONS: subscriptionStore });
+    assert.equal(ready.features.email, true);
+    assert.equal(ready.features.accountDeletion, true);
+  }
+  assert.equal(getConfigurationHealth(serviceAccount).features.accountDeletion, true);
   assert.equal(features.publishing, true);
   assert.equal(features.institutionEmailVerification, true);
   assert.equal(features.pdf, false);

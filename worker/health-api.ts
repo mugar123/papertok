@@ -2,7 +2,7 @@ import type { WorkerEnv } from './env.ts';
 
 import { activeAIProvider, checkAIProviderHealth, isAIProviderConfigured } from './ai-explanation.ts';
 import { isCallerQuotaSecretConfigured } from './caller-quota.ts';
-import { checkEmailProviderHealth, configuredEmailProvider, getEmailDeliveryLedgerHealth, getEmailScheduleHealth } from './email-notifications.ts';
+import { checkEmailProviderHealth, configuredEmailProvider, configuredEmailSubscriptionStore, getEmailDeliveryLedgerHealth, getEmailScheduleHealth } from './email-notifications.ts';
 import { isServiceAccountConfigured } from './firebase-service-account.ts';
 import { corsHeaders, json } from './http.ts';
 import { openReviewAccount } from './open-review-api.ts';
@@ -19,6 +19,7 @@ export function getConfigurationHealth(env: WorkerEnv) {
   const resendConfigured = Boolean(configuredEmailProvider(env));
   const emailConfigured = Boolean(env.NOTIFICATION_STORE && resendConfigured);
   const emailLedgerConfigured = getEmailDeliveryLedgerHealth(env).ok;
+  const emailSubscriptionsConfigured = Boolean(configuredEmailSubscriptionStore(env));
   const publishingConfigured = isServiceAccountConfigured(env);
   const quotaConfigured = isRequestQuotaLedgerConfigured(env.REQUEST_QUOTA_LEDGER);
   const publicCallerQuotaConfigured = quotaConfigured && isCallerQuotaSecretConfigured(env.PDF_RATE_LIMIT_SECRET);
@@ -40,11 +41,11 @@ export function getConfigurationHealth(env: WorkerEnv) {
       orcid: Boolean(configuredOrcidHost(env)),
       zotero: isZoteroConfigured(env),
       scopus: scopusConfigured,
-      email: emailConfigured && emailLedgerConfigured,
+      email: emailConfigured && emailLedgerConfigured && emailSubscriptionsConfigured,
       publishing: publishingConfigured && quotaConfigured,
       institutionLink: publishingConfigured,
       institutionEmailVerification: publishingConfigured && resendConfigured && emailLedgerConfigured && quotaConfigured,
-      accountDeletion: publishingConfigured,
+      accountDeletion: publishingConfigured && (!env.NOTIFICATION_STORE || emailSubscriptionsConfigured),
       openReviewLookup: Boolean(openReviewAccount(env)),
       semanticScholar: semanticScholarKeyConfigured,
       pdf: publicCallerQuotaConfigured,

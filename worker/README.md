@@ -1358,9 +1358,10 @@ routes to check provider availability.
 | `orcid` | A supported ORCID registry, client ID and secret, and a Firestore service account. |
 | `zotero` | Zotero client credentials and token key, and a Firestore service account. |
 | `scopus` | The Scopus proxy URL and shared secret. |
-| `email` | The notification store, Resend key and sender, and the durable delivery ledger. The legacy `emailConfigured` field checks the store, key and sender. |
+| `email` | `NOTIFICATION_STORE`, `EMAIL_SUBSCRIPTIONS`, the Resend key and sender, and the durable delivery ledger. The legacy `emailConfigured` field checks the notification store, key and sender. |
 | `publishing` | A Firestore service account and the request quota ledger. The legacy `publishingConfigured` field checks the service account. |
-| `institutionLink`, `accountDeletion` | A Firestore service account. |
+| `institutionLink` | A Firestore service account. |
+| `accountDeletion` | A Firestore service account. When `NOTIFICATION_STORE` is bound, subscription cleanup also requires `EMAIL_SUBSCRIPTIONS`. |
 | `institutionEmailVerification` | A Firestore service account, Resend key and sender, and both quota and delivery ledgers. |
 | `openReviewLookup` | OpenReview username and password for lookups by ID. Public search works without them. |
 | `semanticScholar` | A Semantic Scholar key for reliable search and related-paper requests. |
