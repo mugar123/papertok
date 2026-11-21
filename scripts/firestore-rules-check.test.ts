@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareIndexes, compareRules, firestoreWriteCases, reportContract } from './firestore-rules-check.ts';
+import { compareFieldOverrides, compareIndexes, compareRules, firestoreWriteCases, reportContract } from './firestore-rules-check.ts';
 
 test('rules comparison ignores CR and detects source changes and extra files', () => {
   const local = "rules_version = '2';\n// café\n";
@@ -38,6 +38,51 @@ test('index comparison reports missing, unexpected and unready indexes', () => {
     passed: false, label: 'Firestore composite indexes', detail: '1 missing, 1 unexpected, 1 not ready',
   });
   assert.equal(compareIndexes([localIndex], [{ ...liveIndex, state: 'CREATING' }]).passed, false);
+});
+
+const fieldOverrides = [
+  { collectionGroup: 'comments', fieldPath: 'authorUid', indexes: [{ queryScope: 'COLLECTION_GROUP', order: 'ASCENDING' }] },
+  { collectionGroup: 'authorMetricReceipts', fieldPath: 'expiresAt', indexes: [], ttl: true },
+];
+const authorField = {
+  name: 'projects/sample/databases/(default)/collectionGroups/comments/fields/authorUid',
+  indexConfig: { indexes: [{
+    name: '', state: 'READY', queryScope: 'COLLECTION_GROUP',
+    fields: [{ fieldPath: 'authorUid', order: 'ASCENDING' }, { fieldPath: '__name__', order: 'ASCENDING' }],
+  }] },
+};
+const receiptField = {
+  name: 'projects/sample/databases/(default)/collectionGroups/authorMetricReceipts/fields/expiresAt',
+  indexConfig: {}, ttlConfig: { state: 'ACTIVE' },
+};
+
+test('field overrides match explicit indexes, empty exemptions and active TTL', () => {
+  assert.deepEqual(compareFieldOverrides(fieldOverrides, [receiptField, authorField]), {
+    passed: true, label: 'Firestore field overrides and TTL', detail: '2 match firestore.indexes.json',
+  });
+  assert.equal(compareFieldOverrides(fieldOverrides, [receiptField]).detail, 'comments.authorUid: missing field override');
+  assert.equal(compareFieldOverrides(fieldOverrides, [receiptField, {
+    ...authorField, indexConfig: { indexes: [{ ...authorField.indexConfig.indexes[0], queryScope: 'COLLECTION' }] },
+  }]).detail, 'comments.authorUid: single-field indexes differ');
+});
+
+test('an inherited index config and absent TTL do not satisfy an exemption and retention policy', () => {
+  assert.deepEqual(compareFieldOverrides(fieldOverrides, [authorField, {
+    ...receiptField, indexConfig: { usesAncestorConfig: true }, ttlConfig: null,
+  }]), {
+    passed: false, label: 'Firestore field overrides and TTL',
+    detail: 'authorMetricReceipts.expiresAt: missing index exemption; authorMetricReceipts.expiresAt: missing TTL policy',
+  });
+});
+
+test('TTL-only fields are checked for readiness and undeclared policies', () => {
+  const ttlOnly = { collectionGroup: 'authorMetricReceipts', fieldPath: 'expiresAt', ttl: true };
+  assert.equal(compareFieldOverrides([ttlOnly], [{ ...receiptField, indexConfig: { usesAncestorConfig: true } }]).passed, true);
+  assert.equal(compareFieldOverrides([ttlOnly], [{ ...receiptField, ttlConfig: { state: 'CREATING' } }]).detail,
+    'authorMetricReceipts.expiresAt: TTL policy not active');
+  assert.deepEqual(compareFieldOverrides([], [{ ...receiptField, indexConfig: { usesAncestorConfig: true } }]), {
+    passed: false, label: 'Firestore field overrides and TTL', detail: '1 unexpected TTL policy',
+  });
 });
 
 test('contract reports each failed case without printing API error messages', () => {

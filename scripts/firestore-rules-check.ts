@@ -21,6 +21,13 @@ type Index = {
 };
 type LocalIndex = Index & { collectionGroup: string };
 type LiveIndex = Index & { name: string; state: string };
+type FieldOverride = IndexField & { queryScope: string; apiScope?: string; density?: string; multikey?: boolean; unique?: boolean };
+type LocalField = { collectionGroup: string; fieldPath: string; indexes?: Omit<FieldOverride, 'fieldPath'>[]; ttl?: boolean };
+type LiveField = {
+  name: string;
+  indexConfig?: { indexes?: LiveIndex[]; usesAncestorConfig?: boolean; reverting?: boolean } | null;
+  ttlConfig?: { state?: string } | null;
+};
 type Report = { passed: boolean; label: string; detail: string };
 
 export function compareRules(local: string, deployed: Source): Report {
@@ -51,6 +58,43 @@ export function compareIndexes(local: LocalIndex[], deployed: LiveIndex[]): Repo
   const passed = missing === 0 && unexpected === 0 && unready === 0;
   return { passed, label: 'Firestore composite indexes', detail: passed ? `${expected.size} match firestore.indexes.json`
     : `${missing} missing, ${unexpected} unexpected, ${unready} not ready` };
+}
+
+export function compareFieldOverrides(local: LocalField[], deployed: LiveField[]): Report {
+  const fields = new Map(deployed.map(field => [field.name.split('/').slice(-4).join('/'), field]));
+  const expectedTtl = new Set<string>();
+  const problems: string[] = [];
+  let unexpectedTtl = 0;
+  for (const { collectionGroup, fieldPath, indexes, ttl } of local) {
+    const key = `collectionGroups/${collectionGroup}/fields/${fieldPath}`;
+    const name = `${collectionGroup}.${fieldPath}`;
+    const live = fields.get(key);
+    const config = live?.indexConfig;
+    if (indexes) {
+      if (!config || config.usesAncestorConfig || config.reverting) {
+        problems.push(`${name}: missing ${indexes.length ? 'field override' : 'index exemption'}`);
+      } else {
+        const actual = config.indexes ?? [];
+        const liveKeys = new Set(actual.map(index => indexKey(collectionGroup, index)));
+        const expected = new Set(indexes.map(index => indexKey(collectionGroup, { ...index, fields: [{ ...index, fieldPath }] })));
+        if (expected.size !== liveKeys.size || [...expected].some(index => !liveKeys.has(index))) {
+          problems.push(`${name}: single-field indexes differ`);
+        } else if (actual.some(index => index.state !== 'READY')) {
+          problems.push(`${name}: single-field indexes not ready`);
+        }
+      }
+    }
+    if (ttl) {
+      expectedTtl.add(key);
+      if (!live?.ttlConfig) problems.push(`${name}: missing TTL policy`);
+      else if (live.ttlConfig.state !== 'ACTIVE') problems.push(`${name}: TTL policy not active`);
+    }
+  }
+  for (const [key, field] of fields) {
+    if (field.ttlConfig && !expectedTtl.has(key)) unexpectedTtl++;
+  }
+  if (unexpectedTtl) problems.push(`${unexpectedTtl} unexpected TTL ${unexpectedTtl === 1 ? 'policy' : 'policies'}`);
+  return { passed: !problems.length, label: 'Firestore field overrides and TTL', detail: problems.join('; ') || `${local.length} match firestore.indexes.json` };
 }
 
 const uid = 'papertok-rules-smoke';
@@ -156,6 +200,20 @@ async function jsonRequest<T>(stage: string, url: string, init?: RequestInit): P
   }
 }
 
+async function listAdminResources<T>(stage: string, url: URL, key: 'indexes' | 'fields', headers: HeadersInit) {
+  const resources: T[] = [];
+  const seen = new Set<string>();
+  while (true) {
+    const page = await jsonRequest<Partial<Record<typeof key, T[]>> & { nextPageToken?: string }>(stage, url.href, { headers });
+    resources.push(...(page[key] ?? []));
+    const pageToken = page.nextPageToken;
+    if (!pageToken) return resources;
+    if (seen.has(pageToken)) throw new CheckError(`${stage} repeated a page`);
+    seen.add(pageToken);
+    url.searchParams.set('pageToken', pageToken);
+  }
+}
+
 async function accessToken(cli: boolean) {
   const form = new URLSearchParams();
   let url = 'https://oauth2.googleapis.com/token';
@@ -208,6 +266,11 @@ async function main() {
     const cli = process.argv.includes('--firebase-cli-token');
     const token = await accessToken(cli);
     const headers = { Authorization: `Bearer ${token}` };
+    const adminHeaders = cli ? { ...headers, 'x-goog-user-project': 'papertok-168df' } : headers;
+    const adminGroups = `https://firestore.googleapis.com/v1/${database}/collectionGroups`;
+    const local = JSON.parse(readFileSync(new URL('../firestore.indexes.json', import.meta.url), 'utf8')) as {
+      indexes: LocalIndex[]; fieldOverrides?: LocalField[];
+    };
     await Promise.all([
       report('Firestore rules and write contract', async () => {
         const release = await jsonRequest<{ rulesetName?: string }>('Rules release lookup', `${rulesApi}/${project}/releases/cloud.firestore`, { headers });
@@ -224,22 +287,25 @@ async function main() {
         print(reportContract(cases.map(entry => entry.label), result));
       }),
       report('Firestore composite indexes', async () => {
-        const local = JSON.parse(readFileSync(new URL('../firestore.indexes.json', import.meta.url), 'utf8')) as { indexes: LocalIndex[] };
-        const indexes: LiveIndex[] = [];
-        const url = new URL(`https://firestore.googleapis.com/v1/${database}/collectionGroups/-/indexes`);
-        const seen = new Set<string>();
-        while (true) {
-          const page = await jsonRequest<{ indexes?: LiveIndex[]; nextPageToken?: string }>('Firestore index lookup', url.href, {
-            headers: cli ? { ...headers, 'x-goog-user-project': 'papertok-168df' } : headers,
-          });
-          indexes.push(...(page.indexes ?? []));
-          const pageToken = page.nextPageToken;
-          if (!pageToken) break;
-          if (seen.has(pageToken)) throw new CheckError('Firestore index lookup repeated a page');
-          seen.add(pageToken);
-          url.searchParams.set('pageToken', pageToken);
-        }
+        const indexes = await listAdminResources<LiveIndex>('Firestore index lookup', new URL(`${adminGroups}/-/indexes`), 'indexes', adminHeaders);
         print(compareIndexes(local.indexes, indexes));
+      }),
+      report('Firestore field overrides and TTL', async () => {
+        const overrides = local.fieldOverrides ?? [];
+        const listFields = (stage: string, filter: string) => {
+          const url = new URL(`${adminGroups}/-/fields`);
+          url.searchParams.set('filter', filter);
+          return listAdminResources<LiveField>(stage, url, 'fields', adminHeaders);
+        };
+        const [indexedFields, ttlFields, declaredFields] = await Promise.all([
+          listFields('Firestore field override lookup', 'indexConfig.usesAncestorConfig:false'),
+          listFields('Firestore TTL policy lookup', 'ttlConfig:*'),
+          Promise.all(overrides.map(({ collectionGroup, fieldPath }) => jsonRequest<LiveField>(
+            'Firestore declared field lookup', `${adminGroups}/${encodeURIComponent(collectionGroup)}/fields/${encodeURIComponent(fieldPath)}`,
+            { headers: adminHeaders },
+          ))),
+        ]);
+        print(compareFieldOverrides(overrides, [...indexedFields, ...ttlFields, ...declaredFields]));
       }),
     ]);
   });

@@ -192,11 +192,12 @@ its `## Production` section. For `firestore.indexes.json`, put
 both files change. The PR check enforces the statement. The release operator
 performs the deploy and checks the result.
 
-The check reads the active rules release and composite indexes for the default
-database. It ignores carriage returns in the rules file and compares the index
-definitions and readiness. Single-field overrides and TTL are outside this
-comparison. It also submits synthetic writes to the Rules API against the
-active source. Create cases, including onboarding, send `resource: null`
+The check reads the active rules release and index configuration for the default
+database. It ignores carriage returns in the rules file and checks composite
+indexes, declared single-field overrides and exemptions, and TTL policies.
+It reports unexpected composites and TTL policies, and requires declared indexes
+and TTL policies to be ready. It also submits synthetic writes to the Rules API
+against the active source. Create cases, including onboarding, send `resource: null`
 explicitly. Omitting `resource` triggers a null-value error when rules compare
 it to `null`. Rules tests use synthetic identities and mock document lookups.
 The ORCID fixture uses an opaque connection string because the simulator
@@ -210,9 +211,9 @@ Nico or Pablo sets this up once for `mugar123/papertok`.
    Grant [Firebase Rules Viewer](https://docs.cloud.google.com/iam/docs/roles-permissions/firebaserules#firebaserules.viewer)
    (`roles/firebaserules.viewer`) to read the release and source.
 2. Create and grant a project custom **Firestore Smoke Reader** role with
-   `firebaserules.rulesets.test` and `datastore.indexes.list`. The former runs
-   `projects:test`. The latter lists composite indexes without granting document
-   access or index writes. See the [Firebase Rules permission table](https://firebase.google.com/docs/projects/iam/permissions/)
+   `firebaserules.rulesets.test`, `datastore.indexes.list`, and
+   `datastore.indexes.get`. These allow `projects:test` and read access to index
+   and TTL configuration. See the [Firebase Rules permission table](https://firebase.google.com/docs/projects/iam/permissions/)
    and [Firestore IAM permission table](https://docs.cloud.google.com/firestore/docs/security/iam#required_permissions_for_api_methods).
 3. Create a JSON key for that service account. In the upstream GitHub repo,
    open **Settings → Secrets and variables → Actions → New repository secret**.
