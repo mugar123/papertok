@@ -9,7 +9,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
-import { bindNudgePlacement, clipToViewport, createNudgePlacer, type Placement } from '../../utils/nudge-placement.ts';
+import { bindNudgePlacement, clipToViewport, createNudgePlacer, restoreTarget, type Placement } from '../../utils/nudge-placement.ts';
 import './nudge-panel.css';
 
 // An aside, not a dialog: it takes no focus, traps nothing, and covers no
@@ -76,9 +76,10 @@ function watchLayout(panel: HTMLElement, notify: { size: () => void; content: ()
 // top edge under the navbar when the bottom would cover the control, and
 // hidden (inert, so nothing in it takes focus) while both would cover it
 // entirely, as with enlarged text. Here it only measures and applies. Focus is
-// never moved, and the notice is never dismissed: it comes back when focus
-// moves to a control it does not cover. It is hidden too when it does not fit
-// on screen at all. Checked as focus arrives, as anything scrolls, when the
+// never moved to make room, and the notice is never dismissed: it comes back
+// when focus moves to a control it does not cover. It is hidden too when it
+// does not fit on screen at all; if focus is inside it then, focus goes back
+// to the control it came from first. Checked as focus arrives, as anything scrolls, when the
 // screen is resized and when the layout changes (watchLayout); a pointer press
 // holds it, and focus inside it keeps its edge.
 function useClearOfFocus() {
@@ -98,7 +99,21 @@ function useClearOfFocus() {
         if (!target || target === document.body) return { kind: 'none' };
         if (element.contains(target)) return { kind: 'inside' };
         // Only what is on screen counts: a tall control is hidden when what shows of it is covered.
-        return { kind: 'control', box: clipToViewport(target.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight }) };
+        return { kind: 'control', box: clipToViewport(target.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight }), ref: target };
+      },
+      // The panel is about to be hidden with focus inside it: back to the control focus came from, or when that is gone
+      // (or focus was never on one) to the page container, where a route change leaves it. The indicator shows because
+      // focus was already visible there; `focusVisible` asks for it where the browser supports the option.
+      restoreFocus: (origin) => {
+        const container = () => document.getElementById('main-content');
+        const back = restoreTarget<HTMLElement>(origin instanceof HTMLElement ? origin : undefined, {
+          usable: candidate => candidate.isConnected,
+          fallback: container,
+        });
+        back?.focus({ focusVisible: true });
+        // A control that is disabled, not displayed or inert does not take focus: it is still in the panel, which
+        // is about to go inert, so try the page container before focus is dropped to the body.
+        if (element.contains(document.activeElement)) container()?.focus({ focusVisible: true });
       },
       measure: (edge) => {
         element.dataset.edge = edge;

@@ -70,7 +70,8 @@ export function choosePlacement({ target, boxes }: { target: ScreenBox; boxes: R
 }
 
 /** Where keyboard focus is: nowhere that matters, inside the panel, or on a control of the page. */
-export type FocusState = { kind: 'none' } | { kind: 'inside' } | { kind: 'control'; box: ScreenBox };
+// `ref` is whatever lets the page find the control again (its element), which the placer hands back to restoreFocus.
+export type FocusState = { kind: 'none' } | { kind: 'inside' } | { kind: 'control'; box: ScreenBox; ref?: unknown };
 
 /**
  * The panel's placement over time. `measure` puts the panel at an edge and
@@ -84,24 +85,32 @@ export type FocusState = { kind: 'none' } | { kind: 'inside' } | { kind: 'contro
  * asked for during a press is made when the last pointer is released. Focus
  * inside the panel keeps its edge, but not a panel that no longer fits on
  * screen (the window was made smaller): its controls would be off screen, so
- * it is hidden, which takes focus out of it.
+ * it is hidden. Hiding a panel that holds focus would drop focus to the page
+ * body with no indicator and send the next Tab to the top of the page
+ * (WCAG 2.4.3, 2.4.7), so before it is hidden `restoreFocus` is given the
+ * control of the page that focus last came from (its `ref`, or undefined when
+ * there was none, as after a click into the panel) and puts focus back there.
  */
-export function createNudgePlacer({ focus, measure, apply }: { focus: () => FocusState; measure: (edge: Edge) => ScreenBox; apply: (placement: Placement) => void }) {
+export function createNudgePlacer({ focus, measure, apply, restoreFocus }: { focus: () => FocusState; measure: (edge: Edge) => ScreenBox; apply: (placement: Placement) => void; restoreFocus: (origin: unknown) => void }) {
   const pressing = new Set<number>();
   let pending = false;
+  let deciding = false;
   let current = HOME_PLACEMENT;
+  // The control of the page that had focus before it entered the panel.
+  let origin: unknown;
   const settle = (placement: Placement) => {
     current = placement;
     apply(placement);
   };
-  const place = () => {
-    if (pressing.size > 0) {
-      pending = true;
-      return;
-    }
+  const decide = () => {
     const state = focus();
+    // Focus that left the page controls (a click on plain text) is no origin: a click into the panel after it has none.
+    if (state.kind === 'control') origin = state.ref;
+    else if (state.kind === 'none') origin = undefined;
     const boxes = { bottom: measure('bottom'), top: measure('top') };
     if (!fitsOnScreen(boxes)) {
+      // Focus first: an inert panel that still holds it would drop it to the page body.
+      if (state.kind === 'inside') restoreFocus(origin);
       settle({ edge: state.kind === 'inside' ? current.edge : 'bottom', hidden: true });
     } else if (state.kind === 'inside') {
       settle({ edge: current.edge, hidden: false });
@@ -111,8 +120,22 @@ export function createNudgePlacer({ focus, measure, apply }: { focus: () => Focu
       settle(choosePlacement({ target: state.box, boxes }));
     }
   };
+  const place = () => {
+    if (pressing.size > 0) {
+      pending = true;
+      return;
+    }
+    // Putting focus back sends a focusin, which asks to place again in the middle of this decision.
+    if (deciding) return;
+    deciding = true;
+    try {
+      decide();
+    } finally {
+      deciding = false;
+    }
+  };
   /**
-   * Forgets every press when \`clear\` is set, for a press whose release never
+   * Forgets every press when `clear` is set, for a press whose release never
    * arrives (a context menu, the window losing focus), so the panel is not held
    * for good. Once none is held, a change asked for meanwhile is made.
    */
@@ -223,4 +246,14 @@ export function bindNudgePlacement(placer: ReturnType<typeof createNudgePlacer>,
     win.removeEventListener('resize', onPlace);
     win.removeEventListener('blur', onReleaseAll);
   };
+}
+
+/**
+ * Where focus goes when the panel is hidden with focus inside it: the control
+ * of the page it came from while that is still on the page, else the page
+ * container `fallback` names, where a route change leaves focus. Null when
+ * neither exists, and focus is then left to the browser.
+ */
+export function restoreTarget<T>(origin: T | undefined, { usable, fallback }: { usable: (origin: T) => boolean; fallback: () => T | null }): T | null {
+  return origin !== undefined && usable(origin) ? origin : fallback();
 }

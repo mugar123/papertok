@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { HOME_PLACEMENT, bindNudgePlacement, choosePlacement, clipToViewport, createNudgePlacer, fitsOnScreen, type Edge, type FocusState, type Placement, type ScreenBox } from './nudge-placement.ts';
+import { HOME_PLACEMENT, bindNudgePlacement, choosePlacement, clipToViewport, createNudgePlacer, fitsOnScreen, restoreTarget, type Edge, type FocusState, type Placement, type ScreenBox } from './nudge-placement.ts';
 
 // A 320 x 568 screen. Under the navbar the top edge starts at 64 px; the bottom edge ends at 556 px.
 const across = (top: number, bottom: number): ScreenBox => ({ left: 12, right: 308, top, bottom });
@@ -58,8 +58,8 @@ test('a control the panel cannot cover entirely never hides it: the panel goes w
 
 // A panel whose geometry follows the edge it is given, as the DOM's does: `dom.edge` is what the page would show,
 // written by both measuring and applying.
-function fakePanel({ focus, boxes }: { focus: { current: FocusState }; boxes: Record<Edge, ScreenBox> | (() => Record<Edge, ScreenBox>) }) {
-  const log = { measured: [] as Edge[], applied: [] as Placement[], dom: { edge: 'bottom' as Edge } };
+function fakePanel({ focus, boxes, onRestore }: { focus: { current: FocusState }; boxes: Record<Edge, ScreenBox> | (() => Record<Edge, ScreenBox>); onRestore?: () => void }) {
+  const log = { measured: [] as Edge[], applied: [] as Placement[], restored: [] as unknown[], order: [] as string[], dom: { edge: 'bottom' as Edge } };
   const placer = createNudgePlacer({
     focus: () => focus.current,
     measure: (edge) => {
@@ -67,7 +67,13 @@ function fakePanel({ focus, boxes }: { focus: { current: FocusState }; boxes: Re
       log.measured.push(edge);
       return (typeof boxes === 'function' ? boxes() : boxes)[edge];
     },
-    apply: (placement) => { log.dom.edge = placement.edge; log.applied.push(placement); },
+    apply: (placement) => { log.dom.edge = placement.edge; log.applied.push(placement); log.order.push('apply'); },
+    restoreFocus: (origin) => {
+      log.restored.push(origin);
+      log.order.push('restore');
+      focus.current = origin === undefined ? { kind: 'none' } : { kind: 'control', box: control(10, 20), ref: origin };
+      onRestore?.();
+    },
   });
   return { placer, log };
 }
@@ -398,4 +404,62 @@ test('a content notice decides only when a control of the page has focus, a size
   page.runFrame();
   assert.deepEqual(log.applied.at(-1), HOME_PLACEMENT, 'the size notice made it a full decision: shown at home');
   unbind();
+});
+
+test('hiding a panel that holds focus puts focus back on the page control it came from, before the panel goes inert', () => {
+  // Focus was on a page control, then Tab took it into the panel's action; the window then drops to 320 px high.
+  const focus = { current: { kind: 'control', box: control(530, 560), ref: 'read button' } as FocusState };
+  const room = { current: TALL_436 };
+  const { placer, log } = fakePanel({ focus, boxes: () => room.current });
+  placer.place();
+  assert.deepEqual(log.applied.at(-1), { edge: 'top', hidden: false });
+  focus.current = { kind: 'inside' };
+  placer.place();
+  assert.deepEqual(log.restored, [], 'while the panel fits, focus inside it is left alone');
+
+  room.current = { bottom: across(-128, 308), top: across(64, 500) };
+  log.order.length = 0;
+  placer.place();
+  assert.deepEqual(log.restored, ['read button'], 'focus goes back to the control it came from');
+  assert.deepEqual(log.order, ['restore', 'apply'], 'before the panel is hidden, so an inert panel never holds it');
+  assert.deepEqual(focus.current, { kind: 'control', box: control(10, 20), ref: 'read button' }, 'and that is where it lands');
+  assert.deepEqual(log.applied.at(-1), { edge: 'top', hidden: true });
+});
+
+test('focus that entered the panel with no page control before it is restored to the fallback, and the restoring does not loop', () => {
+  const focus = { current: { kind: 'inside' } as FocusState };
+  const room = { current: { bottom: across(-128, 308), top: across(64, 500) } as Record<Edge, ScreenBox> };
+  // Putting focus back sends a focusin, which asks to place again in the middle of the decision.
+  const refs: { placer?: ReturnType<typeof fakePanel>['placer'] } = {};
+  const { placer, log } = fakePanel({ focus, boxes: () => room.current, onRestore: () => refs.placer?.place() });
+  refs.placer = placer;
+  placer.place();
+  assert.deepEqual(log.restored, [undefined], 'no origin: the page decides where, by restoreTarget');
+  assert.equal(log.applied.length, 1, 'the nested request did not decide again');
+  assert.deepEqual(log.applied.at(-1), { edge: 'bottom', hidden: true });
+});
+
+test('focus returns to the control it came from while that is on the page, else to the page container, else nowhere', () => {
+  const read = { id: 'read button', connected: true };
+  const container = { id: 'main-content', connected: true };
+  const usable = (element: { connected: boolean }) => element.connected;
+  assert.equal(restoreTarget(read, { usable, fallback: () => container }), read);
+  read.connected = false;
+  assert.equal(restoreTarget(read, { usable, fallback: () => container }), container, 'the control is gone: the page container');
+  assert.equal(restoreTarget(undefined, { usable, fallback: () => container }), container, 'focus never came from a page control');
+  assert.equal(restoreTarget(undefined, { usable, fallback: () => null }), null, 'no container either: left to the browser');
+});
+
+test('focus that left the page controls before the panel was entered has no origin to go back to', () => {
+  // A card button had focus, a click on plain text dropped it to the page, then a click put focus in the panel's X.
+  const focus = { current: { kind: 'control', box: control(300, 340), ref: 'card button' } as FocusState };
+  const room = { current: SMALL };
+  const { placer, log } = fakePanel({ focus, boxes: () => room.current });
+  placer.place();
+  focus.current = { kind: 'none' };
+  placer.place();
+  focus.current = { kind: 'inside' };
+  room.current = { bottom: across(-128, 308), top: across(64, 500) };
+  placer.place();
+  assert.deepEqual(log.restored, [undefined], 'not the card button focus left long ago');
 });

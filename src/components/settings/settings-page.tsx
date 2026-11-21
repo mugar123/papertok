@@ -31,7 +31,7 @@ import { useEmailNotifications } from '../../context/email-notifications-context
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analytics-service.ts';
 import { readAuthorMetricsConsent, writeAuthorMetricsConsent } from '../../services/author-metrics-service.ts';
-import { emailServiceState } from '../../utils/email-health.ts';
+import { emailDownStatus, emailServiceState } from '../../utils/email-health.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paper-rewrite-service.ts';
 import { CATEGORIES } from '../../data/categories.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/auth-identity-service.ts';
@@ -238,8 +238,7 @@ function emailStatus(preferences: ReturnType<typeof useEmailNotifications>['pref
   const service = emailServiceState(health);
   if (service === 'down') {
     return {
-      label: 'Unavailable',
-      description: 'The email service is not responding right now',
+      ...emailDownStatus(health),
       tone: 'warning',
     };
   }

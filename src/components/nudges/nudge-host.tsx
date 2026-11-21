@@ -8,6 +8,7 @@ import { useEmailNotifications } from '../../context/email-notifications-context
 import { useFeed } from '../../context/feed-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
+import { EMAIL_NOT_CONFIGURED_REASON } from '../../utils/email-health.ts';
 import { ANALYTICS_CONSENT, trackPmfSurvey } from '../../services/analytics-service.ts';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
 import { auth } from '../../services/firebase.ts';
@@ -111,7 +112,7 @@ const COPY = {
     'email-down': {
       'not-configured': {
         title: 'Email updates are paused',
-        body: 'The service is not connected yet, so no digest will go out.',
+        body: `${EMAIL_NOT_CONFIGURED_REASON}.`,
       },
       unavailable: {
         title: 'Email updates are paused',

@@ -1,4 +1,4 @@
-import { emailServiceState } from './email-health.ts';
+import { EMAIL_NOT_CONFIGURED_CODE, emailServiceState } from './email-health.ts';
 import { PRIVACY_NOTICE_BASELINE_VERSION } from '../legal/privacy-policy.ts';
 
 type NudgeStorage = Pick<Storage, 'getItem' | 'setItem'>;
@@ -530,5 +530,5 @@ export function answerPrivacyNotice(visit: VisitNotices): VisitNotices {
  */
 export function emailNudgeProblem({ loading = false, health = {} }: { loading?: boolean; health?: { code?: string | null; available?: boolean; configured?: boolean } | null } = {}): 'not-configured' | 'unavailable' | null {
   if (loading || !health?.code || emailServiceState(health) !== 'down') return null;
-  return health.code === 'EMAIL_NOT_CONFIGURED' ? 'not-configured' : 'unavailable';
+  return health.code === EMAIL_NOT_CONFIGURED_CODE ? 'not-configured' : 'unavailable';
 }
