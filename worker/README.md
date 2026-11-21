@@ -1129,7 +1129,7 @@ The global search palette asks the author index first (`/authors?search=` with 1
 
 | Tier | Share | What spends it |
 | --- | --- | --- |
-| essential | 100% | One work by identifier with `per-page=1` (or `per_page=1`): a paper being opened, such as the arXiv fallback of the public paper page. |
+| essential | 100% | One work by identifier with `per-page=1` (or `per_page=1`): a paper being opened, such as the public paper page's OpenAlex lookup of an arXiv paper, asked beside arXiv as both its fallback and its enrichment. |
 | feed | 95% | The paper harvest, whatever it asks: the topic, venue, notable and area lanes and working-paper series, followed entities, searches and projects, and enrichment. It goes through `handleHarvestOpenAlex`, and its misses also count against its own 4,000 units a day (`OPENALEX_HARVEST_DAILY_UNITS`) in place of the minute's ceiling, as two ledger subjects: 300 for the runs new follows start (`OPENALEX_NEW_FOLLOWS_DAILY_UNITS`) and 3,700 for the nightly run. A category or nightly followed lane's misses count against its part of the nightly run's share too (steps 2 to 4 of the paper harvest). |
 | enrichment | 80% | `works` lists filtered only by `doi`, `openalex`, `ids.openalex` or `locations.landing_page_url` (cards already shown, followed DOIs, saved papers a list holds with no field), and the share pages' billed lookups. |
 | exploration | 60% | Graph expansions (`select=id,ids`), every search, `/citation-graph`, autocomplete, profile pages and lookups, and any shape not listed above. Also every OpenAlex request for a scheduled or test email. |
