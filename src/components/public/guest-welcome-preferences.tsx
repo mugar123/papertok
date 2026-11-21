@@ -275,7 +275,10 @@ function StarDemo({ still }: { still: boolean }) {
             >
               <Star size={11} weight={starred ? 'fill' : 'regular'}/>
             </motion.span>
-            {starred ? 'Starred' : 'Star'}
+            {/* In its own span: the icon before it is replaced on the star,
+                and React cannot insert before text a browser's translator has
+                replaced (facebook/react#11538). */}
+            <span>{starred ? 'Starred' : 'Star'}</span>
             {starred && !still && <>
               <motion.span
                 className="gw-gh-ring"
