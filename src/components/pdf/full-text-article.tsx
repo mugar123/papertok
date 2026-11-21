@@ -64,9 +64,10 @@ const subscribeMath = (listener: () => void) => {
 function Formula({ mathml, tex, image, display }: { mathml?: string; tex?: string; image?: string; display: boolean }) {
   useSyncExternalStore(subscribeMath, mathReady);
   const html = formulaHtml(tex, display) ?? mathml;
-  if (html) return <span className="ft-math" dangerouslySetInnerHTML={{ __html: html }} />;
+  // A formula is not words for a browser's translator to rewrite.
+  if (html) return <span className="ft-math" translate="no" dangerouslySetInnerHTML={{ __html: html }} />;
   if (image) return <img className="ft-formula-image" src={image} alt={tex ?? 'Formula'} loading="lazy" referrerPolicy="no-referrer" />;
-  return tex ? <code className="ft-tex">{tex}</code> : null;
+  return tex ? <code className="ft-tex" translate="no">{tex}</code> : null;
 }
 
 function CopyFormula({ tex, mathml }: { tex?: string; mathml?: string }) {

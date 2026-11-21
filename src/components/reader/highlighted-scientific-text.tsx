@@ -99,6 +99,7 @@ function MathRun({ Tag, display, html, ...rest }: HTMLAttributes<HTMLElement> & 
         {...rest}
         ref={scrollerRef}
         className={[rest.className, 'rd-math-scroller'].filter(Boolean).join(' ')}
+        translate="no"
         onScroll={scrolls ? event => setPosition(event.currentTarget.scrollLeft) : undefined}
         dangerouslySetInnerHTML={markup}
       />
@@ -221,6 +222,8 @@ export default function HighlightedScientificText({ children, highlights = [], p
           // Until the chunk lands — and for anything KaTeX refuses — the LaTeX
           // source shows. It is readable, and it is what the highlight offsets
           // were measured against either way.
+          // Both it and the drawn formula carry `translate="no"`, so a browser
+          // translating the page does not rewrite LaTeX or glyphs as words.
           // Marked maths carries the same id as any other run of its
           // highlight: a tap on the formula is a tap on the highlight.
           const mathId = item.kind ? item.id || undefined : undefined;
@@ -230,7 +233,7 @@ export default function HighlightedScientificText({ children, highlights = [], p
           return (
             <Fragment key={`math-${item.start}`}>
               {html === null
-                ? <Tag {...bounds} {...marks} data-math="" data-highlight-id={mathId} className={markClass}>{item.raw}</Tag>
+                ? <Tag {...bounds} {...marks} data-math="" data-highlight-id={mathId} className={markClass} translate="no">{item.raw}</Tag>
                 : (
                   <MathRun
                     Tag={Tag}
