@@ -6441,6 +6441,37 @@ test('reactivation status reports stale KV as unavailable and recovers on retry'
   assert.deepEqual(await settings(migrating), { enabled: false, revision: 3 });
 });
 
+for (const source of ['kv', 'object']) {
+  test(`a KV miss for a subscribed reader is an unavailable read, not an unsubscribe, and withdrawal still works (${source})`, async t => {
+    const identity = { uid: 'reader', email: 'reader@example.com', displayName: '' };
+    const kv = createMemoryKv();
+    const stores = inMemorySubscriptionStores();
+    // The reader subscribed and opted in while KV held the record (phase 1).
+    const phase1 = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+    const env = { ...phase1, EMAIL_SUBSCRIPTION_SOURCE: source };
+    t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: identity.uid, email: identity.email, emailVerified: true }] }));
+    const preferences = () => withIdentityCache(() => handleEmailNotificationRequest(preferencesRequest(), env, '/notifications/preferences'));
+    const key = 'notification:subscription:reader';
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, identity);
+    await reactivationRequest('PUT', '/notifications/reactivation', phase1, { enabled: true, revision: 0 });
+    await reactivationRequest('POST', '/notifications/visit', phase1, { revision: 1 });
+    const record = kv.values.get(key);
+    assert.ok(record);
+
+    // KV briefly returns null for the record the object says may still exist.
+    kv.values.delete(key);
+    await assert.rejects(preferences, refusedWith('EMAIL_UNAVAILABLE', 503));
+    await assert.rejects(() => reactivationRequest('GET', '/notifications/reactivation', env), refusedWith('EMAIL_UNAVAILABLE', 503));
+    kv.values.set(key, record);
+    const read = await preferences();
+    assert.ok('preferences' in read && read.preferences.enabled === true);
+
+    kv.values.delete(key);
+    assert.deepEqual(await reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: false }), { enabled: false, revision: 2 });
+    assert.equal(stores.visitState(identity.uid).lastVisit, undefined);
+  });
+}
+
 function reactivationRequest(method: string, pathname: string, env: WorkerEnv, body?: unknown) {
   return handleEmailReactivationRequest(new Request(`https://api.papertok.app${pathname}`, {
     method,

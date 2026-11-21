@@ -1288,10 +1288,26 @@ async function changeSubscription(
   throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
 }
 
-/** `behind`: phase 1 read a KV record behind the object (see readPhase1Slot). */
-async function loadSubscriptionRecord(env: WorkerEnv, key: string, read?: Awaited<ReturnType<typeof readPhase1Slot>>) {
+/**
+ * A read that found no subscription while the reader's object says a KV record
+ * may still exist: a save or a reminder grant reopened the object and no
+ * cancellation closed it since, so the miss may be a cached or not yet moved
+ * KV record, not an unsubscribe.
+ */
+function waitingForKv(slot: StoredSlot) {
+  return slot.migratable && !slot.subscription && (slot.version > 0 || Boolean(slot.reactivation));
+}
+
+/**
+ * `behind`: phase 1 read a KV record behind the object (see readPhase1Slot).
+ * `settled`: refuse with `EMAIL_UNAVAILABLE` when the read is waiting for KV,
+ * rather than answer as not subscribed.
+ */
+async function loadSubscriptionRecord(env: WorkerEnv, key: string, read?: Awaited<ReturnType<typeof readPhase1Slot>>, settled = false) {
   const phase1 = read ?? (subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key)) : null);
-  const subscription = withVersion(phase1 ? phase1.slot : await readSubscriptionSlot(env, subscriptionUid(key)));
+  const slot = phase1 ? phase1.slot : await readSubscriptionSlot(env, subscriptionUid(key));
+  if (settled && waitingForKv(slot)) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  const subscription = withVersion(slot);
   if (!subscription) return null;
   const stateKey = deliveryStateKey(key, subscription);
   const state = await env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json');
@@ -1306,8 +1322,8 @@ function subscriptionWithState(record: NonNullable<Awaited<ReturnType<typeof loa
   };
 }
 
-async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
-  const record = await loadSubscriptionRecord(env, key);
+async function loadSubscriptionWithState(env: WorkerEnv, key: string, settled = false) {
+  const record = await loadSubscriptionRecord(env, key, undefined, settled);
   return record && subscriptionWithState(record);
 }
 
@@ -3173,8 +3189,7 @@ async function handleReactivation(request: Request, env: WorkerEnv, identity: Pi
   if (!reading && expectedConsentRevision !== revision) {
     throw new EmailNotificationError('EMAIL_REACTIVATION_CHANGED', 409);
   }
-  const waitingForKv = slot.migratable && !slot.subscription && (slot.version > 0 || Boolean(slot.reactivation));
-  if (phase1?.behind || waitingForKv) {
+  if (phase1?.behind || waitingForKv(slot)) {
     throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
   }
   const token = slot.subscription?.unsubscribeToken;
@@ -3231,7 +3246,10 @@ export async function handleEmailNotificationRequest(request: Request, env: Work
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
 
   if (pathname === '/notifications/preferences' && request.method === 'GET') {
-    const subscription = await loadSubscriptionWithState(env, key);
+    // Settings reads a miss as an unsubscribe, so a miss that may be a cached
+    // or unmoved KV record is a failed read instead, and Settings keeps
+    // reminder withdrawal available.
+    const subscription = await loadSubscriptionWithState(env, key, true);
     return { preferences: publicSubscription(subscription, identity.email) };
   }
   if (pathname === '/notifications/preferences' && request.method === 'PUT') {
