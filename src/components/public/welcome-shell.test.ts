@@ -38,7 +38,7 @@ test('on a translated welcome, the topic fold\'s button shows its new label when
   try {
     const picker = (expanded: boolean) => createElement(SubtopicsPicker, {
       selectedAreas: new Set(['physics']),
-      selectedTopics: new Set(),
+      selectedTopics: new Set<string>(),
       onToggleTopic() {},
       expandedAreas: new Set(expanded ? ['physics'] : []),
       onToggleExpanded() {},
