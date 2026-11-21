@@ -20,6 +20,7 @@ import {
   legacyPaperPath,
   legacyPaperRedirect,
   parsePaperKey,
+  readablePaperPath,
   encodePaperKey,
 } from './public-navigation.ts';
 import type { PathLike } from 'fs';
@@ -328,4 +329,33 @@ test('every kind of public page previews with an image that ships in public/', (
   assert.equal(getShareImage('concept').path, '/og/papertok-share-topic-0.3.png', 'a concept is a research topic');
   assert.equal(getShareImage('paper'), DEFAULT_SHARE_IMAGE);
   assert.equal(getShareImage('toString'), DEFAULT_SHARE_IMAGE, 'a kind is looked up, not read off the prototype');
+});
+
+// ENG-218: a paper written by hand as /paper/<type>:<id>. The router hands the
+// page the decoded key, so a DOI's slash arrives as written with %2F.
+test('a readable paper key moves to the canonical path of the same paper', () => {
+  const canonical = (identity: string) => `/paper/${Buffer.from(identity).toString('base64url')}`;
+  assert.equal(readablePaperPath('arxiv:1706.03762'), '/paper/YXJ4aXY6MTcwNi4wMzc2Mg', 'the link from ENG-218');
+  assert.equal(readablePaperPath('arXiv:1706.03762'), canonical('arxiv:1706.03762'), 'the type is not case sensitive');
+  assert.equal(readablePaperPath('arxiv:1706.03762v7'), canonical('arxiv:1706.03762v7'), 'a version is kept');
+  assert.equal(readablePaperPath('arxiv:hep-th/9901001'), canonical('arxiv:hep-th/9901001'), 'an old-style id keeps its archive');
+  assert.equal(readablePaperPath('doi:10.48550/arXiv.1706.03762'), canonical('doi:10.48550/arxiv.1706.03762'), 'a DOI is lowercased');
+  assert.equal(readablePaperPath('DOI:10.1000/ABC'), readablePaperPath('doi:10.1000/abc'));
+  assert.equal(readablePaperPath('openalex:w2741809807'), canonical('openalex:W2741809807'), 'an OpenAlex id is uppercase');
+  assert.equal(readablePaperPath('pmid:31234567'), canonical('pmid:31234567'));
+  assert.equal(readablePaperPath('openreview:5pShDP8LSm'), canonical('openreview:5pShDP8LSm'), 'an OpenReview id keeps its case');
+});
+
+test('a readable key moves to a path whose key names the same paper', () => {
+  const path = readablePaperPath('doi:10.48550/arXiv.1706.03762');
+  assert.ok(path);
+  const key = path.slice('/paper/'.length);
+  assert.deepEqual(parsePaperKey(key), { type: 'doi', value: '10.48550/arxiv.1706.03762' });
+  assert.equal(readablePaperPath(key), null, 'the canonical key is not moved again, so no redirect loops');
+});
+
+test('a key that is not a readable paper address does not move', () => {
+  for (const key of ['foo:bar', 'arxiv:', ':1706.03762', 'arxiv:not-an-id', 'openalex:A2741809807', '1706.03762', '', 'YXJ4aXY6MTcwNi4wMzc2Mg']) {
+    assert.equal(readablePaperPath(key), null, JSON.stringify(key));
+  }
 });
