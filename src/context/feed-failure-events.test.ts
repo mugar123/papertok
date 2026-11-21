@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { afterEach, test } from 'node:test';
 import { sourceFeedFailure } from './source-feed-failure.ts';
 import type { Paper } from '../models/paper.ts';
 import { renderFeed, waitFor } from '../../tests/dom/render-feed.ts';
@@ -8,6 +8,11 @@ import { renderFeed, waitFor } from '../../tests/dom/render-feed.ts';
 // attempt is on the reader's screen. The pure steps are in
 // feed-load-failure.test.ts; these tests render the provider, so the wiring that
 // feeds them its screen and its failures is checked too.
+
+afterEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});
 
 const OUTAGE = { kind: 'feed_load_failed', reason: 'server', status: 503, error_code: 'AUTH_UNAVAILABLE' };
 
@@ -39,6 +44,31 @@ test('a feed that fails on entry and again on its retry sends one app_error per 
   }
 });
 
+const loadsStarted = (view: Awaited<ReturnType<typeof renderFeed>>) =>
+  view.feedLoadsStarted().map(params => [params?.load_type, params?.attempt]);
+
+for (const action of ['Try again', 'Check again']) {
+  test(`${action} records a manual retry`, async () => {
+    const view = await renderFeed({ container: true });
+    try {
+      await view.corpus.requested();
+      if (action === 'Try again') view.corpus.refuse(503, 'AUTH_UNAVAILABLE');
+      else view.corpus.answer({ papers: [], more: false });
+      const button = await waitFor(() => {
+        const retry = [...document.querySelectorAll('button')].find(candidate => candidate.textContent === action);
+        assert.ok(retry);
+        return retry;
+      }, { timeout: 8000 });
+      view.corpus.answer({ papers: [card], more: false });
+      button.click();
+      await waitFor(() => assert.deepEqual(loadsStarted(view).at(-1), ['refresh', 'manual_retry']));
+      await waitFor(() => assert.deepEqual(view.feed().papers.map(paper => paper.id), [card.id]));
+    } finally {
+      await view.stop();
+    }
+  });
+}
+
 test('a failure while the reader is off /feed is sent when they return', async () => {
   const view = await renderFeed();
   try {
@@ -62,6 +92,7 @@ test('a failure behind cards is sent when the last card is dismissed', async () 
     await waitFor(() => assert.deepEqual(view.feed().papers.map(paper => paper.id), [card.id]));
     void view.feed().refreshFeed();
     await view.corpus.requested();
+    assert.deepEqual(loadsStarted(view), [['refresh', 'original']]);
     view.corpus.refuse(503, 'AUTH_UNAVAILABLE');
     await waitFor(() => assert.equal(view.feed().error, 'FEED_LOAD_FAILED'));
     await quiet();

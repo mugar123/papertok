@@ -336,10 +336,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     () => (source ? (source.loadMore || (() => false)) : feed.loadMore),
     [source, feed.loadMore],
   );
-  const refreshFeed = useMemo(
-    () => (source ? (source.refresh || (() => {})) : feed.refreshFeed),
-    [source, feed.refreshFeed],
-  );
+  const refreshFeed = useCallback((attempt?: 'manual_retry') => {
+    if (source) source.refresh?.();
+    else void feed.refreshFeed(attempt);
+  }, [source, feed.refreshFeed]);
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
   const dismissal = useMemo(() => dismissalFor(source, {
     hide: paper => { void markNotInterested(paper); },
@@ -895,8 +895,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     };
   }, [papers.length, loading, tail, showEndCard, feedNode, prefersReducedMotion]);
 
-  const handleRefresh = useCallback(() => {
-    refreshFeed();
+  const handleRetry = useCallback(() => {
+    refreshFeed('manual_retry');
   }, [refreshFeed]);
   // While its refresh runs the pill is `aria-disabled`, not `disabled`, which
   // would drop its keyboard focus to the page (ENG-178), so a press is
@@ -1351,7 +1351,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           art={<Petri pose="upset" className="feed-error-petri" />}
           title={'Error loading papers'}
           actions={(
-            <Button ref={retryButtonRef} size="sm" onClick={handleRefresh}>
+            <Button ref={retryButtonRef} size="sm" onClick={handleRetry}>
               <ArrowsClockwise size={16} aria-hidden="true" />
               {'Try again'}
             </Button>
@@ -1393,7 +1393,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           actions={(
             <>
               <Button size="sm" role="link" render={<Link to="/settings/discovery" />}>{'Add topics'}</Button>
-              <Button ref={retryButtonRef} size="sm" variant="outline" onClick={handleRefresh}>
+              <Button ref={retryButtonRef} size="sm" variant="outline" onClick={handleRetry}>
                 <ArrowsClockwise size={16} aria-hidden="true" />
                 {'Check again'}
               </Button>
@@ -1416,7 +1416,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         <p>
           {'There are no papers in your categories yet. Try broadening your interests.'}
         </p>
-        <button ref={retryButtonRef} className="feed-retry-btn" onClick={handleRefresh}>
+        <button ref={retryButtonRef} className="feed-retry-btn" onClick={() => refreshFeed()}>
           {'Explore again'}
         </button>
       </FeedLandmark>
