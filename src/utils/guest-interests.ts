@@ -1,11 +1,12 @@
 type GuestStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown; institutionEmail?: unknown } & InterestSettings;
+type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown; emailDigestConsent?: unknown; institutionEmail?: unknown } & InterestSettings;
 
 import { CATEGORIES } from '../data/categories.ts';
 import { normalizeInterestSettings, type InterestSettings } from './area-preferences.ts';
 import { normalizeReadingPreferences } from './user-settings.ts';
 import { institutionDomainOf } from './institution-domain.ts';
+import { DIGEST_CONSENT_FROM_SIGNUP } from './digest-consent.ts';
 
 /**
  * What a visitor told us they care about, before they had an account.
@@ -146,10 +147,14 @@ export function readGuestInterests(storage?: GuestStorage | null) {
       ? { readingLevel: parsed.readingLevel } : {};
     // Present only as an explicit yes: email is opt-in, so anything else —
     // an old answer, a no, a malformed value — reads as no.
+    // The consent version travels only with a yes, and only a version this app
+    // knows: a yes saved under the earlier welcome text has none.
     const email = parsed.emailDigest === true ? { emailDigest: true } : {};
+    const emailConsent = parsed.emailDigest === true && parsed.emailDigestConsent === DIGEST_CONSENT_FROM_SIGNUP
+      ? { emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP } : {};
     const institution = institutionDomainOf(parsed.institutionEmail)
       ? { institutionEmail: String(parsed.institutionEmail).trim().toLowerCase() } : {};
-    return { areas, topics, dismissed, ...reading, ...email, ...institution, ...normalizeInterestSettings(parsed, areas) };
+    return { areas, topics, dismissed, ...reading, ...email, ...emailConsent, ...institution, ...normalizeInterestSettings(parsed, areas) };
   } catch {
     return null;
   }
@@ -180,6 +185,8 @@ export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | unde
         ...normalizeInterestSettings(Array.isArray(answer) ? null : answer, normalized),
         ...((answer as GuestAnswer | null | undefined)?.readingLevel ? { readingLevel: normalizeReadingPreferences({ aiExplanationLevel: (answer as GuestAnswer).readingLevel }).aiExplanationLevel } : {}),
         ...((answer as GuestAnswer | null | undefined)?.emailDigest === true ? { emailDigest: true } : {}),
+        ...((answer as GuestAnswer | null | undefined)?.emailDigest === true && (answer as GuestAnswer).emailDigestConsent === DIGEST_CONSENT_FROM_SIGNUP
+          ? { emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP } : {}),
         ...(institutionDomainOf((answer as GuestAnswer | null | undefined)?.institutionEmail)
           ? { institutionEmail: String((answer as GuestAnswer).institutionEmail).trim().toLowerCase() } : {}),
         dismissedAt: null,

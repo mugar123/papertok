@@ -93,14 +93,14 @@ export function DigestPreview({ still, stamp }: { still: boolean; stamp?: ReactN
 
 // The digest is opt-in: off until the visitor turns it on. A yes travels with
 // the other answers and is saved on the account at onboarding; the
-// subscription itself starts with the account's first follow, because the
-// digest is built from follows (EmailNotificationsContext).
+// subscription starts in the account's first session, on the topics the visitor
+// chose (EmailNotificationsContext).
 export function WelcomeInboxChoice({ subscribed, onChange }: { subscribed: boolean; onChange: (subscribed: boolean) => void }) {
   return <div className="gw-preferences gw-inbox">
     <label className="gw-digest-optin" data-checked={subscribed ? '' : undefined}>
       <span className="gw-digest-optin-text">
         <strong id="gw-digest-optin-title">Email me the weekly digest</strong>
-        <span id="gw-digest-optin-desc">Starts with your first follow. Unsubscribe anytime.</span>
+        <span id="gw-digest-optin-desc">Mondays, when there are new papers in the topics you chose. Unsubscribe anytime.</span>
       </span>
       <Switch
         className="data-checked:border-[var(--accent-success)] data-checked:bg-[var(--accent-success)]"

@@ -109,6 +109,7 @@ import { forgetAccountToasts } from '../components/ui/toast.ts';
 import { accountLooksOnboarded } from '../utils/account-onboarding.ts';
 import { nextAdded, nextDeselected } from '../utils/interest-memory.ts';
 import { clearGuestInterests, readGuestInterests } from '../utils/guest-interests.ts';
+import { DIGEST_CONSENT_FROM_SIGNUP, writeDigestConsent } from '../utils/digest-consent.ts';
 import { areasForInterests, normalizeInterestSettings, type InterestSettings } from '../utils/area-preferences.ts';
 import { toggleFollowedAuthor } from '../utils/followed-authors.ts';
 
@@ -133,9 +134,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [followedAuthors, setFollowedAuthors] = useState<string[]>([]);
   const [readingPreferences, setReadingPreferences] = useState<ReadingPreferences>(DEFAULT_READING_PREFERENCES);
   // A yes to the email digest given in the guest welcome, saved on the
-  // account at onboarding and waiting for the first follow: the digest is
-  // built from follows, so EmailNotificationsContext turns the subscription
-  // on then and settles this flag.
+  // account at onboarding. EmailNotificationsContext turns the subscription
+  // on and settles this flag: in the first session for a yes given under the
+  // welcome text that promised the email from sign-up, at the first follow for
+  // any other (utils/digest-consent.ts).
   const [emailDigestPending, setEmailDigestPending] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   // Which doors this account has (F5). Kept in state rather than read from
@@ -457,6 +459,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
       // connection) must cost the reader the opt-in, not the account. They can
       // still turn email on in Settings.
       if (guestEmailDigest) {
+        // Which welcome text the yes was given under stays on this device: the
+        // profile flag is a bool. A yes with no known version keeps the promise
+        // of the earlier text, whenever the account was created.
+        writeDigestConsent(userId, guestAnswer?.emailDigestConsent === DIGEST_CONSENT_FROM_SIGNUP ? DIGEST_CONSENT_FROM_SIGNUP : null);
         void settleWithin(
           setDoc(doc(db, 'users', userId), { emailDigestOptIn: true }, { merge: true }),
           PROFILE_NETWORK_TIMEOUT_MS,
@@ -543,6 +549,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const userId = user?.uid;
     if (!userId) return;
     await setDoc(doc(db, 'users', userId), { emailDigestOptIn: deleteField() }, { merge: true });
+    writeDigestConsent(userId, null);
     if (auth.currentUser?.uid === userId) setEmailDigestPending(false);
   }, [user?.uid]);
 

@@ -1,3 +1,4 @@
+import { DIGEST_CONSENT_FROM_SIGNUP, DIGEST_CONSENT_SPENT, type DigestConsent } from './digest-consent.ts';
 import { getAllLeafCategories } from '../data/category-taxonomy.ts';
 
 const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
@@ -6,14 +7,16 @@ const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
  * The chosen categories a profile snapshot gives the digest: its leaf ids,
  * once each and sorted, read the way the account profile reads them. They are
  * confirmed only when the snapshot is the server's copy, never the device's
- * cache; a server copy with no categories, or no profile, is a confirmed none.
+ * cache and never one that still holds a write the server has not acknowledged
+ * (Firestore's `fromCache` and `hasPendingWrites`); a server copy with no
+ * categories, or no profile, is a confirmed none.
  */
-export function digestProfileInterests(profile: { preferences?: unknown; selectedCategories?: unknown } | undefined, fromCache: boolean) {
+export function digestProfileInterests(profile: { preferences?: unknown; selectedCategories?: unknown } | undefined, snapshot: { fromCache: boolean; hasPendingWrites: boolean }) {
   const chosen = profile?.preferences || profile?.selectedCategories;
   const interests = Array.isArray(chosen)
     ? [...new Set(chosen.filter((id): id is string => typeof id === 'string' && LEAF_IDS.has(id)))].sort()
     : [];
-  return { interests, confirmed: !fromCache };
+  return { interests, confirmed: !snapshot.fromCache && !snapshot.hasPendingWrites };
 }
 
 export interface DigestShutoffState {
@@ -81,4 +84,50 @@ export function digestShutoffNoticeShown({ turnedOffFor, userId, enabled, digest
   digestCovered: boolean;
 }) {
   return userId !== null && turnedOffFor === userId && !enabled && !digestCovered;
+}
+
+/**
+ * Whether a pending yes to the email still waits for the reader's first
+ * follow. Only a yes given under the welcome text that promised the email from
+ * sign-up (`DIGEST_CONSENT_FROM_SIGNUP`) starts on the chosen topics alone, and
+ * only while something covers the digest. Any other yes, a yes whose version is
+ * unknown included, keeps the promise it was given under. A spent yes waits
+ * for nothing.
+ */
+export function digestOptInWaitsForFollow({ pending, consent, covered = true }: {
+  pending: boolean;
+  consent: DigestConsent;
+  covered?: boolean;
+}) {
+  if (!pending) return false;
+  return consent !== DIGEST_CONSENT_SPENT && (consent !== DIGEST_CONSENT_FROM_SIGNUP || !covered);
+}
+
+/**
+ * What a pending yes to the email does next, once the subscription and the
+ * follows are known: `settle` when the flag only has to be deleted (the digest
+ * is already on, or the yes is `spent`), `subscribe` when the subscription can
+ * start now, `wait` otherwise. An older yes starts with the first follow; a yes
+ * given under the from-sign-up text starts on whatever covers the digest, the
+ * chosen topics included, once the profile read is the server's own
+ * (`digestSendReady`). Nothing is attempted twice in a session; a failed
+ * attempt leaves the flag in place, so the next session is the retry. A flag
+ * the live profile says is gone (`flagLive === false`: another tab or device
+ * already settled it) is not acted on; `null` is not known yet.
+ */
+export function digestOptInStep({ consent, attempted, flagLive, enabled, serviceDown, hasFollows, digestCovered, digestSendReady }: {
+  consent: DigestConsent;
+  attempted: boolean;
+  flagLive: boolean | null;
+  enabled: boolean;
+  serviceDown: boolean;
+  hasFollows: boolean;
+  digestCovered: boolean;
+  digestSendReady: boolean;
+}): 'settle' | 'subscribe' | 'wait' {
+  if (attempted || flagLive === false) return 'wait';
+  if (enabled || consent === DIGEST_CONSENT_SPENT) return 'settle';
+  if (serviceDown) return 'wait';
+  const ready = consent === DIGEST_CONSENT_FROM_SIGNUP ? digestCovered && digestSendReady : hasFollows;
+  return ready ? 'subscribe' : 'wait';
 }
