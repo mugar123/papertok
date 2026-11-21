@@ -496,7 +496,10 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
                     aria-describedby={waiting ? preparingId : undefined}
                   >
                     {preparing || pendingProvider === 'github' ? <ProviderSpinner /> : <GithubMark size={18} />}
-                    {copy.welcome.github}
+                    {/* The label in its own span, as in the sign-in modal: the mark
+                        before it swaps with a spinner, and React cannot insert
+                        before a text node a browser's translator has replaced. */}
+                    <span>{copy.welcome.github}</span>
                   </Button>
                   <Button
                     variant="outline"
@@ -508,7 +511,7 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
                     aria-describedby={waiting ? preparingId : undefined}
                   >
                     {preparing || pendingProvider === 'google' ? <ProviderSpinner /> : <GoogleMark size={18} />}
-                    {copy.welcome.google}
+                    <span>{copy.welcome.google}</span>
                   </Button>
                   <PreparingNote id={preparingId} state={readiness} onRetry={retry} keepLine={false} />
                   {/* Always mounted and displayed, even empty, so the alert is a
