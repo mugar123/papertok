@@ -4,7 +4,7 @@ This Cloudflare Worker protects provider keys and serves scientific queries, AI,
 
 ## Source structure
 
-Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker, its three bound Durable Object classes and the harvest Workflow to PostHog. The request and schedule implementation stays in `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)) and runs each cron of `wrangler.toml` by its expression: `*/20 7-13 * * *` runs the email schedule, `30 2 * * *` starts the paper harvest and `* * * * *` pings the paper store (see [Paper store](#paper-store)). Any other expression runs the email schedule.
+Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker, its three bound Durable Object classes and the harvest Workflow to PostHog. The request and schedule implementation stays in `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)) and runs each cron of `wrangler.toml` by its expression: `*/20 7-13 * * *` runs the email schedule, `30 2 * * *` starts the paper harvest and deletes expired author save receipts (see [Author save collection](#author-save-collection)), and `* * * * *` pings the paper store (see [Paper store](#paper-store)). Any other expression runs the email schedule.
 
 - `router.ts` owns dispatch order, the Origin checks for the feature and health routes (`/health` and `/notifications/unsubscribe` have none), Firebase identity for `PROTECTED_PROVIDER_PATHS`, institution access and `/ai/quota`, a GET-only check for every route after the AI POST routes, and error responses. Most feature handlers check their own methods.
 - Provider handlers refuse a disallowed Origin themselves. A request without an Origin passes, except on `/pdf`, which requires one. The `/sources/*` handlers check through `sourceRequestContext` in `provider-runtime.ts`. `/share/*` has no Origin check because it serves crawlers.
@@ -829,8 +829,18 @@ previously assigned canonical IDs, collection skips the conflicting save.
 
 A browser tab writes an immutable receipt under `users/{uid}/authorMetricReceipts`
 after the save succeeds. It writes and submits the receipt in the background,
-then deletes it. The `expiresAt` field makes an abandoned receipt eligible for
-Firestore TTL deletion after five minutes. A transaction rechecks the switch,
+then deletes it. The browser sets `expiresAt` five minutes after the save. If the
+tab closes first, the receipt stays until the daily 02:30 UTC cron, which deletes
+every receipt whose `expiresAt` has passed (`runAuthorReceiptCleanup` in
+`worker/author-metrics.ts`). Firestore TTL would need billing, and the project
+stays on the free Spark plan. The cron queries the `authorMetricReceipts`
+collection group, up to five pages of 200, and logs a warning when it stops at
+that cap. Each query costs one Firestore read even when it finds nothing, so an
+idle day costs one read; a day with abandoned receipts costs one read per
+receipt plus one per page, and one delete per receipt. The query needs the
+collection-group index on `expiresAt` in `firestore.indexes.json`. Until that
+index is ready, Firestore refuses the query with `FAILED_PRECONDITION`: the cron
+logs the error code, deletes nothing and tries again the next day. A transaction rechecks the switch,
 account, preference, receipt and a recent server save timestamp on the saved
 copy. The earlier server timestamp determines the week. The Worker accepts
 receipts for two minutes after they are written, including at midnight UTC.
@@ -842,8 +852,8 @@ its own preference in Settings → Privacy. Verified-email accounts count by def
 Account deletion fences new contributions before sweeping the weekly documents
 and preference. It removes the fence after deleting the sign-in account.
 
-Deploy Firestore rules, the receipt TTL configuration in `firestore.indexes.json`
-and the Worker before publishing the frontend. Collection runs outside the save
+Deploy Firestore rules, the receipt index in `firestore.indexes.json` (wait until
+it is READY) and the Worker before publishing the frontend. Collection runs outside the save
 operation. A failed or expired submission leaves the reader's save intact.
 Phase 2 will need to reconcile identifiers when new evidence connects previously
 independent mappings. It will wait for the receipt window and in-flight writes, publish one

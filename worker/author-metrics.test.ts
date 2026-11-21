@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
-import { recordAuthorSave, verifiedIdentifiers } from './author-metrics.ts';
-import { decodeFields, FirestoreAdminError, type FirestoreWrite } from './firestore-admin.ts';
+import { deleteExpiredAuthorReceipts, recordAuthorSave, verifiedIdentifiers } from './author-metrics.ts';
+import { resetAccessTokenCache } from './firebase-service-account.ts';
+import { decodeFields, FirestoreAdminError, type FirestoreWrite, type QueryOptions } from './firestore-admin.ts';
+import worker from './index.ts';
 import { handleRequest } from './router.ts';
 
 const config = 'authorMetricConfig/saves';
@@ -230,4 +232,125 @@ test('the last weekly slot cannot be spent by two different papers', async () =>
   assert.equal(stored.paperIds.length, 100);
   assert.deepEqual(stored.paperIds.slice(0, 99), paperIds);
   assert.ok(['doi:10.1234/example', 'openalex:W43'].includes(stored.paperIds[99]));
+});
+
+// Receipts keyed by document name, each with its `expiresAt` in milliseconds.
+function receiptStore(expiries: number[]) {
+  const documents = new Map(expiries.map((ms, index): [string, number] => [`users/u${index}/authorMetricReceipts/r${index}`, ms]));
+  const queries: QueryOptions[] = [];
+  let failCommits = 0;
+  const admin = {
+    name: (path: string[]) => path.join('/'),
+    async runQuery<T extends object>(options: QueryOptions) {
+      queries.push(options);
+      const cutoff = options.where?.value;
+      assert.ok(cutoff instanceof Date);
+      return [...documents].filter(([, ms]) => ms < cutoff.getTime()).sort(([, a], [, b]) => a - b).slice(0, options.limit)
+        .map(([name]) => ({ id: name.split('/').at(-1)!, data: {} as T, path: name.split('/') }));
+    },
+    async commit(writes: FirestoreWrite[]) {
+      if (failCommits > 0) {
+        failCommits -= 1;
+        throw new FirestoreAdminError('FIRESTORE_WRITE_FAILED', 502, 'UNAVAILABLE');
+      }
+      for (const write of writes) {
+        assert.ok(write.delete && !write.update && !write.currentDocument);
+        documents.delete(write.delete);
+      }
+      return {};
+    },
+  };
+  return { documents, queries, admin, failNextCommit: () => { failCommits += 1; } };
+}
+
+test('receipt cleanup deletes expired receipts across all accounts and keeps unexpired ones', async () => {
+  const now = Date.parse('2026-11-23T02:30:00Z');
+  const { documents, queries, admin } = receiptStore([now - 86_400_000, now - 1, now, now + 60_000]);
+  assert.deepEqual(await deleteExpiredAuthorReceipts(admin, now), { deleted: 2, complete: true });
+  assert.deepEqual([...documents.keys()], ['users/u2/authorMetricReceipts/r2', 'users/u3/authorMetricReceipts/r3']);
+  assert.equal(queries.length, 1);
+  assert.deepEqual(queries[0], {
+    collectionId: 'authorMetricReceipts',
+    allDescendants: true,
+    where: { field: 'expiresAt', op: 'LESS_THAN', value: new Date(now) },
+    limit: 200,
+    select: ['__name__'],
+  });
+});
+
+test('receipt cleanup stops at five pages of 200 and the next run continues', async () => {
+  const now = Date.parse('2026-11-23T02:30:00Z');
+  const { documents, queries, admin } = receiptStore(Array.from({ length: 1100 }, (_, index) => now - 1 - index));
+  assert.deepEqual(await deleteExpiredAuthorReceipts(admin, now), { deleted: 1000, complete: false });
+  assert.equal(queries.length, 5);
+  assert.equal(documents.size, 100);
+  assert.deepEqual(await deleteExpiredAuthorReceipts(admin, now + 86_400_000), { deleted: 100, complete: true });
+  assert.equal(documents.size, 0);
+});
+
+test('a failed receipt commit deletes nothing and the next run deletes everything', async () => {
+  const now = Date.parse('2026-11-23T02:30:00Z');
+  const { documents, admin, failNextCommit } = receiptStore([now - 2, now - 1]);
+  failNextCommit();
+  await assert.rejects(deleteExpiredAuthorReceipts(admin, now), { code: 'FIRESTORE_WRITE_FAILED' });
+  assert.equal(documents.size, 2);
+  assert.deepEqual(await deleteExpiredAuthorReceipts(admin, now), { deleted: 2, complete: true });
+  assert.equal(documents.size, 0);
+});
+
+const servicePair = await crypto.subtle.generateKey(
+  { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+  true,
+  ['sign', 'verify'],
+) as CryptoKeyPair;
+const exportedKey = await crypto.subtle.exportKey('pkcs8', servicePair.privateKey);
+assert.ok(exportedKey instanceof ArrayBuffer);
+const servicePkcs8 = new Uint8Array(exportedKey);
+const serviceEnv = {
+  FIREBASE_SERVICE_ACCOUNT_EMAIL: 'worker@papertok-test.iam.gserviceaccount.com',
+  FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: `-----BEGIN PRIVATE KEY-----
+${btoa(String.fromCharCode(...servicePkcs8))}
+-----END PRIVATE KEY-----`,
+  FIREBASE_PROJECT_ID: 'papertok-test',
+};
+
+async function runHarvestCron(scheduledTime: number) {
+  const pending: Promise<unknown>[] = [];
+  await worker.scheduled({ cron: '30 2 * * *', scheduledTime }, serviceEnv, { waitUntil: promise => { pending.push(promise); } });
+  await Promise.all(pending);
+}
+
+test('the daily cron logs a refused receipt query without account data and deletes on the next run', async t => {
+  resetAccessTokenCache();
+  const now = Date.parse('2026-11-23T02:30:00Z');
+  const expired = 'projects/papertok-test/databases/(default)/documents/users/alice/authorMetricReceipts/00000000-1111-2222-3333-444444444444';
+  let indexReady = false;
+  const deleted: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: string, init: RequestInit) => {
+    if (input === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'token', expires_in: 3600 });
+    if (input.endsWith('/documents:runQuery')) {
+      const { structuredQuery } = JSON.parse(String(init.body));
+      assert.deepEqual(structuredQuery.from, [{ collectionId: 'authorMetricReceipts', allDescendants: true }]);
+      assert.equal(structuredQuery.where.fieldFilter.value.timestampValue, new Date(now).toISOString());
+      if (!indexReady) return Response.json({ error: { status: 'FAILED_PRECONDITION' } }, { status: 400 });
+      return Response.json([{ document: { name: expired } }]);
+    }
+    if (input.endsWith('/documents:commit')) {
+      deleted.push(...JSON.parse(String(init.body)).writes.map((write: FirestoreWrite) => write.delete));
+      return Response.json({ commitTime: 'x' });
+    }
+    throw new Error(`unexpected fetch ${input}`);
+  });
+  const errors = t.mock.method(console, 'error', () => {});
+
+  await runHarvestCron(now);
+  assert.deepEqual(deleted, []);
+  // The harvest itself is not bound here and logs that it did not start.
+  const cleanupErrors = () => errors.mock.calls.map(call => call.arguments).filter(([message]) => String(message).startsWith('Author receipt'));
+  assert.deepEqual(cleanupErrors(), [['Author receipt cleanup failed', 'FIRESTORE_READ_FAILED: FAILED_PRECONDITION']]);
+
+  indexReady = true;
+  await runHarvestCron(now);
+  assert.deepEqual(deleted, [expired]);
+  assert.equal(cleanupErrors().length, 1);
 });
