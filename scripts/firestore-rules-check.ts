@@ -63,7 +63,7 @@ function mockLookup(fn: 'get' | 'exists', path: string, value: unknown) {
 }
 
 function contractCase(label: string, path: string, data: object, options: {
-  before?: object; method?: 'update' | 'create'; deny?: boolean;
+  before?: object; method?: 'update' | 'create'; deny?: boolean; actor?: string;
   functionMocks?: ReturnType<typeof mockLookup>[];
 } = {}) {
   const method = options.method ?? 'update';
@@ -71,7 +71,7 @@ function contractCase(label: string, path: string, data: object, options: {
     expectation: options.deny ? 'DENY' : 'ALLOW',
     request: {
       method, path: `${userPath}${path}`, time,
-      auth: { uid: options.deny ? 'papertok-other-smoke-user' : uid, token: { email_verified: true } },
+      auth: { uid: options.actor ?? uid, token: { email_verified: true } },
       resource: { data },
     },
     // Omission triggers a null-value error on `resource == null` in the simulator.
@@ -94,8 +94,11 @@ export function firestoreWriteCases() {
   const accountMocks = [mockLookup('exists', userPath, true), mockLookup('get', userPath, { data: profile })];
   return [
     contractCase('onboarding profile creation', '', profile, { method: 'create' }),
+    contractCase('minimal onboarding profile creation', '', onboardingProfileWrite(preferences, {}, null), { method: 'create' }),
+    contractCase('onboarding profile creation with a frozen email', '', { ...profile, email: 'smoke@example.test' }, { method: 'create', deny: true }),
+    contractCase('onboarding profile creation with an invalid interest mix', '', { ...profile, interestMix: 'invalid' }, { method: 'create', deny: true }),
     contractCase('onboarding profile merge', '', profile),
-    contractCase('another account’s onboarding profile', '', profile, { deny: true }),
+    contractCase('another account’s onboarding profile', '', profile, { deny: true, actor: 'papertok-other-smoke-user' }),
     contractCase('interest settings', '', { ...profile, ...interestPreferencesWrite(['cs.LG'], ['cs.AI'], ['cs.LG'], settings, settings) }, { before: profile }),
     contractCase('email digest setting', '', { ...profile, emailDigestOptIn: true }, { before: profile }),
     contractCase('privacy notice setting', '/settings/privacyNotice', { shownVersion: '2026-11-06' }),
