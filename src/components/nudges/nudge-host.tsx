@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { EnvelopeSimple } from '@phosphor-icons/react';
+import { EnvelopeSimple, IdentificationBadge } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
@@ -14,6 +14,7 @@ import { auth } from '../../services/firebase.ts';
 import { readAccountPrivacyNotice, saveAccountPrivacyNotice } from '../../services/privacy-notice-service.ts';
 import {
   NUDGE_DWELL_MS,
+  ORCID_NUDGE_ID,
   PMF_SURVEY_ID,
   PRIVACY_NOTICE_ID,
   VISIT_START,
@@ -26,6 +27,8 @@ import {
   loadAccountNotice,
   modalIsOpen,
   noticeOnScreen,
+  orcidNudgeAnswered,
+  orcidNudgeOffered,
   privacyCardsCover,
   privacyDialogOpen,
   privacyNoticeStatus,
@@ -33,8 +36,10 @@ import {
   readingMinutePassed,
   recordPrivacyNoticeShown,
   rememberNudgeDismissal,
+  rememberOrcidNudgeAnswer,
   syncLocalPrivacyNotice,
   visitChoiceGates,
+  visitNudgeCandidates,
   visitReaderReady,
   type AccountNoticeRecord,
   type VisitNotices,
@@ -74,6 +79,14 @@ import PrivacyNotice from './privacy-notice.tsx';
 // never loads shows neither the dialog nor a nudge. A change of account
 // remounts this component, which clears what was picked for the previous reader.
 //
+// The ORCID notice is the last candidate: offered to a signed-in reader whose
+// profile the server confirmed with no iD connected, from the first visit on a
+// later calendar day than the account's creation, and only when neither an
+// email problem nor the survey is. Its button opens My profile and counts as
+// the answer, which is kept for the account and not the device; a
+// connection made in this tab puts it away, and it is not shown on My profile,
+// where the Connect button is (noticeOnScreen).
+//
 // The product-market fit survey is one of the visit's candidates like a nudge,
 // picked after the minute of reading on the feed, and shown like the privacy
 // dialog: over the feed's cards, never over another modal, only on the feed.
@@ -90,6 +103,11 @@ const COPY = {
   en: {
     surveyThanks: 'Thanks for answering',
     dismiss: 'Dismiss and do not show again',
+    'orcid-connect': {
+      title: 'Connect your ORCID iD',
+      body: 'Connecting lists your public works on My profile. If you get the weekly email, it also adds a “Cited your work” section when papers cite them.',
+      cta: 'Open My profile',
+    },
     'email-down': {
       'not-configured': {
         title: 'Email updates are paused',
@@ -124,7 +142,7 @@ function subscribeToTabVisibility(onChange: () => void) {
 }
 
 export default function NudgeHost() {
-  const { user, loading: authLoading, onboardingComplete, profileLoadError, userPreferences, readingPreferences } = useAuth();
+  const { user, loading: authLoading, onboardingComplete, profileLoadError, userPreferences, readingPreferences, orcid, profileConfirmed } = useAuth();
   const { health, loading: emailLoading } = useEmailNotifications();
   const location = useLocation();
   const navigate = useNavigate();
@@ -137,8 +155,19 @@ export default function NudgeHost() {
   const [visit, setVisit] = useState<VisitNotices>(VISIT_START);
   const { picked, dwellDone } = visit;
 
+  // The day this visit began, so the account's first session is told apart from later ones.
+  const [visitStart] = useState(() => new Date());
+
   const gates = visitChoiceGates({ user, loading: authLoading, onboardingComplete, pathname: location.pathname });
   const { signedIn } = gates;
+  const readerReady = visitReaderReady({ user, loading: authLoading, onboardingComplete, profileLoadError });
+  // This account's own answer, read on every render like the privacy notice's.
+  const orcidAnswered = useSyncExternalStore(
+    subscribeToOtherTabs,
+    () => orcidNudgeAnswered(user?.uid),
+    () => false,
+  );
+  const orcidOffered = orcidNudgeOffered({ orcid, readerReady, profileConfirmed, answered: orcidAnswered, accountCreated: user?.metadata?.creationTime, now: visitStart });
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
   const analyticsOn = useAnalyticsConsent().consent !== ANALYTICS_CONSENT.DENIED;
 
@@ -227,7 +256,7 @@ export default function NudgeHost() {
     gates,
     privacyOwed,
     privacyPending,
-    eligible: [...(emailProblem ? ['email-down'] : []), ...(surveyDue ? [PMF_SURVEY_ID] : [])],
+    eligible: visitNudgeCandidates({ emailProblem: Boolean(emailProblem), surveyDue, orcidOffered, dismissed }),
     dismissed,
   });
   if (chosen !== visit) setVisit(chosen);
@@ -237,6 +266,12 @@ export default function NudgeHost() {
     setVisit(current => ({ ...current, picked: null }));
   }, []);
 
+  // The ORCID notice is answered by the account, not the device (utils/nudges.ts).
+  const closeOrcid = useCallback(() => {
+    if (uid) rememberOrcidNudgeAnswer(uid);
+    setVisit(current => ({ ...current, picked: null }));
+  }, [uid]);
+
   // The dialog waits for the For You feed's first cards (/feed renders this
   // context's list), so it never covers the loading or error screen. Nor does
   // it open over another modal: one still open, or still playing its exit, is
@@ -245,8 +280,7 @@ export default function NudgeHost() {
   // Whether the privacy or survey dialog was open on the previous render.
   const [noticeOpen, setNoticeOpen] = useState(false);
 
-  const readerReady = visitReaderReady({ user, loading: authLoading, onboardingComplete, profileLoadError });
-  const onScreen = noticeOnScreen({ picked, signedIn: readerReady, pathname: location.pathname, privacyOwed, surveyDue, dialogOpen: noticeOpen });
+  const onScreen = noticeOnScreen({ picked, signedIn: readerReady, pathname: location.pathname, privacyOwed, surveyDue, dialogOpen: noticeOpen, orcidConnected: Boolean(orcid) });
   const dialogShown = onScreen === PRIVACY_NOTICE_ID || onScreen === PMF_SURVEY_ID;
   const waiting = dialogShown && cardsShown && !noticeOpen;
   const subscribe = useCallback((onChange: () => void) => (waiting ? subscribeToModals(onChange) : () => undefined), [waiting]);
@@ -326,6 +360,11 @@ export default function NudgeHost() {
     void navigate('/settings/notifications');
   }, [close, navigate]);
 
+  const handleOrcid = useCallback(() => {
+    closeOrcid();
+    void navigate('/profile');
+  }, [closeOrcid, navigate]);
+
   const copy = COPY.en;
   const emailCopy = emailProblem ? copy['email-down'][emailProblem] : null;
 
@@ -343,6 +382,17 @@ export default function NudgeHost() {
             action={{ label: copy['email-down'].cta, onClick: handleSettings }}
             dismissLabel={copy.dismiss}
             onDismiss={() => close('email-down')}
+          />
+        )}
+        {onScreen === ORCID_NUDGE_ID && (
+          <NudgePanel
+            key="nudge-orcid-connect"
+            icon={<IdentificationBadge size={19} />}
+            title={copy[ORCID_NUDGE_ID].title}
+            body={copy[ORCID_NUDGE_ID].body}
+            action={{ label: copy[ORCID_NUDGE_ID].cta, onClick: handleOrcid }}
+            dismissLabel={copy.dismiss}
+            onDismiss={closeOrcid}
           />
         )}
       </AnimatePresence>
