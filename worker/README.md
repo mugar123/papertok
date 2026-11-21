@@ -443,7 +443,7 @@ When the source a row was built from lists the paper again, as arXiv does with a
 ```bash
 npx wrangler d1 migrations apply PAPER_STORE --local        # or --remote before deploying (0012 before the Worker that writes `arrived`, above; 0011 came after its deploy: step 3)
 npx wrangler dev --port 8787 --test-scheduled
-curl "http://localhost:8787/__scheduled?cron=30+2+*+*+*"    # starts a harvest on local D1; embeddings use the remote AI binding
+curl "http://localhost:8787/__scheduled?cron=30+2+*+*+*"    # starts a harvest on local D1; embeddings use the remote AI binding; also runs the receipt cleanup against the Firestore project in .dev.vars
 curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"     # one ping of local D1
 npx wrangler workflows instances list papertok-paper-harvest  # production runs
 ```
@@ -835,12 +835,17 @@ every receipt whose `expiresAt` has passed (`runAuthorReceiptCleanup` in
 `worker/author-metrics.ts`). Firestore TTL would need billing, and the project
 stays on the free Spark plan. The cron queries the `authorMetricReceipts`
 collection group, up to five pages of 200, and logs a warning when it stops at
-that cap. Each query costs one Firestore read even when it finds nothing, so an
-idle day costs one read; a day with abandoned receipts costs one read per
-receipt plus one per page, and one delete per receipt. The query needs the
+that cap. A query costs one Firestore read per receipt it returns, and one read
+when it returns none. An idle day costs one read; a day with abandoned receipts
+costs one read and one delete per receipt, plus one read when the last page
+comes back empty. At the cap that is at most 1,001 reads and 1,000 deletes. The query needs the
 collection-group index on `expiresAt` in `firestore.indexes.json`. Until that
 index is ready, Firestore refuses the query with `FAILED_PRECONDITION`: the cron
-logs the error code, deletes nothing and tries again the next day. A transaction rechecks the switch,
+logs the error code, deletes nothing and tries again the next day. A Worker
+without the service account logs `SERVICE_ACCOUNT_NOT_CONFIGURED` the same way.
+Firestore has no local emulator path here, so a local `__scheduled` call for
+`30 2 * * *` with the production service account in `.dev.vars` deletes expired
+production receipts. A transaction rechecks the switch,
 account, preference, receipt and a recent server save timestamp on the saved
 copy. The earlier server timestamp determines the week. The Worker accepts
 receipts for two minutes after they are written, including at midnight UTC.
@@ -1407,7 +1412,9 @@ more than 2 hours; a load's main page and follows' page each log one), one `slow
 line for each `POST /store/papers` slower than 1.5 s (see Slow feed requests below), a fixed line,
 `Feed quota ledger did not answer; request let through`, with the object's own error, for each feed
 request whose call to the quota ledger threw (it names no reader; an error answer or a missing
-binding logs nothing), and one `{ route, status }`
+binding logs nothing), the daily receipt cleanup's `Author receipt cleanup failed` with an error
+code or class name and `Author receipt cleanup stopped at its cap` with a count (neither names an
+account or a paper; [Author save collection](#author-save-collection)), and one `{ route, status }`
 line from `worker/index.ts` for every 429 or 5xx answer, including an uncaught throw (logged as
 500). Its `route` is the fixed part of the path, such as `/openalex/works`, `/share` or
 `/notifications/unsubscribe`, never an id, a query string or an address. On the Workers Free plan

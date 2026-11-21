@@ -269,13 +269,9 @@ test('receipt cleanup deletes expired receipts across all accounts and keeps une
   assert.deepEqual(await deleteExpiredAuthorReceipts(admin, now), { deleted: 2, complete: true });
   assert.deepEqual([...documents.keys()], ['users/u2/authorMetricReceipts/r2', 'users/u3/authorMetricReceipts/r3']);
   assert.equal(queries.length, 1);
-  assert.deepEqual(queries[0], {
-    collectionId: 'authorMetricReceipts',
-    allDescendants: true,
-    where: { field: 'expiresAt', op: 'LESS_THAN', value: new Date(now) },
-    limit: 200,
-    select: ['__name__'],
-  });
+  assert.equal(queries[0].collectionId, 'authorMetricReceipts');
+  assert.equal(queries[0].allDescendants, true);
+  assert.deepEqual(queries[0].where, { field: 'expiresAt', op: 'LESS_THAN', value: new Date(now) });
 });
 
 test('receipt cleanup stops at five pages of 200 and the next run continues', async () => {

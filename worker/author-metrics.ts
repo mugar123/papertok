@@ -8,7 +8,7 @@ import { doiPathId, getArxivIdFromWork } from '../src/utils/open-alex-work.ts';
 import { arxivIdOf } from './paper-store.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { verifyFirebaseIdentity } from './firebase-auth.ts';
-import { FirebaseServiceAccountError, isServiceAccountConfigured } from './firebase-service-account.ts';
+import { FirebaseServiceAccountError } from './firebase-service-account.ts';
 import { createFirestoreAdmin, createWrite, deleteWrite, FirestoreAdminError, mergeWrite } from './firestore-admin.ts';
 import { handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -206,8 +206,8 @@ export async function handleAuthorSave(request: Request, env: WorkerEnv) {
  * Each page is one query and one commit of plain deletes. A commit lands
  * whole or not at all, and deleting a receipt the browser already removed
  * succeeds, so a failure at any point leaves the next run the same query.
- * Every query costs at least one Firestore read even when empty, and each
- * receipt it returns costs one more.
+ * A query costs one Firestore read per receipt it returns, and one read
+ * when it returns none.
  */
 export async function deleteExpiredAuthorReceipts(admin: CleanupAdmin, now: number) {
   let deleted = 0;
@@ -228,16 +228,16 @@ export async function deleteExpiredAuthorReceipts(admin: CleanupAdmin, now: numb
 
 /**
  * The daily entry point. It never throws: a failed run, including a query
- * refused while its index is still building, leaves every receipt for the
- * next day. The log carries the error code only, never a document name.
+ * refused while its index is still building or a Worker without the service
+ * account, leaves every receipt for the next day. The log carries an error
+ * code or class name only, never a document name.
  */
 export async function runAuthorReceiptCleanup(env: WorkerEnv, now: number) {
-  if (!isServiceAccountConfigured(env)) return;
   try {
     const { deleted, complete } = await deleteExpiredAuthorReceipts(createFirestoreAdmin(env), now);
     if (!complete) console.warn('Author receipt cleanup stopped at its cap', deleted);
   } catch (error) {
     const known = error instanceof FirestoreAdminError || error instanceof FirebaseServiceAccountError;
-    console.error('Author receipt cleanup failed', known ? error.message : 'unexpected error');
+    console.error('Author receipt cleanup failed', known ? error.message : error instanceof Error ? error.name : typeof error);
   }
 }
