@@ -58,7 +58,7 @@ function CheckButton({ checking, onClick, children }: { checking: boolean; onCli
 export default function RecentFeedPage({ onOpenPdf, onSaveToList }: Pick<ComponentProps<typeof FeedContainer>, 'onOpenPdf' | 'onSaveToList'>) {
   const { user } = useAuth();
   const { markNotInterested, undoNotInterested } = useFeed();
-  const { papers, loading, error, hasMore, loadMore, refresh, isRefreshing, hasTopics } = useRecentFeedPapers();
+  const { papers, loading, error, takeFailureReport, hasMore, loadMore, refresh, isRefreshing, hasTopics } = useRecentFeedPapers();
 
   // Check again's and Show older papers' loads run under the empty state, with
   // the button busy and still holding the focus, instead of the feed's wait,
@@ -167,6 +167,7 @@ export default function RecentFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
     // Over cards too, as on Following: a failed refresh or next page is still
     // a failure the container has to know about.
     error,
+    takeFailureReport,
     hasMore,
     loadMore,
     refresh,
@@ -175,7 +176,7 @@ export default function RecentFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
     endCard: END_CARD,
     surface: 'recent',
     dismissal,
-  }), [papers, loading, checking, emptyKind, error, hasMore, loadMore, refresh, isRefreshing, emptyState, dismissal]);
+  }), [papers, loading, checking, emptyKind, error, takeFailureReport, hasMore, loadMore, refresh, isRefreshing, emptyState, dismissal]);
 
   return (
     <FeedContainer

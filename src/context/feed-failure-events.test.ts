@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { sourceFeedFailure } from './source-feed-failure.ts';
 import type { Paper } from '../models/paper.ts';
 import { renderFeed, waitFor } from '../../tests/dom/render-feed.ts';
 
@@ -29,7 +30,7 @@ test('a feed that fails on entry and again on its retry sends one app_error per 
     view.corpus.refuse(503, 'AUTH_UNAVAILABLE');
     await waitFor(() => assert.deepEqual(view.appErrors(), [OUTAGE]));
     // The retry, after its pause, fails too. Only then does the feed screen show
-    // the error, and it reports for sources with no provider events (hasSource).
+    // the error.
     await waitFor(() => assert.deepEqual(view.appErrors(), [OUTAGE, OUTAGE]), { timeout: 8000 });
     await quiet();
     assert.deepEqual(view.appErrors(), [OUTAGE, OUTAGE]);
@@ -68,6 +69,28 @@ test('a failure behind cards is sent when the last card is dismissed', async () 
 
     await view.feed().markNotInterested(card);
     await waitFor(() => assert.deepEqual(view.appErrors(), [OUTAGE]));
+  } finally {
+    await view.stop();
+  }
+});
+
+test('a source reports once when its failed screen opens, even across remounts', async () => {
+  const event = { kind: 'feed_load_failed' };
+  const failure = sourceFeedFailure('FOLLOWING_LOAD_FAILED');
+  const source = { papers: [], loading: false, error: failure.error, takeFailureReport: failure.takeReport };
+  const view = await renderFeed({ source });
+  try {
+    assert.deepEqual(view.appErrors(), []);
+    view.showContainer();
+    await waitFor(() => assert.deepEqual(view.appErrors(), [event]));
+    view.showContainer(false);
+    view.showContainer();
+    await quiet();
+    assert.deepEqual(view.appErrors(), [event]);
+
+    source.takeFailureReport = sourceFeedFailure('FOLLOWING_LOAD_FAILED').takeReport;
+    view.showContainer();
+    await waitFor(() => assert.deepEqual(view.appErrors(), [event, event]));
   } finally {
     await view.stop();
   }

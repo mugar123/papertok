@@ -1,3 +1,4 @@
+import { sourceFeedFailure } from '../context/source-feed-failure.ts';
 import type { Paper } from '../models/paper.ts';
 import type { LoadingFollow } from '../services/paper-store-service.ts';
 import type { SessionCache } from '../utils/session-cache.ts';
@@ -21,7 +22,7 @@ type Pending = 'first' | 'more' | 'refresh';
  */
 interface PagesState<Run> {
   key: string | null; pages: CustomFeedPages | null; run: Run | null;
-  error: unknown; pending: Pending | null; emptyAdvances: number; answeredPress: number | null;
+  failure: ReturnType<typeof sourceFeedFailure> | null; pending: Pending | null; emptyAdvances: number; answeredPress: number | null;
   /** A refresh the reader asked for before the profile was ready, started once it is. */
   queued: boolean;
 }
@@ -37,7 +38,7 @@ const seeded = <Run>(caches: Caches<Run>, key: string | null, press: number | nu
   key,
   pages: key ? caches.pages.get(key) ?? null : null,
   run: key ? caches.runs.get(key) ?? null : null,
-  error: null,
+  failure: null,
   pending: null,
   emptyAdvances: 0,
   answeredPress: press,
@@ -79,7 +80,7 @@ export function useCorpusFeedPages<Run>(options: {
   shown: (papers: Paper[]) => Paper[];
   caches: Caches<Run>;
 }): {
-  pages: CustomFeedPages | null; run: Run | null; papers: Paper[]; loading: boolean; error: unknown; hasMore: boolean;
+  pages: CustomFeedPages | null; run: Run | null; papers: Paper[]; loading: boolean; error: unknown; takeFailureReport: (() => boolean) | undefined; hasMore: boolean;
   loadMore: () => boolean; refresh: () => void; isRefreshing: boolean;
   emptyKind: 'more' | 'gathering' | 'nothing' | 'error' | null;
 } {
@@ -117,17 +118,19 @@ export function useCorpusFeedPages<Run>(options: {
       inFlightRef.current = null;
       const incoming = { ...answer, loading: answer.loading ?? [] };
       setState(current => (current.key === key
-        ? { ...current, ...settled, pages: mergeFeedPage(current.pages, incoming, page), run: answer.run ?? run, error: null, pending: null }
+        ? { ...current, ...settled, pages: mergeFeedPage(current.pages, incoming, page), run: answer.run ?? run, failure: null, pending: null }
         : current));
     }, (error: unknown) => {
       if (tokenRef.current !== token) return;
       inFlightRef.current = null;
+      const failure = sourceFeedFailure(error);
       // The pages already shown, and their run, stay; the error says the request failed.
-      setState(current => (current.key === key ? { ...current, ...settled, error, pending: null } : current));
+      setState(current => (current.key === key ? { ...current, ...settled, failure, pending: null } : current));
     });
     return true;
   }, [ask, asksNothing, key, runFor, view.pages, view.run]);
 
+  const error = view.failure?.error ?? null;
   const pages = asksNothing ? NOTHING : view.pages;
   useEffect(() => {
     if (!view.key || !view.pages || !view.run) return;
@@ -145,7 +148,7 @@ export function useCorpusFeedPages<Run>(options: {
   // out, a few times in a row at most.
   const servable = key !== null && !asksNothing;
   const pressPending = servable && press !== null && press !== view.answeredPress;
-  const idle = servable && !view.error && view.pending === null;
+  const idle = servable && !error && view.pending === null;
   const opening = feedOpening(Boolean(view.pages), profileReady);
   const needsFirstPage = idle && opening !== 'show';
   const needsNextPage = idle && Boolean(view.pages) && advancesByItself(Boolean(view.pages?.hasMore), papers.length, view.emptyAdvances);
@@ -182,7 +185,7 @@ export function useCorpusFeedPages<Run>(options: {
     const kind: Pending = view.pages ? 'refresh' : 'first';
     if (profileReady ? !fetchPage(kind, 0, { emptyAdvances: 0 }) : asksNothing || !key) return;
     setState(current => (current.key === key
-      ? { ...current, pending: kind, queued: !profileReady, ...(kind === 'first' ? { error: null } : {}) }
+      ? { ...current, pending: kind, queued: !profileReady, ...(kind === 'first' ? { failure: null } : {}) }
       : current));
   }, [asksNothing, fetchPage, key, profileReady, view.pages]);
 
@@ -193,12 +196,13 @@ export function useCorpusFeedPages<Run>(options: {
     run: view.run,
     papers,
     loading,
-    error: view.error,
+    error,
+    takeFailureReport: view.failure?.takeReport,
     hasMore: Boolean(pages?.hasMore),
     loadMore,
     refresh,
     isRefreshing: view.pending === 'refresh' || (pressPending && Boolean(view.pages)),
     // Not while a page is on its way, which may still bring papers to show.
-    emptyKind: loading ? null : feedEmptyKind(pages && { ...pages, papers }, view.error),
+    emptyKind: loading ? null : feedEmptyKind(pages && { ...pages, papers }, error),
   };
 }

@@ -7,6 +7,7 @@ interface FeedSource {
   papers: Paper[];
   loading: boolean;
   error?: unknown;
+  takeFailureReport?: () => boolean;
   hasMore?: boolean;
   /** Whether a load started. */
   loadMore?: () => boolean;
@@ -1206,11 +1207,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     loading,
   );
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
-  const hasSource = Boolean(source);
+  const takeFailureReport = source?.takeFailureReport;
   useEffect(() => {
-    // The For You feed reports each failed load itself (feed-context.tsx).
-    if (feedFailed && hasSource) void trackEvent('app_error', { kind: 'feed_load_failed' });
-  }, [feedFailed, hasSource, trackEvent]);
+    if (feedFailed && takeFailureReport?.()) void trackEvent('app_error', { kind: 'feed_load_failed' });
+  }, [feedFailed, takeFailureReport, trackEvent]);
 
   // Pull-to-refresh, touch only, and only where the pill exists: a source
   // without a refresh of its own (the Similar layer) has nothing to pull.
