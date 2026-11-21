@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
@@ -81,23 +81,22 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
   } = useEmailNotifications();
   const { followedEntities } = useFollowing();
   const followsNotice = emailFollowsNotice(followedEntities, digestWaitsForFollow, digestCovered, hasCitationSource);
-  const [draft, setDraft] = useState(preferences);
+  // Only what the reader changed. Everything else follows the saved preferences,
+  // so a subscription that finishes starting while this is open shows as on
+  // without reopening it, and an edit is never overwritten.
+  const [edits, setEdits] = useState<Partial<typeof preferences> | null>(null);
+  const draft = useMemo(() => ({ ...preferences, ...edits }), [preferences, edits]);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testState, setTestState] = useState('idle');
-  const preferencesRef = useRef(preferences);
   const testFeedbackTimerRef = useRef<number | null>(null);
   const isPhone = useIsPhone();
 
-  useEffect(() => {
-    preferencesRef.current = preferences;
-  }, [preferences]);
-
   // Escape, the scrim and the focus trap are the Dialog's own; what is left
-  // here is the draft, reset from the saved preferences on every opening.
+  // here is the draft, dropped on every opening so it follows the saved preferences.
   useEffect(() => {
     if (!isOpen) return undefined;
     const timeoutId = setTimeout(() => {
-      setDraft(preferencesRef.current);
+      setEdits(null);
       setFeedback(null);
       setTestState('idle');
     }, 0);
@@ -111,6 +110,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     setFeedback(null);
     try {
       await savePreferences(draft);
+      setEdits(null);
       setFeedback({
         type: 'success',
         text: draft.enabled
@@ -132,7 +132,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
       const remainingSendingTime = MIN_TEST_SENDING_MS - (Date.now() - startedAt);
       if (remainingSendingTime > 0) await wait(remainingSendingTime);
       const saved = result.preferences;
-      setDraft(saved);
+      setEdits(null);
       setFeedback({
         type: 'success',
         text: `Test email sent to ${saved.email}.`,
@@ -205,7 +205,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             id={enabledId}
             className="email-notification-switch"
             checked={Boolean(draft.enabled)}
-            onCheckedChange={checked => setDraft(current => ({ ...current, enabled: checked }))}
+            onCheckedChange={checked => setEdits(current => ({ ...current, enabled: checked }))}
             disabled={toggleDisabled}
           />
         </div>
@@ -219,7 +219,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             <Select
               items={MAX_PAPERS_OPTIONS}
               value={draft.maxPapers || 5}
-              onValueChange={value => setDraft(current => ({ ...current, maxPapers: Number(value) }))}
+              onValueChange={value => setEdits(current => ({ ...current, maxPapers: Number(value) }))}
               disabled={optionsDisabled}
             >
               <SelectTrigger id={countId} className="email-notification-count-trigger">

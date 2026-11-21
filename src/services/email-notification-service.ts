@@ -2,11 +2,12 @@ import type { Paper, PaperAuthor, PaperFollowMatch } from '../models/paper.ts';
 import { isDigestFollow, type FollowEntity } from '../utils/following.ts';
 type NotificationPaper = Partial<Paper>;
 export interface NotificationPreferences { enabled?: boolean; maxPapers?: number; frequency?: string; language?: string; email?: string; lastSentAt?: string | null; lastTestAt?: string | null }
-interface NotificationSaveOptions { sync?: boolean; interests?: readonly string[] }
+/** `uid` binds the request to the account that asked for it (see `workerRequestUser`). */
+interface NotificationSaveOptions { sync?: boolean; interests?: readonly string[]; uid?: string }
 interface EmailHealth { configured?: boolean; available?: boolean; provider?: string; senderMode?: string; permissionLimited?: boolean; code?: string }
 
 import { auth } from './firebase.ts';
-import { authenticatedWorkerFetch, trustedWorkerUrl } from './worker-api-client.ts';
+import { authenticatedWorkerFetch, trustedWorkerUrl, WorkerApiAuthError } from './worker-api-client.ts';
 import { areaKeyForPaper } from '../utils/area-accent.ts';
 import { getLocalizedInstitutionName } from '../utils/institution-localization.ts';
 import {
@@ -108,7 +109,7 @@ export function serializeUpdateForNotifications(paper: NotificationPaper = {}) {
   };
 }
 
-async function authenticatedRequest<T extends object>(path: string, options: RequestInit = {}) {
+async function authenticatedRequest<T extends object>(path: string, options: RequestInit = {}, uid?: string) {
   if (!auth.currentUser) throw new EmailNotificationServiceError('EMAIL_AUTH_REQUIRED', 401);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 25_000);
@@ -120,20 +121,21 @@ async function authenticatedRequest<T extends object>(path: string, options: Req
         ...(options.body ? { 'content-type': 'application/json' } : {}),
         ...options.headers,
       },
-    });
+    }, undefined, uid);
     const payload = await response.json().catch(() => ({})) as T & { code?: string };
     if (!response.ok) throw new EmailNotificationServiceError(payload.code || 'EMAIL_UNAVAILABLE', response.status);
     return payload;
   } catch (error) {
     if (error instanceof EmailNotificationServiceError) throw error;
+    if (error instanceof WorkerApiAuthError && error.code === 'WORKER_ACCOUNT_CHANGED') throw new EmailNotificationServiceError('EMAIL_ACCOUNT_CHANGED', 401);
     throw new EmailNotificationServiceError((error as { name?: string } | null)?.name === 'AbortError' ? 'EMAIL_TIMEOUT' : 'EMAIL_UNAVAILABLE');
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
-export async function getEmailNotificationPreferences() {
-  const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences');
+export async function getEmailNotificationPreferences(uid?: string) {
+  const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences', {}, uid);
   return payload.preferences;
 }
 
@@ -217,10 +219,10 @@ export async function saveEmailNotificationPreferences(preferences: Notification
   const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences', {
     method: 'PUT',
     body: JSON.stringify(buildNotificationPreferencesPayload(preferences, follows, previewItems, options)),
-  });
+  }, options.uid);
   return payload.preferences;
 }
 
-export async function sendEmailNotificationTest() {
-  return authenticatedRequest<{ ok: boolean; providerId: string | null; paperCount: number; followCount: number; preferences: Required<NotificationPreferences> }>('/notifications/test', { method: 'POST' });
+export async function sendEmailNotificationTest(uid?: string) {
+  return authenticatedRequest<{ ok: boolean; providerId: string | null; paperCount: number; followCount: number; preferences: Required<NotificationPreferences> }>('/notifications/test', { method: 'POST' }, uid);
 }

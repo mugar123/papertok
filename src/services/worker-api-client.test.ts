@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WorkerApiAuthError, fetchWorkerSourceJson, workerSourceUrl } from './worker-api-client.ts';
+import { WorkerApiAuthError, fetchWorkerSourceJson, workerRequestUser, workerSourceUrl } from './worker-api-client.ts';
 
 const WORKER = 'https://papertok-report-api.example';
 
@@ -100,4 +100,19 @@ test('an error body that is not JSON leaves the error exactly as the bare status
       return true;
     },
   );
+});
+
+// Firebase can already hold the next account's credential while the app still
+// shows the previous one: data read for account A must not go out as account B.
+test('a request made for one account is refused once another account is signed in', () => {
+  const accountA = { uid: 'uid-a' };
+  const accountB = { uid: 'uid-b' };
+  assert.equal(workerRequestUser(accountA, 'uid-a'), accountA);
+  assert.throws(() => workerRequestUser(accountB, 'uid-a'), (error: unknown) => error instanceof WorkerApiAuthError && error.code === 'WORKER_ACCOUNT_CHANGED');
+});
+
+test('a request that names no account goes out as whoever is signed in, and none without a session', () => {
+  const accountB = { uid: 'uid-b' };
+  assert.equal(workerRequestUser(accountB), accountB);
+  assert.throws(() => workerRequestUser(null, 'uid-a'), (error: unknown) => error instanceof WorkerApiAuthError && error.code === 'WORKER_AUTH_REQUIRED');
 });

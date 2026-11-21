@@ -14,6 +14,7 @@ import {
   saveGuestInterests,
 } from './guest-interests.ts';
 import { getDomainSourcePlan } from '../services/domain-source-records.ts';
+import { DIGEST_CONSENT_FROM_SIGNUP } from './digest-consent.ts';
 
 function fakeStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
@@ -203,4 +204,32 @@ test('Artificial Intelligence picked alone seeds AI topics that reach the AI sou
   const plan = getDomainSourcePlan(seed);
   assert.ok(plan.huggingFace.includes('cs.AI'));
   assert.ok(plan.openReview.includes('cs.AI'));
+});
+
+// A yes saved under the earlier welcome text ("Starts with your first follow")
+// has no consent version, and keeps that promise when the account is created
+// later: only the from-sign-up text stamps one.
+test('the consent version travels only with a yes given under the from-sign-up welcome text', () => {
+  const storage = fakeStorage();
+  saveGuestInterests({ areas: ['cs'], emailDigest: true, emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP }, storage);
+  assert.equal(readGuestInterests(storage)!.emailDigest, true);
+  assert.equal(readGuestInterests(storage)!.emailDigestConsent, DIGEST_CONSENT_FROM_SIGNUP);
+
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: true }));
+  assert.equal(readGuestInterests(storage)!.emailDigest, true, 'an earlier yes is still a yes');
+  assert.equal('emailDigestConsent' in readGuestInterests(storage)!, false, 'but carries no version');
+
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: true, emailDigestConsent: 'topics-from-signup-99' }));
+  assert.equal('emailDigestConsent' in readGuestInterests(storage)!, false, 'an unknown version is no version');
+
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: false, emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP }));
+  assert.equal('emailDigestConsent' in readGuestInterests(storage)!, false, 'a no carries no consent');
+});
+
+test('saving an answer read back from an earlier yes does not stamp the new version on it', () => {
+  const storage = fakeStorage();
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: true }));
+  saveGuestInterests(readGuestInterests(storage), storage);
+  assert.equal(readGuestInterests(storage)!.emailDigest, true);
+  assert.equal('emailDigestConsent' in readGuestInterests(storage)!, false);
 });

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emailFollowsNotice } from './email-follows-notice.ts';
 import { digestOptInWaitsForFollow } from '../../utils/digest-shutoff.ts';
+import { DIGEST_CONSENT_FROM_SIGNUP } from '../../utils/digest-consent.ts';
 
 test('the email settings explain citation updates when an ORCID reader follows nothing', () => {
   assert.match(emailFollowsNotice([], false, false, true)!.body, /papers that cite your work/);
@@ -41,12 +42,12 @@ test('the email settings tell a reader who asked for the digest when they joined
   assert.equal(emailFollowsNotice([journal], true, true)?.heading, 'Journals are not in the email yet');
 });
 
-// Settings reads the same rule the subscription does: a yes from an account
-// created after the email began from sign-up is on its chosen topics at once.
-test('the email settings show a new account\'s yes as covering its interests, and an older account\'s as waiting', () => {
-  const effectiveAt = '2026-11-25T00:00:00Z';
-  const newYes = digestOptInWaitsForFollow({ pending: true, accountCreated: '2026-11-25T09:30:00Z', effectiveAt });
-  const oldYes = digestOptInWaitsForFollow({ pending: true, accountCreated: '2026-11-24T12:00:00Z', effectiveAt });
-  assert.equal(emailFollowsNotice([], newYes, true)?.heading, 'Your email covers your interests');
-  assert.match(emailFollowsNotice([], oldYes, true)!.body, /starts on its own with your first follow/);
+
+// Settings reads the same rule the subscription does: a yes given under the
+// from-sign-up text is on its chosen topics at once; any other still waits.
+test('the email settings show a from-sign-up yes as covering its interests, and any other yes as waiting', () => {
+  const fromSignup = digestOptInWaitsForFollow({ pending: true, consent: DIGEST_CONSENT_FROM_SIGNUP });
+  const earlier = digestOptInWaitsForFollow({ pending: true, consent: null });
+  assert.equal(emailFollowsNotice([], fromSignup, true)?.heading, 'Your email covers your interests');
+  assert.match(emailFollowsNotice([], earlier, true)!.body, /starts on its own with your first follow/);
 });

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { deleteConfirmedAccount } from './delete-confirmed-account.ts';
 import { readPrivacyNoticeAck, rememberPrivacyNotice } from '../../utils/nudges.ts';
 import { pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown } from '../../utils/pmf-survey.ts';
+import { DIGEST_CONSENT_SPENT, readDigestConsent, writeDigestConsent } from '../../utils/digest-consent.ts';
 
 const fakeStorage = () => {
   const map = new Map<string, string>();
@@ -102,4 +103,19 @@ test('a sign-in that fails deletes nothing and reaches the caller', async () => 
   }), /popup closed/);
   assert.deepEqual(calls, []);
   assert.equal(readPrivacyNoticeAck('uid-a', storage), '2026-10-26', 'nor forgets anything');
+});
+
+test('this browser forgets the email consent record of the deleted account only', async () => {
+  const storage = fakeStorage();
+  writeDigestConsent('uid-a', DIGEST_CONSENT_SPENT, storage);
+  writeDigestConsent('uid-b', DIGEST_CONSENT_SPENT, storage);
+  await deleteConfirmedAccount({
+    reauthenticate: () => Promise.resolve('uid-a'),
+    onSignedIn: () => {},
+    deleteAccount: () => Promise.resolve(),
+    onDeleted: () => {},
+    storage,
+  });
+  assert.equal(readDigestConsent('uid-a', storage), null);
+  assert.equal(readDigestConsent('uid-b', storage), DIGEST_CONSENT_SPENT);
 });

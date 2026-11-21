@@ -120,16 +120,28 @@ export async function fetchWorkerSourceJson<T = unknown>(path: string, params: R
 }
 
 /**
+ * The signed-in user a request may be sent as. Without `expectedUid` it is
+ * whoever is signed in now. A caller acting for an account it read earlier
+ * passes that account's uid: Firebase can already hold the next account's
+ * credential while the app still shows the previous one, and the previous
+ * account's data must never travel under the next account's token.
+ */
+export function workerRequestUser<T extends { uid: string }>(currentUser: T | null | undefined, expectedUid?: string) {
+  if (!currentUser) throw new WorkerApiAuthError();
+  if (expectedUid && currentUser.uid !== expectedUid) throw new WorkerApiAuthError('WORKER_ACCOUNT_CHANGED');
+  return currentUser;
+}
+
+/**
  * `timeoutMs` is the request's own budget. It starts once the ID token is in
  * hand: a token refresh can take seconds, and a deadline armed before it spent
  * the feed's 3.5 s on the refresh (ENG-116). The deadline covers the response
  * body too (request-deadline.ts).
  */
-export async function authenticatedWorkerFetch(input: string | URL, options: RequestInit = {}, timeoutMs?: number) {
+export async function authenticatedWorkerFetch(input: string | URL, options: RequestInit = {}, timeoutMs?: number, expectedUid?: string) {
   const url = trustedWorkerUrl(input);
   if (!url) throw new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED');
-  const currentUser = auth.currentUser;
-  if (!currentUser) throw new WorkerApiAuthError();
+  const currentUser = workerRequestUser(auth.currentUser, expectedUid);
   const token = await currentUser.getIdToken();
   const headers = new Headers(options.headers || {});
   headers.set('authorization', `Bearer ${token}`);

@@ -17,8 +17,8 @@ export function emailFollowsNotice(follows: readonly Partial<FollowEntity>[], wa
     };
   }
   // ENG-163: the reader's chosen categories fill the email until then. A yes
-  // given before the email began from sign-up still waits for the first
-  // follow, as the welcome said then (`waitsForFollow`).
+  // given under the earlier welcome text still waits for the first follow, as
+  // that text said (`waitsForFollow`).
   if (hasInterests && !waitsForFollow) {
     return {
       heading: 'Your email covers your interests',
