@@ -246,7 +246,8 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           <div>
             <Label htmlFor={reactivationId} id={`${reactivationId}-label`}><strong>Weekly digest reminder</strong></Label>
             <small id={`${reactivationId}-description`}>
-              Allow PaperTok to keep your last signed-in visit for up to 30 days to prepare a future digest after seven days away.
+              Allow PaperTok to keep your last signed-in visit to prepare a future digest after seven days away.
+              {' PaperTok deletes it 30 days after that visit, usually within a day more if that deletion fails; Cloudflare’s backups may keep it 30 more days, and PaperTok never reads or restores them.'}
               <span role="status">{reactivationReason && ` ${reactivationReason}`}</span>
               {!reactivationReason && <> This choice saves immediately.</>}
             </small>
