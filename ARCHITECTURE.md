@@ -112,8 +112,8 @@ flowchart TD
   caching, deadlines and quota reservations. Durable Objects own atomic quotas,
   email delivery reservations and rewrite sessions. The per-account
   [email subscription store](worker/email-subscription-store.ts) holds
-  digest reminder consent and the last signed-in visit hour, which expires
-  after 30 days. See the [digest reminder contract](worker/README.md#digest-reminder-consent-and-visits).
+  digest reminder consent and the last signed-in visit hour, which is used
+  for 30 days and then deleted by its alarm or the object's next access. See the [digest reminder contract](worker/README.md#digest-reminder-consent-and-visits).
   KV holds notification state,
   institution-service verdicts and rewrite cache records. Exact bindings and
   selected providers live in [wrangler.toml](wrangler.toml).

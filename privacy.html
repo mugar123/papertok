@@ -363,15 +363,16 @@
         of your last signed-in visit when the app is visible, in your account's
         Cloudflare Durable Object. PaperTok keeps it to tell when you have been away
         for seven days and prepare a future digest with papers published since your
-        last visit. The visit expires after 30 days or is deleted sooner if you turn
-        reminders off, unsubscribe from the digest or delete your account. PaperTok
-        never uses a visit older than 30 days. If the automatic deletion fails,
-        PaperTok's digest schedule, which checks every subscriber each morning (UTC),
-        deletes the visit, normally within a day. If that schedule is switched off, the
-        visit is deleted when it is switched back on or the next time you open PaperTok
-        while signed in. Cloudflare's restore backups of that storage may keep a deleted
-        visit for up to 30 more days; PaperTok never reads or restores them. PaperTok
-        keeps this visit separate from usage analytics.
+        last visit. PaperTok uses the visit for 30 days from the hour it records, then
+        deletes it, and deletes it sooner if you turn reminders off, unsubscribe from the
+        digest or delete your account. A deletion is scheduled for the end of those 30
+        days. If it fails, PaperTok stops using the visit and usually deletes it by the
+        next day, when the morning digest run reaches your subscription; if the run does
+        not reach it, the visit stays stored, unused, until PaperTok next reads your
+        subscription, for example when you open PaperTok while signed in. Cloudflare keeps a 30-day
+        point-in-time history of that storage, so a deleted visit can remain in it for up
+        to 30 more days; PaperTok never reads or restores that history. PaperTok keeps
+        this visit separate from usage analytics.
       </p>
 
       <h2>Analytics</h2>

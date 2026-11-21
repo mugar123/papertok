@@ -1372,9 +1372,11 @@ Subscription preferences and delivery state use separate, generation-scoped KV r
   deletes the visit 30 days after its stored hour. Every access to the object,
   including the schedule's read of each subscriber, ignores and deletes a visit
   that old, and schedules the alarm again when it is missing. After an alarm
-  fails every retry, an expired visit therefore stays stored, unused, only until
-  the object's next access; a schedule that is disabled or deferred, or a
-  reader without a schedule index, can postpone that access. Cloudflare's
+  fails every retry, an expired visit therefore stays stored, unused, until the
+  object's next access: usually the next morning's digest run, but a schedule
+  that is disabled or deferred, or a reader without a schedule index, leaves it
+  until the reader's app or another request next reads the object. This is
+  what `privacy.html` states; the Settings checkbox summarizes it. Cloudflare's
   point-in-time recovery for the object's storage keeps a deleted visit for 30
   more days; PaperTok does not read or restore that history (the Worker never
   calls the bookmark API), and `privacy.html` says so. Withdrawing consent,

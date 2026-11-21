@@ -116,6 +116,13 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     };
   }, [isOpen]);
 
+  // Another tab may have granted or withdrawn reminders since the provider
+  // last read them, so every opening asks again.
+  const refreshReactivation = reactivation.refresh;
+  useEffect(() => {
+    if (isOpen) void refreshReactivation();
+  }, [isOpen, refreshReactivation]);
+
   const handleSave = async () => {
     setFeedback(null);
     try {
@@ -247,14 +254,15 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             <Label htmlFor={reactivationId} id={`${reactivationId}-label`}><strong>Weekly digest reminder</strong></Label>
             <small id={`${reactivationId}-description`}>
               Allow PaperTok to keep your last signed-in visit to prepare a future digest after seven days away.
-              {' PaperTok deletes it 30 days after that visit, usually within a day more if that deletion fails; Cloudflare’s backups may keep it 30 more days, and PaperTok never reads or restores them.'}
+              {' PaperTok uses it for 30 days, then usually deletes it within a day; Cloudflare’s point-in-time history may keep it 30 more days, and PaperTok never reads or restores it.'}
               <span role="status">{reactivationReason && ` ${reactivationReason}`}</span>
               {!reactivationReason && <> This choice saves immediately.</>}
             </small>
             {reactivation.unavailable && !loading && digestSubscribed !== false && (
               <>
                 <Button variant="outline" size="sm" disabled={savingReactivation} onClick={() => { void reactivation.refresh(); }}>Retry</Button>
-                {!reactivation.known && (
+                {/* A failed read may hide consent another tab gave. */}
+                {!reactivation.enabled && (
                   <Button type="button" variant="outline" size="sm" disabled={savingReactivation} onClick={() => { void handleReactivation(false); }}>Turn off reminders</Button>
                 )}
               </>
@@ -267,7 +275,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             aria-describedby={`${reactivationId}-description`}
             aria-busy={savingReactivation}
             checked={reactivation.enabled}
-            indeterminate={reactivation.unavailable && !reactivation.known}
+            indeterminate={reactivation.unavailable && !reactivation.enabled}
             disabled={Boolean(reactivationReason && !reactivation.enabled) || saving || testing}
             readOnly={savingReactivation}
             onCheckedChange={checked => { void handleReactivation(checked); }}

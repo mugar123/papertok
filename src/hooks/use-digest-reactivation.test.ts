@@ -165,3 +165,54 @@ test('a reader whose digest preferences could not be read cannot grant reminders
     unmount();
   }
 });
+
+test('opening Settings reads reminders again, so a grant from another tab can be withdrawn, even when that read fails', async t => {
+  const modules = await loadDigestReactivation();
+  t.after(() => modules.close());
+  let enabled = false;
+  let revision = 1;
+  let failReads = false;
+  const withdrawals: unknown[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, options?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (path === '/notifications/visit') return Response.json({ ok: true });
+    assert.equal(path, '/notifications/reactivation');
+    if (options?.method === 'PUT') {
+      assert.ok(typeof options.body === 'string');
+      const body = JSON.parse(options.body);
+      if (!body.enabled) withdrawals.push(body);
+      enabled = body.enabled === true;
+      return Response.json({ enabled, revision: ++revision });
+    }
+    if (failReads) return Response.json({ code: 'EMAIL_UNAVAILABLE' }, { status: 503 });
+    return Response.json({ enabled, revision });
+  });
+  // The first tab loads with reminders off and its dialog closed.
+  const first = render(createElement(modules.ReminderSettings, { isOpen: false }));
+  // A second instance for the same account turns reminders on.
+  const second = renderHook(() => modules.useDigestReactivation('reader', true, true));
+  try {
+    await waitFor(() => assert.equal(second.result.current.known, true));
+    await act(async () => { await second.result.current.save(true); });
+    assert.equal(enabled, true);
+
+    first.rerender(createElement(modules.ReminderSettings, { isOpen: true }));
+    const checkbox = await screen.findByRole('checkbox', { name: 'Weekly digest reminder' });
+    await waitFor(() => assert.equal(checkbox.getAttribute('aria-checked'), 'true'));
+    fireEvent.click(checkbox);
+    await waitFor(() => assert.deepEqual(withdrawals, [{ enabled: false }]));
+
+    // The other tab turns them on again; this time the first tab's read on opening fails.
+    await act(async () => { await second.result.current.refresh(); });
+    await act(async () => { await second.result.current.save(true); });
+    first.rerender(createElement(modules.ReminderSettings, { isOpen: false }));
+    failReads = true;
+    first.rerender(createElement(modules.ReminderSettings, { isOpen: true }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn off reminders' }));
+    await waitFor(() => assert.deepEqual(withdrawals, [{ enabled: false }, { enabled: false }]));
+    assert.equal(enabled, false);
+  } finally {
+    second.unmount();
+    first.unmount();
+  }
+});
