@@ -39,12 +39,14 @@ export type FirestoreAdmin = ReturnType<typeof createFirestoreAdmin>;
 export class FirestoreAdminError extends Error {
   declare code: string;
   declare status: number;
+  declare detail: string;
 
   constructor(code: string, status = 502, detail = '') {
     super(detail ? `${code}: ${detail}` : code);
     this.name = 'FirestoreAdminError';
     this.code = code;
     this.status = status;
+    this.detail = detail;
   }
 }
 
