@@ -64,12 +64,12 @@ lastOrder.orderKeys = readStoredOrderKeys();
 
 export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<ComponentProps<typeof FeedContainer>, 'onOpenPdf' | 'onSaveToList'>) {
   const navigate = useNavigate();
-  const { followedEntities, error: followsError, retry: retryFollows } = useFollowing();
+  const { followedEntities, error: followsError, takeFailureReport: takeFollowsReport, retry: retryFollows } = useFollowing();
   // Skip writes into this set (`markNotInterested`), and For You gets its
   // effect for free because that same call drops the paper from the list it
   // renders. This page renders its own, so it has to read the set itself.
   const { notInterestedIds } = useFeed();
-  const { items, seenIds, loading, refreshing, error, lastUpdatedAt, refresh, markSeen } = useFollowingUpdates();
+  const { items, seenIds, loading, refreshing, error, takeFailureReport: takeUpdatesReport, lastUpdatedAt, refresh, markSeen } = useFollowingUpdates();
 
   // Ranked on the first render, not in an effect after it: the state used to
   // start empty and be filled by an effect, so the page's first paint was the
@@ -107,6 +107,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
 
   const hasFollows = followedEntities.length > 0;
   const loadError = followingFeedError({ updatesError: error, followsError, hasFollows });
+  const takeFailureReport = error ? takeUpdatesReport : takeFollowsReport;
   const retryFeed = useCallback(
     () => retryFollowingFeed({ followsError, retryFollows, refresh }),
     [followsError, refresh, retryFollows],
@@ -156,13 +157,14 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
     // Over cards too: the cards stay, and the container still needs to know
     // a refresh failed so it does not say the papers were updated (ENG-176).
     error: loadError,
+    takeFailureReport,
     hasMore: false,
     loadMore: () => false,
     refresh: retryFeed,
     isRefreshing: refreshing,
     emptyState,
     onPaperViewed: markSeen,
-  }), [shownPapers, items, loading, lastUpdatedAt, loadError, retryFeed, refreshing, emptyState, markSeen]);
+  }), [shownPapers, items, loading, lastUpdatedAt, loadError, takeFailureReport, retryFeed, refreshing, emptyState, markSeen]);
 
   return (
     <FeedContainer

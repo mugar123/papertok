@@ -336,7 +336,7 @@ async function connectedKey(admin: Admin, env: WorkerEnv, uid: string) {
   }
 }
 
-function isZoteroConfigured(env: WorkerEnv) {
+export function isZoteroConfigured(env: WorkerEnv) {
   return Boolean(env.ZOTERO_CLIENT_KEY && env.ZOTERO_CLIENT_SECRET && env.ZOTERO_TOKEN_KEY && isServiceAccountConfigured(env));
 }
 
