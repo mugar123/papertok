@@ -14,7 +14,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so the account record identifies the text behind the notice.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-20.10';
+export const PRIVACY_POLICY_VERSION = '2026-11-21';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -123,9 +123,10 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20.10';
  * including guest choices awaiting sign-in.
  * Version 2026-11-20.8 adds the optional ORCID citation lookup for weekly emails.
  * Version 2026-11-20.9 adds the session sample for activity before a profile loads.
- * Version 2026-11-20.10 adds opt-in digest reminders and the last signed-in visit.
+ * Version 2026-11-21 adds opt-in digest reminders and the last signed-in visit.
+ * It was dated 2026-11-20.10 until the merge fell on the next UTC day.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-21T23:59:59Z';
 
 /**
  * Notices through this version are retired for every account. A recorded
