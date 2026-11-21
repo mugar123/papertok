@@ -410,24 +410,6 @@ export function orcidNudgeOffered({ orcid, readerReady, profileConfirmed, answer
   return readerReady && profileConfirmed && !answered && !orcid && pastFirstSession(accountCreated, now);
 }
 
-interface ScreenBox { top: number; bottom: number; left: number; right: number }
-
-function overlapArea(a: ScreenBox, b: ScreenBox) {
-  return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-}
-
-/**
- * Which edge of the screen a nudge panel sits on so that the control holding
- * keyboard focus (`target`) is not under it (WCAG 2.4.11). The panel is fixed
- * and reserves no room, and the feed's cards fill the screen, so it moves
- * instead: `atBottom` and `atTop` are the boxes it would take at each edge.
- * It stays at the bottom, its home, unless the top covers strictly less of the
- * control.
- */
-export function nudgeEdge({ target, atBottom, atTop }: { target: ScreenBox; atBottom: ScreenBox; atTop: ScreenBox }): 'bottom' | 'top' {
-  return overlapArea(target, atTop) < overlapArea(target, atBottom) ? 'top' : 'bottom';
-}
-
 /**
  * The nudges this visit may pick from. The ORCID notice comes last: it is
  * offered only when neither a problem with email nor the survey is pending, so

@@ -17,7 +17,6 @@ import {
   heldAccountNotice,
   loadAccountNotice,
   noticeOnScreen,
-  nudgeEdge,
   orcidNudgeAnswered,
   orcidNudgeOffered,
   pastFirstSession,
@@ -914,16 +913,4 @@ test('a profile painted from the cache without an iD, whose server read failed, 
   assert.equal(orcidNudgeOffered(orcidFacts({ profileConfirmed: profileServerConfirmed(fromCache) })), false, 'a read the cache answered is not the word of the server either');
   const answered = profileReadOutcome({ status: 'fulfilled', value: { metadata: { fromCache: false } } }, true);
   assert.equal(orcidNudgeOffered(orcidFacts({ profileConfirmed: profileServerConfirmed(answered) })), true, 'the server answer settles it');
-});
-
-test('a nudge panel moves to the top edge when the focused control would sit under it at the bottom', () => {
-  // A 320 x 568 screen: the panel is 111 px tall at the bottom (445-556) or just under the navbar (70-181).
-  const atBottom = { left: 12, right: 308, top: 445, bottom: 556 };
-  const atTop = { left: 12, right: 308, top: 70, bottom: 181 };
-  const box = (top: number, bottom: number) => ({ left: 20, right: 300, top, bottom });
-  assert.equal(nudgeEdge({ target: box(492, 540), atBottom, atTop }), 'top', 'the read button under the bottom panel');
-  assert.equal(nudgeEdge({ target: box(300, 340), atBottom, atTop }), 'bottom', 'a control clear of both stays put');
-  assert.equal(nudgeEdge({ target: box(100, 140), atBottom, atTop }), 'bottom', 'a control under the top edge only does not move it there');
-  assert.equal(nudgeEdge({ target: box(150, 480), atBottom, atTop }), 'top', 'a tall control: the edge that covers less of it');
-  assert.equal(nudgeEdge({ target: box(120, 500), atBottom, atTop }), 'bottom', 'covered the same either way: home');
 });

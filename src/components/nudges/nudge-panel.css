@@ -27,6 +27,31 @@
   bottom: auto;
 }
 
+/* Set by NudgePanel when the full panel would hide the control holding focus
+   at either edge, as with enlarged text on a small screen: the title, a Show
+   button and the dismiss button, small enough to clear it. Show opens the full
+   panel in place. */
+.nudge-show {
+  display: none;
+}
+
+.nudge[data-compact] {
+  padding-block: 10px;
+}
+
+.nudge[data-compact] .nudge-copy p,
+.nudge[data-compact] .nudge-actions {
+  display: none;
+}
+
+.nudge[data-compact] .nudge-copy h2 {
+  margin: 0;
+}
+
+.nudge[data-compact] .nudge-show {
+  display: inline-flex;
+}
+
 .nudge-icon {
   display: grid;
   width: 40px;
@@ -116,6 +141,25 @@
 
   .nudge-icon {
     display: none;
+  }
+
+  /* Compact: the title, Show and dismiss share one row. */
+  .nudge[data-compact] {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .nudge[data-compact] .nudge-copy {
+    grid-column: 1;
+  }
+
+  .nudge[data-compact] .nudge-show {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .nudge[data-compact] .nudge-dismiss {
+    grid-column: 3;
+    grid-row: 1;
   }
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { Transition } from 'framer-motion';
 interface NudgePanelProps {
   icon: ReactNode; title: string; body: ReactNode;
@@ -9,7 +9,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
-import { nudgeEdge } from '../../utils/nudges.ts';
+import { createNudgePlacer, type Placement } from '../../utils/nudge-placement.ts';
 import './nudge-panel.css';
 
 // An aside, not a dialog: it takes no focus, traps nothing, and covers no
@@ -38,49 +38,77 @@ const LEAVE: Transition = {
 
 // The panel is fixed and reserves no room, and the feed's cards fill the
 // screen, so on a small one it can sit over the control that has keyboard
-// focus (WCAG 2.4.11). It moves instead of taking room from the feed, whose
-// snap geometry is one card per screen: when the focused control would be
-// under it at the bottom, it takes the top edge under the navbar. It only
-// measures; focus is never moved. Checked as focus arrives and again a frame
-// later, once the browser has scrolled the focused control into view, when the
-// screen is resized and when the panel appears.
+// focus (WCAG 2.4.11). utils/nudge-placement.ts decides where it goes: the
+// top edge under the navbar when the bottom would cover the control, and its
+// compact form (title, Show, dismiss) when both would, as with enlarged text.
+// Here it only measures and applies; focus is never moved to make room.
+// Checked as focus arrives and again a frame later, once the browser has
+// scrolled the focused control into view, when the screen is resized and when
+// the panel appears. Not while focus is inside the panel or a pointer press
+// is down.
 function useClearOfFocus() {
   const panel = useRef<HTMLElement>(null);
-  const place = useEffectEvent(() => {
+  const placer = useRef<ReturnType<typeof createNudgePlacer> | null>(null);
+  useLayoutEffect(() => {
     const element = panel.current;
-    const target = document.activeElement;
-    if (!element) return;
-    if (!target || target === document.body || element.contains(target)) {
-      element.dataset.edge = 'bottom';
-      return;
-    }
-    const box = (edge: 'bottom' | 'top') => {
+    if (!element) return undefined;
+    const put = ({ edge, compact }: Placement) => {
       element.dataset.edge = edge;
-      return element.getBoundingClientRect();
+      if (compact) element.dataset.compact = '';
+      else delete element.dataset.compact;
     };
-    const atTop = box('top');
-    const atBottom = box('bottom');
-    element.dataset.edge = nudgeEdge({ target: target.getBoundingClientRect(), atBottom, atTop });
-  });
-  useLayoutEffect(() => place());
-  useEffect(() => {
+    const next = createNudgePlacer({
+      focus: () => {
+        const target = document.activeElement;
+        if (!target || target === document.body) return { kind: 'none' };
+        if (element.contains(target)) return { kind: 'inside' };
+        return { kind: 'control', box: target.getBoundingClientRect() };
+      },
+      measure: (placement) => {
+        put(placement);
+        return element.getBoundingClientRect();
+      },
+      apply: put,
+    });
+    placer.current = next;
+    next.place();
     let frame = 0;
-    const onChange = () => place();
+    const onPlace = () => next.place();
     // focusin fires before the browser scrolls the control into view.
     const onFocus = () => {
-      place();
+      next.place();
       window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => place());
+      frame = window.requestAnimationFrame(onPlace);
     };
+    const onDown = (event: PointerEvent) => next.pointerDown(event.pointerId);
+    const onUp = (event: PointerEvent) => next.pointerUp(event.pointerId);
+    // A press whose release never arrives must not hold the panel for good.
+    const onReleaseAll = () => next.releaseAll();
     document.addEventListener('focusin', onFocus);
-    window.addEventListener('resize', onChange);
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('pointerup', onUp, true);
+    document.addEventListener('pointercancel', onUp, true);
+    window.addEventListener('resize', onPlace);
+    window.addEventListener('blur', onReleaseAll);
+    document.addEventListener('contextmenu', onReleaseAll, true);
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener('focusin', onFocus);
-      window.removeEventListener('resize', onChange);
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('pointerup', onUp, true);
+      document.removeEventListener('pointercancel', onUp, true);
+      window.removeEventListener('resize', onPlace);
+      window.removeEventListener('blur', onReleaseAll);
+      document.removeEventListener('contextmenu', onReleaseAll, true);
+      placer.current = null;
     };
   }, []);
-  return panel;
+  // The reader asked for the full panel: it opens in place and focus goes to its action.
+  const expand = useCallback(() => {
+    placer.current?.expand();
+    panel.current?.querySelector<HTMLElement>('.nudge-action')?.focus();
+  }, []);
+  return { panel, expand };
 }
 
 export default function NudgePanel({
@@ -92,7 +120,7 @@ export default function NudgePanel({
   onDismiss,
 }: NudgePanelProps) {
   const prefersReducedMotion = useReducedMotion();
-  const panel = useClearOfFocus();
+  const { panel, expand } = useClearOfFocus();
 
   return (
     <motion.aside
@@ -109,6 +137,8 @@ export default function NudgePanel({
         <h2 id="nudge-title">{title}</h2>
         <p>{body}</p>
       </div>
+      {/* Shown only in the compact form (nudge-panel.css). */}
+      <Button variant="outline" size="sm" className="nudge-show" aria-label="Show notice" onClick={expand}>Show</Button>
       <div className="nudge-actions">
         <Button size="sm" className="nudge-action" onClick={action.onClick}>{action.label}</Button>
       </div>
