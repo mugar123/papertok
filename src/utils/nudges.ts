@@ -340,6 +340,50 @@ export const PRIVACY_NOTICE_ID = 'privacy-change';
 /** The product-market fit survey (utils/pmf-survey.ts), picked like a nudge and shown like the privacy dialog. */
 export const PMF_SURVEY_ID = 'pmf-survey';
 
+/** The notice that tells a reader without a connected ORCID iD what connecting gives them. */
+export const ORCID_NUDGE_ID = 'orcid-connect';
+
+function calendarDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/**
+ * Whether `now` falls on a later calendar day (on this device) than the one
+ * the account was created, so the account's first session is behind it. An
+ * unknown or unreadable creation time is not past it: nothing is offered on a
+ * guess.
+ */
+export function pastFirstSession(accountCreated: string | null | undefined, now: Date) {
+  const created = accountCreated ? new Date(accountCreated) : null;
+  if (!created || Number.isNaN(created.getTime())) return false;
+  return calendarDay(created) < calendarDay(now);
+}
+
+/**
+ * Whether the ORCID notice may be chosen for this visit: the profile loaded
+ * (`readerReady`, so a missing connection is known and not just unread), no
+ * iD is connected, and the account is past its first session.
+ */
+export function orcidNudgeOffered({ orcid, readerReady, accountCreated, now }: { orcid: object | null; readerReady: boolean; accountCreated: string | null | undefined; now: Date }) {
+  return readerReady && !orcid && pastFirstSession(accountCreated, now);
+}
+
+/**
+ * The nudges this visit may pick from. The ORCID notice comes last: it is
+ * offered only when neither a problem with email nor the survey is pending, so
+ * those keep the visit's turn and it waits for a later one. An email problem
+ * the reader already dismissed is not pending, or it would use up the visit's
+ * choice on nothing for as long as the outage lasts.
+ */
+export function visitNudgeCandidates({ emailProblem, surveyDue, orcidOffered, dismissed = [] }: { emailProblem: boolean; surveyDue: boolean; orcidOffered: boolean; dismissed?: string[] }) {
+  const emailPending = emailProblem && !dismissed.includes('email-down');
+  return [
+    ...(emailPending ? ['email-down'] : []),
+    ...(surveyDue ? [PMF_SURVEY_ID] : []),
+    ...(orcidOffered && !emailPending && !surveyDue ? [ORCID_NUDGE_ID] : []),
+  ];
+}
+
 /**
  * The picked notice, while it may be on screen. A nudge, once picked on the
  * feed, stays on every route until it is dismissed, as it did before the
@@ -351,9 +395,12 @@ export const PMF_SURVEY_ID = 'pmf-survey';
  * here (`dialogOpen`, from the previous render) stays until the reader closes
  * it or leaves the feed, although opening it recorded it as told. The survey
  * dialog follows the same rules, with `surveyDue` (pmfSurveyDue) in place of
- * `privacyOwed`.
+ * `privacyOwed`. The ORCID notice stays on every route but My profile, and is
+ * not shown once `orcidConnected`.
  */
-export function noticeOnScreen({ picked, signedIn, pathname, privacyOwed, surveyDue = false, dialogOpen = false }: { picked: string | null; signedIn: boolean; pathname: string; privacyOwed: boolean; surveyDue?: boolean; dialogOpen?: boolean }) {
+export function noticeOnScreen({ picked, signedIn, pathname, privacyOwed, surveyDue = false, dialogOpen = false, orcidConnected = false }: { picked: string | null; signedIn: boolean; pathname: string; privacyOwed: boolean; surveyDue?: boolean; dialogOpen?: boolean; orcidConnected?: boolean }) {
+  // The ORCID notice goes away once an iD is connected, and on My profile, where its button leads.
+  if (picked === ORCID_NUDGE_ID) return orcidConnected || pathname.replace(/\/+$/, '').toLowerCase() === '/profile' ? null : picked;
   if (picked !== PRIVACY_NOTICE_ID && picked !== PMF_SURVEY_ID) return picked;
   const owed = picked === PRIVACY_NOTICE_ID ? privacyOwed : surveyDue;
   return signedIn && isFeedPath(pathname) && (owed || dialogOpen) ? picked : null;

@@ -34,7 +34,7 @@ const COPY = {
   title: 'My profile',
   subtitle: 'Only you can see this page.',
   orcid: 'ORCID',
-  orcidIntro: 'Connecting signs you in to ORCID to confirm your iD, and this page then lists the public works in your ORCID record.',
+  orcidIntro: 'Connecting lists the public works in your ORCID record on this page. If you get the weekly email, it also adds a “Cited your work” section when papers cite them. It signs you in to ORCID to confirm your iD.',
   orcidConnected: 'Confirmed by signing in to ORCID.',
   orcidId: 'ORCID iD',
   notConnected: 'Not connected',

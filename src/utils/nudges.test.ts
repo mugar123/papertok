@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   NUDGE_DISMISSED_KEY,
   NUDGE_DWELL_MS,
+  ORCID_NUDGE_ID,
   PMF_SURVEY_ID,
   PRIVACY_NOTICE_ID,
   VISIT_START,
@@ -16,6 +17,8 @@ import {
   heldAccountNotice,
   loadAccountNotice,
   noticeOnScreen,
+  orcidNudgeOffered,
+  pastFirstSession,
   policyVersionCovers,
   pickNudge,
   pickVisitNotice,
@@ -31,6 +34,7 @@ import {
   rememberPrivacyNotice,
   visitChoiceDue,
   visitChoiceGates,
+  visitNudgeCandidates,
   visitReaderReady,
   type AccountNoticeRecord,
 } from './nudges.ts';
@@ -817,4 +821,75 @@ test("who is told is decided from the account, its creation time, this browser's
   rememberPrivacyNotice('a', NEXT_VERSION, storage);
   assert.equal(status({ uid: 'a' }, { storage }), 'settled', 'shown to this account in this browser');
   assert.equal(status({ uid: 'b' }, { storage }), 'owed', 'another account on the same browser');
+});
+
+// Local times, so the days hold in any time zone the tests run in.
+const CREATED = new Date(2026, 10, 20, 23, 50).toISOString();
+const NEXT_DAY = new Date(2026, 10, 21, 0, 10);
+const orcidFacts = (overrides: Partial<Parameters<typeof orcidNudgeOffered>[0]> = {}) => ({ orcid: null, readerReady: true, accountCreated: CREATED, now: NEXT_DAY, ...overrides });
+const CONNECTED = { id: '0000-0002-1825-0097', host: 'orcid.org', name: null, connectedAt: '2026-11-21T08:00:00.000Z' };
+
+test('the ORCID notice is shown once to an unconnected account after its first session', () => {
+  const visit = readingMinutePassed(VISIT_START);
+  const pick = (dismissed: string[], offered = orcidNudgeOffered(orcidFacts())) => chooseVisitNotice(visit, {
+    gates: ON_FEED,
+    privacyOwed: false,
+    eligible: visitNudgeCandidates({ emailProblem: false, surveyDue: false, orcidOffered: offered }),
+    dismissed,
+  }).picked;
+
+  assert.equal(pastFirstSession(CREATED, new Date(2026, 10, 20, 23, 59)), false, 'the day the account was created is its first session');
+  assert.equal(pastFirstSession(CREATED, NEXT_DAY), true, 'the next calendar day is not');
+  assert.equal(chooseVisitNotice(VISIT_START, { gates: ON_FEED, privacyOwed: false, eligible: [ORCID_NUDGE_ID], dismissed: [] }).picked, null, 'not before the minute of reading');
+  assert.equal(pick([]), ORCID_NUDGE_ID);
+  assert.equal(pick([ORCID_NUDGE_ID]), null, 'once answered it does not come back');
+  assert.equal(orcidNudgeOffered(orcidFacts({ now: new Date(2026, 10, 20, 23, 59) })), false, 'not in the first session');
+  assert.equal(orcidNudgeOffered(orcidFacts({ accountCreated: null })), false, 'an unknown creation time is not past it');
+  assert.equal(orcidNudgeOffered(orcidFacts({ accountCreated: 'not a date' })), false);
+  assert.equal(orcidNudgeOffered(orcidFacts({ readerReady: false })), false, 'not while the profile is unread or failed to load');
+});
+
+test('the ORCID notice is never offered to an account with a connected iD', () => {
+  assert.equal(orcidNudgeOffered(orcidFacts({ orcid: CONNECTED })), false);
+  assert.deepEqual(visitNudgeCandidates({ emailProblem: false, surveyDue: false, orcidOffered: orcidNudgeOffered(orcidFacts({ orcid: CONNECTED })) }), []);
+});
+
+test('dismissing the ORCID notice is remembered on this device and spends nothing else', () => {
+  const storage = fakeStorage();
+  assert.deepEqual(rememberNudgeDismissal(ORCID_NUDGE_ID, storage), [ORCID_NUDGE_ID]);
+  const dismissed = readDismissedNudges(storage);
+  assert.equal(pickNudge({ eligible: visitNudgeCandidates({ emailProblem: false, surveyDue: false, orcidOffered: true }), dismissed }), null);
+  assert.equal(pickNudge({ eligible: ['email-down'], dismissed }), 'email-down', 'another nudge is still asked');
+});
+
+test('the ORCID notice waits for the privacy notice, the survey and an email problem', () => {
+  const visit = readingMinutePassed(VISIT_START);
+  const choose = (facts: { privacyOwed?: boolean; emailProblem?: boolean; surveyDue?: boolean }) => chooseVisitNotice(visit, {
+    gates: ON_FEED,
+    privacyOwed: facts.privacyOwed ?? false,
+    eligible: visitNudgeCandidates({ emailProblem: facts.emailProblem ?? false, surveyDue: facts.surveyDue ?? false, orcidOffered: true }),
+    dismissed: [],
+  }).picked;
+
+  assert.equal(choose({ privacyOwed: true }), PRIVACY_NOTICE_ID);
+  assert.equal(choose({ surveyDue: true }), PMF_SURVEY_ID);
+  assert.equal(choose({ emailProblem: true }), 'email-down');
+  assert.deepEqual(visitNudgeCandidates({ emailProblem: true, surveyDue: true, orcidOffered: true }), ['email-down', PMF_SURVEY_ID]);
+  assert.equal(choose({}), ORCID_NUDGE_ID, 'with none of them pending it is the one chosen');
+  const afterEmailDismissed = chooseVisitNotice(visit, {
+    gates: ON_FEED,
+    privacyOwed: false,
+    eligible: visitNudgeCandidates({ emailProblem: true, surveyDue: false, orcidOffered: true, dismissed: ['email-down'] }),
+    dismissed: ['email-down'],
+  });
+  assert.equal(afterEmailDismissed.picked, ORCID_NUDGE_ID, 'an email problem the reader dismissed does not keep it waiting');
+});
+
+test('the ORCID notice stays on every route but My profile, and goes away once an iD is connected', () => {
+  const on = (pathname: string, orcidConnected = false) => noticeOnScreen({ picked: ORCID_NUDGE_ID, signedIn: true, pathname, privacyOwed: false, orcidConnected });
+  assert.equal(on('/feed'), ORCID_NUDGE_ID);
+  assert.equal(on('/lists'), ORCID_NUDGE_ID);
+  assert.equal(on('/profile'), null, 'its button leads there');
+  assert.equal(on('/Profile/'), null);
+  assert.equal(on('/feed', true), null, 'a connection made while it was up puts it away');
 });

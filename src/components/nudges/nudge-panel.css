@@ -75,7 +75,25 @@
     bottom: calc(12px + var(--inset-bottom));
     width: calc(100vw - 24px);
     padding: 14px;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  /* The copy takes the full width and the action and dismiss share the row
+     under it, so a longer button label does not squeeze the copy at 320px or
+     at 200% text. Both stay in the order they are read and tabbed. */
+  .nudge-copy {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .nudge-actions {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .nudge-dismiss {
+    grid-column: 2;
+    grid-row: 2;
   }
 
   .nudge-icon {
