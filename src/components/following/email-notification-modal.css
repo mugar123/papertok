@@ -140,6 +140,8 @@
 
 .email-notification-switch { flex: 0 0 auto; }
 
+.email-notification-reminder { margin-top: var(--space-4); }
+
 .email-notification-options {
   margin-top: 22px;
   padding-top: 20px;

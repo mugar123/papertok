@@ -108,14 +108,16 @@ export function serializeUpdateForNotifications(paper: NotificationPaper = {}) {
   };
 }
 
-async function authenticatedRequest<T extends object>(path: string, options: RequestInit = {}) {
-  if (!auth.currentUser) throw new EmailNotificationServiceError('EMAIL_AUTH_REQUIRED', 401);
+async function authenticatedRequest<T extends object>(path: string, options: RequestInit = {}, uid?: string) {
+  if (!auth.currentUser || (uid && auth.currentUser.uid !== uid)) {
+    throw new EmailNotificationServiceError('EMAIL_AUTH_REQUIRED', 401);
+  }
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 25_000);
   try {
     const response = await authenticatedWorkerFetch(`${apiBase()}${path}`, {
       ...options,
-      signal: controller.signal,
+      signal: options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
       headers: {
         ...(options.body ? { 'content-type': 'application/json' } : {}),
         ...options.headers,
@@ -135,6 +137,24 @@ async function authenticatedRequest<T extends object>(path: string, options: Req
 export async function getEmailNotificationPreferences() {
   const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences');
   return payload.preferences;
+}
+
+interface ReactivationConsent { enabled: boolean; revision: number }
+
+export function getReactivationConsent(uid: string, signal: AbortSignal) {
+  return authenticatedRequest<ReactivationConsent>('/notifications/reactivation', { signal }, uid);
+}
+
+export function saveReactivationConsent(uid: string, enabled: boolean, revision: number | undefined, signal: AbortSignal) {
+  return authenticatedRequest<ReactivationConsent>('/notifications/reactivation', {
+    method: 'PUT',
+    body: JSON.stringify(enabled ? { enabled, revision } : { enabled }),
+    signal,
+  }, uid);
+}
+
+export async function recordDigestVisit(uid: string, revision: number, signal: AbortSignal) {
+  await authenticatedRequest('/notifications/visit', { method: 'POST', body: JSON.stringify({ revision }), signal }, uid);
 }
 
 export async function getEmailNotificationHealth() {

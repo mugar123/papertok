@@ -9,7 +9,7 @@ import {
   handleAccountDeletionRequest,
   runAccountDeletionSlice,
 } from './account-deletion.ts';
-import { handleEmailNotificationRequest } from './email-notifications.ts';
+import { handleEmailNotificationRequest, handleEmailReactivationRequest } from './email-notifications.ts';
 import { inMemorySubscriptionStores } from './test-support/email-subscriptions.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 
@@ -210,6 +210,7 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
   const store = kvStore({
     [`notification:subscription:${UID}`]: JSON.stringify({
       uid: UID,
+      email: 'alice@example.com',
       unsubscribeToken: 'tok-1',
       enabled: true,
     }),
@@ -219,6 +220,19 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
   const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
 
   try {
+    const setReminder = await handleEmailReactivationRequest(new Request('https://worker.test/notifications/reactivation', {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true, revision: 0 }),
+    }), env, '/notifications/reactivation');
+    assert.deepEqual(setReminder, { enabled: true, revision: 1 });
+    await handleEmailReactivationRequest(new Request('https://worker.test/notifications/visit', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ revision: 1 }),
+    }), env, '/notifications/visit');
+    assert.notEqual(env.EMAIL_SUBSCRIPTIONS.visitState(UID).lastVisit, undefined);
+
     let result;
     // One slice per stage and per seeded collection of the tree.
     for (let i = 0; i < 16; i += 1) {
@@ -260,6 +274,8 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     assert.equal(admin.documents[`users/${UID}/orcid/works`], undefined);
     assert.equal(store.data.has(`notification:subscription:${UID}`), false);
     assert.equal(store.data.has('notification:unsubscribe:tok-1'), false);
+    assert.equal(env.EMAIL_SUBSCRIPTIONS.visitState(UID).lastVisit, undefined);
+    assert.equal(env.EMAIL_SUBSCRIPTIONS.visitState(UID).alarm, null);
   } finally {
     restore();
   }

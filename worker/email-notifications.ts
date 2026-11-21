@@ -237,8 +237,8 @@ function cleanText(value: unknown, maxLength = 300) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
-async function readBoundedJson(request: Request, maximumBytes = MAX_PREFERENCES_REQUEST_BYTES) {
-  return readBoundedRequestJson<PreferencesBody>(request, maximumBytes, {
+async function readBoundedJson<Body = PreferencesBody>(request: Request, maximumBytes = MAX_PREFERENCES_REQUEST_BYTES) {
+  return readBoundedRequestJson<Body>(request, maximumBytes, {
     tooLarge: () => new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413),
     invalid: () => new EmailNotificationError('EMAIL_INVALID_REQUEST', 400),
   });
@@ -1076,7 +1076,7 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
     // `behind`: the record may be older than the last save (see readKvRecord),
     // so the last check before a send would cancel a digest prepared from it.
     return {
-      slot: cancelled ? { ...kv, subscription: null, migratable: false, ...cleanup } : { ...kv, ...cleanup },
+      slot: cancelled ? { ...kv, subscription: null, migratable: false, ...cleanup } : { ...kv, reactivation: slot.reactivation, consentRevision: slot.consentRevision, ...cleanup },
       inKv: true,
       objectVersion: slot.version,
       behind: !cancelled && kv.revision !== slot.version,
@@ -1250,7 +1250,7 @@ async function changeSubscription(
     }
     // The object keeps the record's token, which the unsubscribe link checks
     // while KV may still return the index and record of a cancelled subscription.
-    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion, token: record.unsubscribeToken });
+    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion, token: record.unsubscribeToken, email: record.email });
     if (reopened.accepted) {
       // The object's version, not one past the KV read: that read may be stale,
       // and two saves computed from it would write the same version.
@@ -1292,10 +1292,26 @@ async function changeSubscription(
   throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
 }
 
-/** `behind`: phase 1 read a KV record behind the object (see readPhase1Slot). */
-async function loadSubscriptionRecord(env: WorkerEnv, key: string, read?: Awaited<ReturnType<typeof readPhase1Slot>>) {
+/**
+ * A read that found no subscription while the reader's object says a KV record
+ * may still exist: a save or a reminder grant reopened the object and no
+ * cancellation closed it since, so the miss may be a cached or not yet moved
+ * KV record, not an unsubscribe.
+ */
+function waitingForKv(slot: StoredSlot) {
+  return slot.migratable && !slot.subscription && (slot.version > 0 || Boolean(slot.reactivation));
+}
+
+/**
+ * `behind`: phase 1 read a KV record behind the object (see readPhase1Slot).
+ * `settled`: refuse with `EMAIL_UNAVAILABLE` when the read is waiting for KV,
+ * rather than answer as not subscribed.
+ */
+async function loadSubscriptionRecord(env: WorkerEnv, key: string, read?: Awaited<ReturnType<typeof readPhase1Slot>>, settled = false) {
   const phase1 = read ?? (subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key)) : null);
-  const subscription = withVersion(phase1 ? phase1.slot : await readSubscriptionSlot(env, subscriptionUid(key)));
+  const slot = phase1 ? phase1.slot : await readSubscriptionSlot(env, subscriptionUid(key));
+  if (settled && waitingForKv(slot)) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  const subscription = withVersion(slot);
   if (!subscription) return null;
   const stateKey = deliveryStateKey(key, subscription);
   const state = await env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json');
@@ -1310,8 +1326,8 @@ function subscriptionWithState(record: NonNullable<Awaited<ReturnType<typeof loa
   };
 }
 
-async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
-  const record = await loadSubscriptionRecord(env, key);
+async function loadSubscriptionWithState(env: WorkerEnv, key: string, settled = false) {
+  const record = await loadSubscriptionRecord(env, key, undefined, settled);
   return record && subscriptionWithState(record);
 }
 
@@ -3153,14 +3169,59 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
   };
 }
 
-export async function handleEmailNotificationRequest(request: Request, env: WorkerEnv, pathname: string) {
+async function handleReactivation(request: Request, env: WorkerEnv, identity: Pick<EmailIdentity, 'uid' | 'email'>, emailVerified: boolean, visit: boolean) {
+  const reading = request.method === 'GET';
+  let expectedConsentRevision: number | undefined;
+  if (!reading) {
+    const body = await readBoundedJson<{ enabled?: unknown; revision?: unknown }>(request, 128);
+    if (!visit && body?.enabled === false && Object.keys(body).length === 1) {
+      const { slot } = await callSubscriptionStore(env, identity.uid, { action: 'reactivation-off' });
+      return { enabled: false, revision: slot.consentRevision };
+    }
+    if (!body || (!visit && body.enabled !== true) || Object.keys(body).length !== (visit ? 1 : 2)
+      || typeof body.revision !== 'number' || !Number.isSafeInteger(body.revision) || body.revision < 0) {
+      throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
+    }
+    if (!emailVerified) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
+    expectedConsentRevision = body.revision;
+  }
+
+  if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, identity.uid) : null;
+  const slot = phase1?.slot ?? await readSubscriptionSlot(env, identity.uid);
+  const revision = slot.consentRevision ?? 0;
+  if (!reading && expectedConsentRevision !== revision) {
+    throw new EmailNotificationError('EMAIL_REACTIVATION_CHANGED', 409);
+  }
+  if (phase1?.behind || waitingForKv(slot)) {
+    throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  }
+  const token = slot.subscription?.unsubscribeToken;
+  const eligible = Boolean(slot.subscription?.enabled && slot.subscription.email === identity.email && token);
+  const consent = eligible && slot.reactivation?.email === identity.email && slot.reactivation?.token === token;
+  if (reading) return { enabled: consent, revision };
+  if (visit && !consent) throw new EmailNotificationError('EMAIL_REACTIVATION_CHANGED', 409);
+  if (!eligible) throw new EmailNotificationError('EMAIL_REACTIVATION_REQUIRES_DIGEST', 409);
+
+  const result = await callSubscriptionStore(env, identity.uid, {
+    action: visit ? 'visit' : 'reactivation-on',
+    expectedVersion: phase1?.objectVersion ?? slot.version,
+    expectedConsentRevision,
+    email: identity.email,
+    token,
+  });
+  if (!result.accepted) throw new EmailNotificationError('EMAIL_REACTIVATION_CHANGED', 409);
+  return visit ? { ok: true } : { enabled: true, revision: result.slot.consentRevision };
+}
+
+async function notificationIdentity(request: Request, env: WorkerEnv, allowCache: boolean) {
   let verified;
   try {
     // Only the settings read may use the 60 s identity cache. A write stores the
     // reader's address and name or sends mail, and account deletion purges the
     // subscription before it deletes Auth, so a cached identity would let a
     // deleted account's token create the subscription again.
-    verified = await verifyFirebaseIdentity(request, env, { allowCache: request.method === 'GET' });
+    verified = await verifyFirebaseIdentity(request, env, { allowCache });
   } catch (error) {
     if (!(error instanceof WorkerAuthError)) throw error;
     const code = error.code === 'AUTH_REQUIRED' ? 'EMAIL_AUTH_REQUIRED'
@@ -3168,6 +3229,20 @@ export async function handleEmailNotificationRequest(request: Request, env: Work
     throw new EmailNotificationError(code, error.status);
   }
   if (!verified.email) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
+  return verified;
+}
+
+export async function handleEmailReactivationRequest(request: Request, env: WorkerEnv, pathname: string) {
+  const visit = pathname === '/notifications/visit';
+  if (visit ? request.method !== 'POST' : !['GET', 'PUT'].includes(request.method)) {
+    throw new EmailNotificationError('EMAIL_METHOD_NOT_ALLOWED', 405);
+  }
+  const identity = await notificationIdentity(request, env, false);
+  return handleReactivation(request, env, identity, identity.emailVerified, visit);
+}
+
+export async function handleEmailNotificationRequest(request: Request, env: WorkerEnv, pathname: string) {
+  const verified = await notificationIdentity(request, env, request.method === 'GET');
   if (!verified.ownsEmail) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
   // The verifier already collapsed and capped the name.
   const identity = { uid: verified.uid, email: verified.email, displayName: verified.displayName ?? '' };
@@ -3175,7 +3250,10 @@ export async function handleEmailNotificationRequest(request: Request, env: Work
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
 
   if (pathname === '/notifications/preferences' && request.method === 'GET') {
-    const subscription = await loadSubscriptionWithState(env, key);
+    // Settings reads a miss as an unsubscribe, so a miss that may be a cached
+    // or unmoved KV record is a failed read instead, and Settings keeps
+    // reminder withdrawal available.
+    const subscription = await loadSubscriptionWithState(env, key, true);
     return { preferences: publicSubscription(subscription, identity.email) };
   }
   if (pathname === '/notifications/preferences' && request.method === 'PUT') {

@@ -110,7 +110,11 @@ flowchart TD
   ([contract](worker/README.md#mcp-server)).
 - [provider-runtime.ts](worker/provider-runtime.ts) owns shared provider
   caching, deadlines and quota reservations. Durable Objects own atomic quotas,
-  email delivery reservations and rewrite sessions. KV holds notification state,
+  email delivery reservations and rewrite sessions. The per-account
+  [email subscription store](worker/email-subscription-store.ts) holds
+  digest reminder consent and the last signed-in visit hour, which expires
+  after 30 days. See the [digest reminder contract](worker/README.md#digest-reminder-consent-and-visits).
+  KV holds notification state,
   institution-service verdicts and rewrite cache records. Exact bindings and
   selected providers live in [wrangler.toml](wrangler.toml).
 - [paper-store.ts](worker/paper-store.ts) owns the D1 corpus, paper identity,
