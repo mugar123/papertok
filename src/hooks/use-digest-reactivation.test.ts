@@ -208,11 +208,90 @@ test('opening Settings reads reminders again, so a grant from another tab can be
     first.rerender(createElement(modules.ReminderSettings, { isOpen: false }));
     failReads = true;
     first.rerender(createElement(modules.ReminderSettings, { isOpen: true }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Turn off reminders' }));
+    const turnOff = await screen.findByRole('button', { name: 'Turn off reminders' });
+    // A browser click focuses the button first.
+    turnOff.focus();
+    fireEvent.click(turnOff);
     await waitFor(() => assert.deepEqual(withdrawals, [{ enabled: false }, { enabled: false }]));
+    assert.equal(enabled, false);
+    // The button unmounts once the withdrawal lands; focus moves to the reminder checkbox.
+    await waitFor(() => assert.ok(screen.queryByRole('button', { name: 'Turn off reminders' }) === null, 'the withdraw button is gone'));
+    const box = screen.getByRole('checkbox', { name: 'Weekly digest reminder' });
+    assert.ok(document.activeElement === box, `focus is on ${document.activeElement?.tagName ?? 'nothing'}, not the checkbox`);
+  } finally {
+    second.unmount();
+    first.unmount();
+  }
+});
+
+test('a tab that read the digest as off can still see and withdraw reminders another tab turned on', async t => {
+  const modules = await loadDigestReactivation();
+  t.after(() => modules.close());
+  let enabled = false;
+  let revision = 1;
+  const reads: string[] = [];
+  const withdrawals: unknown[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, options?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (path === '/notifications/visit') return Response.json({ ok: true });
+    assert.equal(path, '/notifications/reactivation');
+    if (options?.method === 'PUT') {
+      assert.ok(typeof options.body === 'string');
+      const body = JSON.parse(options.body);
+      if (!body.enabled) withdrawals.push(body);
+      enabled = body.enabled === true;
+      return Response.json({ enabled, revision: ++revision });
+    }
+    reads.push('GET');
+    return Response.json({ enabled, revision });
+  });
+  // The first tab read the digest as off and has its dialog closed: it asks nothing.
+  const first = render(createElement(modules.ReminderSettings, { subscribed: false, isOpen: false }));
+  // A second instance for the same account subscribed and turns reminders on.
+  const second = renderHook(() => modules.useDigestReactivation('reader', true, true));
+  try {
+    await waitFor(() => assert.equal(second.result.current.known, true));
+    await act(async () => { await second.result.current.save(true); });
+    assert.deepEqual(reads, ['GET']);
+
+    first.rerender(createElement(modules.ReminderSettings, { subscribed: false, isOpen: true }));
+    const checkbox = await screen.findByRole('checkbox', { name: 'Weekly digest reminder' });
+    await waitFor(() => assert.equal(checkbox.getAttribute('aria-checked'), 'true'));
+    assert.ok(screen.getAllByRole('status').some(status => status.textContent?.includes('You can turn them off here,')));
+    fireEvent.click(checkbox);
+    await waitFor(() => assert.deepEqual(withdrawals, [{ enabled: false }]));
+    await waitFor(() => assert.equal(checkbox.getAttribute('aria-checked'), 'false'));
     assert.equal(enabled, false);
   } finally {
     second.unmount();
     first.unmount();
+  }
+});
+
+test('a tab that read the digest as off can still withdraw reminders when the read on opening fails', async t => {
+  const modules = await loadDigestReactivation();
+  t.after(() => modules.close());
+  const withdrawals: unknown[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, options?: RequestInit) => {
+    assert.equal(new URL(String(input)).pathname, '/notifications/reactivation');
+    if (options?.method !== 'PUT') return Response.json({ code: 'EMAIL_UNAVAILABLE' }, { status: 503 });
+    assert.ok(typeof options.body === 'string');
+    withdrawals.push(JSON.parse(options.body));
+    return Response.json({ enabled: false, revision: 3 });
+  });
+  const view = render(createElement(modules.ReminderSettings, { subscribed: false, isOpen: false }));
+  try {
+    view.rerender(createElement(modules.ReminderSettings, { subscribed: false, isOpen: true }));
+    const button = await screen.findByRole('button', { name: 'Turn off reminders' });
+    assert.ok(screen.getAllByRole('status').some(status => status.textContent?.includes('temporarily unavailable')));
+    // A browser click focuses the button first.
+    button.focus();
+    fireEvent.click(button);
+    await waitFor(() => assert.deepEqual(withdrawals, [{ enabled: false }]));
+    await waitFor(() => assert.ok(screen.queryByRole('button', { name: 'Turn off reminders' }) === null, 'the withdraw button is gone'));
+    const box = screen.getByRole('checkbox', { name: 'Weekly digest reminder' });
+    assert.ok(document.activeElement === box, `focus is on ${document.activeElement?.tagName ?? 'nothing'}, not the checkbox`);
+  } finally {
+    view.unmount();
   }
 });

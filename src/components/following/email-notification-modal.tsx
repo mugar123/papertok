@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
@@ -93,6 +93,11 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testState, setTestState] = useState('idle');
   const [savingReactivation, setSavingReactivation] = useState(false);
+  const reactivationBoxRef = useRef<HTMLElement>(null);
+  // The Retry or withdraw button that started a reminder request. Both unmount
+  // once the request succeeds; focus then moves to the checkbox, unless the
+  // reader moved it elsewhere meanwhile.
+  const reminderTrigger = useRef<HTMLElement | null>(null);
   const preferencesRef = useRef(preferences);
   const testFeedbackTimerRef = useRef<number | null>(null);
   const isPhone = useIsPhone();
@@ -174,6 +179,16 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     }
   };
 
+  // A layout effect runs before Base UI's focus manager moves focus to the
+  // dialog itself, which it does when a focused element disappears.
+  useLayoutEffect(() => {
+    const trigger = reminderTrigger.current;
+    if (!trigger || trigger.isConnected) return;
+    reminderTrigger.current = null;
+    const active = document.activeElement;
+    if (!active || active === document.body) reactivationBoxRef.current?.focus();
+  }, [reactivation.enabled, reactivation.unavailable]);
+
   const emailService = emailServiceState(health);
   const toggleDisabled = loading || (emailService === 'down' && !draft.enabled) || (!digestCovered && !draft.enabled);
   const optionsDisabled = !draft.enabled || loading;
@@ -182,8 +197,13 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
   // Withdrawing never waits on the digest preferences: when their read failed,
   // a reader who gave consent can still take it back.
   const reactivationReason = loading || reactivation.loading ? 'Loading your reminder preference.'
-    : digestSubscribed === false ? 'Turn on and save your weekly digest first.'
     : reactivation.unavailable ? 'Your reminder preference is temporarily unavailable. Try again.'
+    // This tab read the digest as off; the read on opening says whether another
+    // tab or device turned reminders on since.
+    : digestSubscribed === false ? (!reactivation.known ? 'Loading your reminder preference.'
+      : reactivation.enabled
+        ? 'Reminders were turned on in another tab or on another device. You can turn them off here, or reload to see your current digest settings.'
+        : 'Turn on and save your weekly digest first.')
     : digestSubscribed === null ? (reactivation.enabled
       ? 'Your digest settings could not be loaded. You can still turn reminders off.'
       : 'Your digest settings could not be loaded. Reload the page to turn reminders on.')
@@ -258,17 +278,18 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
               <span role="status">{reactivationReason && ` ${reactivationReason}`}</span>
               {!reactivationReason && <> This choice saves immediately.</>}
             </small>
-            {reactivation.unavailable && !loading && digestSubscribed !== false && (
+            {reactivation.unavailable && !loading && (
               <>
-                <Button variant="outline" size="sm" disabled={savingReactivation} onClick={() => { void reactivation.refresh(); }}>Retry</Button>
+                <Button variant="outline" size="sm" disabled={savingReactivation} onClick={event => { reminderTrigger.current = event.currentTarget; void reactivation.refresh(); }}>Retry</Button>
                 {/* A failed read may hide consent another tab gave. */}
                 {!reactivation.enabled && (
-                  <Button type="button" variant="outline" size="sm" disabled={savingReactivation} onClick={() => { void handleReactivation(false); }}>Turn off reminders</Button>
+                  <Button type="button" variant="outline" size="sm" disabled={savingReactivation} onClick={event => { reminderTrigger.current = event.currentTarget; void handleReactivation(false); }}>Turn off reminders</Button>
                 )}
               </>
             )}
           </div>
           <Checkbox
+            ref={reactivationBoxRef}
             id={reactivationId}
             className="size-6"
             aria-labelledby={`${reactivationId}-label`}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EmailNotificationServiceError, getReactivationConsent, recordDigestVisit, saveReactivationConsent } from '../services/email-notification-service.ts';
 import type { UseDigestReactivation } from './digest-reactivation-types.ts';
 
@@ -9,46 +9,67 @@ const HOUR_MS = 60 * 60 * 1000;
  * digest preferences could not be read: consent is still read, so a reader who
  * gave it can withdraw it, but only a confirmed subscription can grant consent
  * or record a visit. Withdrawing needs neither read.
+ * The hook reads consent by itself only while the digest is on or unknown.
+ * `refresh` reads it for any signed-in account, so Settings can show and
+ * withdraw consent another tab gave while this tab read the digest as off.
  */
 export const useDigestReactivation: UseDigestReactivation = (uid, subscribed, emailVerified) => {
-  const [consent, setConsent] = useState<Awaited<ReturnType<typeof getReactivationConsent>> | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
   const subscriberUid = subscribed !== false ? uid : null;
-  const [loadedUid, setLoadedUid] = useState(subscriberUid);
+  // Every answer and failed read belongs to the account and digest state it
+  // was asked under, so one that lands after either changed is never shown.
+  const scope = `${uid ?? ''}|${subscriberUid ?? ''}`;
+  const [answer, setAnswer] = useState<{ scope: string; consent: Awaited<ReturnType<typeof getReactivationConsent>> } | null>(null);
+  const [failedScope, setFailedScope] = useState<string | null>(null);
+  // A changed scope also clears what an earlier visit to it left, so going
+  // back to it does not show an old answer while the new read is in flight.
+  const [seenScope, setSeenScope] = useState(scope);
+  if (seenScope !== scope) {
+    setSeenScope(scope);
+    setAnswer(null);
+    setFailedScope(null);
+  }
+  const consent = answer?.scope === scope ? answer.consent : null;
+  const unavailable = failedScope === scope;
+  // The scope now, set before any passive effect (the dialog's read on opening
+  // included) runs, so a request from an earlier scope can tell it is stale.
+  const currentScope = useRef(scope);
+  useLayoutEffect(() => {
+    currentScope.current = scope;
+  }, [scope]);
   const session = useRef<AbortController | null>(null);
   const refreshAttempt = useRef(0);
   const lastAttempt = useRef<{ revision: number; hour: number } | null>(null);
-  if (loadedUid !== subscriberUid) {
-    setLoadedUid(subscriberUid);
-    setConsent(null);
-    setUnavailable(false);
-  }
 
   const refresh = useCallback(async () => {
     const signal = session.current?.signal;
-    if (!uid || !signal) return;
+    // A callback from an earlier scope must not invalidate the current scope's reads.
+    if (!uid || !signal || currentScope.current !== scope) return;
     const attempt = ++refreshAttempt.current;
+    const current = () => !signal.aborted && attempt === refreshAttempt.current && currentScope.current === scope;
     try {
-      const current = await getReactivationConsent(uid, signal);
-      if (!signal.aborted && attempt === refreshAttempt.current) {
-        setConsent(current);
-        setUnavailable(false);
+      const read = await getReactivationConsent(uid, signal);
+      if (current()) {
+        setAnswer({ scope, consent: read });
+        setFailedScope(null);
       }
     } catch {
-      if (!signal.aborted && attempt === refreshAttempt.current) setUnavailable(true);
+      if (current()) setFailedScope(scope);
     }
-  }, [uid]);
+  }, [scope, uid]);
 
   useEffect(() => {
-    if (!subscriberUid) return;
+    if (!uid) return;
     const controller = new AbortController();
     session.current = controller;
-    void refresh();
     return () => {
       controller.abort();
       session.current = null;
       lastAttempt.current = null;
     };
+  }, [uid]);
+
+  useEffect(() => {
+    if (subscriberUid) void refresh();
   }, [refresh, subscriberUid]);
 
   const revision = consent?.revision;
@@ -64,15 +85,16 @@ export const useDigestReactivation: UseDigestReactivation = (uid, subscribed, em
       if (!signal.aborted && error instanceof EmailNotificationServiceError && error.code === 'EMAIL_REACTIVATION_CHANGED') await refresh();
       throw error;
     }
-    if (!signal.aborted) {
+    // After a scope change, the new scope's own read shows the result.
+    if (!signal.aborted && currentScope.current === scope) {
       // A retry may have read the old choice before this save landed.
       refreshAttempt.current++;
-      setConsent(saved);
-      setUnavailable(false);
+      setAnswer({ scope, consent: saved });
+      setFailedScope(current => (current === scope ? null : current));
     }
-  }, [refresh, revision, subscribed, uid]);
+  }, [refresh, revision, scope, subscribed, uid]);
 
-  const enabled = subscribed !== false && consent?.enabled === true;
+  const enabled = consent?.enabled === true;
   const recording = enabled && subscribed === true;
   useEffect(() => {
     if (!recording) {
