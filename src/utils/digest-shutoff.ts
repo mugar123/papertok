@@ -111,9 +111,13 @@ export function digestOptInWaitsForFollow({ pending, consent, covered = true }: 
  * given under the from-sign-up text starts on whatever covers the digest, the
  * chosen topics included, once the profile read is the server's own
  * (`digestSendReady`). Nothing is attempted twice in a session; a failed
- * attempt leaves the flag in place, so the next session is the retry. A flag
- * the live profile says is gone (`flagLive === false`: another tab or device
- * already settled it) is not acted on; `null` is not known yet.
+ * attempt leaves the flag in place, so the next session is the retry. A
+ * subscription starts only while the live profile confirms the flag
+ * (`flagLive === true`): `false` means another tab or device already settled
+ * it, and `null` means this tab has no confirmed answer (not heard yet, cached,
+ * a write in flight or a failed listener), so its pending yes may be stale (the
+ * reader may have started and ended the subscription elsewhere since). The yes
+ * then waits for the next session.
  */
 export function digestOptInStep({ consent, attempted, flagLive, enabled, serviceDown, hasFollows, digestCovered, digestSendReady }: {
   consent: DigestConsent;
@@ -129,5 +133,19 @@ export function digestOptInStep({ consent, attempted, flagLive, enabled, service
   if (enabled || consent === DIGEST_CONSENT_SPENT) return 'settle';
   if (serviceDown) return 'wait';
   const ready = consent === DIGEST_CONSENT_FROM_SIGNUP ? digestCovered && digestSendReady : hasFollows;
-  return ready ? 'subscribe' : 'wait';
+  return ready && flagLive === true ? 'subscribe' : 'wait';
+}
+
+/**
+ * Whether an answer still belongs to the account shown and signed in. React
+ * learns of an account change after Firebase does, and analytics identifies the
+ * new account in between: a response for the previous account must be dropped
+ * against both, or it could be reported under the next account's identity.
+ */
+export function requestAccountCurrent({ requestUid, shownUid, signedInUid }: {
+  requestUid: string | null;
+  shownUid: string | null;
+  signedInUid: string | null | undefined;
+}) {
+  return requestUid !== null && requestUid === shownUid && requestUid === signedInUid;
 }

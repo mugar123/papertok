@@ -36,10 +36,10 @@ import {
 } from '../services/email-notification-service.ts';
 import { emailServiceState } from '../utils/email-health.ts';
 import { DIGEST_CONSENT_SPENT, readDigestConsent, withDigestOptInLock, writeDigestConsent } from '../utils/digest-consent.ts';
-import { digestInterestsToSend, digestOptInStep, digestOptInWaitsForFollow, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
+import { digestInterestsToSend, digestOptInStep, digestOptInWaitsForFollow, requestAccountCurrent, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../services/firebase.ts';
+import { auth, db } from '../services/firebase.ts';
 import { normalizeOrcidConnection } from '../services/orcid-connection-service.ts';
 
 const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
@@ -199,9 +199,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   }, [language, markActivation, trackEvent, userEmail]);
 
   // What answers after an await belongs to the account that asked. Once the app
-  // shows another account, its state and its analytics are not touched.
+  // shows, or Firebase holds, another account, its state and its analytics are
+  // not touched.
   const assertCurrentAccount = useCallback((requestUid: string | null) => {
-    if (requestUid !== currentUserId.current) throw new EmailNotificationServiceError('EMAIL_ACCOUNT_CHANGED', 401);
+    if (!requestAccountCurrent({ requestUid, shownUid: currentUserId.current, signedInUid: auth.currentUser?.uid })) throw new EmailNotificationServiceError('EMAIL_ACCOUNT_CHANGED', 401);
   }, []);
 
   // A pending yes from the welcome is decided by the reader's own choice to turn

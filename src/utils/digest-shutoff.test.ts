@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { digestInterestsToSend, digestOptInStep, digestOptInWaitsForFollow, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
+import { digestInterestsToSend, digestOptInStep, digestOptInWaitsForFollow, digestProfileInterests, requestAccountCurrent, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
 import { DIGEST_CONSENT_FROM_SIGNUP, DIGEST_CONSENT_SPENT, readDigestConsent, writeDigestConsent } from './digest-consent.ts';
 
 const SERVER = { fromCache: false, hasPendingWrites: false };
@@ -70,7 +70,7 @@ test('a profile snapshot that still holds an unacknowledged write is not the ser
 const optIn = {
   consent: DIGEST_CONSENT_FROM_SIGNUP,
   attempted: false,
-  flagLive: null,
+  flagLive: true,
   enabled: false,
   serviceDown: false,
   hasFollows: false,
@@ -135,9 +135,25 @@ test('a withdrawal made while the flag survived is never turned back into a subs
 
 // Another tab or device already subscribed and settled the flag, then the reader
 // unsubscribed there: this tab still has the old pending yes in memory.
-test('a yes whose flag the live profile no longer holds is never acted on, but an unknown flag is', () => {
+test('a yes starts a subscription only while the live profile confirms its flag', () => {
   assert.equal(digestOptInStep({ ...optIn, consent: null, hasFollows: true, flagLive: false }), 'wait');
   assert.equal(digestOptInStep({ ...optIn, flagLive: false }), 'wait');
   assert.equal(digestOptInStep({ ...optIn, flagLive: true }), 'subscribe');
-  assert.equal(digestOptInStep({ ...optIn, consent: null, hasFollows: true, flagLive: null }), 'subscribe');
+  // A tab with a cached profile cannot tell whether the reader started and ended the subscription elsewhere.
+  assert.equal(digestOptInStep({ ...optIn, flagLive: null }), 'wait');
+  assert.equal(digestOptInStep({ ...optIn, consent: null, hasFollows: true, flagLive: null }), 'wait');
+  // Deleting a flag can never start a subscription, so it does not need the live answer.
+  assert.equal(digestOptInStep({ ...optIn, enabled: true, flagLive: null }), 'settle');
+  assert.equal(digestOptInStep({ ...optIn, consent: DIGEST_CONSENT_SPENT, flagLive: null }), 'settle');
+  assert.equal(digestOptInStep({ ...optIn, consent: null, hasFollows: true }), 'subscribe');
+});
+
+test('an answer is kept only for the account that is both shown and signed in', () => {
+  assert.equal(requestAccountCurrent({ requestUid: 'a', shownUid: 'a', signedInUid: 'a' }), true);
+  // Firebase switched to B before React did: the shown account is still A.
+  assert.equal(requestAccountCurrent({ requestUid: 'a', shownUid: 'a', signedInUid: 'b' }), false);
+  // React moved on to B while A's answer was in flight.
+  assert.equal(requestAccountCurrent({ requestUid: 'a', shownUid: 'b', signedInUid: 'b' }), false);
+  assert.equal(requestAccountCurrent({ requestUid: 'a', shownUid: 'a', signedInUid: null }), false);
+  assert.equal(requestAccountCurrent({ requestUid: null, shownUid: null, signedInUid: null }), false);
 });
