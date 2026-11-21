@@ -167,6 +167,13 @@ Changes listed in [decisions that need authorization](AGENTS.md#decisions-that-n
 such as a new ranking rule or a new agent skill, need a person to approve their impact. Record
 each approval in the PR's `## Authorized decisions` section.
 
+## Production delivery
+
+After every Worker deploy, run `node scripts/production-smoke.ts` and confirm
+the version tag matches the deployed commit. The daily production smoke
+workflow reports failures in a GitHub issue. See the
+[Worker deployment instructions](worker/README.md#deployment).
+
 ## Documentation maintenance
 
 [ARCHITECTURE.md](ARCHITECTURE.md#documentation-owners) identifies the primary
