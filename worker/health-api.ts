@@ -1,12 +1,61 @@
 import type { WorkerEnv } from './env.ts';
 
-import { checkAIProviderHealth } from './ai-explanation.ts';
-import { checkEmailProviderHealth, getEmailDeliveryLedgerHealth, getEmailScheduleHealth } from './email-notifications.ts';
+import { activeAIProvider, checkAIProviderHealth, isAIProviderConfigured } from './ai-explanation.ts';
+import { isCallerQuotaSecretConfigured } from './caller-quota.ts';
+import { checkEmailProviderHealth, configuredEmailProvider, configuredEmailSubscriptionStore, getEmailDeliveryLedgerHealth, getEmailScheduleHealth } from './email-notifications.ts';
+import { isServiceAccountConfigured } from './firebase-service-account.ts';
 import { corsHeaders, json } from './http.ts';
+import { openReviewAccount } from './open-review-api.ts';
 import { checkOpenAlexHealth } from './openalex-api.ts';
+import { configuredOrcidHost } from './orcid.ts';
 import { canonicalCacheKey, readOpenAlexBudget, serveCached } from './provider-runtime.ts';
-import { reserveRequestQuota } from './request-quota-ledger.ts';
-import { checkScopusHealth } from './scopus-api.ts';
+import { isRequestQuotaLedgerConfigured, reserveRequestQuota } from './request-quota-ledger.ts';
+import { checkScopusHealth, isScopusEgressConfigured } from './scopus-api.ts';
+import { isZoteroConfigured } from './zotero.ts';
+
+export function getConfigurationHealth(env: WorkerEnv) {
+  const aiConfigured = isAIProviderConfigured(env, activeAIProvider(env));
+  const scopusConfigured = isScopusEgressConfigured(env);
+  const resendConfigured = Boolean(configuredEmailProvider(env));
+  const emailConfigured = Boolean(env.NOTIFICATION_STORE && resendConfigured);
+  const emailLedgerConfigured = getEmailDeliveryLedgerHealth(env).ok;
+  const emailSubscriptionsConfigured = Boolean(configuredEmailSubscriptionStore(env));
+  const publishingConfigured = isServiceAccountConfigured(env);
+  const quotaConfigured = isRequestQuotaLedgerConfigured(env.REQUEST_QUOTA_LEDGER);
+  const publicCallerQuotaConfigured = quotaConfigured && isCallerQuotaSecretConfigured(env.PDF_RATE_LIMIT_SECRET);
+  // Anonymous Semantic Scholar requests are rate-limited enough that the app
+  // needs this key for search and related papers to work reliably.
+  const semanticScholarKeyConfigured = Boolean(env.SEMANTIC_SCHOLAR_API_KEY);
+  return {
+    ok: true,
+    aiConfigured,
+    openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
+    adsConfigured: Boolean(env.NASA_ADS_API_TOKEN),
+    scopusConfigured,
+    pubmedKeyConfigured: Boolean(env.NCBI_API_KEY),
+    semanticScholarKeyConfigured,
+    emailConfigured,
+    publishingConfigured,
+    features: {
+      ai: aiConfigured,
+      orcid: Boolean(configuredOrcidHost(env)),
+      zotero: isZoteroConfigured(env),
+      scopus: scopusConfigured,
+      email: emailConfigured && emailLedgerConfigured && emailSubscriptionsConfigured,
+      publishing: publishingConfigured && quotaConfigured,
+      institutionLink: publishingConfigured,
+      institutionEmailVerification: publishingConfigured && resendConfigured && emailLedgerConfigured && quotaConfigured,
+      accountDeletion: publishingConfigured && (!env.NOTIFICATION_STORE || emailSubscriptionsConfigured),
+      openReviewLookup: Boolean(openReviewAccount(env)),
+      semanticScholar: semanticScholarKeyConfigured,
+      pdf: publicCallerQuotaConfigured,
+      mcp: publicCallerQuotaConfigured,
+    },
+    version: env.CF_VERSION_METADATA
+      ? { id: env.CF_VERSION_METADATA.id, tag: env.CF_VERSION_METADATA.tag || null }
+      : null,
+  };
+}
 
 const EMAIL_HEALTH_CACHE_SECONDS = 5 * 60;
 const SCOPUS_HEALTH_CACHE_SECONDS = 10 * 60;

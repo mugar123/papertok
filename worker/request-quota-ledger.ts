@@ -383,6 +383,12 @@ async function sha256(value: unknown) {
 // only when it creates the object, and treats it as best effort.
 const LEDGER_LOCATION_HINT: DurableObjectLocationHint = 'weur';
 
+export function isRequestQuotaLedgerConfigured(
+  namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null,
+): namespace is NonNullable<WorkerEnv['REQUEST_QUOTA_LEDGER']> {
+  return Boolean(namespace?.idFromName && namespace?.get);
+}
+
 async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, action: string, {
   periodKey,
   subject,
@@ -397,7 +403,7 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
   part,
   pace,
 }: QuotaRequest): Promise<QuotaReading> {
-  if (!namespace?.idFromName || !namespace?.get) {
+  if (!isRequestQuotaLedgerConfigured(namespace)) {
     return { accepted: false, code: 'QUOTA_LEDGER_NOT_CONFIGURED' };
   }
   const subjectKey = await sha256(subject);

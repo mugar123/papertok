@@ -982,8 +982,12 @@ function subscriptionUid(key: string) {
 
 type StoredSlot = SubscriptionSlot<Subscription>;
 
+export function configuredEmailSubscriptionStore(env: WorkerEnv) {
+  return env.EMAIL_SUBSCRIPTIONS;
+}
+
 async function callSubscriptionStore(env: WorkerEnv, uid: string, payload: SubscriptionStorePayload) {
-  const namespace = env.EMAIL_SUBSCRIPTIONS;
+  const namespace = configuredEmailSubscriptionStore(env);
   if (!namespace) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const response = await namespace.get(namespace.idFromName(uid)).fetch('https://papertok.internal/email-subscription', {
     method: 'POST',
@@ -2203,7 +2207,7 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   return { papers, sourceReport };
 }
 
-function configuredEmailProvider(env: WorkerEnv) {
+export function configuredEmailProvider(env: WorkerEnv) {
   return env.RESEND_API_KEY && env.RESEND_FROM_EMAIL ? 'resend' : '';
 }
 

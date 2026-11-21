@@ -1341,7 +1341,31 @@ Subscription preferences and delivery state use separate, generation-scoped KV r
 
 **Live health probes.** `/health/openalex`, `/health/scopus` and `/health/email` call a provider on an edge-cache miss and need no session, and a request without an `Origin` passes. The edge cache is per data centre and nothing joins concurrent misses, so before calling the provider each miss reserves one probe in `REQUEST_QUOTA_LEDGER` for the current UTC window, app-wide: 6 per 10 minutes for OpenAlex, 1 per 10 minutes for Scopus and 6 per 5 minutes for email (Pablo, 2026-10-24). That is at most 864 OpenAlex list calls a day outside its ledger (about $0.09 of the $1 day), 144 Scopus probes and 1,728 Resend domain lists. Once the window is spent, a miss answers `429 HEALTH_PROBE_LIMITED` with `no-store` and a `retry-after` that ends with the window, without calling the provider; the email settings then say the status is unknown instead of unavailable and still let readers turn updates on or off, since saving preferences does not call Resend and a test send reports its own failure. It is a 429 because every 5xx is reported to PostHog (see Error monitoring). Without the binding, or when the ledger answers with an error, no probe runs and the route answers `503 PROVIDER_QUOTA_NOT_CONFIGURED`, also `no-store`; the email settings read that as status unknown too. A refusal is never cached, so the next probe admitted in that location refreshes its entry, and cache hits reserve nothing. Anyone can spend a window, and a location that finds it spent waits for the next one, so a `HEALTH_PROBE_LIMITED` answer says nothing about the provider.
 
-`GET /health` needs no `Origin` and reports configuration, not whether providers answer: `ok`, booleans such as `aiConfigured` and `semanticScholarKeyConfigured` (described above), and `version: { id, tag }` from the `[version_metadata]` binding (`CF_VERSION_METADATA`). `id` is the Cloudflare version id and `tag` is what the deploy passed to `--tag`, or `null` when it passed none. `version` is `null` where the binding does not exist, as in the Node tests.
+`GET /health` needs no `Origin`. It returns `ok`, the existing configuration
+booleans, and `version: { id, tag }` from `CF_VERSION_METADATA`. The tag is
+`null` if the deployment was untagged. The entire version is `null` if the
+binding is absent.
+
+The response includes a `features` object with boolean configuration checks.
+The Worker computes them from its environment without sending credentials or
+calling providers. Signed-in routes still require Firebase authentication, and
+requests still go through their normal quota checks. Use the live health
+routes to check provider availability.
+
+| Flag | Required configuration |
+| --- | --- |
+| `ai` | The provider the AI routes select has a credential that passes its local check. Anthropic requires the `sk-ant-` prefix, NaN requires `sk-`, and Gemini requires a nonempty printable ASCII token without spaces. `aiConfigured` reports the same value. |
+| `orcid` | A supported ORCID registry, client ID and secret, and a Firestore service account. |
+| `zotero` | Zotero client credentials and token key, and a Firestore service account. |
+| `scopus` | The Scopus proxy URL and shared secret. |
+| `email` | `NOTIFICATION_STORE`, `EMAIL_SUBSCRIPTIONS`, the Resend key and sender, and the durable delivery ledger. The legacy `emailConfigured` field checks the notification store, key and sender. |
+| `publishing` | A Firestore service account and the request quota ledger. The legacy `publishingConfigured` field checks the service account. |
+| `institutionLink` | A Firestore service account. |
+| `accountDeletion` | A Firestore service account. When `NOTIFICATION_STORE` is bound, subscription cleanup also requires `EMAIL_SUBSCRIPTIONS`. |
+| `institutionEmailVerification` | A Firestore service account, Resend key and sender, and both quota and delivery ledgers. |
+| `openReviewLookup` | OpenReview username and password for lookups by ID. Public search works without them. |
+| `semanticScholar` | A Semantic Scholar key for reliable search and related-paper requests. |
+| `pdf`, `mcp` | The request quota ledger and a `PDF_RATE_LIMIT_SECRET` of at least 32 characters for caller rate limits. |
 
 ### Logs
 
