@@ -1,9 +1,9 @@
 import type { FirestoreData, FirestoreWrite } from './firestore-admin.ts';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import { FirebaseServiceAccountError } from './firebase-service-account.ts';
-import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
+import { decodeFields, FirestoreAdminError, mergeWrite } from './firestore-admin.ts';
 import { OrcidError, handleOrcidRequest } from './orcid.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
@@ -25,10 +25,11 @@ const ENV = {
 const IDENTIFIER = '0000-0002-1825-0097';
 const ACCESS_TOKEN = 'f5af9f51-07e6-4332-8f1a-c0c11c1e3728';
 const NOW = Date.parse('2026-11-18T10:00:00Z');
-test.beforeEach(t => {
-  t.mock.timers.enable({ apis: ['Date'], now: NOW });
+test.beforeEach(() => {
+  mock.timers.enable({ apis: ['Date'], now: NOW });
   ENV.REQUEST_QUOTA_LEDGER = inMemoryQuotaLedger().binding;
 });
+test.afterEach(() => { mock.timers.reset(); });
 
 /** Documents in memory, each with a version that every write changes, and Firestore's preconditions. */
 function memoryAdmin(seed: Record<string, FirestoreData> = {}) {
@@ -37,13 +38,16 @@ function memoryAdmin(seed: Record<string, FirestoreData> = {}) {
   const versions: Record<string, string> = Object.fromEntries(Object.keys(seed).map(key => [key, `v${++clock}`]));
   /** Each commit, as the documents it wrote or deleted. */
   const commits: string[][] = [];
+  const reads: string[] = [];
   const path = (name: string) => name.split('/documents/')[1];
   return {
     documents,
     commits,
+    reads,
     name: (segments: string[]) => `projects/${PROJECT_ID}/databases/(default)/documents/${segments.join('/')}`,
     async getDocument<T>(segments: string[]) {
       const key = segments.join('/');
+      reads.push(key);
       return documents[key] ? { data: documents[key] as T, updateTime: versions[key] } : null;
     },
     async commit(writes: FirestoreWrite[]) {
@@ -148,44 +152,81 @@ test('each ORCID route has an hourly limit per account', async () => {
   }
 });
 
-test('the daily write ceiling is shared across routes and accounts', async () => {
-  const admin = memoryAdmin();
+
+test('empty disconnects spend no writes and linked accounts can disconnect after the general budget fills', async () => {
+  const admin = memoryAdmin({
+    [`users/${ALICE}`]: { onboardingComplete: true, orcid: { id: IDENTIFIER } },
+    [`users/${ALICE}/orcid/link`]: { stateHash: 'pending', createdAt: NOW },
+    [`users/${ALICE}/orcid/works`]: { mine: ['doi:10.1000/a'] },
+    ...Object.fromEntries(Array.from({ length: 100 }, (_, i) => [
+      `users/linked-${i}`, { orcid: { id: IDENTIFIER } },
+    ])),
+  });
   const upstream = stubFetch(() => new Response('down', { status: 502 }));
-  const disconnect = (uid: string) => handleOrcidRequest(request('/orcid/disconnect', uid), ENV, ORIGIN, { admin, now: () => NOW });
+  const disconnect = (uid: string) => handleOrcidRequest(request('/orcid/disconnect', uid), ENV, ORIGIN, { admin });
+  const dailyLimit = { code: 'ORCID_WRITE_LIMIT', status: 429, retryAfter: '50400' };
   try {
-    for (let i = 0; i < 498; i++) await disconnect(`reader-${i}`);
-    const state = (await connect(admin)).searchParams.get('state');
-    await assert.rejects(complete(admin, state), rejectsWith('ORCID_UNAVAILABLE'));
-    await disconnect('another-reader');
-    const limit = { code: 'ORCID_WRITE_LIMIT', status: 429, retryAfter: '50400' };
-    await assert.rejects(complete(admin, state), limit);
-    await assert.rejects(disconnect(BOB), limit);
-    assert.equal(upstream.calls.length, 1);
-    assert.equal(admin.commits.flat().length, 1498);
+    for (let i = 0; i < 500; i++) {
+      assert.deepEqual(await disconnect(`empty-${Math.floor(i / 5)}`), { orcid: null });
+    }
+    assert.equal(admin.commits.length, 0);
+
+    const state = (await connect(admin, { uid: 'callback-reader' })).searchParams.get('state');
+    for (let i = 0; i < 1196; i++) await connect(admin, { uid: `reader-${Math.floor(i / 6)}` });
+    await assert.rejects(complete(admin, state, { uid: 'callback-reader' }), rejectsWith('ORCID_UNAVAILABLE'));
+    await connect(admin, { uid: 'two-connects' });
+    await connect(admin, { uid: 'two-connects' });
+    const exhausted = { ...admin, async commit() {
+      throw new FirestoreAdminError('FIRESTORE_WRITE_FAILED', 502, 'RESOURCE_EXHAUSTED');
+    } };
+    for (let i = 0; i < 6; i++) await assert.rejects(connect(exhausted, { uid: BOB }), /RESOURCE_EXHAUSTED/);
     await connect(admin, { uid: BOB });
-    await connect(admin, { uid: BOB });
-    await assert.rejects(connect(admin, { uid: 'another-reader' }), limit);
+    await assert.rejects(connect(admin, { uid: 'new-reader' }), dailyLimit);
+    await assert.rejects(disconnect(BOB), dailyLimit);
+    assert.deepEqual(await disconnect('empty-after-cap'), { orcid: null });
+    assert.deepEqual(await disconnect(ALICE), { orcid: null });
+    assert.deepEqual(admin.documents[`users/${ALICE}`], { onboardingComplete: true });
+    assert.equal(admin.documents[`users/${ALICE}/orcid/link`], undefined);
+    assert.equal(admin.documents[`users/${ALICE}/orcid/works`], undefined);
+    for (let i = 0; i < 99; i++) await disconnect(`linked-${i}`);
+    await assert.rejects(disconnect('linked-99'), dailyLimit);
     assert.equal(admin.commits.flat().length, 1500);
-    await connect(admin, { now: NOW + 24 * 60 * 60_000 });
   } finally {
     upstream.restore();
   }
 });
 
-test('invalid state and a failed exchange leave the write allowance available', async () => {
+test('invalid callbacks and failed exchanges spend attempts without spending write units', async () => {
   const admin = memoryAdmin();
-  let available = false;
-  const upstream = stubFetch(() => available ? orcidAnswer() : new Response('down', { status: 502 }));
+  const upstream = stubFetch(() => new Response('down', { status: 502 }));
   try {
     const state = (await connect(admin)).searchParams.get('state');
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 3; i++) {
       await assert.rejects(complete(admin, 'wrong-state'), rejectsWith('ORCID_CONNECTION_EXPIRED'));
       await assert.rejects(complete(admin, state), rejectsWith('ORCID_UNAVAILABLE'));
     }
+    await assert.rejects(complete(admin, state), { code: 'ORCID_WRITE_LIMIT', status: 429 });
+    assert.equal(admin.reads.length, 6);
+    assert.equal(upstream.calls.length, 3);
     assert.equal(admin.commits.length, 1);
-    available = true;
-    await complete(admin, state);
-    assert.equal(admin.commits.length, 2);
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('the global callback attempt limit stops reads across accounts', async () => {
+  const admin = memoryAdmin();
+  const upstream = stubFetch(() => orcidAnswer());
+  try {
+    for (let i = 0; i < 2400; i++) {
+      await assert.rejects(complete(admin, 'expired', { uid: `reader-${Math.floor(i / 6)}` }),
+        rejectsWith('ORCID_CONNECTION_EXPIRED'));
+    }
+    await assert.rejects(complete(admin, 'expired', { uid: BOB }), {
+      code: 'ORCID_WRITE_LIMIT', status: 429, retryAfter: '50400',
+    });
+    assert.equal(admin.reads.length, 2400);
+    assert.equal(upstream.calls.length, 0);
   } finally {
     upstream.restore();
   }
@@ -360,32 +401,55 @@ test('a Disconnect while ORCID is answering stays disconnected', async () => {
   assert.deepEqual(admin.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
 });
 
-test('a completion that lands between the commits of a Disconnect writes nothing', async () => {
+test('disconnect removes an iD completed between its pending-state and account reads', async () => {
   const admin = memoryAdmin({ [`users/${ALICE}`]: { onboardingComplete: true } });
   const orcid = heldOrcid();
   const upstream = stubFetch(orcid.handler);
   try {
     const state = (await connect(admin)).searchParams.get('state');
-    const late = complete(admin, state);
+    const completing = complete(admin, state);
     await orcid.asked;
-    // ORCID answers, and the completion commits, right after the Disconnect's first commit.
-    let interleaved = false;
     const disconnecting = {
       ...admin,
-      async commit(writes: FirestoreWrite[]) {
-        await admin.commit(writes);
-        if (interleaved) return;
-        interleaved = true;
-        orcid.release();
-        await late.catch(() => {});
+      async getDocument<T>(segments: string[]) {
+        const document = await admin.getDocument<T>(segments);
+        if (segments.at(-1) === 'link') {
+          orcid.release();
+          await completing;
+        }
+        return document;
       },
     };
-    await handleOrcidRequest(request('/orcid/disconnect'), ENV, ORIGIN, { admin: disconnecting });
-    await assert.rejects(late, rejectsWith('ORCID_CONNECTION_EXPIRED'));
+    assert.deepEqual(await handleOrcidRequest(request('/orcid/disconnect'), ENV, ORIGIN, { admin: disconnecting }), { orcid: null });
   } finally {
     upstream.restore();
   }
   assert.deepEqual(admin.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
+});
+
+test('empty disconnect preserves decisions for a connection created after its account read', async () => {
+  const admin = memoryAdmin();
+  const upstream = stubFetch(() => orcidAnswer());
+  const decisions = { mine: ['doi:10.1000/a'] };
+  try {
+    const disconnecting = {
+      ...admin,
+      async getDocument<T>(segments: string[]) {
+        const document = await admin.getDocument<T>(segments);
+        if (segments.length === 2) {
+          const state = (await connect(admin)).searchParams.get('state');
+          await complete(admin, state);
+          const name = admin.name(['users', ALICE, 'orcid', 'works']);
+          await admin.commit([mergeWrite(name, decisions, { mustExist: false })]);
+        }
+        return document;
+      },
+    };
+    assert.deepEqual(await handleOrcidRequest(request('/orcid/disconnect'), ENV, ORIGIN, { admin: disconnecting }), { orcid: null });
+    assert.deepEqual(admin.documents[`users/${ALICE}/orcid/works`], decisions);
+  } finally {
+    upstream.restore();
+  }
 });
 
 test('a new Connect while ORCID is answering keeps its pending state and refuses the old completion', async () => {
@@ -486,9 +550,7 @@ test('disconnecting forgets the iD, any pending state and the decisions about it
   }
   assert.deepEqual(connectedAccount.documents, { [`users/${ALICE}`]: { onboardingComplete: true } });
   assert.deepEqual(newAccount.documents, {});
-  // The pending state goes first, so a completion in flight writes nothing; then the iD, before
-  // the decisions, since the rules take a decision only for the connected iD.
-  assert.deepEqual(connectedAccount.commits, [[`users/${ALICE}/orcid/link`], [`users/${ALICE}`], [`users/${ALICE}/orcid/works`]]);
+  assert.deepEqual(connectedAccount.commits, [[`users/${ALICE}`, `users/${ALICE}/orcid/link`, `users/${ALICE}/orcid/works`]]);
 });
 
 test('only POST is answered', async () => {

@@ -46,6 +46,8 @@ const DAY_MS = 24 * HOUR_MS;
 const ACCOUNT_ROUTE_HOURLY_LIMIT = 6;
 // Firestore's Spark write allowance is shared with the rest of the app.
 const GLOBAL_DAILY_WRITE_LIMIT = 1500;
+const GENERAL_DAILY_WRITE_LIMIT = 1200;
+const GLOBAL_DAILY_COMPLETION_LIMIT = 2400;
 
 export class OrcidError extends Error {
   declare code: string;
@@ -69,15 +71,17 @@ interface OrcidOptions { admin?: Admin; now?: () => number }
 interface LinkDocument { stateHash?: string; createdAt?: number }
 interface OrcidConnection { id: string; name: string | null; host: OrcidHost; connectedAt: string }
 
-async function reserveOrcidWrites(env: WorkerEnv, uid: string, route: string, now: number, writes: number) {
+async function reserveOrcidQuota(env: WorkerEnv, uid: string, route: string, now: number, {
+  budget, globalLimit, globalAmount,
+}: { budget: 'writes' | 'attempts'; globalLimit: number; globalAmount: number }) {
   const hour = Math.floor(now / HOUR_MS);
   const day = Math.floor(now / DAY_MS);
   const quota: QuotaRequest = {
-    periodKey: `orcid-writes:${day}`,
+    periodKey: `orcid-${budget}:${day}`,
     subject: `${hour}:${route}:${uid}`,
     subjectLimit: ACCOUNT_ROUTE_HOURLY_LIMIT,
-    globalLimit: GLOBAL_DAILY_WRITE_LIMIT,
-    globalAmount: writes,
+    globalLimit,
+    globalAmount,
     expiresAt: (day + 1) * DAY_MS + HOUR_MS,
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, quota).catch(() => {
@@ -86,7 +90,7 @@ async function reserveOrcidWrites(env: WorkerEnv, uid: string, route: string, no
   if (reservation.accepted) return quota;
   if (reservation.scope === 'user' || reservation.scope === 'global') {
     const dailyLimitReached = reservation.scope === 'global'
-      || (reservation.globalUsage ?? 0) + writes > GLOBAL_DAILY_WRITE_LIMIT;
+      || (globalAmount > 0 && (reservation.globalUsage ?? 0) + globalAmount > globalLimit);
     const resetAt = dailyLimitReached ? (day + 1) * DAY_MS : (hour + 1) * HOUR_MS;
     throw new OrcidError('ORCID_WRITE_LIMIT', 429, String(Math.ceil((resetAt - now) / 1000)));
   }
@@ -107,11 +111,10 @@ async function commitFirstOrcidWrites(admin: Admin, writes: FirestoreWrite[], en
   try {
     await admin.commit(writes);
   } catch (error) {
-    // A lost response may hide a successful write, and later disconnect
-    // commits can fail after a write.
+    // A lost response may hide a successful commit.
     const refused = error instanceof FirestoreAdminError && (error.status === 409
       || (error.code === 'FIRESTORE_WRITE_FAILED'
-        && ['PERMISSION_DENIED', 'UNAUTHENTICATED', 'INVALID_ARGUMENT'].includes(error.detail)));
+        && ['PERMISSION_DENIED', 'UNAUTHENTICATED', 'INVALID_ARGUMENT', 'RESOURCE_EXHAUSTED'].includes(error.detail)));
     if (refused || error instanceof FirebaseServiceAccountError) {
       await releaseOrcidWrites(env, quota);
     }
@@ -217,7 +220,9 @@ export async function handleOrcidRequest(request: Request, env: WorkerEnv, origi
   if (pathname === '/orcid/connect') {
     const state = randomState();
     const stateHash = await sha256(state);
-    const quota = await reserveOrcidWrites(env, identity.uid, pathname, now, 1);
+    const quota = await reserveOrcidQuota(env, identity.uid, pathname, now, {
+      budget: 'writes', globalLimit: GENERAL_DAILY_WRITE_LIMIT, globalAmount: 1,
+    });
     // A whole-document write: a new connection replaces any one still pending.
     await commitFirstOrcidWrites(admin, [{ update: { name: link, fields: encodeFields({ stateHash, createdAt: now }) } }], env, quota);
     const query = new URLSearchParams({
@@ -232,13 +237,18 @@ export async function handleOrcidRequest(request: Request, env: WorkerEnv, origi
 
   if (pathname === '/orcid/complete') {
     const { code, state } = await readBody(request);
+    await reserveOrcidQuota(env, identity.uid, pathname, now, {
+      budget: 'attempts', globalLimit: GLOBAL_DAILY_COMPLETION_LIMIT, globalAmount: 1,
+    });
     const pending = await admin.getDocument<LinkDocument>(linkSegments(identity.uid), { withMeta: true });
     const age = now - Number(pending?.data.createdAt);
     if (!pending?.updateTime || !pending.data.stateHash || pending.data.stateHash !== await sha256(state)
       || !(age >= 0 && age <= PENDING_LIFETIME_MS)) {
       throw new OrcidError('ORCID_CONNECTION_EXPIRED', 400);
     }
-    const quota = await reserveOrcidWrites(env, identity.uid, pathname, now, 3);
+    const quota = await reserveOrcidQuota(env, identity.uid, pathname, now, {
+      budget: 'writes', globalLimit: GENERAL_DAILY_WRITE_LIMIT, globalAmount: 3,
+    });
     const holder = await exchangeCode(env, host, code, redirectUri).catch(async (error: unknown) => {
       await releaseOrcidWrites(env, quota);
       throw error;
@@ -266,20 +276,39 @@ export async function handleOrcidRequest(request: Request, env: WorkerEnv, origi
   }
 
   if (pathname === '/orcid/disconnect') {
-    const quota = await reserveOrcidWrites(env, identity.uid, pathname, now, 3);
-    // The pending state goes first, on its own: a completion still waiting on
-    // ORCID deletes only the version of it that it read, so once it is gone
-    // that completion writes nothing, wherever it lands among these commits.
-    await commitFirstOrcidWrites(admin, [deleteWrite(link)], env, quota);
-    // Then the iD: the rules accept a decision only for the connected iD, so
-    // none can be written after the decisions are deleted.
-    try {
-      await admin.commit([clearFieldsWrite(userDocument, ['orcid'])]);
-    } catch (error) {
-      // A user document that does not exist has no iD to clear.
-      if (!(error instanceof FirestoreAdminError && error.status === 409)) throw error;
+    await reserveOrcidQuota(env, identity.uid, pathname, now, {
+      budget: 'attempts', globalLimit: GLOBAL_DAILY_COMPLETION_LIMIT, globalAmount: 0,
+    });
+    // Snapshot cleanup documents before the account so unlinked cleanup
+    // cannot delete documents belonging to a connection created afterward.
+    const [pending, previousDecisions] = await Promise.all([
+      admin.getDocument<LinkDocument>(linkSegments(identity.uid), { withMeta: true }),
+      admin.getDocument(decisionsSegments(identity.uid), { withMeta: true }),
+    ]);
+    const user = await admin.getDocument<{ orcid?: OrcidConnection }>(['users', identity.uid], { withMeta: true });
+    const connected = Boolean(user?.data.orcid);
+    const writes: FirestoreWrite[] = [];
+    if (connected) {
+      if (!user?.updateTime) throw new OrcidError('ORCID_FAILED', 502);
+      const clear = clearFieldsWrite(userDocument, ['orcid']);
+      // Clear the iD and remove pending state and decisions in one commit.
+      // The user version protects a completion that has already committed.
+      writes.push(
+        { ...clear, currentDocument: { updateTime: user.updateTime } },
+        deleteWrite(link),
+        deleteWrite(decisions),
+      );
+    } else {
+      if (pending?.updateTime) writes.push(deleteWrite(link, { updateTime: pending.updateTime }));
+      if (previousDecisions?.updateTime) writes.push(deleteWrite(decisions, { updateTime: previousDecisions.updateTime }));
     }
-    await admin.commit([deleteWrite(decisions)]);
+    if (!writes.length) return { orcid: null };
+    const quota = await reserveOrcidQuota(env, identity.uid, pathname, now, {
+      budget: 'writes',
+      globalLimit: connected ? GLOBAL_DAILY_WRITE_LIMIT : GENERAL_DAILY_WRITE_LIMIT,
+      globalAmount: writes.length,
+    });
+    await commitFirstOrcidWrites(admin, writes, env, quota);
     return { orcid: null };
   }
 
