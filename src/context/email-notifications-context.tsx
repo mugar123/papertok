@@ -12,6 +12,12 @@ export interface EmailNotificationsContextValue {
   digestSendReady: boolean;
   /** The app turned the digest off this session because there was nothing left for it to cover. */
   digestTurnedOff: boolean;
+  /**
+   * Whether the server holds an enabled digest for this account: `null` when
+   * the preferences read failed, so Settings cannot tell an unsubscribed
+   * reader from one it could not ask. False while the read is in flight.
+   */
+  digestSubscribed: boolean | null;
   reactivation: ReturnType<typeof useDigestReactivation>;
   savePreferences: (preferences: NotificationPreferences) => Promise<Required<NotificationPreferences>>;
   sendTest: (preferences?: NotificationPreferences) => Promise<Awaited<ReturnType<typeof sendEmailNotificationTest>>>;
@@ -74,7 +80,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   });
   const loadedForUser = useRef<string | null>(null);
   const userId = user?.uid || null;
-  const reactivation = useDigestReactivation(userId, !loading && preferences.enabled, user?.emailVerified === true);
+  // The account whose preferences came from the server, by a read or a save.
+  const [preferencesFrom, setPreferencesFrom] = useState<string | null>(null);
+  const digestSubscribed = preferencesFrom === userId ? preferences.enabled : loading ? false : null;
+  const reactivation = useDigestReactivation(userId, digestSubscribed, user?.emailVerified === true);
   const followSignature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
   const previewSignature = useMemo(() => items.slice(0, 20).map(item => item.updateKey || item.id || item.doi).join('|'), [items]);
   const notificationDataReady = !followsLoading && !followsError;
@@ -146,6 +155,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         if (preferencesResult.status === 'fulfilled') {
           const next = preferencesResult.value;
           setPreferences({ ...DEFAULT_PREFERENCES, ...next, language, email: next.email || userEmail });
+          setPreferencesFrom(userId);
         } else {
           setError(preferencesResult.reason);
         }
@@ -171,6 +181,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const applySavedPreferences = useCallback((saved: NotificationPreferences, wasEnabled: boolean) => {
     const normalized = { ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail };
     setPreferences(normalized);
+    setPreferencesFrom(userId);
     if (normalized.enabled !== wasEnabled) {
       void trackEvent('newsletter_change', {
         action: normalized.enabled ? 'subscribe' : 'unsubscribe',
@@ -178,7 +189,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       if (normalized.enabled) void markActivation();
     }
     return normalized;
-  }, [language, markActivation, trackEvent, userEmail]);
+  }, [language, markActivation, trackEvent, userEmail, userId]);
 
   const savePreferences = useCallback(async (nextPreferences: NotificationPreferences) => {
     if (!notificationDataReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
@@ -355,6 +366,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     hasCitationSource,
     digestCovered,
     digestSendReady,
+    digestSubscribed,
     reactivation,
     digestTurnedOff: digestShutoffNoticeShown({
       turnedOffFor: digestTurnedOffFor,
@@ -364,7 +376,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     }),
     savePreferences,
     sendTest,
-  }), [digestCovered, digestSendReady, digestTurnedOffFor, error, hasCitationSource, hasFollows, health, loading, localizedPreferences, notificationDataReady, reactivation, savePreferences, saving, sendTest, testing, userId]);
+  }), [digestCovered, digestSendReady, digestSubscribed, digestTurnedOffFor, error, hasCitationSource, hasFollows, health, loading, localizedPreferences, notificationDataReady, reactivation, savePreferences, saving, sendTest, testing, userId]);
 
   return <EmailNotificationsContext.Provider value={value}>{children}</EmailNotificationsContext.Provider>;
 }

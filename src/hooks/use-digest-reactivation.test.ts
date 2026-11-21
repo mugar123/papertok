@@ -96,3 +96,72 @@ test('Settings can withdraw reminders after the first consent read fails', async
     view.unmount();
   }
 });
+
+test('Settings can withdraw reminders when the digest preferences read fails, and cannot grant them', async t => {
+  const modules = await loadDigestReactivation();
+  t.after(() => modules.close());
+  const requests: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, options?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    requests.push(`${options?.method ?? 'GET'} ${path} ${typeof options?.body === 'string' ? options.body : ''}`.trim());
+    assert.equal(path, '/notifications/reactivation');
+    if (options?.method === 'PUT') return Response.json({ enabled: false, revision: 2 });
+    return Response.json({ enabled: true, revision: 1 });
+  });
+  const view = render(createElement(modules.ReminderSettings, { subscribed: null }));
+  try {
+    const checkbox = await screen.findByRole('checkbox', { name: 'Weekly digest reminder' });
+    await waitFor(() => assert.equal(checkbox.getAttribute('aria-checked'), 'true'));
+    assert.ok(screen.getAllByRole('status').some(status => status.textContent?.includes('You can still turn reminders off.')));
+    fireEvent.click(checkbox);
+    await waitFor(() => assert.equal(checkbox.getAttribute('aria-checked'), 'false'));
+    // No visit is recorded and nothing is granted without a confirmed subscription.
+    assert.deepEqual(requests, ['GET /notifications/reactivation', 'PUT /notifications/reactivation {"enabled":false}']);
+    assert.ok(checkbox.hasAttribute('data-disabled') || checkbox.getAttribute('aria-disabled') === 'true');
+  } finally {
+    view.unmount();
+  }
+});
+
+test('Settings can withdraw reminders when both the digest preferences and the consent reads fail', async t => {
+  const modules = await loadDigestReactivation();
+  t.after(() => modules.close());
+  const withdrawals: unknown[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, options?: RequestInit) => {
+    assert.equal(new URL(String(input)).pathname, '/notifications/reactivation');
+    if (options?.method !== 'PUT') return Response.json({ code: 'EMAIL_UNAVAILABLE' }, { status: 503 });
+    assert.ok(typeof options.body === 'string');
+    withdrawals.push(JSON.parse(options.body));
+    return Response.json({ enabled: false, revision: 2 });
+  });
+  const view = render(createElement(modules.ReminderSettings, { subscribed: null }));
+  try {
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn off reminders' }));
+    await waitFor(() => {
+      assert.deepEqual(withdrawals, [{ enabled: false }]);
+      assert.ok(screen.getAllByRole('status').some(status => status.textContent?.includes('Reminder turned off.')));
+    });
+  } finally {
+    view.unmount();
+  }
+});
+
+test('a reader whose digest preferences could not be read cannot grant reminders', async t => {
+  const modules = await loadDigestReactivation();
+  t.after(() => modules.close());
+  const methods: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (_input: RequestInfo | URL, options?: RequestInit) => {
+    methods.push(options?.method ?? 'GET');
+    return Response.json({ enabled: false, revision: 1 });
+  });
+  const { result, unmount } = renderHook(() => modules.useDigestReactivation('reader', null, true));
+  try {
+    await waitFor(() => assert.equal(result.current.known, true));
+    await act(async () => {
+      await assert.rejects(() => result.current.save(true), { code: 'EMAIL_REACTIVATION_REQUIRES_DIGEST' });
+    });
+    assert.deepEqual(methods, ['GET']);
+  } finally {
+    unmount();
+  }
+});

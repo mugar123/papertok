@@ -7,4 +7,4 @@ export interface DigestReactivationView {
   save: (enabled: boolean) => Promise<void>;
 }
 
-export type UseDigestReactivation = (uid: string | null, subscribed: boolean, emailVerified: boolean) => DigestReactivationView;
+export type UseDigestReactivation = (uid: string | null, subscribed: boolean | null, emailVerified: boolean) => DigestReactivationView;

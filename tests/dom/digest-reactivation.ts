@@ -13,14 +13,16 @@ export async function loadDigestReactivation() {
     const { default: Modal } = await app.load<{ default: ComponentType<{ isOpen: boolean; onClose: () => void }> }>('/src/components/following/email-notification-modal.tsx');
     const { AuthContext, LanguageContext, EmailNotificationsContext, FollowingContext } =
       await app.load<Record<'AuthContext' | 'LanguageContext' | 'EmailNotificationsContext' | 'FollowingContext', Context<unknown>>>('/src/context/contexts.ts');
-    function ReminderSettings() {
-      const reactivation = useDigestReactivation('reader', true, true);
+    // Settings with the digest preferences read (`subscribed`: true) or failed (null).
+    function ReminderSettings({ subscribed = true }: { subscribed?: boolean | null }) {
+      const reactivation = useDigestReactivation('reader', subscribed, true);
       return createElement(MemoryRouter, {},
         createElement(AuthContext.Provider, { value: { user: { emailVerified: true } } },
           createElement(LanguageContext.Provider, { value: { language: 'en' } },
             createElement(FollowingContext.Provider, { value: { followedEntities: [] } },
               createElement(EmailNotificationsContext.Provider, { value: {
-                preferences: { enabled: true, email: 'reader@example.com', maxPapers: 5 },
+                preferences: { enabled: subscribed === true, email: 'reader@example.com', maxPapers: 5 },
+                digestSubscribed: subscribed,
                 health: { configured: true, available: true },
                 digestCovered: true, digestSendReady: true, notificationDataReady: true, reactivation,
               } }, createElement(Modal, { isOpen: true, onClose: () => {} }))))));

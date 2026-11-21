@@ -82,6 +82,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     hasCitationSource,
     digestSendReady,
     digestTurnedOff,
+    digestSubscribed,
     reactivation,
     savePreferences,
     sendTest,
@@ -171,9 +172,14 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
   const optionsDisabled = !draft.enabled || loading;
   const statusUnknown = !loading && emailService === 'unknown';
   const providerDown = !loading && emailService === 'down';
+  // Withdrawing never waits on the digest preferences: when their read failed,
+  // a reader who gave consent can still take it back.
   const reactivationReason = loading || reactivation.loading ? 'Loading your reminder preference.'
-    : !preferences.enabled ? 'Turn on and save your weekly digest first.'
+    : digestSubscribed === false ? 'Turn on and save your weekly digest first.'
     : reactivation.unavailable ? 'Your reminder preference is temporarily unavailable. Try again.'
+    : digestSubscribed === null ? (reactivation.enabled
+      ? 'Your digest settings could not be loaded. You can still turn reminders off.'
+      : 'Your digest settings could not be loaded. Reload the page to turn reminders on.')
     : !user?.emailVerified && !reactivation.enabled ? 'Verify your email address to turn reminders on.'
     : null;
 
@@ -244,7 +250,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
               <span role="status">{reactivationReason && ` ${reactivationReason}`}</span>
               {!reactivationReason && <> This choice saves immediately.</>}
             </small>
-            {reactivation.unavailable && !loading && preferences.enabled && (
+            {reactivation.unavailable && !loading && digestSubscribed !== false && (
               <>
                 <Button variant="outline" size="sm" disabled={savingReactivation} onClick={() => { void reactivation.refresh(); }}>Retry</Button>
                 {!reactivation.known && (

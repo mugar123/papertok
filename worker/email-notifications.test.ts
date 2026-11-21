@@ -6325,6 +6325,52 @@ for (const source of ['kv', 'object']) {
     assert.equal(state().lastVisit, undefined);
   });
 
+  test(`a visit older than 30 days is absent and deleted on the next access, even after its alarm failed (${source})`, async t => {
+    const uid = 'reader';
+    const identity = { uid, email: 'reader@example.com', displayName: '' };
+    const stores = inMemorySubscriptionStores();
+    const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+    let clock = Date.UTC(2026, 10, 20, 10, 5);
+    t.mock.method(Date, 'now', () => clock);
+    t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: uid, email: identity.email, emailVerified: true }] }));
+    const settings = () => reactivationRequest('GET', '/notifications/reactivation', env);
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
+    await reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: true, revision: 0 });
+    await reactivationRequest('POST', '/notifications/visit', env, { revision: 1 });
+    assert.equal(stores.visitState(uid).lastVisit, Date.UTC(2026, 10, 20, 10));
+
+    // Every retry of the alarm failed, so nothing is scheduled to remove the visit.
+    stores.dropAlarm(uid);
+    clock = Date.UTC(2026, 10, 25, 10);
+    assert.deepEqual(await settings(), { enabled: true, revision: 1 });
+    assert.deepEqual(stores.visitState(uid), { lastVisit: Date.UTC(2026, 10, 20, 10), alarm: Date.UTC(2026, 11, 20, 10), alarmWrites: 2 });
+
+    stores.dropAlarm(uid);
+    clock = Date.UTC(2026, 11, 21, 10);
+    assert.deepEqual(await settings(), { enabled: true, revision: 1 });
+    assert.deepEqual(stores.visitState(uid), { lastVisit: undefined, alarm: null, alarmWrites: 2 });
+  });
+
+  test(`a firing alarm before the visit expires schedules it again (${source})`, async t => {
+    const uid = 'reader';
+    const identity = { uid, email: 'reader@example.com', displayName: '' };
+    const stores = inMemorySubscriptionStores();
+    const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+    let clock = Date.UTC(2026, 10, 20, 10, 5);
+    t.mock.method(Date, 'now', () => clock);
+    t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: uid, email: identity.email, emailVerified: true }] }));
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
+    await reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: true, revision: 0 });
+    await reactivationRequest('POST', '/notifications/visit', env, { revision: 1 });
+
+    clock = Date.UTC(2026, 11, 20, 9, 59);
+    await stores.runAlarm(uid);
+    assert.deepEqual(stores.visitState(uid), { lastVisit: Date.UTC(2026, 10, 20, 10), alarm: Date.UTC(2026, 11, 20, 10), alarmWrites: 2 });
+    clock = Date.UTC(2026, 11, 20, 10);
+    await stores.runAlarm(uid);
+    assert.deepEqual(stores.visitState(uid), { lastVisit: undefined, alarm: null, alarmWrites: 2 });
+  });
+
   for (const cancellation of ['settings', 'one-click', 'account deletion']) {
     test(`${cancellation} clears the visit and wins against an in-flight visit (${source})`, async t => {
       const uid = 'reader';

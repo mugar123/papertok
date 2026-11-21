@@ -1369,7 +1369,15 @@ Subscription preferences and delivery state use separate, generation-scoped KV r
   and its revision in the same transaction as the hourly limit and expiry
   alarm. Each grant and withdrawal advances the consent revision so an older
   grant or visit cannot take effect afterward. The alarm
-  deletes the visit 30 days after its stored hour. Withdrawing consent,
+  deletes the visit 30 days after its stored hour. Every access to the object,
+  including the schedule's read of each subscriber, ignores and deletes a visit
+  that old, and schedules the alarm again when it is missing. After an alarm
+  fails every retry, an expired visit therefore stays stored, unused, only until
+  the object's next access; a schedule that is disabled or deferred, or a
+  reader without a schedule index, can postpone that access. Cloudflare's
+  point-in-time recovery for the object's storage keeps a deleted visit for 30
+  more days; PaperTok does not read or restore that history (the Worker never
+  calls the bookmark API), and `privacy.html` says so. Withdrawing consent,
   unsubscribing in Settings or through the email link, and deleting the
   account also erase the visit. These routes send no email.
 

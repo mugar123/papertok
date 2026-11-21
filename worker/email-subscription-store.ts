@@ -1,7 +1,7 @@
 import type { LedgerStorage, LedgerTransaction } from './ledger-storage.ts';
 
 type ReactivationConsent = { email: string; token: string };
-type SubscriptionTransaction = LedgerTransaction & Pick<DurableObjectTransaction, 'setAlarm' | 'deleteAlarm'>;
+type SubscriptionTransaction = LedgerTransaction & Pick<DurableObjectTransaction, 'getAlarm' | 'setAlarm' | 'deleteAlarm'>;
 
 /**
  * What one reader's object holds: the digest subscription, or `null` once it is
@@ -63,6 +63,24 @@ async function clearReactivation(transaction: SubscriptionTransaction, nextRevis
   await transaction.put(CONSENT_REVISION_KEY, nextRevision);
 }
 
+/**
+ * The last visit while it is under 30 days old. An older one is deleted here
+ * and treated as absent, and a live one gets its expiry alarm back if it has
+ * none, so a failed alarm cannot keep the visit: every access to the object,
+ * the schedule's read of each subscriber included, expires or re-arms it.
+ */
+async function liveVisit(transaction: SubscriptionTransaction) {
+  const lastVisit = await transaction.get<number>(LAST_VISIT_KEY);
+  if (lastVisit === undefined) return undefined;
+  const expiresAt = lastVisit + VISIT_RETENTION_MS;
+  if (expiresAt <= Date.now()) {
+    await transaction.delete(LAST_VISIT_KEY);
+    return undefined;
+  }
+  if ((await transaction.getAlarm()) !== expiresAt) await transaction.setAlarm(expiresAt);
+  return lastVisit;
+}
+
 // A string field of a subscription record the object holds.
 function recordField(record: unknown, field: 'unsubscribeToken' | 'stateId' | 'email') {
   if (typeof record !== 'object' || record === null) return undefined;
@@ -109,13 +127,7 @@ export class EmailSubscriptionStore {
   }
 
   async alarm() {
-    await this.state.storage.transaction(async transaction => {
-      const lastVisit = await transaction.get<number>(LAST_VISIT_KEY);
-      if (lastVisit === undefined) return;
-      const expiresAt = lastVisit + VISIT_RETENTION_MS;
-      if (expiresAt <= Date.now()) await transaction.delete(LAST_VISIT_KEY);
-      else await transaction.setAlarm(expiresAt);
-    });
+    await this.state.storage.transaction(async transaction => { await liveVisit(transaction); });
   }
 
   async fetch(request: Request) {
@@ -148,6 +160,7 @@ export class EmailSubscriptionStore {
     }
 
     const outcome = await this.state.storage.transaction(async (transaction) => {
+      const lastVisit = await liveVisit(transaction);
       const version = Number(await transaction.get<number>(VERSION_KEY)) || 0;
       const subscription = (await transaction.get(SUBSCRIPTION_KEY)) ?? null;
       const migratable = (await transaction.get(CLOSED_KEY)) !== true;
@@ -178,7 +191,6 @@ export class EmailSubscriptionStore {
         if (!matches) return { status: 409, slot };
         if (visit && matches) {
           const hour = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
-          const lastVisit = await transaction.get<number>(LAST_VISIT_KEY);
           if (lastVisit === undefined || lastVisit < hour) {
             await transaction.put(LAST_VISIT_KEY, hour);
             await transaction.setAlarm(hour + VISIT_RETENTION_MS);

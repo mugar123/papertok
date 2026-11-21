@@ -4,10 +4,16 @@ import type { UseDigestReactivation } from './digest-reactivation-types.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 
+/**
+ * Reminder consent for the signed-in account. `subscribed` is null when the
+ * digest preferences could not be read: consent is still read, so a reader who
+ * gave it can withdraw it, but only a confirmed subscription can grant consent
+ * or record a visit. Withdrawing needs neither read.
+ */
 export const useDigestReactivation: UseDigestReactivation = (uid, subscribed, emailVerified) => {
   const [consent, setConsent] = useState<Awaited<ReturnType<typeof getReactivationConsent>> | null>(null);
   const [unavailable, setUnavailable] = useState(false);
-  const subscriberUid = subscribed ? uid : null;
+  const subscriberUid = subscribed !== false ? uid : null;
   const [loadedUid, setLoadedUid] = useState(subscriberUid);
   const session = useRef<AbortController | null>(null);
   const refreshAttempt = useRef(0);
@@ -49,6 +55,7 @@ export const useDigestReactivation: UseDigestReactivation = (uid, subscribed, em
   const save = useCallback(async (enabled: boolean) => {
     const signal = session.current?.signal;
     if (!uid || !signal) throw new EmailNotificationServiceError('EMAIL_AUTH_REQUIRED', 401);
+    if (enabled && subscribed !== true) throw new EmailNotificationServiceError('EMAIL_REACTIVATION_REQUIRES_DIGEST', 409);
     if (enabled && revision === undefined) throw new EmailNotificationServiceError('EMAIL_REACTIVATION_CHANGED', 409);
     let saved;
     try {
@@ -63,11 +70,12 @@ export const useDigestReactivation: UseDigestReactivation = (uid, subscribed, em
       setConsent(saved);
       setUnavailable(false);
     }
-  }, [refresh, revision, uid]);
+  }, [refresh, revision, subscribed, uid]);
 
-  const enabled = subscribed && consent?.enabled === true;
+  const enabled = subscribed !== false && consent?.enabled === true;
+  const recording = enabled && subscribed === true;
   useEffect(() => {
-    if (!enabled) {
+    if (!recording) {
       lastAttempt.current = null;
       return;
     }
@@ -89,9 +97,9 @@ export const useDigestReactivation: UseDigestReactivation = (uid, subscribed, em
       document.removeEventListener('visibilitychange', record);
       controller.abort();
     };
-  }, [emailVerified, enabled, refresh, revision, uid]);
+  }, [emailVerified, recording, refresh, revision, uid]);
 
-  const loading = subscribed && consent === null && !unavailable;
+  const loading = subscribed !== false && consent === null && !unavailable;
   const known = consent !== null;
   return useMemo(() => ({ enabled, known, loading, unavailable, refresh, save }), [enabled, known, loading, unavailable, refresh, save]);
 };

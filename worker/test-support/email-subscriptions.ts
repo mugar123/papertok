@@ -10,6 +10,7 @@ export function inMemorySubscriptionStores() {
     values: Map<string, unknown>;
     alarm: () => number | null;
     alarmWrites: () => number;
+    clearAlarm: () => void;
   }>();
   return {
     idFromName: (name: string): unknown => name,
@@ -17,8 +18,14 @@ export function inMemorySubscriptionStores() {
       const object = objects.get(uid);
       return { lastVisit: object?.values.get('lastVisitAt'), alarm: object?.alarm() ?? null, alarmWrites: object?.alarmWrites() ?? 0 };
     },
+    // As on Cloudflare, a firing alarm is no longer scheduled while it runs.
     runAlarm: async (uid: string) => {
+      objects.get(uid)?.clearAlarm();
       await objects.get(uid)?.store.alarm();
+    },
+    // An alarm whose handler failed every retry: Cloudflare stops scheduling it.
+    dropAlarm: (uid: string) => {
+      objects.get(uid)?.clearAlarm();
     },
     get: (name: unknown): Pick<DurableObjectStub, 'fetch'> => {
       const key = String(name);
@@ -33,6 +40,7 @@ export function inMemorySubscriptionStores() {
               get: <T>(item: string) => structuredClone(values.get(item)) as T | undefined,
               put: (item: string, value: unknown) => { values.set(item, structuredClone(value)); },
               delete: (item: string) => values.delete(item),
+              getAlarm: async () => alarm,
               setAlarm: async (at) => { alarm = Number(at); alarmWrites += 1; },
               deleteAlarm: async () => { alarm = null; },
             }));
@@ -40,12 +48,13 @@ export function inMemorySubscriptionStores() {
             return run;
           },
         } });
-        objects.set(key, { store, values, alarm: () => alarm, alarmWrites: () => alarmWrites });
+        objects.set(key, { store, values, alarm: () => alarm, alarmWrites: () => alarmWrites, clearAlarm: () => { alarm = null; } });
       }
       return { fetch: async (url, init) => objects.get(key)!.store.fetch(new Request(String(url), init)) };
     },
   } as NonNullable<WorkerEnv['EMAIL_SUBSCRIPTIONS']> & {
     visitState(uid: string): { lastVisit: unknown; alarm: number | null; alarmWrites: number };
     runAlarm(uid: string): Promise<void>;
+    dropAlarm(uid: string): void;
   };
 }
