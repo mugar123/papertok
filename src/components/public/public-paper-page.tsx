@@ -373,9 +373,12 @@ export default function PublicPaperPage({
           title={text(status === 'not-found' ? COPY.notFoundTitle : COPY.errorTitle)}
           actions={(
             <>
-              <Button onClick={retry}>
-                <ArrowClockwise size={16} aria-hidden="true" /> {text(COPY.retry)}
-              </Button>
+              {/* A key that names no paper made no request, so a retry has nothing to repeat. */}
+              {identity && (
+                <Button onClick={retry}>
+                  <ArrowClockwise size={16} aria-hidden="true" /> {text(COPY.retry)}
+                </Button>
+              )}
               <Button variant="outline" onClick={goBack}>
                 <ArrowLeft size={16} aria-hidden="true" /> {text(COPY.back)}
               </Button>

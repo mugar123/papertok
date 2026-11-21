@@ -451,6 +451,20 @@ export function legacyPaperRedirect(location: { pathname: string; search: string
   return { to: { pathname, search: location.search, hash: location.hash }, state: location.state };
 }
 
+/**
+ * Where a hand-written address, `/paper/arxiv:1706.03762`, lives: the canonical
+ * `/paper/<key>` path, or null when `key` is not one. `key` is the route's
+ * decoded `:paperKey`, so `arxiv:1706.03762` and `arxiv%3A1706.03762` are the
+ * same key, and a DOI writes its slash as `%2F` to stay in the one segment:
+ * `/paper/doi:10.48550%2FarXiv.1706.03762`. A minted key is base64url and never
+ * holds a colon, so it is never read as this form. The identity is checked and
+ * spelled by `getPublicPaperPath`, whose result holds no colon: a redirect to it
+ * cannot loop. The query and fragment are the caller's to carry.
+ */
+export function readablePaperPath(key: string) {
+  return key.includes(':') ? getPublicPaperPath(key) : null;
+}
+
 function decodeSegment(segment: string) {
   try {
     return decodeURIComponent(segment);
