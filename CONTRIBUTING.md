@@ -174,6 +174,60 @@ the version tag matches the deployed commit. The daily production smoke
 workflow reports failures in a GitHub issue. See the
 [Worker deployment instructions](worker/README.md#deployment).
 
+### Firestore rules and indexes
+
+Vercel and the Worker deploy separately from Firestore. From the release
+checkout, deploy Firestore rules and indexes before merging the web change
+that needs them, then verify the deployed configuration from that same checkout.
+
+```sh
+firebase deploy --only firestore:rules,firestore:indexes --project papertok-168df
+node scripts/firestore-rules-check.ts --firebase-cli-token
+```
+
+Wait for new composite indexes to reach `READY` before merging. For a PR that
+changes `firestore.rules`, put `Deploy Firestore rules before the web merge.` in
+its `## Production` section. For `firestore.indexes.json`, put
+`Deploy Firestore indexes before the web merge.` there. Use both lines when
+both files change. The PR check enforces the statement. The release operator
+performs the deploy and checks the result.
+
+The check reads the active rules release and index configuration for the default
+database. It ignores carriage returns in the rules file and checks composite
+indexes, declared single-field overrides and exemptions, and TTL policies.
+It reports unexpected composites and TTL policies, and requires declared indexes
+and TTL policies to be ready. It also submits synthetic writes to the Rules API
+against the active source. Create cases, including onboarding, send `resource: null`
+explicitly. Omitting `resource` triggers a null-value error when rules compare
+it to `null`. Rules tests use synthetic identities and mock document lookups.
+The ORCID fixture uses an opaque connection string because the simulator
+otherwise converts the ISO string stored by the Worker into a timestamp.
+
+#### Configure the daily Firestore check
+
+Nico or Pablo sets this up once for `mugar123/papertok`.
+
+1. Create a dedicated service account in Google Cloud project `papertok-168df`.
+   Grant [Firebase Rules Viewer](https://docs.cloud.google.com/iam/docs/roles-permissions/firebaserules#firebaserules.viewer)
+   (`roles/firebaserules.viewer`) to read the release and source.
+2. Create and grant a project custom **Firestore Smoke Reader** role with
+   `firebaserules.rulesets.test`, `datastore.indexes.list`, and
+   `datastore.indexes.get`. These allow `projects:test` and read access to index
+   and TTL configuration. See the [Firebase Rules permission table](https://firebase.google.com/docs/projects/iam/permissions/)
+   and [Firestore IAM permission table](https://docs.cloud.google.com/firestore/docs/security/iam#required_permissions_for_api_methods).
+3. Create a JSON key for that service account. In the upstream GitHub repo,
+   open **Settings → Secrets and variables → Actions → New repository secret**.
+   Save the entire JSON as `FIREBASE_RULES_READER_KEY` and remove the downloaded
+   key from disk after saving it. An absent secret fails the Firestore step with
+   `not configured` and contributes to the same production monitoring issue.
+4. After merge, run **Production smoke** from GitHub Actions and confirm both
+   the production probe and the Firestore step pass.
+
+For local runs, `--firebase-cli-token` uses the refresh token saved by
+`firebase login` in `~/.config/configstore/firebase-tools.json` (or under
+`$XDG_CONFIG_HOME`). Use a Firebase CLI account with access to the production
+rules and indexes. The check does not write to Firestore or change the CLI login.
+
 ## Documentation maintenance
 
 [ARCHITECTURE.md](ARCHITECTURE.md#documentation-owners) identifies the primary

@@ -7,6 +7,13 @@
 <!-- List each decision from "Decisions that need authorization" in AGENTS.md: what
 changed, its impact and who authorized it. Write "None" when there is no such decision. -->
 
+## Production
+
+<!-- List secrets, variables, bindings, migrations and registrations. State the Worker
+and web deploy order, or write "No production setup or deploy ordering required."
+If firestore.rules changes, add: Deploy Firestore rules before the web merge.
+If firestore.indexes.json changes, add: Deploy Firestore indexes before the web merge. -->
+
 ## Documentation
 
 <!-- Write one of the following, with a concrete explanation:

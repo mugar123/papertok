@@ -3,13 +3,14 @@ name: PR description
 # The description must report documentation impact, verification and review
 # (.github/pull_request_template.md). The checker comes from the base branch,
 # not from the pull request, so a pull request cannot change the check that
-# judges it; only the description text is read from the event.
+# judges it. Changed paths come from the GitHub API.
 on:
   pull_request_target:
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: pr-body-${{ github.event.pull_request.number }}
@@ -37,4 +38,16 @@ jobs:
           node-version: '22'
 
       - name: Check the description
-        run: node scripts/check-pr-body.ts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          files="$RUNNER_TEMP/pr-files.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > "$files"
+          # GitHub caps the list at 3,000 files.
+          count=$(jq '[.[][]] | length' "$files")
+          if [[ "$count" -ne "$(jq '.pull_request.changed_files' "$GITHUB_EVENT_PATH")" ]]; then
+            echo '::error::Unable to verify the full pull request file list.'
+            exit 1
+          fi
+          node scripts/check-pr-body.ts "$files"
