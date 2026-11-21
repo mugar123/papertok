@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { Transition } from 'framer-motion';
 interface NudgePanelProps {
   icon: ReactNode; title: string; body: ReactNode;
@@ -9,6 +9,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
+import { nudgeEdge } from '../../utils/nudges.ts';
 import './nudge-panel.css';
 
 // An aside, not a dialog: it takes no focus, traps nothing, and covers no
@@ -35,6 +36,53 @@ const LEAVE: Transition = {
   scale: { duration: 0.22, ease: EASE_OUT },
 };
 
+// The panel is fixed and reserves no room, and the feed's cards fill the
+// screen, so on a small one it can sit over the control that has keyboard
+// focus (WCAG 2.4.11). It moves instead of taking room from the feed, whose
+// snap geometry is one card per screen: when the focused control would be
+// under it at the bottom, it takes the top edge under the navbar. It only
+// measures; focus is never moved. Checked as focus arrives and again a frame
+// later, once the browser has scrolled the focused control into view, when the
+// screen is resized and when the panel appears.
+function useClearOfFocus() {
+  const panel = useRef<HTMLElement>(null);
+  const place = useEffectEvent(() => {
+    const element = panel.current;
+    const target = document.activeElement;
+    if (!element) return;
+    if (!target || target === document.body || element.contains(target)) {
+      element.dataset.edge = 'bottom';
+      return;
+    }
+    const box = (edge: 'bottom' | 'top') => {
+      element.dataset.edge = edge;
+      return element.getBoundingClientRect();
+    };
+    const atTop = box('top');
+    const atBottom = box('bottom');
+    element.dataset.edge = nudgeEdge({ target: target.getBoundingClientRect(), atBottom, atTop });
+  });
+  useLayoutEffect(() => place());
+  useEffect(() => {
+    let frame = 0;
+    const onChange = () => place();
+    // focusin fires before the browser scrolls the control into view.
+    const onFocus = () => {
+      place();
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => place());
+    };
+    document.addEventListener('focusin', onFocus);
+    window.addEventListener('resize', onChange);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('focusin', onFocus);
+      window.removeEventListener('resize', onChange);
+    };
+  }, []);
+  return panel;
+}
+
 export default function NudgePanel({
   icon,
   title,
@@ -44,9 +92,11 @@ export default function NudgePanel({
   onDismiss,
 }: NudgePanelProps) {
   const prefersReducedMotion = useReducedMotion();
+  const panel = useClearOfFocus();
 
   return (
     <motion.aside
+      ref={panel}
       className="nudge"
       aria-labelledby="nudge-title"
       initial={prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }}
@@ -60,7 +110,7 @@ export default function NudgePanel({
         <p>{body}</p>
       </div>
       <div className="nudge-actions">
-        <Button size="sm" onClick={action.onClick}>{action.label}</Button>
+        <Button size="sm" className="nudge-action" onClick={action.onClick}>{action.label}</Button>
       </div>
       {onDismiss && (
         <button

@@ -17,6 +17,8 @@ import {
   heldAccountNotice,
   loadAccountNotice,
   noticeOnScreen,
+  nudgeEdge,
+  orcidNudgeAnswered,
   orcidNudgeOffered,
   pastFirstSession,
   policyVersionCovers,
@@ -31,6 +33,7 @@ import {
   readingMinutePassed,
   recordPrivacyNoticeShown,
   rememberNudgeDismissal,
+  rememberOrcidNudgeAnswer,
   rememberPrivacyNotice,
   visitChoiceDue,
   visitChoiceGates,
@@ -39,6 +42,7 @@ import {
   type AccountNoticeRecord,
 } from './nudges.ts';
 import { setCardsCovered, trackVisibleTime } from './visible-time.ts';
+import { profileReadOutcome, profileServerConfirmed } from '../context/profile-load.ts';
 import { FEED_DISPLAY_STATES, FEED_EMPTY, getFeedDisplayState } from './feed-loading-state.ts';
 import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../legal/privacy-policy.ts';
 
@@ -826,7 +830,7 @@ test("who is told is decided from the account, its creation time, this browser's
 // Local times, so the days hold in any time zone the tests run in.
 const CREATED = new Date(2026, 10, 20, 23, 50).toISOString();
 const NEXT_DAY = new Date(2026, 10, 21, 0, 10);
-const orcidFacts = (overrides: Partial<Parameters<typeof orcidNudgeOffered>[0]> = {}) => ({ orcid: null, readerReady: true, accountCreated: CREATED, now: NEXT_DAY, ...overrides });
+const orcidFacts = (overrides: Partial<Parameters<typeof orcidNudgeOffered>[0]> = {}) => ({ orcid: null, readerReady: true, profileConfirmed: true, accountCreated: CREATED, now: NEXT_DAY, ...overrides });
 const CONNECTED = { id: '0000-0002-1825-0097', host: 'orcid.org', name: null, connectedAt: '2026-11-21T08:00:00.000Z' };
 
 test('the ORCID notice is shown once to an unconnected account after its first session', () => {
@@ -847,19 +851,12 @@ test('the ORCID notice is shown once to an unconnected account after its first s
   assert.equal(orcidNudgeOffered(orcidFacts({ accountCreated: null })), false, 'an unknown creation time is not past it');
   assert.equal(orcidNudgeOffered(orcidFacts({ accountCreated: 'not a date' })), false);
   assert.equal(orcidNudgeOffered(orcidFacts({ readerReady: false })), false, 'not while the profile is unread or failed to load');
+  assert.equal(orcidNudgeOffered(orcidFacts({ profileConfirmed: false })), false, 'not on a profile only the device cache vouches for');
 });
 
 test('the ORCID notice is never offered to an account with a connected iD', () => {
   assert.equal(orcidNudgeOffered(orcidFacts({ orcid: CONNECTED })), false);
   assert.deepEqual(visitNudgeCandidates({ emailProblem: false, surveyDue: false, orcidOffered: orcidNudgeOffered(orcidFacts({ orcid: CONNECTED })) }), []);
-});
-
-test('dismissing the ORCID notice is remembered on this device and spends nothing else', () => {
-  const storage = fakeStorage();
-  assert.deepEqual(rememberNudgeDismissal(ORCID_NUDGE_ID, storage), [ORCID_NUDGE_ID]);
-  const dismissed = readDismissedNudges(storage);
-  assert.equal(pickNudge({ eligible: visitNudgeCandidates({ emailProblem: false, surveyDue: false, orcidOffered: true }), dismissed }), null);
-  assert.equal(pickNudge({ eligible: ['email-down'], dismissed }), 'email-down', 'another nudge is still asked');
 });
 
 test('the ORCID notice waits for the privacy notice, the survey and an email problem', () => {
@@ -892,4 +889,41 @@ test('the ORCID notice stays on every route but My profile, and goes away once a
   assert.equal(on('/profile'), null, 'its button leads there');
   assert.equal(on('/Profile/'), null);
   assert.equal(on('/feed', true), null, 'a connection made while it was up puts it away');
+});
+
+test('the ORCID notice answer belongs to the account: one answering leaves the other asked, and it outlives a sign-out', () => {
+  const storage = fakeStorage();
+  assert.equal(orcidNudgeAnswered('uid-a', storage), false);
+  rememberOrcidNudgeAnswer('uid-a', storage);
+  assert.equal(orcidNudgeAnswered('uid-a', storage), true);
+  assert.equal(orcidNudgeAnswered('uid-b', storage), false);
+  assert.equal(orcidNudgeAnswered(null, storage), false, 'a guest has none');
+  const offeredTo = (uid: string) => orcidNudgeOffered(orcidFacts({ answered: orcidNudgeAnswered(uid, storage) }));
+  assert.equal(offeredTo('uid-a'), false);
+  assert.equal(offeredTo('uid-b'), true, 'account B on the same browser is still asked');
+  assert.equal(readDismissedNudges(storage).includes(ORCID_NUDGE_ID), false, 'the device-wide list is not where it is kept');
+  assert.equal(orcidNudgeAnswered('uid-a', brokenStorage()), false, 'unreadable storage asks again rather than failing');
+  assert.doesNotThrow(() => rememberOrcidNudgeAnswer('uid-a', brokenStorage()));
+});
+
+test('a profile painted from the cache without an iD, whose server read failed, is offered no ORCID notice', () => {
+  const failedRemote = profileReadOutcome({ status: 'rejected', reason: new Error('unavailable') }, true);
+  assert.equal(failedRemote.kind, 'keep-cached');
+  assert.equal(orcidNudgeOffered(orcidFacts({ profileConfirmed: profileServerConfirmed(failedRemote) })), false);
+  const fromCache = profileReadOutcome({ status: 'fulfilled', value: { metadata: { fromCache: true } } }, true);
+  assert.equal(orcidNudgeOffered(orcidFacts({ profileConfirmed: profileServerConfirmed(fromCache) })), false, 'a read the cache answered is not the word of the server either');
+  const answered = profileReadOutcome({ status: 'fulfilled', value: { metadata: { fromCache: false } } }, true);
+  assert.equal(orcidNudgeOffered(orcidFacts({ profileConfirmed: profileServerConfirmed(answered) })), true, 'the server answer settles it');
+});
+
+test('a nudge panel moves to the top edge when the focused control would sit under it at the bottom', () => {
+  // A 320 x 568 screen: the panel is 111 px tall at the bottom (445-556) or just under the navbar (70-181).
+  const atBottom = { left: 12, right: 308, top: 445, bottom: 556 };
+  const atTop = { left: 12, right: 308, top: 70, bottom: 181 };
+  const box = (top: number, bottom: number) => ({ left: 20, right: 300, top, bottom });
+  assert.equal(nudgeEdge({ target: box(492, 540), atBottom, atTop }), 'top', 'the read button under the bottom panel');
+  assert.equal(nudgeEdge({ target: box(300, 340), atBottom, atTop }), 'bottom', 'a control clear of both stays put');
+  assert.equal(nudgeEdge({ target: box(100, 140), atBottom, atTop }), 'bottom', 'a control under the top edge only does not move it there');
+  assert.equal(nudgeEdge({ target: box(150, 480), atBottom, atTop }), 'top', 'a tall control: the edge that covers less of it');
+  assert.equal(nudgeEdge({ target: box(120, 500), atBottom, atTop }), 'bottom', 'covered the same either way: home');
 });

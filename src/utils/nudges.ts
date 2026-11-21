@@ -343,6 +343,45 @@ export const PMF_SURVEY_ID = 'pmf-survey';
 /** The notice that tells a reader without a connected ORCID iD what connecting gives them. */
 export const ORCID_NUDGE_ID = 'orcid-connect';
 
+const ORCID_NUDGE_KEY_PREFIX = 'papertok_orcidNudgeDismissed:';
+
+// Unlike the device-wide list above, this answer belongs to the account: it is
+// about that account's own profile, so another account signing in on this
+// browser is asked on its own. Like the privacy notice and the survey version,
+// it is kept across sign-outs, so signing in again does not ask again, and an
+// account deletion removes it (forgetOrcidNudge).
+function orcidNudgeKey(uid: string) {
+  return `${ORCID_NUDGE_KEY_PREFIX}${encodeURIComponent(uid)}`;
+}
+
+/** Whether this account has answered the ORCID notice on this browser. Unreadable storage reads as not answered. */
+export function orcidNudgeAnswered(uid: string | null | undefined, storage?: NudgeStorage | null) {
+  if (!uid) return false;
+  try {
+    return resolveStorage(storage)?.getItem(orcidNudgeKey(uid)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Remembers that this account answered the ORCID notice. A failed write leaves the visit's own state as the fallback. */
+export function rememberOrcidNudgeAnswer(uid: string, storage?: NudgeStorage | null) {
+  try {
+    resolveStorage(storage)?.setItem(orcidNudgeKey(uid), '1');
+  } catch {
+    // The visit's choice is spent; the next visit asks again.
+  }
+}
+
+/** For a deleted account: its uid has no business staying in this browser. */
+export function forgetOrcidNudge(uid: string, storage?: (NudgeStorage & Pick<Storage, 'removeItem'>) | null) {
+  try {
+    (storage === undefined ? browserStorage() : storage)?.removeItem(orcidNudgeKey(uid));
+  } catch {
+    // Clearing site data removes it too.
+  }
+}
+
 function calendarDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
@@ -361,11 +400,32 @@ export function pastFirstSession(accountCreated: string | null | undefined, now:
 
 /**
  * Whether the ORCID notice may be chosen for this visit: the profile loaded
- * (`readerReady`, so a missing connection is known and not just unread), no
- * iD is connected, and the account is past its first session.
+ * (`readerReady`) and the server confirmed it (`profileConfirmed`, which a
+ * profile painted from this device's cache is not: an iD connected elsewhere
+ * would read as none while the server read is slow or has failed), no iD is
+ * connected, the account has not answered the notice and is past its first
+ * session.
  */
-export function orcidNudgeOffered({ orcid, readerReady, accountCreated, now }: { orcid: object | null; readerReady: boolean; accountCreated: string | null | undefined; now: Date }) {
-  return readerReady && !orcid && pastFirstSession(accountCreated, now);
+export function orcidNudgeOffered({ orcid, readerReady, profileConfirmed, answered = false, accountCreated, now }: { orcid: object | null; readerReady: boolean; profileConfirmed: boolean; answered?: boolean; accountCreated: string | null | undefined; now: Date }) {
+  return readerReady && profileConfirmed && !answered && !orcid && pastFirstSession(accountCreated, now);
+}
+
+interface ScreenBox { top: number; bottom: number; left: number; right: number }
+
+function overlapArea(a: ScreenBox, b: ScreenBox) {
+  return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+}
+
+/**
+ * Which edge of the screen a nudge panel sits on so that the control holding
+ * keyboard focus (`target`) is not under it (WCAG 2.4.11). The panel is fixed
+ * and reserves no room, and the feed's cards fill the screen, so it moves
+ * instead: `atBottom` and `atTop` are the boxes it would take at each edge.
+ * It stays at the bottom, its home, unless the top covers strictly less of the
+ * control.
+ */
+export function nudgeEdge({ target, atBottom, atTop }: { target: ScreenBox; atBottom: ScreenBox; atTop: ScreenBox }): 'bottom' | 'top' {
+  return overlapArea(target, atTop) < overlapArea(target, atBottom) ? 'top' : 'bottom';
 }
 
 /**

@@ -27,6 +27,7 @@ import {
   loadAccountNotice,
   modalIsOpen,
   noticeOnScreen,
+  orcidNudgeAnswered,
   orcidNudgeOffered,
   privacyCardsCover,
   privacyDialogOpen,
@@ -35,6 +36,7 @@ import {
   readingMinutePassed,
   recordPrivacyNoticeShown,
   rememberNudgeDismissal,
+  rememberOrcidNudgeAnswer,
   syncLocalPrivacyNotice,
   visitChoiceGates,
   visitNudgeCandidates,
@@ -78,9 +80,10 @@ import PrivacyNotice from './privacy-notice.tsx';
 // remounts this component, which clears what was picked for the previous reader.
 //
 // The ORCID notice is the last candidate: offered to a signed-in reader whose
-// profile loaded with no iD connected, from the first visit on a later calendar
-// day than the account's creation, and only when neither an email problem nor
-// the survey is. Its button opens My profile and counts as the answer; a
+// profile the server confirmed with no iD connected, from the first visit on a
+// later calendar day than the account's creation, and only when neither an
+// email problem nor the survey is. Its button opens My profile and counts as
+// the answer, which is kept for the account and not the device; a
 // connection made in this tab puts it away, and it is not shown on My profile,
 // where the Connect button is (noticeOnScreen).
 //
@@ -139,7 +142,7 @@ function subscribeToTabVisibility(onChange: () => void) {
 }
 
 export default function NudgeHost() {
-  const { user, loading: authLoading, onboardingComplete, profileLoadError, userPreferences, readingPreferences, orcid } = useAuth();
+  const { user, loading: authLoading, onboardingComplete, profileLoadError, userPreferences, readingPreferences, orcid, profileConfirmed } = useAuth();
   const { health, loading: emailLoading } = useEmailNotifications();
   const location = useLocation();
   const navigate = useNavigate();
@@ -158,7 +161,13 @@ export default function NudgeHost() {
   const gates = visitChoiceGates({ user, loading: authLoading, onboardingComplete, pathname: location.pathname });
   const { signedIn } = gates;
   const readerReady = visitReaderReady({ user, loading: authLoading, onboardingComplete, profileLoadError });
-  const orcidOffered = orcidNudgeOffered({ orcid, readerReady, accountCreated: user?.metadata?.creationTime, now: visitStart });
+  // This account's own answer, read on every render like the privacy notice's.
+  const orcidAnswered = useSyncExternalStore(
+    subscribeToOtherTabs,
+    () => orcidNudgeAnswered(user?.uid),
+    () => false,
+  );
+  const orcidOffered = orcidNudgeOffered({ orcid, readerReady, profileConfirmed, answered: orcidAnswered, accountCreated: user?.metadata?.creationTime, now: visitStart });
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
   const analyticsOn = useAnalyticsConsent().consent !== ANALYTICS_CONSENT.DENIED;
 
@@ -257,6 +266,12 @@ export default function NudgeHost() {
     setVisit(current => ({ ...current, picked: null }));
   }, []);
 
+  // The ORCID notice is answered by the account, not the device (utils/nudges.ts).
+  const closeOrcid = useCallback(() => {
+    if (uid) rememberOrcidNudgeAnswer(uid);
+    setVisit(current => ({ ...current, picked: null }));
+  }, [uid]);
+
   // The dialog waits for the For You feed's first cards (/feed renders this
   // context's list), so it never covers the loading or error screen. Nor does
   // it open over another modal: one still open, or still playing its exit, is
@@ -346,9 +361,9 @@ export default function NudgeHost() {
   }, [close, navigate]);
 
   const handleOrcid = useCallback(() => {
-    close(ORCID_NUDGE_ID);
+    closeOrcid();
     void navigate('/profile');
-  }, [close, navigate]);
+  }, [closeOrcid, navigate]);
 
   const copy = COPY.en;
   const emailCopy = emailProblem ? copy['email-down'][emailProblem] : null;
@@ -377,7 +392,7 @@ export default function NudgeHost() {
             body={copy[ORCID_NUDGE_ID].body}
             action={{ label: copy[ORCID_NUDGE_ID].cta, onClick: handleOrcid }}
             dismissLabel={copy.dismiss}
-            onDismiss={() => close(ORCID_NUDGE_ID)}
+            onDismiss={closeOrcid}
           />
         )}
       </AnimatePresence>
