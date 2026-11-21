@@ -77,12 +77,36 @@ test('an inherited index config and absent TTL do not satisfy an exemption and r
 
 test('TTL-only fields are checked for readiness and undeclared policies', () => {
   const ttlOnly = { collectionGroup: 'authorMetricReceipts', fieldPath: 'expiresAt', ttl: true };
-  assert.equal(compareFieldOverrides([ttlOnly], [{ ...receiptField, indexConfig: { usesAncestorConfig: true } }]).passed, true);
-  assert.equal(compareFieldOverrides([ttlOnly], [{ ...receiptField, ttlConfig: { state: 'CREATING' } }]).detail,
+  const inherited = { ...receiptField, indexConfig: { usesAncestorConfig: true } };
+  assert.equal(compareFieldOverrides([ttlOnly], [inherited]).passed, true);
+  assert.equal(compareFieldOverrides([ttlOnly], [receiptField]).detail, '1 unexpected single-field index override');
+  assert.equal(compareFieldOverrides([ttlOnly], [{ ...inherited, ttlConfig: { state: 'CREATING' } }]).detail,
     'authorMetricReceipts.expiresAt: TTL policy not active');
-  assert.deepEqual(compareFieldOverrides([], [{ ...receiptField, indexConfig: { usesAncestorConfig: true } }]), {
+  assert.deepEqual(compareFieldOverrides([], [inherited]), {
     passed: false, label: 'Firestore field overrides and TTL', detail: '1 unexpected TTL policy',
   });
+});
+
+test('an undeclared exemption on lists.paperIds fails the comparison', () => {
+  const listsField = {
+    name: 'projects/sample/databases/(default)/collectionGroups/lists/fields/paperIds',
+    indexConfig: { usesAncestorConfig: false, indexes: [] },
+  };
+  assert.deepEqual(compareFieldOverrides(fieldOverrides, [authorField, receiptField, listsField]), {
+    passed: false, label: 'Firestore field overrides and TTL', detail: '1 unexpected single-field index override',
+  });
+  assert.equal(compareFieldOverrides(fieldOverrides, [authorField, receiptField, {
+    ...listsField, indexConfig: { indexes: [{
+      name: '', queryScope: 'COLLECTION', state: 'READY', fields: [{ fieldPath: 'paperIds', order: 'ASCENDING' }],
+    }] },
+  }]).passed, false);
+});
+
+test('the database default is ignored while collection wildcard overrides fail', () => {
+  const wildcard = { indexConfig: { indexes: [] } };
+  const prefix = 'projects/sample/databases/(default)/collectionGroups';
+  assert.equal(compareFieldOverrides([], [{ ...wildcard, name: `${prefix}/__default__/fields/*` }]).passed, true);
+  assert.equal(compareFieldOverrides([], [{ ...wildcard, name: `${prefix}/lists/fields/*` }]).passed, false);
 });
 
 test('contract reports each failed case without printing API error messages', () => {

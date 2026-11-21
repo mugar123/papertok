@@ -195,8 +195,8 @@ performs the deploy and checks the result.
 The check reads the active rules release and index configuration for the default
 database. It ignores carriage returns in the rules file and checks composite
 indexes, declared single-field overrides and exemptions, and TTL policies.
-It reports unexpected composites and TTL policies, and requires declared indexes
-and TTL policies to be ready. It also submits synthetic writes to the Rules API
+It reports unexpected composites, single-field overrides, and TTL policies.
+It requires declared indexes and TTL policies to be ready and submits synthetic writes to the Rules API
 against the active source. Create cases, including onboarding, send `resource: null`
 explicitly. Omitting `resource` triggers a null-value error when rules compare
 it to `null`. Rules tests use synthetic identities and mock document lookups.

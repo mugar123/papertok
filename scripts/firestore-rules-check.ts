@@ -62,8 +62,10 @@ export function compareIndexes(local: LocalIndex[], deployed: LiveIndex[]): Repo
 
 export function compareFieldOverrides(local: LocalField[], deployed: LiveField[]): Report {
   const fields = new Map(deployed.map(field => [field.name.split('/').slice(-4).join('/'), field]));
+  const expectedOverrides = new Set<string>();
   const expectedTtl = new Set<string>();
   const problems: string[] = [];
+  let unexpectedOverrides = 0;
   let unexpectedTtl = 0;
   for (const { collectionGroup, fieldPath, indexes, ttl } of local) {
     const key = `collectionGroups/${collectionGroup}/fields/${fieldPath}`;
@@ -71,6 +73,7 @@ export function compareFieldOverrides(local: LocalField[], deployed: LiveField[]
     const live = fields.get(key);
     const config = live?.indexConfig;
     if (indexes) {
+      expectedOverrides.add(key);
       if (!config || config.usesAncestorConfig || config.reverting) {
         problems.push(`${name}: missing ${indexes.length ? 'field override' : 'index exemption'}`);
       } else {
@@ -91,8 +94,13 @@ export function compareFieldOverrides(local: LocalField[], deployed: LiveField[]
     }
   }
   for (const [key, field] of fields) {
+    const config = field.indexConfig;
+    // The Admin API includes the database-wide default alongside overrides.
+    if (key !== 'collectionGroups/__default__/fields/*' && config
+      && (!config.usesAncestorConfig || config.reverting) && !expectedOverrides.has(key)) unexpectedOverrides++;
     if (field.ttlConfig && !expectedTtl.has(key)) unexpectedTtl++;
   }
+  if (unexpectedOverrides) problems.push(`${unexpectedOverrides} unexpected single-field index ${unexpectedOverrides === 1 ? 'override' : 'overrides'}`);
   if (unexpectedTtl) problems.push(`${unexpectedTtl} unexpected TTL ${unexpectedTtl === 1 ? 'policy' : 'policies'}`);
   return { passed: !problems.length, label: 'Firestore field overrides and TTL', detail: problems.join('; ') || `${local.length} match firestore.indexes.json` };
 }
