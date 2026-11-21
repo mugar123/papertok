@@ -335,10 +335,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     () => (source ? (source.loadMore || (() => false)) : feed.loadMore),
     [source, feed.loadMore],
   );
-  const refreshFeed = useMemo(
-    () => (source ? (source.refresh || (() => {})) : feed.refreshFeed),
-    [source, feed.refreshFeed],
-  );
+  const refreshFeed = useCallback((attempt?: 'manual_retry') => {
+    if (source) source.refresh?.();
+    else void feed.refreshFeed(attempt);
+  }, [source, feed.refreshFeed]);
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
   const dismissal = useMemo(() => dismissalFor(source, {
     hide: paper => { void markNotInterested(paper); },
