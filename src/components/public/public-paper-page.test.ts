@@ -21,7 +21,9 @@ test('an address that names no paper says so, with Back and Home and no Retry', 
 });
 
 // The key is the canonical one for doi:10.1000/abc. The stub Worker answers
-// nothing, so the lookup fails as it does when the reader is offline.
+// nothing (it has no route for the OpenAlex lookup of this DOI), so the lookup
+// fails as it does when the reader is offline. Stubbing that route would load
+// the paper instead and end this test.
 test('a paper that fails to load offers Retry', async () => {
   const app = await renderApp('/paper/ZG9pOjEwLjEwMDAvYWJj');
   try {
