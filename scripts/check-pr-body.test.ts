@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { prBodyProblems } from './check-pr-body.ts';
 
 test('the unfilled template is rejected for all required sections', () => {
@@ -49,4 +53,55 @@ test('documentation needs an explicit update or no-impact explanation in its own
     'The docs are fine.',
     '## Other section\nNot needed: only a test changed.',
   ]) assert.equal(prBodyProblems(`## Documentation\n${documentation}${rest}`).length, 1);
+});
+
+const completeBody = '## Documentation\nNot needed: example.\n## Verification\nNode tests passed.\n## Review\nFresh-context review complete.';
+
+test('a rules change with no Firestore release step is rejected, as in #535', () => {
+  assert.deepEqual(prBodyProblems(`${completeBody}\n## Production\nVercel deploys the web on merge.`, [
+    'firestore.rules', 'src/context/auth-context.tsx',
+  ]), [
+    'Changes to firestore.rules require this line in "## Production": Deploy Firestore rules before the web merge.',
+  ]);
+});
+
+test('each changed Firestore file needs its own deployment statement in Production', () => {
+  const rules = '- Deploy Firestore rules before the web merge.';
+  const indexes = '- Deploy Firestore indexes before the web merge.';
+  const files = ['firestore.rules', 'firestore.indexes.json'];
+  assert.deepEqual(prBodyProblems(`${completeBody}\n## Production\n${rules}\n${indexes}`, files), []);
+  assert.deepEqual(prBodyProblems(`${completeBody}\n## Production\n${rules}\n<!-- ${indexes} -->\n## Notes\n${indexes}`, files), [
+    'Changes to firestore.indexes.json require this line in "## Production": Deploy Firestore indexes before the web merge.',
+  ]);
+  assert.equal(prBodyProblems(`${completeBody}\n## Production\n  ## Notes\n${rules}`, [files[0]]).length, 1);
+  assert.equal(prBodyProblems(`${completeBody}\n## Production\n\n    ${rules}`, [files[0]]).length, 1);
+  assert.deepEqual(prBodyProblems(`${completeBody}\n## Production\nDeploy Firestore indexes after the web merge.`, [files[1]]), [
+    'Changes to firestore.indexes.json require this line in "## Production": Deploy Firestore indexes before the web merge.',
+  ]);
+  assert.deepEqual(prBodyProblems(completeBody, ['tests/firestore.rules.test.ts']), []);
+});
+
+test('a deployment statement inside a Markdown example does not satisfy the gate', () => {
+  const body = `${completeBody}\n\`\`\`markdown\n## Production\nDeploy Firestore rules before the web merge.\n\`\`\``;
+  assert.deepEqual(prBodyProblems(body, ['firestore.rules']), [
+    'Changes to firestore.rules require this line in "## Production": Deploy Firestore rules before the web merge.',
+  ]);
+});
+
+test('the workflow entry point detects a rename away from firestore.rules', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'papertok-pr-body-'));
+  const event = join(directory, 'event.json');
+  const files = join(directory, 'files.json');
+  try {
+    writeFileSync(event, JSON.stringify({ pull_request: { body: completeBody } }));
+    writeFileSync(files, JSON.stringify([[{ filename: 'renamed.rules', previous_filename: 'firestore.rules' }]]));
+    const script = fileURLToPath(new URL('./check-pr-body.ts', import.meta.url));
+    const result = spawnSync(process.execPath, [script, files], {
+      encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_PATH: event },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /Changes to firestore\.rules require this line/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

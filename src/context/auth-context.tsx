@@ -110,6 +110,7 @@ import { accountLooksOnboarded } from '../utils/account-onboarding.ts';
 import { nextAdded, nextDeselected } from '../utils/interest-memory.ts';
 import { clearGuestInterests, readGuestInterests } from '../utils/guest-interests.ts';
 import { areasForInterests, normalizeInterestSettings, type InterestSettings } from '../utils/area-preferences.ts';
+import { interestPreferencesWrite, onboardingProfileWrite } from '../utils/profile-writes.ts';
 import { toggleFollowedAuthor } from '../utils/followed-authors.ts';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
@@ -441,12 +442,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       // Throws unless the write is fulfilled in time: the flag and the
       // preferences below stay unflipped.
       await confirmOnboardingWrite(
-        setDoc(doc(db, 'users', userId), {
-          onboardingComplete: true,
-          ...(guestReading ? { readingPreferences: guestReading } : {}),
-          preferences,
-          ...savedSettings,
-        }, { merge: true }),
+        setDoc(doc(db, 'users', userId), onboardingProfileWrite(preferences, savedSettings, guestReading), { merge: true }),
         PROFILE_NETWORK_TIMEOUT_MS,
       );
       if (auth.currentUser?.uid !== userId) throw new Error('The account changed while onboarding was saving.');
@@ -483,13 +479,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (userId) {
       const deselected = nextDeselected(userPreferences ?? [], newPreferences, deselectedPreferences);
       const added = nextAdded(userPreferences ?? [], newPreferences, addedPreferences, deselectedPreferences);
-      const patch = {
-        preferences: newPreferences,
-        deselectedPreferences: deselected,
-        addedPreferences: added,
-        ...savedSettings,
-        ...(interestSettings.areaPreferences && !savedSettings.areaPreferences ? { areaPreferences: {} } : {}),
-      };
+      const patch = interestPreferencesWrite(newPreferences, deselected, added, savedSettings, interestSettings);
       // Replace the whole map so clearing an area's level removes it.
       await setDoc(doc(db, 'users', userId), patch, { mergeFields: Object.keys(patch) });
       if (auth.currentUser?.uid !== userId) return;
