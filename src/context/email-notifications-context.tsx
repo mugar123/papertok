@@ -301,9 +301,9 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // next session tries again. Once the subscription exists the flag is spent,
   // so a later unsubscribe, in Settings or from the email, is never undone.
   const emailServiceDown = emailServiceState(health) === 'down';
-  // `emailDigestPending` is not read inside: it makes the device record be read
-  // again whenever the flag changes, after onboarding or a settle writes it.
-  const digestConsent = useMemo(() => readDigestConsent(userId), [userId, emailDigestPending]);
+  // Read on every render, not memoised: onboarding and a settle write the device
+  // record, and the next render must see it.
+  const digestConsent = readDigestConsent(userId);
   const digestWaitsForFollow = digestOptInWaitsForFollow({ pending: emailDigestPending, consent: digestConsent, covered: digestCovered });
   const startOptIn = useCallback(async (uid: string) => {
     // Read again after each await: another tab's settle can arrive meanwhile.

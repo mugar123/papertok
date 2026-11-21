@@ -39,7 +39,7 @@ test('a spent yes replaces the version, and clearing it removes the record', () 
 test('an unknown version reads as no record, so it keeps the old promise', () => {
   const storage = fakeStorage();
   writeDigestConsent('uid-a', DIGEST_CONSENT_FROM_SIGNUP, storage);
-  const key = storage.keys()[0]!;
+  const key = storage.keys()[0];
   storage.setItem(key, 'topics-from-signup-99');
   assert.equal(readDigestConsent('uid-a', storage), null);
 });
