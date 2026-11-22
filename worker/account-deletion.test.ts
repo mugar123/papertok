@@ -9,7 +9,7 @@ import {
   handleAccountDeletionRequest,
   runAccountDeletionSlice,
 } from './account-deletion.ts';
-import { handleEmailNotificationRequest, handleEmailReactivationRequest } from './email-notifications.ts';
+import { emailNotificationInternals, handleEmailNotificationRequest, handleEmailReactivationRequest } from './email-notifications.ts';
 import { inMemorySubscriptionStores } from './test-support/email-subscriptions.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 
@@ -804,4 +804,65 @@ test('a stale session asks the user to sign in again instead of deleting Auth la
     }),
     error => (error as Error & { code?: string; status?: number }).code === 'AUTH_RECENT_LOGIN_REQUIRED' && (error as Error & { code?: string; status?: number }).status === 401,
   );
+});
+
+// ENG-215: the welcome yes (POST /notifications/opt-in) against account deletion.
+const WELCOME_YES_REQUEST = () => new Request('https://worker.test/notifications/opt-in', {
+  method: 'POST',
+  headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+  body: JSON.stringify({ consent: 'topics-from-signup-1', interests: ['cs.LG'] }),
+});
+
+function welcomeEnvironment() {
+  const store = kvStore();
+  const subscriptions = inMemorySubscriptionStores();
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: subscriptions };
+  const object = async () => (await subscriptions.get(subscriptions.idFromName(UID)).fetch('https://papertok.internal/email-subscription', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'read' }),
+  })).json<{ version: number; subscription: { stateId?: string } | null; migratable: boolean }>();
+  return { store, env, object };
+}
+
+test('a weekly email the welcome yes started just before the deletion is purged: no record, link or delivery state stays', async () => {
+  const { store, env, object } = welcomeEnvironment();
+  const answer = await emailNotificationInternals.startDigestOptIn(WELCOME_YES_REQUEST(), env, { uid: UID, email: 'alice@example.com', displayName: '' });
+  assert.equal(answer.outcome, 'created');
+  // What the first Monday's send leaves beside it.
+  store.data.set(`notification:delivery-state:${UID}:${(await object()).subscription!.stateId}`, JSON.stringify({ lastSentAt: '2026-11-30T07:00:00.000Z' }));
+  assert.equal(store.data.size, 3);
+
+  const result = await runAccountDeletionSlice(memoryAdmin(), UID, env, { idToken: TOKEN, fetchImpl: async () => new Response('{}', { status: 200 }) });
+
+  assert.equal(result.complete, true);
+  assert.deepEqual([...store.data.keys()], []);
+  const after = await object();
+  assert.deepEqual([after.subscription, after.migratable], [null, false]);
+});
+
+test('a welcome yes that arrives after the deletion purged the subscription, while the Auth delete is in flight, is declined', async () => {
+  const restore = stubIdentityLookup();
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  const { store, env, object } = welcomeEnvironment();
+
+  try {
+    let answer: { outcome?: string } | undefined;
+    const result = await runAccountDeletionSlice(memoryAdmin(), UID, env, {
+      idToken: TOKEN,
+      fetchImpl: async () => {
+        answer = await handleEmailNotificationRequest(WELCOME_YES_REQUEST(), env, '/notifications/opt-in') as { outcome?: string };
+        return new Response('{}', { status: 200 });
+      },
+    });
+
+    assert.equal(answer?.outcome, 'declined');
+    assert.equal(result.complete, true);
+    assert.deepEqual([...store.data.keys()], []);
+    assert.equal((await object()).subscription, null);
+  } finally {
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
+    restore();
+  }
 });
