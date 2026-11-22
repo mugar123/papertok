@@ -3,8 +3,10 @@ import { EmailSubscriptionStore } from '../email-subscription-store.ts';
 
 // The `EMAIL_SUBSCRIPTIONS` binding: one in-memory object per uid, its
 // transactions run one after another as a Durable Object's are. Test-only.
+// `kv` is the namespace the objects write their indexes to (the `index`
+// action); without it that action answers as not configured.
 
-export function inMemorySubscriptionStores() {
+export function inMemorySubscriptionStores(kv?: { put(key: string, value: string): Promise<unknown> }) {
   const objects = new Map<string, {
     store: EmailSubscriptionStore;
     values: Map<string, unknown>;
@@ -47,7 +49,9 @@ export function inMemorySubscriptionStores() {
             queue = run.catch(() => {});
             return run;
           },
-        } });
+        // The queue above already holds every other request's transaction until
+        // the running one's callback has settled, its awaits included.
+        }, blockConcurrencyWhile: callback => callback() }, { NOTIFICATION_STORE: kv });
         objects.set(key, { store, values, alarm: () => alarm, alarmWrites: () => alarmWrites, clearAlarm: () => { alarm = null; } });
       }
       return { fetch: async (url, init) => objects.get(key)!.store.fetch(new Request(String(url), init)) };

@@ -140,6 +140,11 @@ const DEFAULT_DAILY_SEND_LIMIT = 100;
 // fifth of production's 100 (Pablo, 2026-10-24).
 const TEST_ACCOUNT_DAILY_LIMIT = 3;
 const TEST_GLOBAL_DAILY_LIMIT = 20;
+// The app sends a welcome yes once, with up to three retries, and an older
+// pending yes once per session, so ten an hour is far above what one account
+// needs. Each request costs an identity lookup and reads of the reader's
+// object and KV, which this bounds per account.
+const OPT_IN_ACCOUNT_HOURLY_LIMIT = 10;
 const SCHEDULE_STATUS_KEY = 'notification:schedule:last-run';
 const SCHEDULE_HISTORY_PREFIX = 'notification:schedule:history:';
 const SCHEDULE_CURSOR_KEY = 'notification:schedule:cursor';
@@ -1555,28 +1560,6 @@ function subscriptionRecord({ current, state, settings, identity, follows, previ
 }
 
 /**
- * The schedule finds subscribers by the KV index, and the unsubscribe link by
- * the token's. Both only point at the object, which a stale copy cannot
- * override. A request that changed nothing (`changed: false`) still checks
- * them: a save whose index write failed would leave a subscriber the schedule
- * never reaches or whose unsubscribe link answers 400, and a sync or a repeated
- * opt-in may be its only retry. An index left after an unsubscribe points at no
- * subscription; the schedule removes it.
- * While KV holds the record (`inKv`, phase 1) the schedule's key is the record
- * itself. Otherwise a key that still holds a record, left by a move or a save
- * whose index write failed, becomes the index too, so KV keeps no copy of it.
- */
-async function writeSubscriptionIndexes(store: KVNamespace, uid: string, subscription: Subscription, { changed, inKv }: { changed: boolean; inKv: boolean }) {
-  const key = `${SUBSCRIPTION_PREFIX}${uid}`;
-  const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
-  const [indexed, owner] = changed ? [null, null] : await Promise.all([inKv ? null : store.get<Subscription>(key, 'json'), store.get(unsubscribeKey)]);
-  await Promise.all([
-    inKv || (indexed && !indexed.unsubscribeToken) ? null : store.put(key, JSON.stringify({ uid })),
-    owner === uid ? null : store.put(unsubscribeKey, uid),
-  ]);
-}
-
-/**
  * What an opt-in decides from, read the way every write reads the reader.
  * `current`: the reader's record, in KV (`inKv`, a phase 1 record written since
  * the last cancellation) or in their object. `behind`: no record was read, yet
@@ -1615,7 +1598,19 @@ async function readOptInState(env: WorkerEnv, uid: string) {
  * the topics one needs a leaf interest, the first-follow one a digest follow.
  * The record goes into the object in phase 1 as well, like a reader phase 2
  * moved, so KV holds only its two indexes and never a copy with the address.
- * No ORCID or Firestore read, no quota, no email.
+ *
+ * The route itself never writes to KV. The two indexes are written by the
+ * reader's object (its `index` action), only while it still holds this
+ * subscription at the version the route saw, and no other request reaches the
+ * object until they have landed. So a cancellation, an account deletion or a
+ * new subscribe that comes after the route's write also comes after its
+ * indexes, and removes or replaces them as for any subscriber; one that comes
+ * between the write and the indexes makes the object refuse them, and nothing
+ * is left in KV.
+ *
+ * One account may send ten of these an hour, counted in the quota ledger under
+ * the hashed uid after the body is validated. No ORCID or Firestore read and
+ * no email.
  */
 async function startDigestOptIn(request: Request, env: WorkerEnv, identity: EmailIdentity) {
   const store = env.NOTIFICATION_STORE;
@@ -1629,11 +1624,38 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
   if (consent === DIGEST_CONSENT_FROM_SIGNUP ? !interests.length : !follows.length) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
 
   const { uid, email } = identity;
+  // Reserved before the reader's object or KV is touched, and not given back:
+  // a refused or failed attempt has made its reads too.
+  const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `email-opt-in:hour:${Math.floor(Date.now() / (60 * 60 * 1000))}`,
+    subject: uid,
+    subjectLimit: OPT_IN_ACCOUNT_HOURLY_LIMIT,
+    // The hour paces one account and counts nothing app-wide.
+    globalLimit: OPT_IN_ACCOUNT_HOURLY_LIMIT,
+    globalAmount: 0,
+  });
+  if (quota.code) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  if (!quota.accepted) throw new EmailNotificationError('EMAIL_OPT_IN_RATE_LIMIT', 429);
+
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
-  // The answer for a reader the opt-in may not write for, or null at version 0.
+  // Asks the reader's object to write the indexes of the subscription it holds.
+  const writeIndexes = (subscription: Subscription, version: number) => callSubscriptionStore(env, uid, {
+    action: 'index',
+    expectedVersion: version,
+    token: subscription.unsubscribeToken,
+    entries: [[key, JSON.stringify({ uid })], [`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`, uid]],
+  });
+  // The answer for a reader the opt-in may not write for; null at version 0,
+  // and `changed` when the reader's object moved on under this read.
   const settled = async ({ current, behind, objectVersion, inKv }: Awaited<ReturnType<typeof readOptInState>>) => {
     if (current?.enabled) {
-      if (current.unsubscribeToken) await writeSubscriptionIndexes(store, uid, current, { changed: false, inKv });
+      // A subscription held in the object whose index write failed gets it
+      // again here: this request may be that write's only retry. A KV record
+      // (phase 1) is its own schedule key, and the reader's app restores its link.
+      if (!inKv && current.unsubscribeToken) {
+        const [index, owner] = await Promise.all([store.get(key), store.get(`${UNSUBSCRIBE_PREFIX}${current.unsubscribeToken}`)]);
+        if ((!index || owner !== uid) && !(await writeIndexes(current, objectVersion)).accepted) return 'changed' as const;
+      }
       const state = await store.get<DeliveryState>(deliveryStateKey(key, current), 'json');
       return { outcome: 'on', preferences: publicSubscription({ ...current, ...deliveryStateFromSubscription(current), ...(state || {}) }, email) };
     }
@@ -1644,30 +1666,21 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
     return objectVersion === 0 ? null : { outcome: 'declined', preferences: publicSubscription(null, email) };
   };
 
-  const answer = await settled(await readOptInState(env, uid));
-  if (answer) return answer;
-  const record: Subscription = {
-    ...subscriptionRecord({ current: null, state: null, settings: sanitizePreferences({ enabled: true }), identity, follows, previewItems, interests }),
-    welcomeConsent: consent,
-  };
-  const written = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: record });
-  if (written.accepted) {
-    await writeSubscriptionIndexes(store, uid, record, { changed: true, inKv: false });
-    const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
-    if (slot.subscription?.unsubscribeToken === record.unsubscribeToken) {
-      return { outcome: 'created', preferences: publicSubscription(slot.subscription, email) };
+  // A second read when something reached the reader's object under the first:
+  // its version is then above 0 for good, so that read answers and nothing is written.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const answer = await settled(await readOptInState(env, uid));
+    if (answer === 'changed') continue;
+    if (answer) return answer;
+    const record: Subscription = {
+      ...subscriptionRecord({ current: null, state: null, settings: sanitizePreferences({ enabled: true }), identity, follows, previewItems, interests }),
+      welcomeConsent: consent,
+    };
+    const written = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: record });
+    if (written.accepted && (await writeIndexes(record, written.slot.version)).accepted) {
+      return { outcome: 'created', preferences: publicSubscription(record, email) };
     }
-    // A cancellation landed between the write and the index puts, and may have
-    // cleaned up before them. Only this opt-in's own link index goes. The
-    // schedule key is never deleted here: by now it may hold the record of the
-    // reader's own later save (phase 1). A bare index left at it stays until
-    // their next cancellation, an account deletion or the first phase 2 window.
-    await store.delete(`${UNSUBSCRIBE_PREFIX}${record.unsubscribeToken}`);
   }
-  // Something reached the object, before the write or right after it. Its
-  // version is above 0 for good, so this read answers and nothing is written.
-  const after = await settled(await readOptInState(env, uid));
-  if (after) return after;
   throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
 }
 
@@ -1745,7 +1758,21 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   });
   if (!subscription?.enabled) return publicSubscription(subscription, identity.email);
 
-  await writeSubscriptionIndexes(store, identity.uid, subscription, { changed, inKv });
+  // The schedule finds subscribers by the KV index, and the unsubscribe link by
+  // the token's. Both only point at the object, which a stale copy cannot
+  // override. A sync that changes nothing still checks them: a save whose
+  // index write failed would leave a subscriber the schedule never reaches or
+  // whose unsubscribe link answers 400, and this sync may be its only retry.
+  // An index left after an unsubscribe points at no subscription; the schedule removes it.
+  const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
+  // While KV holds the record (phase 1) the schedule's key is the record itself.
+  // Otherwise a key that still holds a record, left by a move or a save whose
+  // index write failed, becomes the index too, so KV keeps no copy of it.
+  const [indexed, owner] = changed ? [null, null] : await Promise.all([inKv ? null : store.get<Subscription>(key, 'json'), store.get(unsubscribeKey)]);
+  await Promise.all([
+    inKv || (indexed && !indexed.unsubscribeToken) ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
+    owner === identity.uid ? null : store.put(unsubscribeKey, identity.uid),
+  ]);
   if (changed && read.selectionChanged) {
     await updateDeliveryState(env, key, subscription, () => ({ heldDigest: null }));
   }

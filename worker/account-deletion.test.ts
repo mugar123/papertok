@@ -11,6 +11,7 @@ import {
 } from './account-deletion.ts';
 import { emailNotificationInternals, handleEmailNotificationRequest, handleEmailReactivationRequest } from './email-notifications.ts';
 import { inMemorySubscriptionStores } from './test-support/email-subscriptions.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 
 const UID = 'alice-uid';
@@ -815,8 +816,9 @@ const WELCOME_YES_REQUEST = () => new Request('https://worker.test/notifications
 
 function welcomeEnvironment() {
   const store = kvStore();
-  const subscriptions = inMemorySubscriptionStores();
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: subscriptions };
+  // The reader's object writes the opt-in's indexes to the same KV.
+  const subscriptions = inMemorySubscriptionStores(store);
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: subscriptions, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
   const object = async () => (await subscriptions.get(subscriptions.idFromName(UID)).fetch('https://papertok.internal/email-subscription', {
     method: 'POST',
     body: JSON.stringify({ action: 'read' }),
