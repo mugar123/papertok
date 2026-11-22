@@ -1644,29 +1644,30 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
     return objectVersion === 0 ? null : { outcome: 'declined', preferences: publicSubscription(null, email) };
   };
 
-  for (let attempt = 0; attempt < SUBSCRIPTION_WRITE_ATTEMPTS; attempt += 1) {
-    const answer = await settled(await readOptInState(env, uid));
-    if (answer) return answer;
-    const record: Subscription = {
-      ...subscriptionRecord({ current: null, state: null, settings: sanitizePreferences({ enabled: true }), identity, follows, previewItems, interests }),
-      welcomeConsent: consent,
-    };
-    const written = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: record });
-    // Something reached the object first: read and decide again.
-    if (!written.accepted) continue;
+  const answer = await settled(await readOptInState(env, uid));
+  if (answer) return answer;
+  const record: Subscription = {
+    ...subscriptionRecord({ current: null, state: null, settings: sanitizePreferences({ enabled: true }), identity, follows, previewItems, interests }),
+    welcomeConsent: consent,
+  };
+  const written = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: record });
+  if (written.accepted) {
     await writeSubscriptionIndexes(store, uid, record, { changed: true, inKv: false });
     const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
     if (slot.subscription?.unsubscribeToken === record.unsubscribeToken) {
       return { outcome: 'created', preferences: publicSubscription(slot.subscription, email) };
     }
     // A cancellation landed between the write and the index puts, and may have
-    // cleaned up before them. Only this opt-in's own link index goes: the
-    // schedule key may already hold the record of the reader's own later save
-    // (phase 1), and the schedule or their next cancellation removes a bare index.
+    // cleaned up before them. Only this opt-in's own link index goes. The
+    // schedule key is never deleted here: by now it may hold the record of the
+    // reader's own later save (phase 1). A bare index left at it stays until
+    // their next cancellation, an account deletion or the first phase 2 window.
     await store.delete(`${UNSUBSCRIBE_PREFIX}${record.unsubscribeToken}`);
-    const after = await settled(await readOptInState(env, uid));
-    if (after) return after;
   }
+  // Something reached the object, before the write or right after it. Its
+  // version is above 0 for good, so this read answers and nothing is written.
+  const after = await settled(await readOptInState(env, uid));
+  if (after) return after;
   throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
 }
 
