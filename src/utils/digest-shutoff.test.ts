@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { digestInterestsToSend, digestOptInStep, digestOptInWaitsForFollow, digestProfileInterests, requestAccountCurrent, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
-import { DIGEST_CONSENT_FROM_SIGNUP, DIGEST_CONSENT_SPENT, readDigestConsent, writeDigestConsent } from './digest-consent.ts';
+import { digestInterestsToSend, digestLeafIds, digestProfileInterests, requestAccountCurrent, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
 
 const SERVER = { fromCache: false, hasPendingWrites: false };
 const base = { enabled: true, followsConfirmed: true, interestsConfirmed: true, digestCovered: false, attempted: false };
@@ -67,85 +66,9 @@ test('a profile snapshot that still holds an unacknowledged write is not the ser
   assert.equal(digestProfileInterests({ preferences: ['cs.LG'] }, SERVER).confirmed, true);
 });
 
-const optIn = {
-  consent: DIGEST_CONSENT_FROM_SIGNUP,
-  attempted: false,
-  flagLive: true,
-  enabled: false,
-  serviceDown: false,
-  hasFollows: false,
-  digestCovered: true,
-  digestSendReady: true,
-} as const;
-
-test('a yes given under the from-sign-up text waits for a follow only while nothing covers the digest', () => {
-  assert.equal(digestOptInWaitsForFollow({ pending: true, consent: DIGEST_CONSENT_FROM_SIGNUP }), false);
-  assert.equal(digestOptInWaitsForFollow({ pending: true, consent: DIGEST_CONSENT_FROM_SIGNUP, covered: false }), true);
-  assert.equal(digestOptInWaitsForFollow({ pending: false, consent: DIGEST_CONSENT_FROM_SIGNUP, covered: false }), false, 'nothing is pending without a yes');
-});
-
-test('a yes with no known version keeps the old promise, whenever the account was created', () => {
-  assert.equal(digestOptInWaitsForFollow({ pending: true, consent: null }), true);
-  assert.equal(digestOptInStep({ ...optIn, consent: null }), 'wait');
-  assert.equal(digestOptInStep({ ...optIn, consent: null, hasFollows: true }), 'subscribe');
-});
-
-test('a new yes subscribes in the first session on the chosen topics, with no follow', () => {
-  assert.equal(digestOptInStep(optIn), 'subscribe');
-});
-
-test('a new yes waits until the topics are the server\'s own and something covers the digest', () => {
-  assert.equal(digestOptInStep({ ...optIn, digestSendReady: false }), 'wait');
-  assert.equal(digestOptInStep({ ...optIn, digestCovered: false }), 'wait');
-  assert.equal(digestOptInStep({ ...optIn, serviceDown: true }), 'wait');
-});
-
-test('an attempt already made this session is not repeated, and one not yet made goes ahead', () => {
-  assert.equal(digestOptInStep({ ...optIn, attempted: true }), 'wait');
-  assert.equal(digestOptInStep({ ...optIn, attempted: false }), 'subscribe');
-});
-
-test('a digest that is already on is settled, not subscribed again', () => {
-  assert.equal(digestOptInStep({ ...optIn, enabled: true }), 'settle');
-  assert.equal(digestOptInStep({ ...optIn, enabled: true, attempted: true }), 'wait');
-});
-
-test('a spent yes, however its flag survived, is only deleted: never a new subscription, with or without follows', () => {
-  const spent = { ...optIn, consent: DIGEST_CONSENT_SPENT } as const;
-  assert.equal(digestOptInStep(spent), 'settle');
-  assert.equal(digestOptInStep({ ...spent, hasFollows: true }), 'settle');
-  assert.equal(digestOptInStep({ ...spent, enabled: false, digestCovered: true, digestSendReady: true }), 'settle');
-});
-
-// The reader's withdrawal outlives a flag that could not be deleted: subscribe
-// succeeds, the delete fails, the reader unsubscribes (in Settings or from the
-// email), and the next sign-in still finds the flag.
-test('a withdrawal made while the flag survived is never turned back into a subscription at the next sign-in', () => {
-  const store = new Map<string, string>();
-  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } };
-  writeDigestConsent('uid-a', DIGEST_CONSENT_FROM_SIGNUP, storage);
-  assert.equal(digestOptInStep({ ...optIn, consent: readDigestConsent('uid-a', storage) }), 'subscribe');
-
-  // The subscription started and the reader later ended it; the device recorded the yes as spent.
-  writeDigestConsent('uid-a', DIGEST_CONSENT_SPENT, storage);
-  const nextSession = { ...optIn, consent: readDigestConsent('uid-a', storage), enabled: false, hasFollows: true };
-  assert.equal(digestOptInStep(nextSession), 'settle');
-  assert.equal(digestOptInWaitsForFollow({ pending: true, consent: nextSession.consent }), false, 'and Settings does not say it starts with a first follow');
-});
-
-// Another tab or device already subscribed and settled the flag, then the reader
-// unsubscribed there: this tab still has the old pending yes in memory.
-test('a yes starts a subscription only while the live profile confirms its flag', () => {
-  assert.equal(digestOptInStep({ ...optIn, consent: null, hasFollows: true, flagLive: false }), 'wait');
-  assert.equal(digestOptInStep({ ...optIn, flagLive: false }), 'wait');
-  assert.equal(digestOptInStep({ ...optIn, flagLive: true }), 'subscribe');
-  // A tab with a cached profile cannot tell whether the reader started and ended the subscription elsewhere.
-  assert.equal(digestOptInStep({ ...optIn, flagLive: null }), 'wait');
-  assert.equal(digestOptInStep({ ...optIn, consent: null, hasFollows: true, flagLive: null }), 'wait');
-  // Deleting a flag can never start a subscription, so it does not need the live answer.
-  assert.equal(digestOptInStep({ ...optIn, enabled: true, flagLive: null }), 'settle');
-  assert.equal(digestOptInStep({ ...optIn, consent: DIGEST_CONSENT_SPENT, flagLive: null }), 'settle');
-  assert.equal(digestOptInStep({ ...optIn, consent: null, hasFollows: true }), 'subscribe');
+test('the welcome hands the digest only the leaf topics of what was chosen, once each and in a fixed order', () => {
+  assert.deepEqual(digestLeafIds(['stat.ML', 'cs', 'cs.LG', 'stat.ML', 7, 'not-a-category']), ['cs.LG', 'stat.ML']);
+  assert.deepEqual(digestLeafIds(undefined), []);
 });
 
 test('an answer is kept only for the account that is both shown and signed in', () => {

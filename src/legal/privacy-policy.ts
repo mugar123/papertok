@@ -14,7 +14,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so the account record identifies the text behind the notice.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-21';
+export const PRIVACY_POLICY_VERSION = '2026-11-25';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -125,8 +125,25 @@ export const PRIVACY_POLICY_VERSION = '2026-11-21';
  * Version 2026-11-20.9 adds the session sample for activity before a profile loads.
  * Version 2026-11-21 adds opt-in digest reminders and the last signed-in visit.
  * It was dated 2026-11-20.10 until the merge fell on the next UTC day.
+ *
+ * Version 2026-11-25 is the text that ships with 0.4, the reminder text of
+ * 2026-11-21 included. It adds that a yes to the weekly email on the welcome
+ * starts the subscription when the account is created, on the chosen
+ * subjects, and that the subscription keeps which version of the welcome's
+ * wording was accepted (ENG-215). It also describes two things that existed
+ * already: the yes kept in the account profile under the earlier welcome text
+ * (`emailDigestOptIn`, since 2026-10-03), and the per-account count of changes
+ * to the email subscription, which stays after an unsubscribe and after
+ * account deletion (since #442's phase 1) and is now what stops an earlier yes
+ * from turning the email back on. A yes kept in the browser is used for a day.
+ * To fit the dialog, the summary no longer names four 20 November changes: the
+ * week-one return mark, the interest priorities, the ORCID citation lookup and
+ * My profile's suggestions. They stay on the page. The text ships with the web
+ * pull request (#570), which merges after the Worker that serves it, so this
+ * instant is the end of the planned merge day: raise it if the merge slips, and
+ * lower it to the deployment's success time once the page is live.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-21T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-25T23:59:59Z';
 
 /**
  * Notices through this version are retired for every account. A recorded
@@ -141,9 +158,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
+  'A welcome yes to the weekly email starts it at sign-up on your subjects, and keeps the wording you accepted. After you unsubscribe, a change count without your address stays, also after account deletion.',
   'Opt-in digest reminders use your last signed-in visit hour for 30 days, until opt-out, unsubscribe or account deletion.',
-  'Anthropic can rewrite/explain outside the EU. Verified-email saves count by account/paper/UTC week (off in Privacy).',
-  'PostHog links surveys and likes/saves/reads before profile load to accounts and counts visits (local day 7–13 mark). We keep Essential/Curiosity, mix and area levels, use ORCID on OpenAlex for weekly citations, and show interest ideas and unsaved citations/coauthors in My profile.',
+  'Anthropic can rewrite/explain outside the EU. Verified-email saves count by account/paper/UTC week (off in Privacy); PostHog links surveys and likes/saves/reads before profile load to accounts.',
 ];
 
 /**
@@ -156,8 +173,14 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  lead: 'Opt-in digest reminders',
+  lead: 'A welcome yes to the weekly email',
   clauses: [
+    ['A welcome yes to the weekly email starts it at sign-up', /If you say yes to the weekly email on the welcome screen, it starts as soon as you finish creating your account/],
+    ['on your subjects', /on Mondays when there are new papers in those subjects/],
+    ['keeps the wording you accepted', /PaperTok keeps with it which version of the welcome's wording you said yes to/],
+    ['After you unsubscribe, a change count', /a count of the changes made to your email subscription and the number of the change that last ended it/],
+    ['without your address', /under your account identifier and without your address or preferences/],
+    ['also after account deletion', /The count stays after you delete your account/],
     ['Opt-in digest reminders', /you can opt in to digest reminders in Settings/],
     ['last signed-in visit hour', /keeps only the hour of your last signed-in visit when the app is visible/],
     ['use your last signed-in visit hour for 30 days', /PaperTok uses the visit for 30 days from the hour it records/],
@@ -171,17 +194,11 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['surveys', /events include your reading level and broad areas of interest, such as Physics, when available/],
     ['surveys', /Submitting the survey records your answers, including your role if you chose one/],
     ['likes/saves/reads before profile load', /records once per session if you like, save or read a paper while signed in before your recommendation profile loads/],
-    ['counts visits', /using the first-use and visit events already sent to PostHog/],
-    ['local day 7–13 mark', /Only your browser keeps the mark for a return 7 to 13 days after your first real use/],
-    ['Essential/Curiosity, mix and area levels', /Your Essential or Curiosity choices, feed mix and reading levels by area/],
-    ['ORCID on OpenAlex', /PaperTok sends your iD and the OpenAlex work identifiers it checks to OpenAlex/],
-    ['weekly citations', /the weekly email can also list new papers that cite your work/],
-    ['interest ideas', /suggests feed interests from the topics of your loaded publications/],
-    ['citations/coauthors', /papers from the last 12 months that cite your publications/],
-    ['coauthors', /coauthors you share two or more of those works with/],
-    ['unsaved citations/coauthors', /PaperTok keeps neither list/],
   ],
   unsaid: [
+    [/new (usage |analytics )?event/i, 'the welcome yes sends no new analytics event'],
+    [/browser (keeps|stores|records)/i, 'the browser keeps no per-account record of the yes'],
+    [/(delet|eras|remov)\w*[^.]*\bcount\b/i, 'the change count is not deleted'],
     [/sent to analytics/i, 'the new preferences are not analytics fields'],
     [/anonymous/i, 'survey events are linked to the signed-in account'],
     [/required role/i, 'readers can skip the role question'],

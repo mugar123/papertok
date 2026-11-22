@@ -150,16 +150,14 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('the current notice summarizes the 20 November policy changes', () => {
+test('the current notice leads with the welcome email change and keeps the main changes since 20 November', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
+  assert.match(notice, /welcome yes to the weekly email starts it at sign-up on your subjects, and keeps the wording you accepted/i);
+  assert.match(notice, /After you unsubscribe, a change count without your address stays, also after account deletion/);
   assert.match(notice, /opt-in digest reminders.*last signed-in visit hour.*30 days.*opt-out, unsubscribe or account deletion/i);
   assert.match(notice, /Anthropic can rewrite\/explain outside the EU/i);
   assert.match(notice, /Verified-email saves count by account\/paper\/UTC week.*off in Privacy/i);
   assert.match(notice, /PostHog links surveys and likes\/saves\/reads before profile load to accounts/i);
-  assert.match(notice, /counts visits.*local day 7–13 mark/i);
-  assert.match(notice, /keep Essential\/Curiosity, mix and area levels/i);
-  assert.match(notice, /interest ideas and unsaved citations\/coauthors in My profile/i);
-  assert.match(notice, /ORCID on OpenAlex for weekly citations/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
@@ -216,14 +214,34 @@ test('the page lists the notice key among what the browser keeps and what remove
   assert.doesNotMatch(changes, /Hide for now/);
 });
 
-// src/utils/digest-consent.ts: the record is per account, never sent, kept across sign-out and
-// forgotten by deleteConfirmedAccount (components/settings/delete-confirmed-account.ts).
-test('the page says the browser keeps, per account, the welcome email wording accepted or that the yes no longer applies, and when it goes', () => {
+// worker/email-notifications.ts `startDigestOptIn` and the welcome hand-off in
+// context/email-notifications-context.tsx; `emailDigestOptIn` in context/auth-context.tsx.
+test('the page says a welcome yes starts the weekly email when the account is created, and that a yes under the earlier wording waits in the profile', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
-  assert.match(html, /keeps, under your account identifier, which wording of the welcome's weekly email choice you said yes to, or that this yes no longer applies because the subscription started or you decided about the email yourself by turning it on or off/);
-  assert.match(html, /It is not sent to the server, and it stays in this browser after you sign out/);
-  // Only a browser that sees the start, or the reader's choice here, removes it (settleEmailDigestOptIn).
-  assert.match(html, /This browser removes it when it sees the subscription start, or when you decide about the email here while the yes is still waiting\. It also goes when you delete the account from Settings in this browser or clear the site's data/);
-  // Elsewhere, or a yes that never reached the account, can leave it until deletion here or cleared data.
-  assert.match(html, /If the subscription starts or you decide on another device, or the yes could not be saved to your account, it can stay here until you delete the account here or clear the site's data\. If you delete the account on another device, it stays until you clear the site's data/);
+  assert.match(html, /If you say yes to the weekly email on the welcome screen, it starts as soon as you finish creating your account/);
+  assert.match(html, /Your browser sends that yes to PaperTok's server with the subjects you chose and the version of the welcome's wording you saw/);
+  assert.match(html, /If it cannot reach the server, it tries again up to three times over the next few minutes/);
+  assert.match(html, /If you said yes while the welcome said the email would start with your first follow, PaperTok keeps that yes in your account profile in <strong>Google Firestore<\/strong> until you first follow an author, topic, institution or project/);
+  // No per-account record of the yes is kept in the browser any more.
+  assert.doesNotMatch(html, /which wording of the welcome's weekly email choice you said yes to, or that this yes no longer applies/);
+});
+
+// worker/email-subscription-store.ts: `version`, `cancelledAt` and the cleanup journal outlive the record.
+test('the page says a count of changes to the email subscription stays after unsubscribing and after account deletion, up top too', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /Unsubscribing deletes the subscription\. So that a yes you gave earlier, or a request still on its way, can never turn the email back on, the Durable Object of your account then keeps, under your account identifier and without your address or preferences, a count of the changes made to your email subscription and the number of the change that last ended it/);
+  assert.match(html, /Until PaperTok confirms it has deleted the subscription's other email records, the object also keeps their identifiers/);
+  assert.match(html, /The count stays after you delete your account, and deleting an account that never had the email leaves one too/);
+  const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
+  assert.match(summary, /A count of the changes made to your email subscription, without your address, also stays \(see Email updates\)/);
+  const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(kept, /The count of the changes made to your email subscription, which holds neither your address nor your preferences, also stays/);
+});
+
+// utils/guest-interests.ts: `emailDigestConsent` travels with a yes, and `WELCOME_DIGEST_YES_MAX_AGE_MS` bounds it.
+test('the page says the browser keeps the welcome answer about the weekly email with its wording version, and that a yes more than a day old is not used', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(storage, /This browser saves your welcome interests, area priorities and feed mix, and your answer about the weekly email with the version of the welcome's wording you saw, until they are saved to a new account, an account with existing interests loads, or you sign out or switch accounts/);
+  assert.match(storage, /A yes to the weekly email more than a day old is not used/);
 });

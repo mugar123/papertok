@@ -26,6 +26,7 @@ export async function loadDigestReactivation() {
                 digestSubscribed: subscribed,
                 health: { configured: true, available: true },
                 digestCovered: true, digestSendReady: true, notificationDataReady: true, reactivation,
+                refreshing: false, refreshPreferences: async () => {},
               } }, createElement(Modal, { isOpen, onClose: () => {} }))))));
     }
     return { useDigestReactivation, ReminderSettings, close: app.close };

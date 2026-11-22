@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { loadEmailNotificationService } from '../../tests/dom/email-notification-service.ts';
 import {
   buildNotificationPreferencesPayload,
   hasDigestFollows,
@@ -182,4 +183,60 @@ test('uses the requested language for paper follow reasons', () => {
   });
 
   assert.equal(preview.matches[0].displayName, 'Quantum Physics');
+});
+
+// The request itself, through the app's own Worker client: loaded the way the
+// build loads it, with a stub session and an answered `fetch`.
+test('a yes from the welcome is posted to the opt-in route under the account that gave it, and never under another', async t => {
+  const { service, signIn, close } = await loadEmailNotificationService();
+  t.after(() => close());
+  signIn('reader');
+  const preferences = { enabled: true, frequency: 'weekly', maxPapers: 5, language: 'en', email: 'reader@example.com', lastSentAt: null, lastTestAt: null };
+  const requests: Array<{ url: string; method?: string; authorization: string | null; body: unknown }> = [];
+  let respond = () => Response.json({ outcome: 'created', preferences });
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, options?: RequestInit) => {
+    requests.push({
+      url: String(input),
+      method: options?.method,
+      authorization: new Headers(options?.headers).get('authorization'),
+      body: JSON.parse(String(options?.body)),
+    });
+    return respond();
+  });
+
+  const answer = await service.startEmailDigestOptIn({ consent: 'topics-from-signup-1', interests: ['stat.ML', 'cs.LG', 'stat.ML'] }, 'reader');
+
+  assert.deepEqual(answer, { outcome: 'created', preferences });
+  assert.deepEqual(requests, [{
+    url: 'https://api.papertok.app/notifications/opt-in',
+    method: 'POST',
+    authorization: 'Bearer reader-token',
+    body: { consent: 'topics-from-signup-1', interests: ['cs.LG', 'stat.ML'] },
+  }]);
+
+  // A yes given under the earlier text sends the follows and previews exactly as a save does.
+  const author = { type: 'author' as const, canonicalId: 'A1', displayName: 'Ada Author' };
+  const follows = [author, { type: 'journal' as const, canonicalId: 'S1', displayName: 'A Journal' }];
+  const previewItems = [{ id: 'p1', title: 'A paper', authors: [{ name: 'Ada Author' }], _followedEntityMatches: [author] }];
+  // As the save's body reaches the Worker: JSON drops the fields a paper lacks.
+  const saved = JSON.parse(JSON.stringify(service.buildNotificationPreferencesPayload({ enabled: true }, follows, previewItems)));
+  respond = () => Response.json({ outcome: 'on', preferences });
+  assert.equal((await service.startEmailDigestOptIn({ consent: 'first-follow-1', follows, previewItems, interests: [] }, 'reader')).outcome, 'on');
+  assert.deepEqual(requests[1].body, { consent: 'first-follow-1', follows: saved.follows, previewItems: saved.previewItems, interests: [] });
+  assert.equal(saved.follows.length, 1, 'the journal reached the digest');
+
+  // A refusal keeps the Worker's code and status.
+  respond = () => Response.json({ code: 'EMAIL_FOLLOWS_REQUIRED' }, { status: 409 });
+  await assert.rejects(
+    service.startEmailDigestOptIn({ consent: 'topics-from-signup-1', interests: [] }, 'reader'),
+    (error: unknown) => (error as { code?: string }).code === 'EMAIL_FOLLOWS_REQUIRED' && (error as { status?: number }).status === 409,
+  );
+
+  // Firebase already holds another account: the yes is not sent under its token.
+  signIn('someone-else');
+  await assert.rejects(
+    service.startEmailDigestOptIn({ consent: 'topics-from-signup-1', interests: ['cs.LG'] }, 'reader'),
+    (error: unknown) => (error as { code?: string }).code === 'EMAIL_ACCOUNT_CHANGED',
+  );
+  assert.equal(requests.length, 3);
 });

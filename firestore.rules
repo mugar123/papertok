@@ -85,11 +85,8 @@ service cloud.firestore {
         'followingMigratedAt',
         'readingPreferences',
         'profilePhoto',
-        // A guest's yes to the email digest, saved at onboarding and waiting
-        // for the subscription to start: on the chosen topics at once for a yes
-        // given under the from-sign-up welcome text, at the first follow for any
-        // other (src/context/email-notifications-context.tsx). A bool, then
-        // deleted.
+        // A guest's yes to the email digest, waiting for the first follow
+        // (src/context/EmailNotificationsContext.jsx). A bool, then deleted.
         'emailDigestOptIn'
       ];
     }

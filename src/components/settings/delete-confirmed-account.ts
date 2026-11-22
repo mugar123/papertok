@@ -1,6 +1,5 @@
 import { forgetPrivacyNotice } from '../../utils/nudges.ts';
 import { forgetPmfSurveyAsked } from '../../utils/pmf-survey.ts';
-import { forgetDigestConsent } from '../../utils/digest-consent.ts';
 
 /**
  * The order of an account deletion once the person has typed the phrase.
@@ -11,11 +10,10 @@ import { forgetDigestConsent } from '../../utils/digest-consent.ts';
  * deleted: the session can switch while the sign-in window is open, so
  * whoever holds it afterwards is never asked.
  *
- * Once that account is deleted, this browser forgets the privacy notice, the
- * survey version and the email consent record it kept for the uid. Sign-out
- * sweeps everything else an account leaves on the device; those three keys are
- * kept across sign-outs on purpose (utils/nudges.ts, utils/pmf-survey.ts,
- * utils/digest-consent.ts).
+ * Once that account is deleted, this browser forgets the privacy notice and
+ * the survey version it kept for the uid. Sign-out sweeps everything else an
+ * account leaves on the device; those two keys are kept across sign-outs on
+ * purpose (utils/nudges.ts, utils/pmf-survey.ts).
  */
 export async function deleteConfirmedAccount({ reauthenticate, onSignedIn, deleteAccount, onDeleted, storage }: {
   reauthenticate: () => Promise<string>;
@@ -29,6 +27,5 @@ export async function deleteConfirmedAccount({ reauthenticate, onSignedIn, delet
   await deleteAccount(confirmedUid);
   forgetPrivacyNotice(confirmedUid, storage);
   forgetPmfSurveyAsked(confirmedUid, storage);
-  forgetDigestConsent(confirmedUid, storage);
   await onDeleted();
 }

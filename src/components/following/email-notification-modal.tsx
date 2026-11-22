@@ -67,7 +67,7 @@ const MAX_PAPERS_OPTIONS = [3, 5, 10].map(value => ({ value, label: String(value
  */
 export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { language } = useLanguage();
-  const { user } = useAuth();
+  const { emailDigestPending, user } = useAuth();
   const enabledId = useId();
   const countId = useId();
   const reactivationId = useId();
@@ -82,17 +82,18 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     hasCitationSource,
     digestSendReady,
     digestTurnedOff,
-    digestWaitsForFollow,
     digestSubscribed,
     reactivation,
+    refreshing,
     savePreferences,
     sendTest,
+    refreshPreferences,
   } = useEmailNotifications();
   const { followedEntities } = useFollowing();
-  const followsNotice = emailFollowsNotice(followedEntities, digestWaitsForFollow, digestCovered, hasCitationSource);
+  const followsNotice = emailFollowsNotice(followedEntities, emailDigestPending, digestCovered, hasCitationSource);
   // Only what the reader changed. Everything else follows the saved preferences,
-  // so a subscription that finishes starting while this is open shows as on
-  // without reopening it, and an edit is never overwritten.
+  // so what the read on opening brings, or a subscription that finishes starting
+  // while this is open, shows without reopening it, and an edit is never overwritten.
   const [edits, setEdits] = useState<Partial<typeof preferences> | null>(null);
   const draft = useMemo(() => ({ ...preferences, ...edits }), [preferences, edits]);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -120,6 +121,18 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
       clearTimeout(testFeedbackTimerRef.current!);
     };
   }, [isOpen]);
+
+  // Another tab or device may have turned the email on or off since this tab
+  // last read it, so every opening reads it again, and the controls wait for
+  // that read (`refreshing`): a save made from an old state could undo it.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let closed = false;
+    refreshPreferences().catch(() => {
+      if (!closed) setFeedback({ type: 'error', text: "We couldn't check your email settings, so what you see may be out of date." });
+    });
+    return () => { closed = true; };
+  }, [isOpen, refreshPreferences]);
 
   // Another tab may have granted or withdrawn reminders since the provider
   // last read them, so every opening asks again.
@@ -192,7 +205,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
 
   const emailService = emailServiceState(health);
   const toggleDisabled = loading || (emailService === 'down' && !draft.enabled) || (!digestCovered && !draft.enabled);
-  const optionsDisabled = !draft.enabled || loading;
+  const optionsDisabled = !draft.enabled || loading || refreshing;
   const statusUnknown = !loading && emailService === 'unknown';
   const providerDown = !loading && emailService === 'down';
   // Withdrawing never waits on the digest preferences: when their read failed,
@@ -267,6 +280,10 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             checked={Boolean(draft.enabled)}
             onCheckedChange={checked => setEdits(current => ({ ...current, enabled: checked }))}
             disabled={toggleDisabled}
+            // Read-only, not disabled, during the read on opening: the switch is
+            // where focus lands, and a disabled control would drop it.
+            readOnly={refreshing}
+            aria-busy={refreshing}
           />
         </div>
 
@@ -332,6 +349,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             whole sheet; it is also where the result is announced. */}
         <div className="email-notification-feedback-slot" role="status">
           <AnimatePresence initial={false}>
+          {refreshing && !feedback && <p className="email-notification-feedback">Checking your email settings…</p>}
           {feedback && (
             <motion.p className={`email-notification-feedback is-${feedback.type}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.14 } }}>
               {feedback.type === 'success' && <Check size={15} />} {feedback.text}
@@ -351,7 +369,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           type="button"
           className={`email-notification-test ${testState === 'sending' ? 'is-sending' : ''} ${testState === 'sent' ? 'is-sent' : ''}`}
           onClick={() => { void handleTest(); }}
-          disabled={saving || testing || savingReactivation || loading || !notificationDataReady || !digestCovered || !digestSendReady || emailService === 'down' || testState === 'sent'}
+          disabled={saving || testing || savingReactivation || loading || refreshing || !notificationDataReady || !digestCovered || !digestSendReady || emailService === 'down' || testState === 'sent'}
           aria-live="polite"
           aria-busy={testState === 'sending'}
         >
@@ -371,7 +389,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             )}
           </AnimatePresence>
         </button>
-        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || savingReactivation || loading || !notificationDataReady || (draft.enabled && (emailService === 'down' || !digestCovered || !digestSendReady))}>
+        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || savingReactivation || loading || refreshing || !notificationDataReady || (draft.enabled && (emailService === 'down' || !digestCovered || !digestSendReady))}>
           {saving
             ? ('Saving...')
             : ('Save changes')}

@@ -198,6 +198,20 @@ export function hasDigestFollows(follows: readonly Partial<FollowEntity>[]) {
 
 const isJournalMatch = (match: PaperFollowMatch | string) => typeof match !== 'string' && match.type === 'journal';
 
+/** The follows and preview papers of a request body, as a save and an opt-in both send them. */
+function digestItemsPayload(follows: Partial<FollowEntity>[], previewItems: NotificationPaper[]) {
+  return {
+    follows: follows.filter(isDigestFollow).slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
+    // A paper that matches journals only is not in the digest. Any other
+    // match keeps it, a legacy string match included: the Worker drops that
+    // match (`sanitizeFollow`) and keeps the paper, as before journals.
+    previewItems: previewItems
+      .filter(paper => !paper._followedEntityMatches?.length || !paper._followedEntityMatches.every(isJournalMatch))
+      .slice(0, 20)
+      .map(paper => serializeUpdateForNotifications(paper)),
+  };
+}
+
 /**
  * The body of a preferences save. The digest is weekly for everyone; the
  * frequency is still sent, always as weekly, because this frontend can be live
@@ -221,14 +235,7 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
     // English only: a preference saved as 'es' before the interface went
     // English-only must not keep the emails in Spanish.
     language: 'en',
-    follows: follows.filter(isDigestFollow).slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
-    // A paper that matches journals only is not in the digest. Any other
-    // match keeps it, a legacy string match included: the Worker drops that
-    // match (`sanitizeFollow`) and keeps the paper, as before journals.
-    previewItems: previewItems
-      .filter(paper => !paper._followedEntityMatches?.length || !paper._followedEntityMatches.every(isJournalMatch))
-      .slice(0, 20)
-      .map(paper => serializeUpdateForNotifications(paper)),
+    ...digestItemsPayload(follows, previewItems),
     ...(interests ? { interests: [...new Set(interests)].sort() } : {}),
   };
 }
@@ -243,4 +250,31 @@ export async function saveEmailNotificationPreferences(preferences: Notification
 
 export async function sendEmailNotificationTest(uid?: string) {
   return authenticatedRequest<{ ok: boolean; providerId: string | null; paperCount: number; followCount: number; preferences: Required<NotificationPreferences> }>('/notifications/test', { method: 'POST' }, uid);
+}
+
+export type DigestOptInOutcome = 'created' | 'on' | 'declined';
+
+/**
+ * Hands the Worker a yes to the weekly email given on the welcome screen
+ * (`POST /notifications/opt-in`). `consent` is the version of the welcome's
+ * wording the yes was given under (utils/digest-consent.ts). The Worker starts
+ * the subscription only for an account that has never decided about the email:
+ * `created` when it did, `on` when the email was already on, `declined` when
+ * the reader had turned it off or decided before. A yes given under the
+ * first-follow wording sends the follows and previews as a save does.
+ */
+export async function startEmailDigestOptIn({ consent, interests, follows, previewItems }: {
+  consent: string;
+  interests: readonly string[];
+  follows?: Partial<FollowEntity>[];
+  previewItems?: NotificationPaper[];
+}, uid: string) {
+  return authenticatedRequest<{ outcome: DigestOptInOutcome; preferences: Required<NotificationPreferences> }>('/notifications/opt-in', {
+    method: 'POST',
+    body: JSON.stringify({
+      consent,
+      ...(follows ? digestItemsPayload(follows, previewItems ?? []) : {}),
+      interests: [...new Set(interests)].sort(),
+    }),
+  }, uid);
 }
