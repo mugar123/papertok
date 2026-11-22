@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test, { type TestContext } from 'node:test';
 import worker from './index.ts';
 import { routeForLog } from './router.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import { PAPER_STORE_PING_CRON } from './paper-store.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import type { WorkerEnv } from './env.ts';
@@ -16,7 +17,7 @@ const request = (path: string, method = 'GET', origin = ORIGIN) => new Request(`
   headers: origin ? { origin } : {},
 });
 
-for (const path of ['/missing', '/share/paper/missing', '/account/delete', '/related', '/notifications/unsubscribe']) {
+for (const path of ['/missing', '/share/paper/missing', '/account/delete', '/related', '/notifications/unsubscribe', '/notifications/opt-in']) {
   test(`OPTIONS ${path} runs before route access checks`, async () => {
     const response = await worker.fetch(request(path, 'OPTIONS'), {});
     assert.equal(response.status, 204);
@@ -33,6 +34,23 @@ test('a disallowed preflight still returns 204 without granting CORS', async () 
   const response = await worker.fetch(request('/account/delete', 'OPTIONS', 'https://other.example'), {});
   assert.equal(response.status, 204);
   assert.equal(response.headers.get('access-control-allow-origin'), null);
+});
+
+test('the digest visit route rejects unsupported methods, foreign origins and unauthenticated writes', async () => {
+  const path = '/notifications/visit';
+  const foreign = await worker.fetch(request(path, 'POST', 'https://other.example'), {});
+  assert.equal(foreign.status, 403);
+  assert.equal(foreign.headers.get('access-control-allow-origin'), null);
+
+  const wrongMethod = await worker.fetch(request(path), {});
+  assert.equal(wrongMethod.status, 405);
+  assert.deepEqual(await wrongMethod.json(), { code: 'EMAIL_METHOD_NOT_ALLOWED' });
+
+  const anonymous = await worker.fetch(request(path, 'POST'), {});
+  assert.equal(anonymous.status, 401);
+  assert.deepEqual(await anonymous.json(), { code: 'EMAIL_AUTH_REQUIRED' });
+  assert.equal(anonymous.headers.get('access-control-allow-origin'), ORIGIN);
+  assert.equal(anonymous.headers.get('cache-control'), 'no-store');
 });
 
 test('unknown paths preserve GET 404 and other-method 405 with allowed-origin CORS', async () => {
@@ -317,4 +335,30 @@ test('a handled feed refusal exposes only its version id to allowed browser orig
   assert.equal(disallowed.status, 403);
   assert.equal(disallowed.headers.get('access-control-allow-origin'), null);
   assert.equal(disallowed.headers.get('access-control-expose-headers'), null);
+});
+
+test('the welcome opt-in route refuses a foreign origin, and its errors keep their status and code, uncached', async t => {
+  const path = '/notifications/opt-in';
+  const foreign = await worker.fetch(request(path, 'POST', 'https://other.example'), {});
+  assert.equal(foreign.status, 403);
+  assert.deepEqual(await foreign.json(), { code: 'EMAIL_ORIGIN_NOT_ALLOWED' });
+  assert.equal(foreign.headers.get('access-control-allow-origin'), null);
+
+  // A signed-in reader whose body names no consent.
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({
+    users: [{ localId: 'reader', email: 'reader@example.com', emailVerified: true }],
+  })));
+  const NOTIFICATION_STORE = Object.fromEntries(['get', 'put', 'list', 'delete'].map(method => [method, async () => {
+    throw new Error(`the refused request reached KV ${method}`);
+  }])) as unknown as KVNamespace;
+  const refused = await worker.fetch(new Request(`https://api.papertok.test${path}`, {
+    method: 'POST',
+    headers: { origin: ORIGIN, authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ interests: ['cs.LG'] }),
+  }), { FIREBASE_WEB_API_KEY: 'firebase-web-key', NOTIFICATION_STORE });
+
+  assert.equal(refused.status, 400);
+  assert.deepEqual(await refused.json(), { code: 'EMAIL_INVALID_REQUEST' });
+  assert.equal(refused.headers.get('access-control-allow-origin'), ORIGIN);
+  assert.equal(refused.headers.get('cache-control'), 'no-store');
 });

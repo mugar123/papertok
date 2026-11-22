@@ -8,6 +8,10 @@ type ConsentLocks = { request: <R>(name: string, callback: (lock: unknown) => Pr
  * so it keeps that promise whenever the account is created.
  */
 export const DIGEST_CONSENT_FROM_SIGNUP = 'topics-from-signup-1';
+/** A yes given under the earlier text, "Starts with your first follow. Unsubscribe anytime.", which carries no stamp. */
+export const DIGEST_CONSENT_FIRST_FOLLOW = 'first-follow-1';
+/** What `POST /notifications/opt-in` accepts. Anything else is refused, never read as the new promise. */
+export const DIGEST_OPT_IN_CONSENTS: readonly string[] = [DIGEST_CONSENT_FROM_SIGNUP, DIGEST_CONSENT_FIRST_FOLLOW];
 
 /**
  * What this device remembers about the account's pending yes, besides the

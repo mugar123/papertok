@@ -1,4 +1,7 @@
-import type { LedgerStorage } from './ledger-storage.ts';
+import type { LedgerStorage, LedgerTransaction } from './ledger-storage.ts';
+
+type ReactivationConsent = { email: string; token: string };
+type SubscriptionTransaction = LedgerTransaction & Pick<DurableObjectTransaction, 'getAlarm' | 'setAlarm' | 'deleteAlarm'>;
 
 /**
  * What one reader's object holds: the digest subscription, or `null` once it is
@@ -19,9 +22,13 @@ import type { LedgerStorage } from './ledger-storage.ts';
  * confirmed deleting (see `CleanupEntry`); a `read`, a deleting `write`, a
  * refused `write` and a `mark` that deleted a record return it, and only while
  * it is not empty.
+ * `reactivation` binds reminder consent to one subscription and email address.
+ * Grants and withdrawals advance `consentRevision` independently of the
+ * subscription version, so they invalidate pending consent and visit writes
+ * without invalidating a weekly digest draft.
  */
-export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string; cleanup?: CleanupEntry[] }
-export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown }
+export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string; cleanup?: CleanupEntry[]; reactivation?: ReactivationConsent; consentRevision?: number }
+export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; expectedConsentRevision?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown; email?: unknown }
 /**
  * One record the object deleted, by the version that step reached (`at`): its
  * delivery state id and unsubscribe token, which name the KV keys it leaves
@@ -43,9 +50,39 @@ const CLOSED_KEY = 'closed';
 const CANCELLED_AT_KEY = 'cancelledAt';
 const TOKEN_KEY = 'token';
 const CLEANUP_KEY = 'cleanup';
+const REACTIVATION_KEY = 'reactivation';
+const CONSENT_REVISION_KEY = 'consentRevision';
+const LAST_VISIT_KEY = 'lastVisitAt';
+const HOUR_MS = 60 * 60 * 1000;
+const VISIT_RETENTION_MS = 30 * 24 * HOUR_MS;
+
+async function clearReactivation(transaction: SubscriptionTransaction, nextRevision: number) {
+  await transaction.delete(REACTIVATION_KEY);
+  await transaction.delete(LAST_VISIT_KEY);
+  await transaction.deleteAlarm();
+  await transaction.put(CONSENT_REVISION_KEY, nextRevision);
+}
+
+/**
+ * The last visit while it is under 30 days old. An older one is deleted here
+ * and treated as absent, and a live one gets its expiry alarm back if it has
+ * none, so a failed alarm cannot keep the visit: every access to the object,
+ * the schedule's read of each subscriber included, expires or re-arms it.
+ */
+async function liveVisit(transaction: SubscriptionTransaction) {
+  const lastVisit = await transaction.get<number>(LAST_VISIT_KEY);
+  if (lastVisit === undefined) return undefined;
+  const expiresAt = lastVisit + VISIT_RETENTION_MS;
+  if (expiresAt <= Date.now()) {
+    await transaction.delete(LAST_VISIT_KEY);
+    return undefined;
+  }
+  if ((await transaction.getAlarm()) !== expiresAt) await transaction.setAlarm(expiresAt);
+  return lastVisit;
+}
 
 // A string field of a subscription record the object holds.
-function recordField(record: unknown, field: 'unsubscribeToken' | 'stateId') {
+function recordField(record: unknown, field: 'unsubscribeToken' | 'stateId' | 'email') {
   if (typeof record !== 'object' || record === null) return undefined;
   const value: unknown = Reflect.get(record, field);
   return typeof value === 'string' && value ? value : undefined;
@@ -83,10 +120,14 @@ function json(payload: unknown, status = 200) {
  * counts is the one of the subscription the object holds, if any.
  */
 export class EmailSubscriptionStore {
-  declare state: { storage: LedgerStorage };
+  declare state: { storage: LedgerStorage<SubscriptionTransaction> };
 
-  constructor(state: { storage: LedgerStorage }) {
+  constructor(state: { storage: LedgerStorage<SubscriptionTransaction> }) {
     this.state = state;
+  }
+
+  async alarm() {
+    await this.state.storage.transaction(async transaction => { await liveVisit(transaction); });
   }
 
   async fetch(request: Request) {
@@ -94,10 +135,17 @@ export class EmailSubscriptionStore {
     const payload = await request.json<SubscriptionStorePayload>().catch(() => null);
     const write = payload?.action === 'write';
     const mark = payload?.action === 'mark';
+    const optIn = payload?.action === 'reactivation-on';
+    const optOut = payload?.action === 'reactivation-off';
+    const visit = payload?.action === 'visit';
     const record = payload?.subscription;
     if (
       !payload
-      || (!write && !mark && payload.action !== 'read')
+      || (!write && !mark && !optIn && !optOut && !visit && payload.action !== 'read')
+      || ((optIn || visit) && (!Number.isInteger(payload.expectedVersion)
+        || !Number.isInteger(payload.expectedConsentRevision)
+        || typeof payload.email !== 'string' || !payload.email
+        || typeof payload.token !== 'string' || !payload.token))
       || (mark && (typeof payload.migratable !== 'boolean'
         || (payload.token !== undefined && typeof payload.token !== 'string')
         || (payload.expectedVersion !== undefined && !Number.isInteger(payload.expectedVersion))))
@@ -112,12 +160,44 @@ export class EmailSubscriptionStore {
     }
 
     const outcome = await this.state.storage.transaction(async (transaction) => {
+      const lastVisit = await liveVisit(transaction);
       const version = Number(await transaction.get<number>(VERSION_KEY)) || 0;
       const subscription = (await transaction.get(SUBSCRIPTION_KEY)) ?? null;
       const migratable = (await transaction.get(CLOSED_KEY)) !== true;
       const cancelledAt = Number(await transaction.get<number>(CANCELLED_AT_KEY)) || 0;
       const issued = await transaction.get<{ token?: unknown; version?: unknown }>(TOKEN_KEY);
       const token = issued?.version === version && typeof issued.token === 'string' ? issued.token : undefined;
+      const reactivation = await transaction.get<ReactivationConsent>(REACTIVATION_KEY);
+      const consentRevision = (await transaction.get<number>(CONSENT_REVISION_KEY)) ?? 0;
+      if (optIn || optOut || visit) {
+        const slot = { version, subscription: null, migratable };
+        if (optOut) {
+          await clearReactivation(transaction, consentRevision + 1);
+          return { status: 200, slot: { ...slot, consentRevision: consentRevision + 1 } };
+        }
+        if (payload.expectedVersion !== version || payload.expectedConsentRevision !== consentRevision || (!migratable && !subscription)) {
+          return { status: 409, slot };
+        }
+        const matches = reactivation?.email === payload.email && reactivation?.token === payload.token;
+        if (optIn) {
+          if (matches) {
+            await transaction.put(CONSENT_REVISION_KEY, consentRevision + 1);
+          } else {
+            await clearReactivation(transaction, consentRevision + 1);
+            await transaction.put(REACTIVATION_KEY, { email: payload.email, token: payload.token });
+          }
+          return { status: 200, slot: { ...slot, consentRevision: consentRevision + 1 } };
+        }
+        if (!matches) return { status: 409, slot };
+        if (visit && matches) {
+          const hour = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
+          if (lastVisit === undefined || lastVisit < hour) {
+            await transaction.put(LAST_VISIT_KEY, hour);
+            await transaction.setAlarm(hour + VISIT_RETENTION_MS);
+          }
+        }
+        return { status: 200, slot };
+      }
       const pending = async () => (await transaction.get<CleanupEntry[]>(CLEANUP_KEY)) ?? [];
       // Appends an entry for the record this step deletes, at the version it
       // reaches: once the record is gone, only the entry names its KV keys.
@@ -139,7 +219,7 @@ export class EmailSubscriptionStore {
           if (cleanup.length) await transaction.put(CLEANUP_KEY, cleanup);
           else await transaction.delete(CLEANUP_KEY);
         }
-        return { status: 200, slot: { version, subscription, migratable, cancelledAt, token, ...(cleanup.length ? { cleanup } : {}) } };
+        return { status: 200, slot: { version, subscription, migratable, cancelledAt, token, reactivation, consentRevision, ...(cleanup.length ? { cleanup } : {}) } };
       }
       if (mark) {
         // The subscription a closing mark would cancel: the one the last
@@ -155,6 +235,9 @@ export class EmailSubscriptionStore {
         }
         const next = version + 1;
         const reopenedFor = payload.migratable && typeof payload.token === 'string' ? payload.token : undefined;
+        if (!payload.migratable || (reactivation && (reactivation.token !== reopenedFor || reactivation.email !== payload.email))) {
+          await clearReactivation(transaction, consentRevision + 1);
+        }
         await transaction.put(VERSION_KEY, next);
         await transaction.put(CLOSED_KEY, !payload.migratable);
         if (!payload.migratable) await transaction.put(CANCELLED_AT_KEY, next);
@@ -172,9 +255,14 @@ export class EmailSubscriptionStore {
         // delete the schedule key, so it lists the journal too, with the
         // entry of a cancellation that won.
         const cleanup = await pending();
-        return { status: 409, slot: { version, subscription, migratable, cancelledAt, token, ...(cleanup.length ? { cleanup } : {}) } };
+        return { status: 409, slot: { version, subscription, migratable, cancelledAt, token, reactivation, consentRevision, ...(cleanup.length ? { cleanup } : {}) } };
       }
       const next = version + 1;
+      const keepsConsent = reactivation?.email === recordField(record, 'email')
+        && reactivation?.token === recordField(record, 'unsubscribeToken');
+      if (record === null || (reactivation && !keepsConsent)) {
+        await clearReactivation(transaction, consentRevision + 1);
+      }
       await transaction.put(VERSION_KEY, next);
       await transaction.put(CLOSED_KEY, true);
       // The record carries its own token from here on; a reopening mark's copy
@@ -182,7 +270,7 @@ export class EmailSubscriptionStore {
       await transaction.delete(TOKEN_KEY);
       if (record !== null) {
         await transaction.put(SUBSCRIPTION_KEY, record);
-        return { status: 200, slot: { version: next, subscription: record, migratable: false, cancelledAt } };
+        return { status: 200, slot: { version: next, subscription: record, migratable: false, cancelledAt, reactivation: keepsConsent ? reactivation : undefined, consentRevision: reactivation && !keepsConsent ? consentRevision + 1 : consentRevision } };
       }
       // A cancellation where the object is the record (phase 2): a KV copy
       // from before it, which a phase 1 Worker may still read, is cancelled too.

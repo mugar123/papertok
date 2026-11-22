@@ -116,7 +116,7 @@ async function authenticatedRequest<T extends object>(path: string, options: Req
   try {
     const response = await authenticatedWorkerFetch(`${apiBase()}${path}`, {
       ...options,
-      signal: controller.signal,
+      signal: options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
       headers: {
         ...(options.body ? { 'content-type': 'application/json' } : {}),
         ...options.headers,
@@ -137,6 +137,24 @@ async function authenticatedRequest<T extends object>(path: string, options: Req
 export async function getEmailNotificationPreferences(uid?: string) {
   const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences', {}, uid);
   return payload.preferences;
+}
+
+interface ReactivationConsent { enabled: boolean; revision: number }
+
+export function getReactivationConsent(uid: string, signal: AbortSignal) {
+  return authenticatedRequest<ReactivationConsent>('/notifications/reactivation', { signal }, uid);
+}
+
+export function saveReactivationConsent(uid: string, enabled: boolean, revision: number | undefined, signal: AbortSignal) {
+  return authenticatedRequest<ReactivationConsent>('/notifications/reactivation', {
+    method: 'PUT',
+    body: JSON.stringify(enabled ? { enabled, revision } : { enabled }),
+    signal,
+  }, uid);
+}
+
+export async function recordDigestVisit(uid: string, revision: number, signal: AbortSignal) {
+  await authenticatedRequest('/notifications/visit', { method: 'POST', body: JSON.stringify({ revision }), signal }, uid);
 }
 
 export async function getEmailNotificationHealth() {

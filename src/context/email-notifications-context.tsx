@@ -14,6 +14,13 @@ export interface EmailNotificationsContextValue {
   digestTurnedOff: boolean;
   /** A yes from the welcome still waits for the reader's first follow: given under the earlier welcome text, or with nothing yet to cover the digest. */
   digestWaitsForFollow: boolean;
+  /**
+   * Whether the server holds an enabled digest for this account: `null` when
+   * the preferences read failed, so Settings cannot tell an unsubscribed
+   * reader from one it could not ask. False while the read is in flight.
+   */
+  digestSubscribed: boolean | null;
+  reactivation: ReturnType<typeof useDigestReactivation>;
   savePreferences: (preferences: NotificationPreferences) => Promise<Required<NotificationPreferences>>;
   sendTest: (preferences?: NotificationPreferences) => Promise<Awaited<ReturnType<typeof sendEmailNotificationTest>>>;
 }
@@ -41,6 +48,7 @@ import { getFollowingSignature } from '../utils/following-updates.ts';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../services/firebase.ts';
 import { normalizeOrcidConnection } from '../services/orcid-connection-service.ts';
+import { useDigestReactivation } from '../hooks/use-digest-reactivation.ts';
 
 const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
   enabled: false,
@@ -81,6 +89,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     currentUserId.current = userId;
   }, [userId]);
+  // The account whose preferences came from the server, by a read or a save.
+  const [preferencesFrom, setPreferencesFrom] = useState<string | null>(null);
+  const digestSubscribed = preferencesFrom === userId ? preferences.enabled : loading ? false : null;
+  const reactivation = useDigestReactivation(userId, digestSubscribed, user?.emailVerified === true);
   const followSignature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
   const previewSignature = useMemo(() => items.slice(0, 20).map(item => item.updateKey || item.id || item.doi).join('|'), [items]);
   const notificationDataReady = !followsLoading && !followsError;
@@ -162,6 +174,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         if (preferencesResult.status === 'fulfilled') {
           const next = preferencesResult.value;
           setPreferences({ ...DEFAULT_PREFERENCES, ...next, language, email: next.email || userEmail });
+          setPreferencesFrom(userId);
         } else if ((preferencesResult.reason as { code?: string } | null)?.code !== 'EMAIL_ACCOUNT_CHANGED') {
           // Firebase moved to another account before this tab did; the next
           // account's own load follows, and must not inherit this failure.
@@ -189,6 +202,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const applySavedPreferences = useCallback((saved: NotificationPreferences, wasEnabled: boolean) => {
     const normalized = { ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail };
     setPreferences(normalized);
+    setPreferencesFrom(userId);
     if (normalized.enabled !== wasEnabled) {
       void trackEvent('newsletter_change', {
         action: normalized.enabled ? 'subscribe' : 'unsubscribe',
@@ -196,7 +210,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       if (normalized.enabled) void markActivation();
     }
     return normalized;
-  }, [language, markActivation, trackEvent, userEmail]);
+  }, [language, markActivation, trackEvent, userEmail, userId]);
 
   // What answers after an await belongs to the account that asked. Once the app
   // shows, or Firebase holds, another account, its state and its analytics are
@@ -457,6 +471,8 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     hasCitationSource,
     digestCovered,
     digestSendReady,
+    digestSubscribed,
+    reactivation,
     digestTurnedOff: digestShutoffNoticeShown({
       turnedOffFor: digestTurnedOffFor,
       userId,
@@ -466,7 +482,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     digestWaitsForFollow,
     savePreferences,
     sendTest,
-  }), [digestCovered, digestSendReady, digestTurnedOffFor, digestWaitsForFollow, error, hasCitationSource, hasFollows, health, loading, localizedPreferences, notificationDataReady, savePreferences, saving, sendTest, testing, userId]);
+  }), [digestCovered, digestSendReady, digestSubscribed, digestTurnedOffFor, digestWaitsForFollow, error, hasCitationSource, hasFollows, health, loading, localizedPreferences, notificationDataReady, reactivation, savePreferences, saving, sendTest, testing, userId]);
 
   return <EmailNotificationsContext.Provider value={value}>{children}</EmailNotificationsContext.Provider>;
 }
