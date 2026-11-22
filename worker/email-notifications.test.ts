@@ -7974,3 +7974,68 @@ test('the opt-in route never uses the identity cache, takes the address only fro
     });
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('phase 1: a welcome yes never writes over a subscriber from before phase 1 whose KV read misses while their object holds reminder consent', async () => {
+  const legacy = digestSubscription({ uid: SYNC_READER.uid, email: SYNC_READER.email, unsubscribeToken: 'legacy-token' });
+  const kv = createMemoryKv({ [SYNC_READER_KEY]: legacy, 'notification:unsubscribe:legacy-token': SYNC_READER.uid });
+  const { phase1 } = twoPhases(kv);
+  // Reminder consent is stored at object version 0, beside a KV record no phase 1 save wrote.
+  await callSubscriptionObject(kv, SYNC_READER.uid, { action: 'reactivation-on', expectedVersion: 0, expectedConsentRevision: 0, email: SYNC_READER.email, token: 'legacy-token' });
+  const before = await everythingStored(kv);
+  assert.deepEqual((before.object as { reactivation?: unknown }).reactivation, { email: SYNC_READER.email, token: 'legacy-token' });
+  const miss = cachedMissOf(kv, SYNC_READER_KEY);
+
+  await assert.rejects(optIn(phase1), refusedWith('EMAIL_UNAVAILABLE', 503));
+  assert.deepEqual(await everythingStored(kv), before);
+
+  miss.show();
+  assert.equal((await optIn(phase1)).outcome, 'on');
+  assert.deepEqual(await everythingStored(kv), before);
+});
+
+for (const phase of DEPLOY_PHASES) {
+  test(`${phase}: a switch-off and a new subscribe in Settings right after the welcome yes wrote its indexes keep that subscription's record, schedule key and link`, async () => {
+    const kv = createMemoryKv();
+    const env = twoPhases(kv)[phase];
+    let written = false;
+    let saved: Subscription | null | undefined;
+    // The opt-in's last read of the object, after its write and both index puts.
+    const stores = interceptedStores(env.EMAIL_SUBSCRIPTIONS, (payload) => {
+      if (payload.action === 'write') written = true;
+      return written && payload.action === 'read';
+    }, async () => {
+      await switchDigestOff(env);
+      await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+      saved = await loadSubscriptionWithState(env, SYNC_READER_KEY);
+    });
+
+    const answer = await optIn({ ...env, EMAIL_SUBSCRIPTIONS: stores });
+
+    assert.ok(stores.intercepted);
+    assert.deepEqual([answer.outcome, answer.preferences.maxPapers], ['on', 10]);
+    const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
+    assert.deepEqual([kept?.unsubscribeToken, kept?.maxPapers, kept?.welcomeConsent], [saved!.unsubscribeToken, 10, undefined]);
+    assert.equal(kv.values.has(SYNC_READER_KEY), true, 'the schedule key of the reader\'s own subscription was deleted');
+    assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${saved!.unsubscribeToken}`]);
+  });
+
+  test(`${phase}: the accepted welcome wording stays with the subscription through later saves and goes with it`, async () => {
+    const kv = createMemoryKv();
+    const env = twoPhases(kv)[phase];
+    assert.equal((await optIn(env)).outcome, 'created');
+    const { unsubscribeToken } = (await objectOf(kv)).subscription!;
+
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, sync: true, follows: [digestFollow(), digestFollow('A2', 'Grace Hopper')] }), env, SYNC_READER);
+
+    const record = (await objectOf(kv)).subscription!;
+    assert.deepEqual(
+      [record.welcomeConsent, record.maxPapers, record.follows?.length, record.unsubscribeToken],
+      ['topics-from-signup-1', 10, 2, unsubscribeToken],
+    );
+
+    await switchDigestOff(env);
+    assert.equal((await objectOf(kv)).subscription, null);
+    assert.equal([...kv.values.values()].some(value => value.includes('topics-from-signup-1')), false);
+  });
+}
