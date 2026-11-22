@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequestChain, deliverWelcomeYes, legacyFlagSettles, optInAttemptStep, readAnswerApplies, saveSendsNothing } from './digest-opt-in.ts';
+import { createRequestChain, deliverWelcomeYes, legacyFlagSettles, optInAttemptStep, optInFailureReason, readAnswerApplies, saveSendsNothing } from './digest-opt-in.ts';
 
 const failure = (code: string, status = 0) => ({ code, status });
 const NETWORK = failure('EMAIL_UNAVAILABLE');
@@ -180,4 +180,57 @@ test('a read that overlaps a write is not shown, and one made after the writes s
   await chain.idle();
   const after = chain.mark();
   assert.equal(chain.readApplies(after), true);
+});
+
+// What the provider asks before it skips a save that keeps the email off.
+const skipsOff = (chain: ReturnType<typeof createRequestChain>, uid = 'reader') => (
+  saveSendsNothing({ enabled: false, serverEnabled: chain.serverEnabled(uid), welcomePending: false })
+);
+
+test('an Off is sent after a subscribe whose answer was lost, although the last answer shown said off', async () => {
+  const chain = createRequestChain();
+  chain.shown('reader', false);
+  assert.equal(skipsOff(chain), true, 'a save that decides nothing was sent');
+
+  // The reader turns the email on; the request reaches the server and its answer is lost.
+  await assert.rejects(chain.run(async () => { throw failure('EMAIL_TIMEOUT'); }));
+
+  assert.equal(chain.serverEnabled('reader'), null);
+  assert.equal(skipsOff(chain), false, 'the Off that would cancel that subscription was skipped');
+});
+
+test('what the server holds is unknown from the moment a write is queued until an answer is shown, after a failed read, and for another account', async () => {
+  const chain = createRequestChain();
+  assert.equal(chain.serverEnabled('reader'), null);
+  chain.shown('reader', false);
+  assert.equal(chain.serverEnabled('reader'), false);
+  assert.equal(chain.serverEnabled('someone-else'), null);
+  assert.equal(skipsOff(chain, 'someone-else'), false);
+
+  const write = held<string>();
+  const writing = chain.run(async () => {
+    const saved = await write.promise;
+    chain.shown('reader', true);
+    return saved;
+  });
+  assert.equal(chain.serverEnabled('reader'), null, 'known while a write was in flight');
+  write.resolve('saved');
+  await writing;
+  assert.equal(chain.serverEnabled('reader'), true);
+
+  chain.shown('reader', false);
+  chain.forget();
+  assert.equal(chain.serverEnabled('reader'), null);
+});
+
+test('a yes that could not start the email says why only for a refusal the reader can act on', () => {
+  const account = { accountHasEmail: true };
+  assert.match(optInFailureReason(failure('EMAIL_ADDRESS_NOT_VERIFIED', 403), account), /has not confirmed your email address/);
+  assert.match(optInFailureReason(failure('EMAIL_AUTH_REQUIRED', 401), account), /Sign in again/);
+  assert.match(optInFailureReason(failure('EMAIL_AUTH_REQUIRED', 401), { accountHasEmail: false }), /no email address/);
+  assert.match(optInFailureReason(failure('EMAIL_FOLLOWS_REQUIRED', 409), account), /None of the subjects you chose/);
+  // A refused origin is a 403 too, and says nothing about the reader's address.
+  for (const other of [failure('EMAIL_ORIGIN_NOT_ALLOWED', 403), failure('EMAIL_METHOD_NOT_ALLOWED', 405), failure('EMAIL_UNAVAILABLE', 503), NETWORK]) {
+    assert.match(optInFailureReason(other, account), /not available right now/, JSON.stringify(other));
+  }
 });

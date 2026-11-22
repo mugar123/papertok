@@ -55,7 +55,7 @@ import {
 import { actionStart, toastError, toastForAccount, type ActionStart } from '../components/ui/toast.ts';
 import { emailServiceState } from '../utils/email-health.ts';
 import { DIGEST_CONSENT_FIRST_FOLLOW, DIGEST_CONSENT_FROM_SIGNUP } from '../utils/digest-consent.ts';
-import { createRequestChain, deliverWelcomeYes, legacyFlagSettles, saveSendsNothing } from '../utils/digest-opt-in.ts';
+import { createRequestChain, deliverWelcomeYes, legacyFlagSettles, optInFailureReason, saveSendsNothing } from '../utils/digest-opt-in.ts';
 import { digestInterestsToSend, requestAccountCurrent, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from '../utils/digest-shutoff.ts';
 import { getFollowingSignature } from '../utils/following-updates.ts';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -76,24 +76,17 @@ const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
 /** A tab that becomes visible reads the stored preferences again at most this often. */
 const BACKGROUND_REFRESH_INTERVAL_MS = 60_000;
 
-/** Why a yes to the weekly email could not start it, in the reader's terms. */
-function optInFailureReason(error: unknown, { accountHasEmail }: { accountHasEmail: boolean }) {
-  const status = Number((error as { status?: unknown } | null)?.status) || 0;
-  if (status === 403) return 'Your sign-in has not confirmed your email address. Confirm it with your sign-in provider, then turn the email on in Settings.';
-  if (status === 401) {
-    return accountHasEmail
-      ? 'Sign in again, then turn the email on in Settings.'
-      : 'Your account has no email address to send it to.';
-  }
-  if (status === 409) return 'None of the subjects you chose can fill the email. Choose subjects in Settings, or follow a topic, author, institution or project, then turn the email on.';
-  return 'The email service is not available right now. You can turn the email on in Settings.';
-}
-
 export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const { user, emailDigestPending, settleEmailDigestOptIn, userPreferences, orcid } = useAuth();
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
+  // Read through a ref: `navigate` changes with every route, and the context
+  // value, with the timers that depend on it, must not.
   const navigate = useNavigate();
+  const navigateRef = useRef(navigate);
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
   const userEmail = user?.email || '';
   const { followedEntities, loading: followsLoading, error: followsError, confirmed: followsConfirmed } = useFollowing();
   const { items, loading: updatesLoading } = useFollowingUpdates();
@@ -209,19 +202,21 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     setLoading(Boolean(userId));
   }
 
-  // Every write to /notifications/* from this tab goes through one chain, one
-  // request at a time: a welcome yes on its way, a save, a test, the sync and
-  // the shut-off reach the server, and are answered here, in the order they
-  // were made. So an Off pressed while a welcome yes is in flight is sent
+  // Every write to the digest subscription from this tab goes through one
+  // chain, one request at a time: a welcome yes on its way, a save, a test, the
+  // sync and the shut-off reach the server, and are answered here, in the order
+  // they were made. So an Off pressed while a welcome yes is in flight is sent
   // after it and its answer is the last one shown. Reads stay outside the
-  // chain and are shown only when no write overlapped them (utils/digest-opt-in.ts).
+  // chain and are shown only when no write overlapped them. The chain also
+  // knows whether the server is known to hold the email off, which a queued
+  // write or a failed read makes unknown again (utils/digest-opt-in.ts).
+  // Reminder consent and visits are not subscription writes and keep their own
+  // requests (hooks/use-digest-reactivation.ts).
   const [chain] = useState(createRequestChain);
   // What the last server answer made of the preferences. Set as the answer is
   // applied, not at the next render, because the next request in the chain may
   // start first: it reads here whether the email was on.
   const shown = useRef(preferences);
-  // Whether the last server answer shown for an account said the email is on.
-  const serverAnswer = useRef<{ uid: string; enabled: boolean } | null>(null);
 
   const accountCurrent = useCallback((requestUid: string | null) => (
     mounted.current && requestAccountCurrent({ requestUid, shownUid: currentUserId.current, signedInUid: auth.currentUser?.uid })
@@ -241,16 +236,19 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     const current = shown.current;
     const normalized = (Object.keys(next) as (keyof NotificationPreferences)[]).some(field => next[field] !== current[field]) ? next : current;
     shown.current = normalized;
-    serverAnswer.current = { uid, enabled: normalized.enabled };
+    chain.shown(uid, normalized.enabled);
     setPreferences(normalized);
     setPreferencesFrom(uid);
     return normalized;
-  }, [language, userEmail]);
+  }, [chain, language, userEmail]);
 
+  // While the first read of an account is in flight, another read adds nothing.
+  const initialLoadPending = useRef(false);
   useEffect(() => {
     if (!userId) return undefined;
     let cancelled = false;
     loadedForUser.current = userId;
+    initialLoadPending.current = true;
     const start = chain.mark();
     void Promise.allSettled([getEmailNotificationPreferences(userId), getEmailNotificationHealth()])
       .then(([preferencesResult, healthResult]) => {
@@ -263,11 +261,14 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         } else if ((preferencesResult.reason as { code?: string } | null)?.code !== 'EMAIL_ACCOUNT_CHANGED') {
           // Firebase moved to another account before this tab did; the next
           // account's own load follows, and must not inherit this failure.
+          chain.forget();
           setError(preferencesResult.reason);
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (cancelled) return;
+        initialLoadPending.current = false;
+        setLoading(false);
       });
     return () => { cancelled = true; };
   }, [accountCurrent, chain, showServerPreferences, userId]);
@@ -276,7 +277,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const lastBackgroundRefresh = useRef(0);
   const refreshPreferences = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
     const requestUid = userId;
-    if (!requestUid) return;
+    if (!requestUid || initialLoadPending.current) return;
     if (background) {
       if (Date.now() - lastBackgroundRefresh.current < BACKGROUND_REFRESH_INTERVAL_MS) return;
       lastBackgroundRefresh.current = Date.now();
@@ -291,6 +292,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       if (!chain.readApplies(start) || !accountCurrent(requestUid)) return;
       showServerPreferences(requestUid, stored);
       setError(null);
+    } catch (readError) {
+      // What is shown may be out of date, so it no longer counts as the server's answer.
+      chain.forget();
+      throw readError;
     } finally {
       refreshes.current -= 1;
       if (refreshes.current === 0 && mounted.current) setRefreshing(false);
@@ -332,12 +337,14 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     }
     if (nextPreferences.enabled && !digestSendReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
     const requestUid = userId;
-    // "Save changes" with the email off, on a reader the server already holds
-    // as off, decides nothing. Sent, it would close their object, and the
-    // server would decline a yes from the welcome that still waits.
+    // "Save changes" with the email off, on a reader the server is known to
+    // hold as off, decides nothing. Sent, it would close their object, and the
+    // server would decline a yes from the welcome that still waits. After a
+    // write whose answer never came, or a failed read, that is not known and
+    // the Off is sent.
     if (saveSendsNothing({
       enabled: Boolean(nextPreferences.enabled),
-      serverEnabled: serverAnswer.current?.uid === requestUid ? serverAnswer.current.enabled : null,
+      serverEnabled: chain.serverEnabled(requestUid),
       welcomePending: welcomePending.current,
     })) return shown.current;
     setSaving(true);
@@ -412,7 +419,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       toastError("Your weekly email didn't start", {
         startedAt,
         description: optInFailureReason(result.failed, { accountHasEmail: Boolean(auth.currentUser?.email) }),
-        action: { label: 'Open Settings', onClick: () => { void navigate('/settings/notifications'); } },
+        action: { label: 'Open Settings', onClick: () => { void navigateRef.current('/settings/notifications'); } },
       });
     } else if (result.outcome !== 'declined') {
       toastForAccount(uid, 'Your weekly email is on', {
@@ -421,7 +428,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         duration: 8_000,
       });
     }
-  }, [accountCurrent, navigate]);
+  }, [accountCurrent]);
 
   // A yes given on the welcome under the text that promises the email from
   // sign-up. Onboarding hands it over once the account's profile is written

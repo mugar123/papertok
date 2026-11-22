@@ -125,13 +125,20 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
   // Another tab or device may have turned the email on or off since this tab
   // last read it, so every opening reads it again, and the controls wait for
   // that read (`refreshing`): a save made from an old state could undo it.
+  // It starts a tick later, after the reset above has cleared the feedback
+  // line, so a read that fails at once still leaves its message there.
   useEffect(() => {
     if (!isOpen) return undefined;
     let closed = false;
-    refreshPreferences().catch(() => {
-      if (!closed) setFeedback({ type: 'error', text: "We couldn't check your email settings, so what you see may be out of date." });
-    });
-    return () => { closed = true; };
+    const timeoutId = setTimeout(() => {
+      refreshPreferences().catch(() => {
+        if (!closed) setFeedback({ type: 'error', text: "We couldn't check your email settings, so what you see may be out of date." });
+      });
+    }, 0);
+    return () => {
+      closed = true;
+      clearTimeout(timeoutId);
+    };
   }, [isOpen, refreshPreferences]);
 
   // Another tab may have granted or withdrawn reminders since the provider

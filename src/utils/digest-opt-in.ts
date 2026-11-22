@@ -75,6 +75,23 @@ export function legacyFlagSettles(result: { outcome: string } | { error: unknown
 }
 
 /**
+ * Why a yes to the weekly email could not start it, in the reader's terms.
+ * Only the Worker's own refusals get a specific line: any other failure, a
+ * refused origin included, says the service is unavailable.
+ */
+export function optInFailureReason(error: unknown, { accountHasEmail }: { accountHasEmail: boolean }) {
+  const code = codeOf(error);
+  if (code === 'EMAIL_ADDRESS_NOT_VERIFIED') return 'Your sign-in has not confirmed your email address. Confirm it with your sign-in provider, then turn the email on in Settings.';
+  if (code === 'EMAIL_AUTH_REQUIRED') {
+    return accountHasEmail
+      ? 'Sign in again, then turn the email on in Settings.'
+      : 'Your account has no email address to send it to.';
+  }
+  if (code === 'EMAIL_FOLLOWS_REQUIRED') return 'None of the subjects you chose can fill the email. Choose subjects in Settings, or follow a topic, author, institution or project, then turn the email on.';
+  return 'The email service is not available right now. You can turn the email on in Settings.';
+}
+
+/**
  * Whether the answer of a read of the preferences may be shown: only when no
  * write was waiting or in flight as the read started, and none was queued
  * while it ran. Otherwise the read may describe the server from before a
@@ -86,9 +103,9 @@ export function readAnswerApplies({ pendingAtStart, epochAtStart, epochNow }: { 
 
 /**
  * Whether a save from Settings has nothing to send: it keeps the email off,
- * the last server answer shown for this account said it is off
- * (`serverEnabled`; `null` when no answer was shown), and no welcome yes is on
- * its way. Sending it would record a decision the reader did not make, and
+ * the server is known to hold it off for this account (`serverEnabled`;
+ * `null` when that is not known, see `createRequestChain`), and no welcome
+ * yes is on its way. Sending it would record a decision the reader did not make, and
  * the server would then decline a yes that is still waiting. While a welcome
  * yes is being delivered an Off is always sent, so it wins.
  */
@@ -97,20 +114,29 @@ export function saveSendsNothing({ enabled, serverEnabled, welcomePending }: { e
 }
 
 /**
- * One line for every write to `/notifications/*` from a tab: each `run` starts
- * once the tasks queued before it have settled, so the requests reach the
- * server, and their answers are shown, in the order the reader made them. A
- * read is not queued: it notes `mark()` as it starts and asks `readApplies`
- * before it shows its answer.
+ * One line for every write to the digest subscription from a tab (a save, a
+ * test, an opt-in, the sync and the shut-off): each `run` starts once the tasks
+ * queued before it have settled, so the requests reach the server, and their
+ * answers are shown, in the order the reader made them. A read is not queued:
+ * it notes `mark()` as it starts and asks `readApplies` before it shows its
+ * answer.
+ *
+ * The chain also holds what the tab knows of the server: whether the last
+ * answer shown for an account said the email is on (`shown`, `serverEnabled`).
+ * That stops being known the moment a write is queued, because a write whose
+ * answer is lost may still have taken effect, and when a read fails
+ * (`forget`). Only another shown answer makes it known again.
  */
 export function createRequestChain() {
   let tail: Promise<unknown> = Promise.resolve();
   let pending = 0;
   let epoch = 0;
+  let answer: { uid: string; enabled: boolean } | null = null;
   return {
     run<Result>(task: () => Promise<Result>): Promise<Result> {
       epoch += 1;
       pending += 1;
+      answer = null;
       const result = tail.then(task).finally(() => { pending -= 1; });
       tail = result.catch(() => undefined);
       return result;
@@ -119,5 +145,8 @@ export function createRequestChain() {
     idle: () => tail.then(() => undefined),
     mark: () => ({ pendingAtStart: pending, epochAtStart: epoch }),
     readApplies: (start: { pendingAtStart: number; epochAtStart: number }) => readAnswerApplies({ ...start, epochNow: epoch }),
+    shown(uid: string, enabled: boolean) { answer = { uid, enabled }; },
+    forget() { answer = null; },
+    serverEnabled: (uid: string | null) => (answer && answer.uid === uid ? answer.enabled : null),
   };
 }

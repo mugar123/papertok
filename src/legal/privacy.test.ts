@@ -221,7 +221,9 @@ test('the page says a welcome yes starts the weekly email when the account is cr
   assert.match(html, /If you say yes to the weekly email on the welcome screen, it starts as soon as you finish creating your account/);
   assert.match(html, /Your browser sends that yes to PaperTok's server with the subjects you chose and the version of the welcome's wording you saw/);
   assert.match(html, /If it cannot reach the server, it tries again up to three times over the next few minutes/);
-  assert.match(html, /If you said yes while the welcome said the email would start with your first follow, PaperTok keeps that yes in your account profile in <strong>Google Firestore<\/strong> until you first follow an author, topic, institution or project/);
+  assert.match(html, /If you said yes while the welcome said the email would start with your first follow, PaperTok keeps that yes in your account profile in <strong>Google Firestore<\/strong>\. When you first follow an author, topic, institution or project, your browser asks PaperTok's server to start the email, which it does unless you have already turned email updates on or off yourself/);
+  // legacyFlagSettles (utils/digest-opt-in.ts): any answer, or a refusal no retry changes.
+  assert.match(html, /The saved yes is deleted once the email starts or PaperTok finds it cannot start/);
   // No per-account record of the yes is kept in the browser any more.
   assert.doesNotMatch(html, /which wording of the welcome's weekly email choice you said yes to, or that this yes no longer applies/);
 });

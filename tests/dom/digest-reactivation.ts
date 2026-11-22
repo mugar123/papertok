@@ -14,8 +14,11 @@ export async function loadDigestReactivation() {
     const { AuthContext, LanguageContext, EmailNotificationsContext, FollowingContext } =
       await app.load<Record<'AuthContext' | 'LanguageContext' | 'EmailNotificationsContext' | 'FollowingContext', Context<unknown>>>('/src/context/contexts.ts');
     // Settings with the digest preferences read (`subscribed`: true) or failed
-    // (null), and its email dialog open or closed.
-    function ReminderSettings({ subscribed = true, isOpen = true }: { subscribed?: boolean | null; isOpen?: boolean }) {
+    // (null), and its email dialog open or closed. `reading` is the read of the
+    // stored preferences the dialog asks for as it opens.
+    function ReminderSettings({ subscribed = true, isOpen = true, reading = {} }: {
+      subscribed?: boolean | null; isOpen?: boolean; reading?: { refreshing?: boolean; refreshPreferences?: () => Promise<void> };
+    }) {
       const reactivation = useDigestReactivation('reader', subscribed, true);
       return createElement(MemoryRouter, {},
         createElement(AuthContext.Provider, { value: { user: { emailVerified: true } } },
@@ -26,7 +29,7 @@ export async function loadDigestReactivation() {
                 digestSubscribed: subscribed,
                 health: { configured: true, available: true },
                 digestCovered: true, digestSendReady: true, notificationDataReady: true, reactivation,
-                refreshing: false, refreshPreferences: async () => {},
+                refreshing: false, refreshPreferences: async () => {}, ...reading,
               } }, createElement(Modal, { isOpen, onClose: () => {} }))))));
     }
     return { useDigestReactivation, ReminderSettings, close: app.close };

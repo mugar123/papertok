@@ -361,9 +361,11 @@
         are new papers in those subjects. While the subscription lasts, PaperTok keeps with
         it which version of the welcome's wording you said yes to. If you said yes while
         the welcome said the email would start with your first follow, PaperTok keeps that
-        yes in your account profile in <strong>Google Firestore</strong> until you first
-        follow an author, topic, institution or project. The email then starts, unless you
-        have already turned email updates on or off yourself, and the saved yes is deleted.
+        yes in your account profile in <strong>Google Firestore</strong>. When you first
+        follow an author, topic, institution or project, your browser asks PaperTok's server
+        to start the email, which it does unless you have already turned email updates on or
+        off yourself. The saved yes is deleted once the email starts or PaperTok finds it
+        cannot start.
       </p>
       <p>
         The legal basis is your consent, and you can withdraw it whenever you like: every
