@@ -28,7 +28,7 @@ type SubscriptionTransaction = LedgerTransaction & Pick<DurableObjectTransaction
  * without invalidating a weekly digest draft.
  */
 export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string; cleanup?: CleanupEntry[]; reactivation?: ReactivationConsent; consentRevision?: number }
-export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; expectedConsentRevision?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown; email?: unknown; entries?: unknown }
+export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; expectedConsentRevision?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown; email?: unknown; indexes?: unknown }
 /** What the object needs besides its storage: the KV namespace its `index` action writes, and the gate that holds other requests meanwhile. */
 type SubscriptionState = { storage: LedgerStorage<SubscriptionTransaction>; blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T> };
 type IndexStore = { put(key: string, value: string): Promise<unknown> };
@@ -56,7 +56,13 @@ const CLEANUP_KEY = 'cleanup';
 const REACTIVATION_KEY = 'reactivation';
 const CONSENT_REVISION_KEY = 'consentRevision';
 const LAST_VISIT_KEY = 'lastVisitAt';
-const INDEX_KEY_PREFIX = 'notification:';
+/**
+ * The two KV keys that point at a reader's subscription: the one the schedule
+ * lists, which in phase 1 holds the record itself for a reader whose record is
+ * in KV, and the unsubscribe link's.
+ */
+export const SUBSCRIPTION_PREFIX = 'notification:subscription:';
+export const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
 const HOUR_MS = 60 * 60 * 1000;
 const VISIT_RETENTION_MS = 30 * 24 * HOUR_MS;
 
@@ -86,7 +92,7 @@ async function liveVisit(transaction: SubscriptionTransaction) {
 }
 
 // A string field of a subscription record the object holds.
-function recordField(record: unknown, field: 'unsubscribeToken' | 'stateId' | 'email') {
+function recordField(record: unknown, field: 'unsubscribeToken' | 'stateId' | 'email' | 'uid') {
   if (typeof record !== 'object' || record === null) return undefined;
   const value: unknown = Reflect.get(record, field);
   return typeof value === 'string' && value ? value : undefined;
@@ -123,14 +129,16 @@ function json(payload: unknown, status = 200) {
  * Once a write raised the version past the reopening mark, the token that
  * counts is the one of the subscription the object holds, if any.
  *
- * `index` writes the KV indexes of the subscription the object holds (the
- * schedule key and the link's) from inside the object, and only while it still
- * holds that subscription at `expectedVersion`. No other request reaches the
- * object until those puts have landed, so every later cancellation or save,
+ * `index` writes the KV indexes of the subscription the object holds
+ * (`schedule`: the key the schedule lists; `link`: the unsubscribe link's),
+ * from inside the object, and only while it still holds that subscription at
+ * `expectedVersion`. The object builds both from its own record, so the
+ * caller names no key. No other request reaches the object until those puts
+ * have landed (`blockConcurrencyWhile`), so every later cancellation or save,
  * and the KV write each makes after its own step here, comes after them. A
- * Worker that wrote those keys itself after its `write` could land them after a
- * later unsubscribe and re-subscribe, over the record a phase 1 save keeps at
- * the schedule key (ENG-215).
+ * Worker that wrote those keys itself after its `write` could land them after
+ * a later unsubscribe and re-subscribe, over the record a phase 1 save keeps
+ * at the schedule key (ENG-215).
  */
 export class EmailSubscriptionStore {
   declare state: SubscriptionState;
@@ -143,30 +151,35 @@ export class EmailSubscriptionStore {
 
   /** The `index` action: see the class comment. */
   private async writeIndexes(payload: SubscriptionStorePayload) {
-    const entries = payload.entries;
+    const wanted = payload.indexes;
     const indexes = this.indexes;
     if (
       !Number.isInteger(payload.expectedVersion) || typeof payload.token !== 'string' || !payload.token
-      || !Array.isArray(entries) || !entries.length || entries.length > 2
-      || !entries.every((entry): entry is [string, string] => Array.isArray(entry) && entry.length === 2
-        && typeof entry[0] === 'string' && entry[0].startsWith(INDEX_KEY_PREFIX) && typeof entry[1] === 'string')
+      || !Array.isArray(wanted) || !wanted.length || !wanted.every(name => name === 'schedule' || name === 'link')
     ) {
       return json({ code: 'INVALID_REQUEST' }, 400);
     }
     if (!indexes) return json({ code: 'NOT_CONFIGURED' }, 503);
-    return this.state.blockConcurrencyWhile(() => this.state.storage.transaction(async (transaction) => {
-      const version = Number(await transaction.get<number>(VERSION_KEY)) || 0;
-      const subscription = (await transaction.get(SUBSCRIPTION_KEY)) ?? null;
-      const slot = { version, subscription, migratable: (await transaction.get(CLOSED_KEY)) !== true, cancelledAt: Number(await transaction.get<number>(CANCELLED_AT_KEY)) || 0 };
-      if (payload.expectedVersion !== version || recordField(subscription, 'unsubscribeToken') !== payload.token) return json(slot, 409);
+    return this.state.blockConcurrencyWhile(async () => {
+      const slot = await this.state.storage.transaction(async transaction => ({
+        version: Number(await transaction.get<number>(VERSION_KEY)) || 0,
+        subscription: (await transaction.get(SUBSCRIPTION_KEY)) ?? null,
+        migratable: (await transaction.get(CLOSED_KEY)) !== true,
+        cancelledAt: Number(await transaction.get<number>(CANCELLED_AT_KEY)) || 0,
+      }));
+      const uid = recordField(slot.subscription, 'uid');
+      if (payload.expectedVersion !== slot.version || !uid || recordField(slot.subscription, 'unsubscribeToken') !== payload.token) return json(slot, 409);
       try {
-        await Promise.all(entries.map(([key, value]) => indexes.put(key, value)));
+        await Promise.all([
+          wanted.includes('schedule') ? indexes.put(`${SUBSCRIPTION_PREFIX}${uid}`, JSON.stringify({ uid })) : null,
+          wanted.includes('link') ? indexes.put(`${UNSUBSCRIBE_PREFIX}${payload.token}`, uid) : null,
+        ]);
       } catch {
         // The caller answers a retryable failure; a later request puts them again.
         return json({ code: 'INDEX_WRITE_FAILED' }, 503);
       }
       return json(slot);
-    }));
+    });
   }
 
   async alarm() {
