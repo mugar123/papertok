@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { createServer, createServerModuleRunner } from 'vite';
+import { createServer, createServerModuleRunner, type Plugin } from 'vite';
 import type { FirebaseStub } from './firebase-stub.ts';
 
 /**
@@ -18,7 +18,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const FIREBASE_STUB = fileURLToPath(new URL('./firebase-stub.ts', import.meta.url)).replaceAll('\\', '/');
 const WORKER_ORIGIN = 'https://api.papertok.app';
 
-export async function startAppModules() {
+/** `plugins` lets a loader stand in for one more module the tests cannot run (see `email-notifications-provider.ts`). */
+export async function startAppModules({ plugins = [] }: { plugins?: Plugin[] } = {}) {
   const server = await createServer({
     root,
     configFile: false,
@@ -29,6 +30,7 @@ export async function startAppModules() {
     envDir: false,
     optimizeDeps: { noDiscovery: true },
     define: { 'import.meta.env.VITE_PAPER_API_BASE_URL': JSON.stringify(WORKER_ORIGIN) },
+    plugins,
     resolve: { alias: [{ find: /^(?:.*\/)?firebase\.ts$/, replacement: FIREBASE_STUB }] },
   });
   const runner = createServerModuleRunner(server.environments.ssr, { hmr: false });

@@ -150,14 +150,18 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('the current notice leads with the welcome email change and keeps the main changes since 20 November', () => {
+test('the current notice leads with the welcome email change and keeps every change announced since 20 November', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
   assert.match(notice, /welcome yes to the weekly email starts it at sign-up on your subjects, and keeps the wording you accepted/i);
-  assert.match(notice, /After you unsubscribe, a change count without your address stays, also after account deletion/);
+  assert.match(notice, /after unsubscribing, a change count without your address stays, also after account deletion/);
   assert.match(notice, /opt-in digest reminders.*last signed-in visit hour.*30 days.*opt-out, unsubscribe or account deletion/i);
   assert.match(notice, /Anthropic can rewrite\/explain outside the EU/i);
   assert.match(notice, /Verified-email saves count by account\/paper\/UTC week.*off in Privacy/i);
   assert.match(notice, /PostHog links surveys and likes\/saves\/reads before profile load to accounts/i);
+  assert.match(notice, /counts visits.*local day 7–13 mark/i);
+  assert.match(notice, /keep Essential\/Curiosity, mix and area levels/i);
+  assert.match(notice, /interest ideas and unsaved citations\/coauthors in My profile/i);
+  assert.match(notice, /ORCID on OpenAlex for weekly citations/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
@@ -181,9 +185,11 @@ test('the in-app summary is short: at most three bullets, its lead change up fro
     const sentences = bullet.match(/[.!?](\s|$)/g)?.length ?? 0;
     assert.ok(sentences >= 1 && sentences <= 2, `one or two sentences: "${bullet}"`);
   }
-  // The dialog has to fit it on a phone's screen; the page has every detail.
+  // The dialog scrolls when it has to (privacy-notice.css), and the page has
+  // every detail. The limit was 520 until 2026-11-25, when the welcome email
+  // change joined a summary that could not lose a data flow it still announced.
   const characters = PRIVACY_POLICY_CHANGE.join(' ').length;
-  assert.ok(characters <= 520, characters + ' characters');
+  assert.ok(characters <= 720, characters + ' characters');
   const { lead } = PRIVACY_POLICY_CHANGE_EVIDENCE;
   const at = PRIVACY_POLICY_CHANGE[0].indexOf(lead);
   assert.ok(at >= 0 && at < 40, `"${lead}" is in the first bullet's lead clause`);
@@ -223,7 +229,7 @@ test('the page says a welcome yes starts the weekly email when the account is cr
   assert.match(html, /If it cannot reach the server, it tries again up to three times over the next few minutes/);
   assert.match(html, /If you said yes while the welcome said the email would start with your first follow, PaperTok keeps that yes in your account profile in <strong>Google Firestore<\/strong>\. When you first follow an author, topic, institution or project, your browser asks PaperTok's server to start the email, which it does unless you have already turned email updates on or off yourself/);
   // legacyFlagSettles (utils/digest-opt-in.ts): any answer, or a refusal no retry changes.
-  assert.match(html, /The saved yes is deleted once the email starts or PaperTok finds it cannot start/);
+  assert.match(html, /The saved yes is deleted once the email starts, PaperTok finds it cannot start, or you save your email settings yourself/);
   // No per-account record of the yes is kept in the browser any more.
   assert.doesNotMatch(html, /which wording of the welcome's weekly email choice you said yes to, or that this yes no longer applies/);
 });
@@ -235,9 +241,19 @@ test('the page says a count of changes to the email subscription stays after uns
   assert.match(html, /Until PaperTok confirms it has deleted the subscription's other email records, the object also keeps their identifiers/);
   assert.match(html, /The count stays after you delete your account, and deleting an account that never had the email leaves one too/);
   const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
-  assert.match(summary, /A count of the changes made to your email subscription, without your address, also stays \(see Email updates\)/);
+  assert.match(summary, /A count of the changes made to your email subscription, without your address, also stays, and a deleted email subscription can remain in Cloudflare's storage history for up to 30 days \(see Email updates\)/);
   const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
-  assert.match(kept, /The count of the changes made to your email subscription, which holds neither your address nor your preferences, also stays/);
+  assert.match(kept, /The count of the changes made to your email subscription, which holds neither your address nor your preferences, also stays, and an email subscription or reminder consent deleted from your account's Durable Object can remain in Cloudflare's 30-day storage history/);
+});
+
+// wrangler.toml lists EmailSubscriptionStore under new_sqlite_classes: Cloudflare keeps 30 days of
+// point-in-time history for that storage. The record holds `displayName` (worker/email-notifications.ts).
+test('the page says a deleted subscription can stay in Cloudflare\'s storage history for 30 days, that the subscription holds the sign-in name, and that welcome requests are counted', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /Cloudflare keeps a 30-day point-in-time history of the Durable Object's storage\. A subscription deleted from it, with its address, name, subjects and follows, and reminder consent with its address, can therefore remain in that history for up to 30 more days after you unsubscribe, withdraw the consent or delete your account; PaperTok never reads or restores that history/);
+  assert.match(html, /PaperTok stores your email address, the name your sign-in gives \(the email greets you with it\), your sending preferences/);
+  // OPT_IN_ACCOUNT_HOURLY_LIMIT in worker/email-notifications.ts; the ledger keeps a subject for three days.
+  assert.match(html, /To limit test emails and requests to start the email from the welcome, Cloudflare counts them under a hashed account identifier that it keeps for up to three days/);
 });
 
 // utils/guest-interests.ts: `emailDigestConsent` travels with a yes, and `WELCOME_DIGEST_YES_MAX_AGE_MS` bounds it.
