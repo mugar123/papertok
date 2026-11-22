@@ -46,7 +46,7 @@ async function startProvider(t: TestContext, { enabled, pendingYes = false, answ
   t.after(() => view.unmount());
   await waitFor(() => assert.equal(view.settings().loading, false), { timeout: 5_000 });
   const decisions = () => sent.filter(request => !request.body?.sync).map(request => `${request.method} ${request.path}${request.body?.enabled === undefined ? '' : ` enabled:${request.body.enabled}`}`);
-  return { settings: view.settings, server, sent, decisions, events, settledCount: () => settled };
+  return { settings: view.settings, server, sent, decisions, events, openOverlay: app.openOverlay, settledCount: () => settled };
 }
 
 // The outside verifier's sequence (ENG-215). The reader unsubscribed on another
@@ -94,7 +94,7 @@ test('after a sync that answered Off and a queued test whose answer was lost, sa
   assert.equal(reader.settings().preferences.enabled, false);
 });
 
-test('a welcome yes is sent once to the opt-in route, and its notice stays until closed and can turn the email off', async (t) => {
+test('a welcome yes is sent once to the opt-in route, and its notice stays, waits out a dialog that opens over it, and can turn the email off', async (t) => {
   const reader = await startProvider(t, { enabled: false });
 
   act(() => { reader.settings().startWelcomeDigest({ uid: 'reader', interests: ['cs.LG'] }); });
@@ -104,12 +104,23 @@ test('a welcome yes is sent once to the opt-in route, and its notice stays until
   const notice = (await screen.findByText('Your weekly email is on')).closest('li');
   assert.ok(notice, 'the notice is not a toast');
   assert.match(notice.textContent ?? '', /It goes to reader@example\.com on Mondays/);
-  const turnOff = within(notice).getByRole('button', { name: 'Turn off' });
+  assert.ok(within(notice).getByRole('button', { name: 'Turn off' }));
   assert.ok(within(notice).getByRole('button', { name: /close/i }), 'the notice cannot be closed');
   // Not a notice that leaves on its own: whoever creates an account on a shared
-  // device was never asked. Sonner's own notices leave after four seconds.
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 4_600)); });
+  // device was never asked. Sonner's own notices leave after four seconds, and
+  // this one used to leave after eight.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 8_600)); });
   assert.ok(notice.isConnected && screen.queryByText('Your weekly email is on'), 'the notice left by itself');
+
+  // A dialog opens over the page, as the privacy notice does for a new account:
+  // the notice is put away while it is open and comes back when it has left.
+  let closeOverlay: (() => void) | undefined;
+  act(() => { closeOverlay = reader.openOverlay(); });
+  await waitFor(() => assert.ok(!screen.queryByText('Your weekly email is on'), 'the notice stayed over the dialog'), { timeout: 5_000 });
+  act(() => { closeOverlay?.(); });
+  const back = (await screen.findByText('Your weekly email is on', undefined, { timeout: 5_000 })).closest('li');
+  assert.ok(back, 'the dialog ended the notice');
+  const turnOff = within(back).getByRole('button', { name: 'Turn off' });
 
   await act(async () => { fireEvent.click(turnOff); });
   await waitFor(() => assert.equal(reader.settings().preferences.enabled, false), { timeout: 5_000 });
@@ -157,4 +168,22 @@ test('saving with the switch off is sent even when the server already answered O
   assert.equal(reader.settledCount(), 1, 'the pending yes stayed in the profile');
   // Nothing changed for the reader, so nothing is reported.
   assert.deepEqual(reader.events, []);
+});
+
+test('closing the started-email notice ends it: a dialog opened afterwards does not bring it back, and nothing is sent', async (t) => {
+  const reader = await startProvider(t, { enabled: false });
+  act(() => { reader.settings().startWelcomeDigest({ uid: 'reader', interests: ['cs.LG'] }); });
+  const notice = (await screen.findByText('Your weekly email is on')).closest('li');
+  assert.ok(notice);
+
+  await act(async () => { fireEvent.click(within(notice).getByRole('button', { name: /close/i })); });
+  await waitFor(() => assert.ok(!screen.queryByText('Your weekly email is on'), 'the notice is still on screen'), { timeout: 5_000 });
+  let closeOverlay: (() => void) | undefined;
+  act(() => { closeOverlay = reader.openOverlay(); });
+  act(() => { closeOverlay?.(); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+
+  assert.ok(!screen.queryByText('Your weekly email is on'), 'the closed notice came back');
+  assert.deepEqual(reader.decisions(), ['POST /notifications/opt-in']);
+  assert.equal(reader.settings().preferences.enabled, true);
 });

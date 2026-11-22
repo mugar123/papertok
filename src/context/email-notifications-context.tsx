@@ -52,7 +52,7 @@ import {
   startEmailDigestOptIn,
   type DigestOptInOutcome,
 } from '../services/email-notification-service.ts';
-import { actionStart, toastError, toastForAccount, type ActionStart } from '../components/ui/toast.ts';
+import { actionStart, toastError, toastForAccount, toastStandingNotice, type ActionStart } from '../components/ui/toast.ts';
 import { emailServiceState } from '../utils/email-health.ts';
 import { DIGEST_CONSENT_FIRST_FOLLOW, DIGEST_CONSENT_FROM_SIGNUP } from '../utils/digest-consent.ts';
 import { createRequestChain, deliverWelcomeYes, legacyFlagSettles, optInFailureReason } from '../utils/digest-opt-in.ts';
@@ -208,8 +208,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // they were made. So an Off pressed while a welcome yes is in flight is sent
   // after it and its answer is the last one shown. Reads stay outside the
   // chain and are shown only when no write overlapped them (utils/digest-opt-in.ts).
-  // No request is skipped on the strength of an earlier answer: a write whose
-  // answer was lost may have taken effect, so a save always reaches the server.
+  // A save, a test and the notice's Turn off are never skipped on the strength
+  // of an earlier answer: a write whose answer was lost may have taken effect,
+  // so the reader's own decision always reaches the server. (The background
+  // sync and the shut-off still run only while this tab shows the email on.)
   // Reminder consent and visits are not subscription writes and keep their own
   // requests (hooks/use-digest-reactivation.ts).
   const [chain] = useState(createRequestChain);
@@ -421,7 +423,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       if (!accountCurrent(uid)) return;
       toastError("Your weekly email couldn't be turned off", {
         startedAt,
-        description: 'It is still on. Try again in Settings.',
+        description: 'It may still be on. Check it in Settings.',
         action: { label: 'Open Settings', onClick: () => { void navigateRef.current('/settings/notifications'); } },
       });
     });
@@ -429,9 +431,11 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
 
   // What the reader is told once a yes from the welcome has an answer. A
   // `declined` says nothing: the reader turned the email off themselves.
-  // The notice of a started email stays until it is closed, like an error, and
-  // carries the way to stop it: on a shared device the person who creates the
-  // account may not be the visitor who said yes, and was never asked.
+  // The notice of a started email waits for the reader's answer, and carries
+  // the way to stop it: on a shared device the person who creates the account
+  // may not be the visitor who said yes, and was never asked. An overlay that
+  // opens meanwhile, such as the privacy notice a new account can be owed, only
+  // holds it back (toastStandingNotice).
   const reportOptIn = useCallback((uid: string, startedAt: ActionStart, result: { outcome: DigestOptInOutcome; email: string } | { failed: unknown }, covers: string) => {
     if ('failed' in result) {
       if (!accountCurrent(uid)) return;
@@ -441,10 +445,8 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         action: { label: 'Open Settings', onClick: () => { void navigateRef.current('/settings/notifications'); } },
       });
     } else if (result.outcome !== 'declined') {
-      toastForAccount(uid, 'Your weekly email is on', {
+      toastStandingNotice(uid, 'Your weekly email is on', {
         description: `It goes to ${result.email} on Mondays, when there are new papers ${covers}. You can also turn it off in Settings.`,
-        duration: Infinity,
-        closeButton: true,
         action: { label: 'Turn off', onClick: () => { turnOffFromNotice(uid); } },
       });
     }

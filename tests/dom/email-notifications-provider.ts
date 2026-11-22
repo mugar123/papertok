@@ -62,8 +62,20 @@ export async function loadEmailNotificationsProvider() {
     const { EmailNotificationsProvider } = await app.load<{ EmailNotificationsProvider: ComponentType<PropsWithChildren> }>('/src/context/email-notifications-context.tsx');
     const contexts = await app.load<Record<string, Context<unknown>>>('/src/context/contexts.ts');
     // Toasts for an account show only once the app has named it as signed in.
-    const { forgetAccountToasts } = await app.load<{ forgetAccountToasts: (uid: string | null) => void }>('/src/components/ui/toast.ts');
+    const { forgetAccountToasts, trackModalOverlay } = await app.load<{
+      forgetAccountToasts: (uid: string | null) => void;
+      trackModalOverlay: (portal: HTMLElement | null) => (() => void) | undefined;
+    }>('/src/components/ui/toast.ts');
     forgetAccountToasts(READER.uid);
+    // A dialog, drawer or sheet opening over the page, as its portal reports it; returns the way to close it.
+    const openOverlay = () => {
+      const portal = document.body.appendChild(document.createElement('div'));
+      const close = trackModalOverlay(portal);
+      return () => {
+        close?.();
+        portal.remove();
+      };
+    };
     const { Toaster } = await app.load<{ Toaster: ComponentType }>('/src/components/ui/sonner.tsx');
 
     function mount({ pendingYes = false, settlePendingYes = async () => {}, events = [] }: {
@@ -95,7 +107,7 @@ export async function loadEmailNotificationsProvider() {
         unmount: () => { view.unmount(); },
       };
     }
-    return { mount, close: app.close };
+    return { mount, openOverlay, close: app.close };
   } catch (error) {
     await app.close();
     throw error;

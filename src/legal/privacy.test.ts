@@ -252,6 +252,8 @@ test('the page says a deleted subscription can stay in Cloudflare\'s storage his
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   assert.match(html, /Cloudflare keeps a 30-day point-in-time history of the Durable Object's storage\. A subscription deleted from it, with its address, name, subjects and follows, and reminder consent with its address, can therefore remain in that history for up to 30 more days after you unsubscribe, withdraw the consent or delete your account; PaperTok never reads or restores that history/);
   assert.match(html, /PaperTok stores your email address, the name your sign-in gives \(the email greets you with it\), your sending preferences/);
+  // RequestQuotaLedger is a SQLite-backed Durable Object too (wrangler.toml).
+  assert.match(html, /The same history covers the request counts Cloudflare keeps in Durable Objects under hashed identifiers/);
   // OPT_IN_ACCOUNT_HOURLY_LIMIT in worker/email-notifications.ts; the ledger keeps a subject for three days.
   assert.match(html, /To limit test emails and requests to start the email from the welcome, Cloudflare counts them under a hashed account identifier that it keeps for up to three days/);
 });
