@@ -25,7 +25,7 @@ export class EmailSubscriptionStore extends DurableObject<WorkerEnv> {
   private readonly store: SubscriptionStore;
   constructor(ctx: DurableObjectState, env: WorkerEnv) {
     super(ctx, env);
-    this.store = new SubscriptionStore(ctx);
+    this.store = new SubscriptionStore(ctx, env);
   }
   fetch(request: Request) { return trackErrors(this.env, this.ctx, 'durable_object', () => this.store.fetch(request)); }
   alarm() { return trackErrors(this.env, this.ctx, 'durable_object', () => this.store.alarm()); }
