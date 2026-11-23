@@ -90,3 +90,12 @@ export async function loadPaperTranslation() {
   ]>('/src/hooks/use-paper-translation.ts', '/src/components/feed/paper-translation.tsx');
   return { ...hook, ...controls, firebase, close };
 }
+
+export async function loadAbstractSheet() {
+  type State = ReturnType<typeof UsePaperTranslation>;
+  type Paper = Parameters<typeof UsePaperTranslation>[0];
+  const { modules: [sheet], close } = await loadModules<[
+    { default: Component<{ paper: Paper; onClose: () => void; translation: State }> },
+  ]>('/src/components/feed/abstract-sheet.tsx');
+  return { AbstractSheet: sheet.default, close };
+}
