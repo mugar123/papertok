@@ -41,7 +41,7 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
   const quotas: Array<{ action: string; subjectLimit: number; globalLimit: number; globalAmount?: number; partKey?: string; partLimit?: number }> = [];
   const days: string[] = [];
   const providerUrls: string[] = [];
-  const ledger = { reply: (_action: string): Response | Promise<Response> => Response.json(ledgerReply) };
+  const ledger: { reply(action: string): Response | Promise<Response> } = { reply: () => Response.json(ledgerReply) };
   const namespace: TestNamespace = {
     idFromName: day => { days.push(day); return 'ledger'; },
     get: () => ({
@@ -113,7 +113,7 @@ function translationTimers(t: TestContext) {
 }
 
 function deferred<T>() {
-  let resolve = (_value: T) => {};
+  let resolve: (value: T) => void = () => {};
   const promise = new Promise<T>(complete => { resolve = complete; });
   return { promise, resolve };
 }
