@@ -14,6 +14,7 @@ export async function requestPaperTranslation(input: PaperTranslationRequest, si
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
     signal,
+    abortTokenWait: true,
   }, 25_000);
   try {
     const response = await authenticatedWorkerFetch(url, options);

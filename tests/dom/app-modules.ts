@@ -8,17 +8,18 @@ import type { FirebaseStub } from './firebase-stub.ts';
  * transforms them; React, React DOM and React Router stay the one copy the test
  * imports, so a provider and the hooks that read it share a context.
  *
- * `services/firebase.ts` is the one module replaced: the real one starts a
- * Firebase app and a browser sign-in. The Worker is not replaced. The tests
+ * The Firebase configuration is replaced so tests do not start a real session.
+ * Tests that sign in also stub Firestore reads. The Worker is not replaced. The tests
  * give it an origin and answer its `fetch`, so the app's own request and error
  * code run (see `renderApp`).
  */
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const FIREBASE_STUB = fileURLToPath(new URL('./firebase-stub.ts', import.meta.url)).replaceAll('\\', '/');
+const FIRESTORE_STUB = fileURLToPath(new URL('./firestore-stub.ts', import.meta.url)).replaceAll('\\', '/');
 const WORKER_ORIGIN = 'https://api.papertok.app';
 
-export async function startAppModules() {
+export async function startAppModules({ stubFirestore = false } = {}) {
   const server = await createServer({
     root,
     configFile: false,
@@ -29,7 +30,10 @@ export async function startAppModules() {
     envDir: false,
     optimizeDeps: { noDiscovery: true },
     define: { 'import.meta.env.VITE_PAPER_API_BASE_URL': JSON.stringify(WORKER_ORIGIN) },
-    resolve: { alias: [{ find: /^(?:.*\/)?firebase\.ts$/, replacement: FIREBASE_STUB }] },
+    resolve: { alias: [
+      { find: /^(?:.*\/)?firebase\.ts$/, replacement: FIREBASE_STUB },
+      ...(stubFirestore ? [{ find: /^firebase\/firestore$/, replacement: FIRESTORE_STUB }] : []),
+    ] },
   });
   const runner = createServerModuleRunner(server.environments.ssr, { hmr: false });
   return {
