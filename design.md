@@ -212,7 +212,9 @@ that only the data is allowed to pick.
   the rail's own states.
   The reader may also pick `accent-teal`, `accent-sky`, `accent-violet` or
   `accent-rose` for a highlight in a paper's full text, as an alternative to
-  the default yellow; their `-soft` surfaces paint the mark.
+  the default yellow; their `-soft` surfaces paint the mark. A clicked
+  highlight is painted with its ink mixed 35% into that wash, and the dashed
+  rule of its entry in the notes sidebar turns solid.
 - **Link Blue** (`link-blue`): the secondary accent, for links in running text.
 
 ### Tertiary
@@ -548,7 +550,7 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   open sends the reader to For you.
 - **`drawer.tsx`:** the bottom sheet a thumb dismisses (swipe, snap points). On
   a phone a menu becomes a drawer of 52px rows.
-- **`popover.tsx`**, **`sheet.tsx`**, **`tooltip.tsx`**, **`tabs.tsx`**
+- **`popover.tsx`**, **`tooltip.tsx`**, **`tabs.tsx`**
   (`line` with the yellow underline, `pill` on a sunken track), and the form
   controls (`switch`, `checkbox`, `radio-group`, `select`, `input`,
   `textarea`).
@@ -616,9 +618,11 @@ another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
-new tab. The plain-words reader uses the same dock (`pdf/paper-info.tsx`) with
-Contents, the reading level, Annotations, AI highlights and the original
-paper, and without the card's options, which it has no card to take from. Its
+new tab. Both readers use `pdf/reading-dock.tsx` for Notes and the
+original-paper link. Voice and the audio player appear only in the full-text
+reader. The plain-words reader keeps its reading level and AI highlights
+alongside them. When opened from a paper card, it also receives the card's options and
+Zotero action; saved-summary history has no card actions. Its
 notes are the full-text reader's notes panel and its selection opens the same
 highlight editor, whose second way out is Explain this to me.
 

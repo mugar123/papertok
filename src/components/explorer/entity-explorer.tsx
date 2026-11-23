@@ -94,12 +94,12 @@ import { Button } from '../ui/button.tsx';
 import { buttonVariants } from '../ui/button-variants.ts';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
-import { Sheet, SheetClose, SheetContent, SheetTitle } from '../ui/sheet.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import useQuickSave from '../../hooks/use-quick-save.ts';
 import useClipTooltip from '../../hooks/use-clip-tooltip.ts';
 import { Switch } from '../ui/switch.tsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
@@ -727,9 +727,11 @@ export default function EntityExplorer({
         ? { en: 'this project' }
         : { en: 'this person' };
   const activeFilterCount = [filters?.category, filters?.peerReviewed, filters?.dateRange].filter(Boolean).length;
+  const sortItems = [{ value: 'cited_by_count:desc', label: 'Most cited' }, { value: 'publication_date:desc', label: 'Most recent' }];
+  const dateItems = [{ value: 'any', label: 'Any time' }, { value: 'last_year', label: 'Last year' }, { value: 'last_5_years', label: 'Last 5 years' }];
   const activeFilterChips = [
     filters.category && { key: 'category', label: CATEGORIES[filters.category as keyof typeof CATEGORIES]?.label || filters.category, clear: () => setFilters({ ...filters, category: '' }) },
-    filters.dateRange && { key: 'date', label: filters.dateRange === 'last_year' ? 'Last year' : 'Last 5 years', clear: () => setFilters({ ...filters, dateRange: '' }) },
+    filters.dateRange && { key: 'date', label: dateItems.find(item => item.value === filters.dateRange)?.label ?? filters.dateRange, clear: () => setFilters({ ...filters, dateRange: '' }) },
     filters.peerReviewed && { key: 'peer', label: 'Peer-reviewed', clear: () => setFilters({ ...filters, peerReviewed: false }) },
   ].filter((chip): chip is { key: string; label: string; clear: () => void } => Boolean(chip));
   const guestSearchLabel = `Search ${guestSearchScope.en} · needs an account`;
@@ -2270,12 +2272,7 @@ export default function EntityExplorer({
           value={[sortBy]}
           onValueChange={([next]) => { if (next !== undefined) setSortBy(next); }}
         >
-          <ToggleGroupItem value="cited_by_count:desc" className="ee-filter-chip">
-            {'Most cited'}
-          </ToggleGroupItem>
-          <ToggleGroupItem value="publication_date:desc" className="ee-filter-chip">
-            {'Most recent'}
-          </ToggleGroupItem>
+          {sortItems.map(item => <ToggleGroupItem key={item.value} value={item.value} className="ee-filter-chip">{item.label}</ToggleGroupItem>)}
         </ToggleGroup>
       </div>
       <div className="ee-filter-section">
@@ -2289,15 +2286,7 @@ export default function EntityExplorer({
             if (next !== undefined) setFilters({ ...filters, dateRange: next === 'any' ? '' : next });
           }}
         >
-          {['any', 'last_year', 'last_5_years'].map(val => (
-            <ToggleGroupItem key={val} value={val} className="ee-filter-chip">
-              {val === 'any'
-                ? ('Any time')
-                : val === 'last_year'
-                  ? ('Last year')
-                  : ('Last 5 years')}
-            </ToggleGroupItem>
-          ))}
+          {dateItems.map(item => <ToggleGroupItem key={item.value} value={item.value} className="ee-filter-chip">{item.label}</ToggleGroupItem>)}
         </ToggleGroup>
       </div>
       <div className="ee-filter-section">
@@ -2319,6 +2308,66 @@ export default function EntityExplorer({
       </Button>
     </div>
     </>
+  );
+
+  // On a desktop each filter is its own short list in the toolbar, applied as it is chosen;
+  // a phone keeps the sheet above.
+  const areaItems = [{ value: 'all', label: 'All areas' }, ...facetAreas.map(area => ({ value: area.key, label: area.label }))];
+  const showFilterBar = activeTab === 'papers' && !isPhone && !publicMode;
+  const filterBar = (
+    <div className="ee-filter-bar" role="group" aria-label={'Filters'}>
+      <Select items={areaItems} value={filters.category || 'all'} onValueChange={(next) => { if (next) setFilters({ ...filters, category: next === 'all' ? '' : next }); }}>
+        <SelectTrigger size="sm" className="ee-filter-select" aria-label={'Area'}><SelectValue /></SelectTrigger>
+        <SelectContent alignItemWithTrigger={false} className="ee-area-list">
+          <SelectItem value="all"><span className="ee-facet-dot" aria-hidden="true" />{'All areas'}</SelectItem>
+          {facetAreas.map(area => (
+            <SelectItem key={area.key} value={area.key} style={{ '--area-accent': area.accent }}>
+              <span className="ee-facet-dot" aria-hidden="true" />
+              {area.label}
+              {areaCounts && <span className="ee-facet-count">{`${area.count.toLocaleString(locale)}${hasMore ? '+' : ''}`}</span>}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select items={sortItems} value={sortBy} onValueChange={(next) => { if (next) setSortBy(next); }}>
+        <SelectTrigger size="sm" className="ee-filter-select" aria-label={'Sort by'}><SelectValue /></SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>
+          {sortItems.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Select items={dateItems} value={filters.dateRange || 'any'} onValueChange={(next) => { if (next) setFilters({ ...filters, dateRange: next === 'any' ? '' : next }); }}>
+        <SelectTrigger size="sm" className="ee-filter-select" aria-label={'Published'}><SelectValue /></SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>
+          {dateItems.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Label className="ee-toggle-label">
+        <Switch checked={filters.peerReviewed} onCheckedChange={(checked) => setFilters({ ...filters, peerReviewed: checked })} />
+        {'Peer-reviewed only'}
+      </Label>
+    </div>
+  );
+
+  // One choice of two, so a single-select ToggleGroup: Base UI marks the pressed one and
+  // moves between them on the arrow keys. The open list cannot be un-chosen, so an empty
+  // value is ignored. It heads the list, under the search and the filters.
+  const listTabs = (
+          <ToggleGroup
+            ref={segRef}
+            className="ee-seg"
+            aria-label={'List'}
+            value={[activeTab]}
+            onValueChange={([next]) => { if (next) openTab(next); }}
+          >
+            <span className="ee-seg-pill" aria-hidden="true" />
+            <ToggleGroupItem value="papers">
+              {'Papers'}
+              <span className="ee-list-count" aria-hidden={shownCountLabel ? undefined : true}>{shownCountLabel || '–'}</span>
+            </ToggleGroupItem>
+            {hasAuthorsTab(type, entity) && (
+              <ToggleGroupItem value="authors">{'Authors'}</ToggleGroupItem>
+            )}
+          </ToggleGroup>
   );
 
   return (
@@ -2358,8 +2407,13 @@ export default function EntityExplorer({
               </motion.div>
               <AnimatePresence>
                 {heroImage && (
-                  <motion.div
+                  <motion.a
                     key={heroImage}
+                    href={hasLoadedWikiImage ? visibleWikiInfo?.imageSourceUrl : undefined}
+                    aria-hidden={!hasLoadedWikiImage}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={visibleWikiInfo?.imageSourceUrl ? `Image source for ${entityDisplayName} on Wikimedia Commons` : undefined}
                     initial={{ opacity: 0, scale: 0.96 }}
                     animate={{ opacity: hasLoadedWikiImage ? 1 : 0, scale: hasLoadedWikiImage ? 1 : 0.96 }}
                     exit={{ opacity: 0, scale: 0.97 }}
@@ -2373,7 +2427,7 @@ export default function EntityExplorer({
                       onLoad={() => setLoadedWikiImageUrl(heroImage)}
                       onError={() => setLoadedWikiImageUrl('')}
                     />
-                  </motion.div>
+                  </motion.a>
                 )}
               </AnimatePresence>
             </div>
@@ -2538,26 +2592,7 @@ export default function EntityExplorer({
 
       {/* Sticky Toolbar Wrapper */}
       <div className="explorer-toolbar-wrapper">
-        <div className="explorer-toolbar">
-          {/* One choice of two, so a single-select ToggleGroup: Base UI marks
-              the pressed one and moves between them on the arrow keys. The
-              open list cannot be un-chosen, so an empty value is ignored. */}
-          <ToggleGroup
-            ref={segRef}
-            className="ee-seg"
-            aria-label={'List'}
-            value={[activeTab]}
-            onValueChange={([next]) => { if (next) openTab(next); }}
-          >
-            <span className="ee-seg-pill" aria-hidden="true" />
-            <ToggleGroupItem value="papers">
-              {'Papers'}
-              <span className="ee-list-count" aria-hidden={shownCountLabel ? undefined : true}>{shownCountLabel || '–'}</span>
-            </ToggleGroupItem>
-            {hasAuthorsTab(type, entity) && (
-              <ToggleGroupItem value="authors">{'Authors'}</ToggleGroupItem>
-            )}
-          </ToggleGroup>
+        <div className="explorer-toolbar explorer-toolbar--list">
           {/* A visitor sees the search — it is part of what an account opens —
               but searching two preview rows would answer "nothing matches" to
               almost everything. It used to be a read-only text field that
@@ -2592,7 +2627,7 @@ export default function EntityExplorer({
                 )}
               </>
             )}
-            {activeTab === 'papers' && (
+            {activeTab === 'papers' && (isPhone || publicMode) && (
               <>
                 <span className="explorer-search-rule" aria-hidden="true" />
                 <Button
@@ -2607,8 +2642,8 @@ export default function EntityExplorer({
               </>
             )}
           </div>
-          </div>
-          {activeTab === 'papers' && activeFilterChips.length > 0 && (
+          {showFilterBar && filterBar}
+          {activeTab === 'papers' && isPhone && activeFilterChips.length > 0 && (
             <div className="ee-chips">
               {activeFilterChips.map(chip => (
                 <Button key={chip.key} variant="outline" size="sm" className="ee-chip" onClick={chip.clear} aria-label={`Remove filter: ${chip.label}`}>
@@ -2618,6 +2653,8 @@ export default function EntityExplorer({
               ))}
             </div>
           )}
+          {listTabs}
+          </div>
         </div>
 
       <div className="explorer-content">
@@ -2837,7 +2874,7 @@ export default function EntityExplorer({
       {/* Filter drawer — a Sheet: a positioned modal Dialog (focus trap,
           Escape, restore, `aria-modal`) that slides in from the right and
           waits for its own exit before unmounting. The title names it. */}
-      {isPhone ? (
+      {isPhone && (
         <Drawer open={showFilters} onOpenChange={setShowFilters}>
           <DrawerContent className="pc-share-sheet ee-filter-sheet">
             <DrawerHandle />
@@ -2847,27 +2884,6 @@ export default function EntityExplorer({
             {filterControls}
           </DrawerContent>
         </Drawer>
-      ) : (
-        <Sheet open={showFilters} onOpenChange={setShowFilters}>
-          <SheetContent
-            side="right"
-            className="ee-filter-drawer"
-            overlayClassName="ee-filter-backdrop"
-            showClose={false}
-          >
-                <div className="ee-filter-header">
-                  <SheetTitle render={<h3 />}><SlidersHorizontal size={18}/> {'Filters'}</SheetTitle>
-                  <SheetClose
-                    render={<Button variant="ghost" size="icon" />}
-                    aria-label={'Close filters'}
-                    title={'Close'}
-                  >
-                    <X size={20}/>
-                  </SheetClose>
-                </div>
-                {filterControls}
-          </SheetContent>
-        </Sheet>
       )}
 
       {/* Paper Card Overlay — the shared takeover, so the explorer and search

@@ -124,7 +124,7 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
  */
 export const MAX_NOTE_LENGTH = 1_200;
 
-export const MAX_QUOTE_LENGTH = 400;
+export const MAX_QUOTE_LENGTH = 1_200;
 export const FULL_TEXT_LEVEL = 'full-text';
 const LEVELS = ['beginner', 'university', 'researcher', FULL_TEXT_LEVEL];
 export const HIGHLIGHT_COLORS = ['yellow', 'teal', 'sky', 'violet', 'rose'] as const;

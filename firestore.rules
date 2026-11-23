@@ -227,7 +227,7 @@ service cloud.firestore {
         && (!('readingPreferences' in request.resource.data)
           || request.resource.data.readingPreferences is map
             && request.resource.data.readingPreferences.keys().hasOnly([
-              'aiExplanationLevel', 'language', 'languagePreferenceSet'
+              'aiExplanationLevel', 'language', 'languagePreferenceSet', 'readAloudFromPosition'
             ])
             && (!('aiExplanationLevel' in request.resource.data.readingPreferences)
               || request.resource.data.readingPreferences.aiExplanationLevel in [
@@ -236,7 +236,9 @@ service cloud.firestore {
             && (!('language' in request.resource.data.readingPreferences)
               || request.resource.data.readingPreferences.language in ['es', 'en'])
             && (!('languagePreferenceSet' in request.resource.data.readingPreferences)
-              || request.resource.data.readingPreferences.languagePreferenceSet is bool))
+              || request.resource.data.readingPreferences.languagePreferenceSet is bool)
+            && (!('readAloudFromPosition' in request.resource.data.readingPreferences)
+              || request.resource.data.readingPreferences.readAloudFromPosition is bool))
         && (!('profilePhoto' in request.resource.data)
           || validString(request.resource.data.profilePhoto, 280000))
         && (!('emailDigestOptIn' in request.resource.data)
@@ -577,7 +579,7 @@ service cloud.firestore {
             'color', 'occurrence', 'paperTitle', 'createdAt'
           ])
           && validNonEmptyString(request.resource.data.paperId, 400)
-          && validString(request.resource.data.quote, 400)
+          && validString(request.resource.data.quote, 1200)
           && request.resource.data.quote.size() >= 8
           && validNonEmptyString(request.resource.data.sectionId, 40)
           && request.resource.data.createdAt == request.time
@@ -617,7 +619,7 @@ service cloud.firestore {
             || (request.resource.data.endParagraphIndex is int
               && request.resource.data.endParagraphIndex > request.resource.data.paragraphIndex
               && request.resource.data.endParagraphIndex <= 100
-              && validNonEmptyString(request.resource.data.endQuote, 400)))
+              && validNonEmptyString(request.resource.data.endQuote, 1200)))
           && (!('endQuote' in request.resource.data)
             || 'endParagraphIndex' in request.resource.data);
       }

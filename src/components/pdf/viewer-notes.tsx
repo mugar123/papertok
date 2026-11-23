@@ -2,7 +2,8 @@ import type { ReactNode, SyntheticEvent } from 'react';
 import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
-import { Highlighter, Sparkle, Trash, X } from '@phosphor-icons/react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { ChatCircleDots, Highlighter, Sparkle, Trash, X } from '@phosphor-icons/react';
 import { Popover } from '../ui/popover.tsx';
 import { Button } from '../ui/button.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
@@ -13,6 +14,8 @@ import { HIGHLIGHT_COLORS, MAX_NOTE_LENGTH, highlightColor, passageQuote } from 
 import ScientificText from '../scientific-text.ts';
 import ThinkingDots from '../reader/thinking-dots.tsx';
 import { SAVE_ERROR } from './use-viewer-notes.ts';
+import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
+import '../ui/tag.css';
 import './viewer-notes.css';
 
 const COLOR_NAMES: Record<HighlightColor, string> = { yellow: 'Yellow', teal: 'Teal', sky: 'Blue', violet: 'Violet', rose: 'Rose' };
@@ -25,7 +28,8 @@ type PassageEditorProps = {
   anchor: { top: number; bottom: number; left: number; right: number };
   busy: boolean;
   sheet: boolean;
-  ask?: { label: string; price: ReactNode; disabled: boolean; title?: string; onAsk: () => void };
+  /** With it, the editor switches between a note and a question for the AI. */
+  ask?: { price: ReactNode; disabled: boolean; title?: string; onAsk: (question: string) => void };
   onSave: (note: string, color: HighlightColor) => void;
   onCancel: () => void;
 };
@@ -33,6 +37,8 @@ type PassageEditorProps = {
 export function PassageEditor({ quote, anchor, busy, error, initialNote, returnFocus, sheet, ask, onSave, onCancel }: PassageEditorProps) {
   const [draft, setDraft] = useState(initialNote);
   const [color, setColor] = useState<HighlightColor>('yellow');
+  const [mode, setMode] = useState<'note' | 'ask'>('note');
+  const asking = Boolean(ask) && mode === 'ask';
   const noteId = useId();
   const errorId = useId();
   const field = useRef<HTMLTextAreaElement | null>(null);
@@ -47,14 +53,17 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
   const note = draft.trim();
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
-    if (!busy) onSave(note, color);
+    if (busy) return;
+    // An empty question asks the AI to explain the passage.
+    if (asking) { if (!ask?.disabled) ask?.onAsk(note); }
+    else onSave(note, color);
   };
   const virtual = useMemo(() => ({
     getBoundingClientRect: () => DOMRect.fromRect({ x: anchor.left, y: anchor.top, width: anchor.right - anchor.left, height: anchor.bottom - anchor.top }),
   }), [anchor]);
   const form = (
     <form onSubmit={submit}>
-      <label htmlFor={noteId} className="visually-hidden">Note (optional)</label>
+      <label htmlFor={noteId} className="visually-hidden">{asking ? 'Question for the AI (optional)' : 'Note (optional)'}</label>
       <Textarea
         id={noteId}
         ref={mountField}
@@ -62,13 +71,30 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
         className="vn-pop-input"
         value={draft}
         maxLength={MAX_NOTE_LENGTH}
-        placeholder="Add a note (optional)"
+        placeholder={ask ? 'Ask AI a question, or save a note.' : 'Add a note (optional)'}
         aria-describedby={error ? errorId : undefined}
         onChange={event => setDraft(event.target.value)}
         onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !sheet) submit(event); }}
       />
       {error && <p id={errorId} className="vn-pop-error">{SAVE_ERROR}</p>}
       <div className="vn-pop-bar">
+        {ask && (
+          <Tabs value={mode} onValueChange={(next) => { setMode(next === 'ask' ? 'ask' : 'note'); field.current?.focus(); }} className="vn-pop-modes">
+            <TabsList variant="pill" aria-label="Note or question">
+              <TabsTrigger value="ask" className="vn-pop-mode">Ask AI</TabsTrigger>
+              <TabsTrigger value="note" className="vn-pop-mode">Note</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+        <div className="vn-pop-actions">
+        {/* The day's AI uses, beside the button that spends one. */}
+        {asking && ask?.price && (
+          <span className="rd-tag rd-tag--ai rd-uses" title={ask.title}>
+            <Sparkle size={12} aria-hidden="true" />
+            {ask.price}
+          </span>
+        )}
+        {!asking && (
         <fieldset className="vn-swatches">
           <legend className="visually-hidden">Highlight colour</legend>
           {HIGHLIGHT_COLORS.map(option => (
@@ -78,23 +104,22 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
             </label>
           ))}
         </fieldset>
-        {sheet
-          ? <Button type="submit" disabled={busy}>{note ? 'Save note' : 'Highlight'}</Button>
-          : (
-            <Button type="submit" size="icon-sm" disabled={busy} aria-label={note ? 'Save highlight with note' : 'Save highlight'} title="Save (Enter)">
-              <Highlighter size={16} aria-hidden="true" />
+        )}
+        {asking
+          ? (
+            <Button type="submit" size="icon-sm" className="vn-pop-send" disabled={busy || ask?.disabled} focusableWhenDisabled aria-label={note ? 'Ask AI' : 'Explain this passage'} title={ask?.title ?? (note ? 'Ask (Enter)' : 'Explain (Enter)')}>
+              <ChatCircleDots size={16} aria-hidden="true" />
             </Button>
-          )}
-      </div>
-      {ask && (
-        <div className="vn-pop-more">
-          <Button type="button" variant="ghost" className="vn-pop-ask" disabled={ask.disabled || busy} focusableWhenDisabled title={ask.title} onClick={ask.onAsk}>
-            <Sparkle size={15} aria-hidden="true" />
-            {ask.label}
-            {ask.price && <small className="vn-pop-price">{ask.price}</small>}
-          </Button>
+          )
+          : sheet
+            ? <Button type="submit" disabled={busy}>{note ? 'Save note' : 'Highlight'}</Button>
+            : (
+              <Button type="submit" size="icon-sm" className="vn-pop-send" disabled={busy} aria-label={note ? 'Save highlight with note' : 'Save highlight'} title="Save (Enter)">
+                <Highlighter size={16} aria-hidden="true" />
+              </Button>
+            )}
         </div>
-      )}
+      </div>
     </form>
   );
   if (sheet) {
@@ -110,10 +135,11 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
     );
   }
   return (
-    <Popover open onOpenChange={(next) => { if (!next) onCancel(); }}>
+    // A press on a passage handle adjusts the passage; it is not a press outside the editor.
+    <Popover open onOpenChange={(next, details) => { if (!next && !(details.event?.target instanceof Element && details.event.target.closest('.vn-handle'))) onCancel(); }}>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Positioner anchor={virtual} side="bottom" align="start" sideOffset={8} collisionPadding={10} className="vn-pop-positioner">
-          <PopoverPrimitive.Popup className="vn-pop" aria-label="Highlight this passage" initialFocus={field} finalFocus={() => returnFocus ?? true}>
+          <PopoverPrimitive.Popup className="vn-pop" data-ask={ask ? '' : undefined} aria-label="Highlight this passage" initialFocus={field} finalFocus={() => returnFocus ?? true}>
             <PopoverPrimitive.Description className="visually-hidden">{quote}</PopoverPrimitive.Description>
             {form}
           </PopoverPrimitive.Popup>
@@ -123,10 +149,11 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
   );
 }
 
-export function NotesSidebar({ id, open, passages, withAi = false, thinking = null, onGoTo, onRemove, onClose }: {
+export function NotesSidebar({ id, open, passages, active = null, withAi = false, thinking = null, onGoTo, onRemove, onClose }: {
   id: string;
   open: boolean;
   passages: PassageAnnotation[];
+  active?: string | null;
   withAi?: boolean;
   thinking?: { at: number; label: string } | null;
   onGoTo?: (passage: PassageAnnotation) => void;
@@ -138,39 +165,52 @@ export function NotesSidebar({ id, open, passages, withAi = false, thinking = nu
   const aiOnly = withAi && view === 'ai';
   const shown = aiOnly ? passages.filter(passage => passage.kind === 'ai') : passages;
   const aiCount = withAi ? passages.filter(passage => passage.kind === 'ai').length : 0;
+  // Focus moves to the next entry's delete, else the previous, else the title. Found by id:
+  // an entry still playing its exit is in the DOM, so a count of rows would land on it.
   const remove = (index: number) => {
-    const rows = list.current?.querySelectorAll<HTMLElement>('.vn-delete');
-    (rows?.[index + 1] ?? rows?.[index - 1] ?? list.current?.querySelector<HTMLElement>('.vn-side-title'))?.focus();
+    const next = shown[index + 1] ?? shown[index - 1];
+    (next
+      ? list.current?.querySelector<HTMLElement>(`[data-passage-id="${CSS.escape(next.id)}"] .vn-delete`)
+      : list.current?.querySelector<HTMLElement>('.vn-side-title'))?.focus();
     onRemove(shown[index].id);
   };
+  const reduceMotion = useReducedMotion();
+  // An entry opens and closes its height, so the list never jumps. Overflow is clipped only
+  // while it moves, so a focus ring at the edge of a settled entry is not cut off.
+  const row = {
+    initial: { height: 0, opacity: 0, overflow: 'hidden' },
+    animate: { height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } },
+    exit: { height: 0, opacity: 0, overflow: 'hidden', pointerEvents: 'none' },
+    transition: reduceMotion ? { duration: 0 } : { duration: MOTION_BASE_S, ease: EASE_OUT },
+  };
+  useEffect(() => {
+    if (open && active) list.current?.querySelector(`[data-passage-id="${CSS.escape(active)}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [open, active]);
   const waiting = useRef<HTMLLIElement | null>(null);
   useEffect(() => {
     if (thinking) waiting.current?.scrollIntoView({ block: 'nearest' });
   }, [thinking]);
   const items = shown.map((passage, index) => (
-    <li key={passage.id} className="vn-item">
-      <div className="vn-entry">
-        <blockquote className="vn-quote" data-color={highlightColor(passage)} lang={passage.language}>
-          {onGoTo
-            ? <button type="button" className="vn-goto" title="Go to the passage" onClick={() => onGoTo(passage)}><ScientificText>{passageQuote(passage)}</ScientificText></button>
-            : <ScientificText>{passageQuote(passage)}</ScientificText>}
-        </blockquote>
-        <Button variant="ghost" size="icon-sm" className="vn-delete" aria-label={`Delete highlight “${passage.quote}”`} title="Delete" onClick={() => remove(index)}>
-          <Trash size={15} aria-hidden="true" />
-        </Button>
+    <motion.li key={passage.id} data-passage-id={passage.id} aria-current={passage.id === active || undefined} {...row}>
+      <div className="vn-item" data-active={passage.id === active ? '' : undefined}>
+        <div className="vn-entry">
+          <blockquote className="vn-quote" data-color={highlightColor(passage)} lang={passage.language}>
+            {onGoTo
+              ? <button type="button" className="vn-goto" title="Go to the passage" onClick={() => onGoTo(passage)}><ScientificText>{passageQuote(passage)}</ScientificText></button>
+              : <ScientificText>{passageQuote(passage)}</ScientificText>}
+          </blockquote>
+          <Button variant="ghost" size="icon-sm" className="vn-delete" aria-label={`Delete highlight “${passage.quote}”`} title="Delete" onClick={() => remove(index)}>
+            <Trash size={15} aria-hidden="true" />
+          </Button>
+        </div>
+        {passage.note && (
+          <p className="vn-note" lang={passage.kind === 'ai' ? passage.language : undefined}>
+            {passage.kind === 'ai' && <span className="visually-hidden">AI: </span>}
+            {passage.note}
+          </p>
+        )}
       </div>
-      {passage.note && (
-        <p className="vn-note" lang={passage.kind === 'ai' ? passage.language : undefined}>
-          {passage.kind === 'ai' && (
-            <span className="vn-origin" title="Written by the AI">
-              <Sparkle size={13} aria-hidden="true" />
-              <span className="visually-hidden">AI: </span>
-            </span>
-          )}
-          {passage.note}
-        </p>
-      )}
-    </li>
+    </motion.li>
   ));
   if (thinking) {
     const at = aiOnly ? passages.slice(0, thinking.at).filter(passage => passage.kind === 'ai').length : thinking.at;
@@ -186,8 +226,13 @@ export function NotesSidebar({ id, open, passages, withAi = false, thinking = nu
       <X size={16} aria-hidden="true" />
     </Button>
   );
-  const body = items.length > 0 ? <ul className="vn-list">{items}</ul>
-    : !aiOnly && <p className="vn-empty">Select text in the paper to highlight it or add a note.</p>;
+  // The list stays mounted even when empty, so the first entry still animates in and the last out.
+  const body = (
+    <>
+      <ul className="vn-list"><AnimatePresence initial={false}>{items}</AnimatePresence></ul>
+      {items.length === 0 && !aiOnly && <p className="vn-empty">Select text in the paper to highlight it or add a note.</p>}
+    </>
+  );
   return (
     <aside id={id} className="vn-side" data-hidden={open ? undefined : ''} inert={!open} aria-labelledby={`${id}-title`} ref={list}>
       {withAi ? (

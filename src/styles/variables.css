@@ -219,6 +219,7 @@
   --space-12: 3rem;
   --space-16: 4rem;
   --space-24: 6rem;
+  --page-width: 1600px;
 
   /* ── Border Radius ──
      Near-square. The design is a printed page, and print has corners: soft
@@ -565,33 +566,6 @@
 @keyframes slideOutToBottom {
   from { transform: translateY(0); }
   to { transform: translateY(100%); }
-}
-/* The other three edges, for ui/sheet.jsx. Same shape as the bottom pair:
-   a sheet is pinned with `inset-*`, never centred with `translate`, so a
-   keyframe on `transform` is safe here where it is not for the dialog. */
-@keyframes slideInFromRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-@keyframes slideOutToRight {
-  from { transform: translateX(0); }
-  to { transform: translateX(100%); }
-}
-@keyframes slideInFromLeft {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
-}
-@keyframes slideOutToLeft {
-  from { transform: translateX(0); }
-  to { transform: translateX(-100%); }
-}
-@keyframes slideInFromTop {
-  from { transform: translateY(-100%); }
-  to { transform: translateY(0); }
-}
-@keyframes slideOutToTop {
-  from { transform: translateY(0); }
-  to { transform: translateY(-100%); }
 }
 
 @keyframes spin {

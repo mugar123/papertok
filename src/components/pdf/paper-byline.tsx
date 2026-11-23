@@ -1,14 +1,15 @@
 import type { Paper, PaperAuthor } from '../../models/paper.ts';
 import type { OpenAlexAuthor } from '../../services/adapters/open-alex-types.ts';
 import type { WikiInfo } from '../../services/wiki-service.ts';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getEntityById } from '../../services/open-alex-service.ts';
 import { loadEntityWikiInfo } from '../../services/wiki-service.ts';
 import { authorExplorerPath, openAlexAuthorId } from '../../utils/explorer-paths.ts';
 import { explorerFollowEntity } from '../explorer/explorer-follow-entity.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
-import { FollowToggle } from '../ui/follow-toggle.tsx';
+import { Check, Plus } from '@phosphor-icons/react';
+import { Button } from '../ui/button.tsx';
 import { PreviewCard, PreviewCardContent, PreviewCardTrigger } from '../ui/preview-card.tsx';
 import ScientificText from '../scientific-text.ts';
 import { NewTabHint } from './new-tab-hint.tsx';
@@ -32,7 +33,9 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
           ? <img className="ft-author-photo" src={profile.wiki.thumbnail} alt="" referrerPolicy="no-referrer" />
           : <span className="ft-author-photo" data-loading={profile === undefined || undefined} aria-hidden="true">{name.charAt(0).toUpperCase()}</span>}
         <div>
-          <p className="ft-author-name">{name}</p>
+          <p className="ft-author-name">
+            {path ? <a href={path} target="_blank" rel="noopener noreferrer">{name}<NewTabHint /></a> : name}
+          </p>
           {/* The profile on its way: where its institution and its figures will be. */}
           {profile === undefined && (
             <>
@@ -44,43 +47,75 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
           {institution && <p className="ft-author-place" title={institution}>{institution}</p>}
           {typeof entity?.works_count === 'number' && <p className="ft-author-stats">{compactCount.format(entity.works_count)} works</p>}
         </div>
-        {follow && (
-          <FollowToggle
-            pressed={isFollowing(follow)}
-            disabled={isFollowPending(follow)}
-            onClick={() => { toggleFollow(follow).catch(console.error); }}
-            followLabel={`Follow ${name}`}
-            followingLabel={`Following ${name}`}
-          />
-        )}
       </div>
       {profile === null && <p className="ft-author-bio" role="status">Could not load this profile.</p>}
-      {profile?.wiki && <p className="ft-author-bio">{profile.wiki.extract}</p>}
-      <div className="ft-author-actions">
-        <span className="ft-author-links">
-          {path && <a href={path} target="_blank" rel="noopener noreferrer">Open profile<NewTabHint /></a>}
-        </span>
-      </div>
+      {/* Cut at three lines; the rest is on the profile, which "Read more" opens. */}
+      {profile?.wiki?.source === 'wikipedia' && (
+        <div className="ft-author-about">
+          <p className="ft-author-bio">{profile.wiki.extract}</p>
+          {path && <a className="ft-author-more" href={path} target="_blank" rel="noopener noreferrer">Read more<span className="visually-hidden"> about {name}</span><NewTabHint /></a>}
+        </div>
+      )}
+      {profile?.wiki?.imageSourceUrl && (
+        <a className="ft-author-image-source" href={profile.wiki.imageSourceUrl} target="_blank" rel="noopener noreferrer">
+          Photo on Wikimedia Commons<NewTabHint />
+        </a>
+      )}
+      {follow && (
+        // The design system's primary button, full width; pressed while followed.
+        <Button
+          className="w-full"
+          variant={isFollowing(follow) ? 'outline' : 'default'}
+          aria-pressed={isFollowing(follow)}
+          disabled={isFollowPending(follow)}
+          onClick={() => { toggleFollow(follow).catch(console.error); }}
+        >
+          {isFollowing(follow) ? <Check data-icon="inline-start" aria-hidden="true" /> : <Plus data-icon="inline-start" aria-hidden="true" />}
+          {isFollowing(follow) ? 'Following' : 'Follow'}
+          <span className="visually-hidden"> {name}</span>
+        </Button>
+      )}
     </>
   );
 }
 
-function AuthorName({ author }: { author: PaperAuthor }) {
+function loadProfile(id: string): Promise<Profile | null> {
+  return getEntityById('author', id)
+    .then(async (entity) => {
+      const wiki = entity ? await loadEntityWikiInfo({ entity }).catch(() => null) : null;
+      // The photo too, so the card opens with it rather than drawing it in.
+      if (wiki?.thumbnail) new Image().src = wiki.thumbnail;
+      return { author: entity, wiki };
+    })
+    .catch(() => null);
+}
+
+// ponytail: only the first authors are preloaded, so a 300-author paper does not fire 300
+// profile requests; the rest still load on hover.
+const PRELOAD = 12;
+
+function AuthorName({ author, paper, preload }: { author: PaperAuthor; paper: Paper; preload: boolean }) {
   const id = openAlexAuthorId(author);
+  const path = authorExplorerPath(author, paper);
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
-  if (!id) return <span className="ft-author">{author.name}</span>;
-  const load = (open: boolean) => {
-    if (!open || profile) return;
-    void getEntityById('author', id)
-      .then(async entity => {
-        const wiki = entity ? await loadEntityWikiInfo({ entity }).catch(() => null) : null;
-        setProfile({ author: entity, wiki });
-      })
-      .catch(() => setProfile(null));
-  };
+  const requested = useRef(false);
+  const load = useCallback(() => {
+    if (!id || requested.current) return;
+    requested.current = true;
+    void loadProfile(id).then(setProfile);
+  }, [id]);
+  // Preloaded once the browser is idle, so the card is ready before the first hover.
+  useEffect(() => {
+    if (!preload) return undefined;
+    const idle = window.requestIdleCallback ?? ((run: () => void) => window.setTimeout(run, 200));
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+    const handle = idle(load);
+    return () => cancel(handle);
+  }, [load, preload]);
+  if (!id) return <a className="ft-author" href={path} target="_blank" rel="noopener noreferrer">{author.name}<NewTabHint /></a>;
   return (
-    <PreviewCard onOpenChange={load}>
-      <PreviewCardTrigger className="ft-author" href={authorExplorerPath(author, null)} target="_blank" rel="noopener noreferrer" delay={400}>
+    <PreviewCard onOpenChange={(open) => { if (open) load(); }}>
+      <PreviewCardTrigger className="ft-author" href={path} target="_blank" rel="noopener noreferrer" delay={400}>
         {author.name}
       </PreviewCardTrigger>
       <PreviewCardContent className="ft-author-card">
@@ -103,7 +138,7 @@ export function PaperByline({ paper }: { paper: Paper }) {
             const place = author.affiliation?.trim();
             return (
               <span key={index} className="ft-author-item">
-                <AuthorName author={author} />
+                <AuthorName author={author} paper={paper} preload={index < PRELOAD} />
                 {numbered && place && <sup>{affiliations.indexOf(place) + 1}</sup>}
               </span>
             );

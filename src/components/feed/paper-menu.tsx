@@ -1,9 +1,8 @@
-import type { Icon } from '@phosphor-icons/react';
-import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactElement, ReactNode, SyntheticEvent } from 'react';
+import type { ButtonHTMLAttributes, ComponentType, CSSProperties, MouseEvent, ReactElement, ReactNode, SyntheticEvent } from 'react';
 import type { ExternalToast } from 'sonner';
 import type { Shared } from './share-targets.ts';
 
-export interface PaperMenuAction { id: string; label: string; hint: string; Icon: Icon; onSelect: (event: MouseEvent) => void }
+export interface PaperMenuAction { id: string; label: string; hint: string; Icon: ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' }>; onSelect: (event: MouseEvent) => void }
 /** `notInterestedHint`: the card's feed's own hint under Not interested (feed-dismissal.ts); without one, the account's. */
 export interface ReaderCard { about: ReactNode; links: ReactNode; isRead: boolean; shareUrl: string; notInterested: () => void; notInterestedHint?: string; toggleRead: () => void }
 export interface ReaderMenu { snapshot: () => ReaderCard; subscribe: (onChange: () => void) => () => void }

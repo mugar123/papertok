@@ -13,6 +13,7 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
+import { READ_ALOUD_PATH, handleReadAloud } from './read-aloud-tts.ts';
 import { handlePaperTranslation } from './ai-translation.ts';
 import {
   EmailNotificationError,
@@ -444,6 +445,27 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
           ...(knownError && error.quota ? { quota: error.quota } : {}),
         },
         status,
+        { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+      );
+    }
+  }
+  if (url.pathname === READ_ALOUD_PATH) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    try {
+      const { body, type } = await handleReadAloud(request, env, context ? work => context.waitUntil(work) : undefined);
+      return new Response(body, {
+        headers: { ...corsHeaders(origin, env), 'content-type': type, 'cache-control': 'private, no-store' },
+      });
+    } catch (error) {
+      captureWorkerException(error);
+      const knownError = error instanceof AIExplanationError;
+      return json(
+        {
+          code: knownError ? error.code : 'AI_UNAVAILABLE',
+          ...(knownError && error.quota ? { quota: error.quota } : {}),
+        },
+        knownError ? error.status : 502,
         { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
       );
     }

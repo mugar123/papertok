@@ -356,7 +356,7 @@ const QUOTE_TRIES = 8;
  * from the selection, a slice may start at each opener met before the first
  * closer, and end after each closer met before the first opener. A slice past
  * that brace carries a brace cut from its partner, or a wrapper that paints
- * nothing such as `\emph{}`: sixty of those filled the 400 characters a quote
+ * nothing such as `\emph{}`: enough of those filled the characters a quote
  * is stored at and left no words to mark. The slices are tried widest first, and each try normalizes the whole slice:
  * past `QUOTE_TRIES` the bare slice is kept, so a text that makes many of them
  * fail cannot stall the reader's selection handler.

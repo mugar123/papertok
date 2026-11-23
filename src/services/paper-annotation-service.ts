@@ -62,9 +62,10 @@ export function toAnnotationError(error: unknown, { cancelled = false } = {}) {
 export async function annotatePassage(paper: Partial<Paper> | null | undefined, {
   quote,
   context = '',
+  question = '',
   level = 'university',
   signal,
-}: { quote?: string; context?: string; level?: string; language?: string; signal?: AbortSignal } = {}): Promise<{ note: string; model: string; remainingUses: number|null; }> {
+}: { quote?: string; context?: string; question?: string; level?: string; language?: string; signal?: AbortSignal } = {}): Promise<{ note: string; model: string; remainingUses: number|null; }> {
   if (!canAnnotatePassage(quote)) throw new PaperAnnotationError('AI_INVALID_REQUEST');
   // A signal that already fired will never fire again, so the listener below
   // would never run and the POST would spend one of the day's uses on an answer
@@ -91,6 +92,8 @@ export async function annotatePassage(paper: Partial<Paper> | null | undefined, 
         // The paragraph the passage came from. Without it the model is asked to
         // explain a fragment whose subject is in the sentence before it.
         context: String(context || '').slice(0, 4_000),
+        // What the reader asked about the passage; without it the passage is explained.
+        ...(question.trim() ? { question: question.trim().slice(0, 500) } : {}),
         level,
         language: 'en',
       }),

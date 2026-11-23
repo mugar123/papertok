@@ -1,52 +1,57 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleNotch } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { toastError } from '../ui/toast.ts';
 import type { Paper } from '../../models/paper.ts';
+import type { PaperMenuAction } from '../feed/paper-menu.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { usePageRestored } from '../../hooks/use-page-restored.ts';
 import { connectZotero, sendToZotero, zoteroCitation, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
-import { Button } from '../ui/button.tsx';
-
-/** A Z drawn on Phosphor's 256 grid with its regular stroke, so it sits among the page's icons. */
-export function ZoteroMark({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 256 256" fill="none" stroke="currentColor" strokeWidth={16} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M64 56h128L64 200h128" />
-    </svg>
-  );
-}
+import { ZoteroMark } from './zotero-mark.tsx';
 
 const sentDate = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' });
 
-/** Keyed by the paper and the account in the viewer, so each starts unchecked. */
-export default function ZoteroButton({ paper, uid }: { paper: Paper; uid: string }) {
+/** The action, plus what a button needs to draw it: a send under way, and whether it was sent before. */
+export type ZoteroAction = PaperMenuAction & { busy: boolean; sent: boolean };
+
+/**
+ * "Send to Zotero" for a signed-in reader: an entry of a card's options, or the
+ * reader's button. The account's Zotero status is asked for only once `wanted`
+ * (a card's menu open, or the button shown), so a feed of cards does not ask
+ * once per card; an unknown status still sends, and the send itself says
+ * whether Zotero is connected.
+ */
+export function useZoteroAction(paper: Paper, uid: string | null | undefined, wanted: boolean): ZoteroAction | null {
   const { trackEvent } = useAnalyticsConsent();
   const [status, setStatus] = useState<ZoteroStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  // A toast's Try again holds an older render's `busy`; this one is current.
+  const asked = useRef('');
+  // A toast's Try again holds an older render's state; this one is current.
   const working = useRef(false);
   // When Zotero said it may be asked again, after it answered busy.
   const busyUntil = useRef(0);
+  const key = uid && paper.id ? `${uid}:${paper.id}` : '';
 
   useEffect(() => {
+    if (!wanted || !key || asked.current === key) return undefined;
+    asked.current = key;
     let live = true;
-    // An unknown status leaves the button usable: the send itself says whether Zotero is connected.
     zoteroStatus(paper.id).then(next => { if (live) setStatus(next); }, () => {});
     return () => { live = false; };
-  }, [paper.id]);
+  }, [key, wanted, paper.id]);
 
   usePageRestored(() => {
     working.current = false;
     setBusy(false);
   });
 
+  if (!key || !uid) return null;
+
   async function connect() {
     working.current = true;
     setBusy(true);
     try {
-      await connectZotero(uid, zoteroCitation(paper));
+      await connectZotero(uid!, zoteroCitation(paper));
     } catch (error) {
       working.current = false;
       setBusy(false);
@@ -66,12 +71,14 @@ export default function ZoteroButton({ paper, uid }: { paper: Paper; uid: string
     if (status?.connected === false) { await connect(); return; }
     working.current = true;
     setBusy(true);
+    const sending = toast.loading('Sending to Zotero…');
     try {
       const { sentAt, highlights } = await sendToZotero(zoteroCitation(paper));
       setStatus({ connected: true, username: status?.username ?? null, sentAt });
       void trackEvent('zotero_send', { result: 'sent' });
-      toast.success(highlights ? `Sent to Zotero with ${highlights} ${highlights === 1 ? 'highlight' : 'highlights'}.` : 'Sent to Zotero.');
+      toast.success(highlights ? `Sent to Zotero with ${highlights} ${highlights === 1 ? 'highlight' : 'highlights'}.` : 'Sent to Zotero.', { id: sending });
     } catch (error) {
+      toast.dismiss(sending);
       void trackEvent('zotero_send', { result: 'failed' });
       const code = (error as { code?: string }).code;
       if (code === 'ZOTERO_NOT_CONNECTED') {
@@ -89,26 +96,10 @@ export default function ZoteroButton({ paper, uid }: { paper: Paper; uid: string
     }
   }
 
-  const label = status?.connected === false ? 'Connect Zotero and send this paper'
-    : status?.sentAt ? `Send to Zotero again (last sent ${sentDate.format(new Date(status.sentAt))})`
-      : 'Send to Zotero';
-
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={() => { void send(); }}
-      disabled={busy}
-      focusableWhenDisabled
-      aria-busy={busy || undefined}
-      aria-label={label}
-      title={label}
-      className="pdf-dock-zotero"
-      data-sent={status?.sentAt ? '' : undefined}
-    >
-      {busy
-        ? <CircleNotch size={18} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
-        : <ZoteroMark size={18} />}
-    </Button>
-  );
+  const [label, hint] = status?.connected === false
+    ? ['Connect Zotero', 'Then this paper goes to your library']
+    : status?.sentAt
+      ? ['Send to Zotero again', `Last sent ${sentDate.format(new Date(status.sentAt))}`]
+      : ['Send to Zotero', 'Adds it to your library, with your highlights'];
+  return { id: 'zotero', label, hint, Icon: ZoteroMark, onSelect: () => { void send(); }, busy, sent: Boolean(status?.sentAt) };
 }

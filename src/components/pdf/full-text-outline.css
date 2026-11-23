@@ -21,3 +21,66 @@
   .ft-outline-list a { display: flex; align-items: center; min-height: 44px; }
   .ft-outline-list .ft-outline-title { flex: 1; min-width: 0; }
 }
+
+/* The contents rail beside the text on a wide screen, in the viewer and the reader. */
+.ft-rail { display: none; }
+@media (min-width: 1024px) {
+  /* The rail is the contents where it shows, so the dock's contents button steps aside. */
+  .pdf-stage:has(> .ft-rail) .ft-outline-button { display: none; }
+  .ft-rail { position: absolute; inset-block: 0; left: var(--space-3); z-index: 2; display: flex; align-items: center; }
+  /* The rail spans the stage to centre its panel, but only the ticks and the
+     open panel answer the pointer. */
+  .ft-rail { pointer-events: none; }
+  .ft-rail-ticks, .ft-rail[data-open] .ft-rail-panel { pointer-events: auto; }
+}
+.ft-rail-ticks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 80vh;
+  padding: var(--space-3) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+}
+.ft-rail-ticks:focus-visible { outline: 2px solid var(--focus-ring); }
+.ft-rail-tick {
+  flex: none;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--text-tertiary);
+  opacity: 0.45;
+  transform-origin: left center;
+  transition: opacity 150ms ease, background-color 150ms ease, transform 200ms var(--ease-out-expo);
+}
+.ft-rail-tick[data-depth="0"] { width: 20px; }
+.ft-rail-tick[data-active] { background: var(--accent-primary); opacity: 1; transform: scaleX(1.2); }
+.ft-rail-panel {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 380px;
+  max-height: calc(100% - 2 * var(--space-8));
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-8px, -50%) scale(0.98);
+  transform-origin: left center;
+  transition: opacity 150ms linear, transform 180ms var(--ease-out-expo), visibility 0s 180ms;
+}
+.ft-rail[data-open] .ft-rail-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(0, -50%);
+  transition: opacity 150ms linear, transform 180ms var(--ease-out-expo), visibility 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft-rail-panel, .ft-rail[data-open] .ft-rail-panel { transform: translateY(-50%); }
+  .ft-rail-tick[data-active] { transform: none; }
+}
