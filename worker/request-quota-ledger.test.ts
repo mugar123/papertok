@@ -608,3 +608,81 @@ test('an immediate paced slot is refused once the ledger\'s clock is past its bo
   assert.equal(late.scope, 'pace');
   assert.equal((await reserve('b'.repeat(64), 5_600)).sendAt, 5_600);
 });
+
+// ENG-225: the paper harvest's shares of the OpenAlex day were ceilings on
+// the harvest only, so every other spender could take the day before the
+// harvest ran. The others are counted apart from the harvest's subjects.
+test('a reservation counted apart from some subjects stops at its percent of the ceiling whatever they spend, and a peek reports the rest', async () => {
+  const { read, harness } = dayLedger();
+  const harvest = { subjectKey: 'a'.repeat(64), subjectLimit: 30 };
+  const follows = { subjectKey: 'b'.repeat(64), subjectLimit: 10 };
+  // Half of the day's hundred for everything but the two subjects.
+  const apartFrom = { percent: 50, subjectKeys: [harvest.subjectKey, follows.subjectKey] };
+
+  assert.equal((await read({ action: 'reserve', amount: 50, apartFrom })).accepted, true);
+  const before = new Map(harness.values);
+  const refused = await read({ action: 'reserve', amount: 1, apartFrom, tally: 'essential.list' });
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'global');
+  assert.deepEqual(new Map([...harness.values].filter(([key]) => key !== 'tally')), before, 'a refusal spends nothing');
+  assert.deepEqual((await read({ action: 'peek' })).tally?.refused, { 'essential.list': 1 });
+
+  // The subjects spend their own units, which neither takes from the rest nor frees any of it.
+  assert.equal((await read({ action: 'reserve', amount: 30, percent: 90, ...harvest })).accepted, true);
+  assert.equal((await read({ action: 'reserve', amount: 10, percent: 90, ...follows })).accepted, true);
+  assert.equal((await read({ action: 'peek', apartFrom })).rest, 50);
+  assert.equal((await read({ action: 'peek' })).rest, undefined);
+  assert.equal((await read({ action: 'reserve', amount: 1, apartFrom })).accepted, false);
+  assert.equal(harness.values.get('global'), 90);
+
+  // A release naming the same request gives its units back to the rest.
+  assert.equal((await read({ action: 'release', amount: 5, apartFrom })).released, true);
+  assert.equal((await read({ action: 'peek', apartFrom })).rest, 45);
+  assert.equal((await read({ action: 'reserve', amount: 5, apartFrom })).accepted, true);
+});
+
+test('a malformed rest of the day is refused, not ignored', async () => {
+  const { call, harness } = dayLedger();
+  const key = 'a'.repeat(64);
+  const malformed: Array<Record<string, unknown>> = [
+    { action: 'reserve', apartFrom: { subjectKeys: [key] } },
+    { action: 'reserve', apartFrom: { percent: 0, subjectKeys: [key] } },
+    { action: 'reserve', apartFrom: { percent: 50 } },
+    { action: 'reserve', apartFrom: { percent: 50, subjectKeys: [] } },
+    { action: 'reserve', apartFrom: { percent: 50, subjectKeys: ['not a hash'] } },
+    { action: 'reserve', apartFrom: { percent: 50, subjectKeys: Array.from({ length: 5 }, () => key) } },
+    { action: 'reserve', apartFrom: { percent: 50, subjectKeys: [key, key] } },
+    { action: 'reserve', apartFrom: null },
+  ];
+  for (const body of malformed) {
+    const response = await call(body);
+    assert.equal(response.status, 400, JSON.stringify(body));
+    assert.deepEqual(await response.json(), { code: 'INVALID_REQUEST' });
+  }
+  assert.equal(harness.values.size, 0, 'nothing was written');
+});
+
+test('the quota client sends the subjects a request is counted apart from as hashed keys', async () => {
+  let body: Record<string, unknown> = {};
+  const namespace: TestNamespace = {
+    idFromName: (value: string): unknown => value,
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async (_url, options) => {
+        body = JSON.parse(options!.body as string);
+        return new Response(JSON.stringify({ accepted: true }));
+      },
+    })),
+  };
+
+  await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
+    periodKey: 'openalex:day:2026-11-22', subject: 'openalex:minute:2026-11-22T10:00', subjectLimit: 3_000, globalLimit: 10_000,
+    apartFrom: { percent: 55, subjects: ['openalex:harvest', 'openalex:harvest:new-follows'] },
+  });
+
+  const apartFrom = body.apartFrom as { percent: number; subjectKeys: string[] };
+  assert.equal(apartFrom.percent, 55);
+  assert.equal(apartFrom.subjectKeys.length, 2);
+  for (const key of apartFrom.subjectKeys) assert.match(key, /^[a-f0-9]{64}$/);
+  assert.notEqual(apartFrom.subjectKeys[0], apartFrom.subjectKeys[1]);
+  assert.doesNotMatch(JSON.stringify(body), /harvest/, 'no subject leaves the client unhashed');
+});

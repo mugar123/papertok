@@ -9,7 +9,7 @@ import { arxivIdOf } from './paper-store.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { verifyFirebaseIdentity } from './firebase-auth.ts';
 import { createFirestoreAdmin, createWrite, FirestoreAdminError, mergeWrite } from './firestore-admin.ts';
-import { handleOpenAlex } from './openalex-api.ts';
+import { handleAccountOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 const METRIC = 'saves';
@@ -66,7 +66,7 @@ export async function verifiedIdentifiers(id: string, env: WorkerEnv) {
   const reference = pubmed ? id
     : id.startsWith('openalex:') ? id.slice('openalex:'.length) : doiPathId(id.slice(4));
   if (!reference) return [id];
-  const response = await handleOpenAlex(new Request(
+  const response = await handleAccountOpenAlex(new Request(
     `https://papertok.internal/openalex/works/${reference}?select=id,doi,ids,locations,primary_location,best_oa_location`,
   ), env);
   if (response.status === 404 || response.status === 400) return fallback;

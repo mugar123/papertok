@@ -676,7 +676,7 @@ outside the Worker, signed in or not, first spends a miss of its address's allow
 minute, see [Public lookup caller limits](#public-lookup-caller-limits)) and may then take
 only every other seat, 10 misses a minute for the whole app, so cache-busting queries cannot
 hold every seat however many addresses send them. The allowance alone would not stop that: a
-script can send from several addresses, and one IPv6 host from a whole /64. An uncached
+script can send from several addresses. An uncached
 request that arrives in a period it may not take waits for the next one, up to 3 s even when
 nobody else is asking. Its seats are 6 s apart and it waits at most 4 s, so one tab's
 back-to-back misses are not all answered. The tab's lane sends its arXiv requests one at a
@@ -776,7 +776,7 @@ the edge for 30 days, an empty one for an hour. The route needs no `Origin`, so 
 an app-wide ceiling of their own, `FIGURES_GLOBAL_MINUTE_LIMIT` (60 a minute, so at most 120
 renderer fetches), and each address may send 20 of them a minute (see
 [Public lookup caller limits](#public-lookup-caller-limits)). One address cannot spend the
-whole minute; three can, and one IPv6 host can send from many addresses of its /64.
+whole minute; three can.
 Everyone behind one NAT shares those 20. A refused miss is a
 429 `PROVIDER_RATE_LIMITED`, and a missing ledger, caller address or `PDF_RATE_LIMIT_SECRET`
 closes the route with a 503; either way the card shows no figures and asks again the next
@@ -1121,7 +1121,7 @@ rate-limit headers are named in `access-control-expose-headers` so the browser c
 them; otherwise the client's backoff falls back to guessing, and since the budget resets at midnight
 UTC that guess can be hours wrong. A 404, a work OpenAlex has not indexed, is an answer rather than a refusal and is cached for an hour. `/health/openalex` reports the remaining daily budget in dollars. Its probe is a billed list call outside the day's ledger, limited by the live health probe ceiling described with `GET /health` below.
 The edge cache is per data centre, so every location asks OpenAlex the same questions again. On launch day (2026-10-21) the day's ceiling ran out of units while two `/health/openalex` readings showed a quarter of the key's dollars left; that the ledger, not OpenAlex, was refusing is an inference from those readings, not a relay measurement (PAP-86). So an answer is also kept in KV, which every location reads: `NOTIFICATION_STORE` under the `openalex:v1:` prefix, keyed by a hash of the canonical upstream URL, until a namespace of its own exists. A 200 is kept a day, a 404 the same hour the edge keeps it, a refusal or an outage not at all. A miss in one location reads the store before reserving anything, so a question answered anywhere that day costs no units anywhere else. The relay writes KV before the edge cache, treats a failed edge read as a miss and tolerates a failed edge put: the edge cache is not guaranteed inside the harvest's Workflow, and the KV write is what the units paid for. The relay carries no identity, so nothing personal is shared. Identical misses in flight in one isolate share one reservation and one call. A request that arrives while one is in flight joins it at no unit, even when its own tier is closed, and gets what the miss came to, OpenAlex's own refusal included. It does not get the ledger's refusal of the first request's reservation: the harvest and a reader can ask for the same URL under different tiers, so each request that waited on a refused miss starts again under its own tier, one at a time, and the URL still has at most one reservation and one call in flight. The entry leaves when the miss settles, so a failure is not shared with anyone who asks after it.
-Both ceilings are one call to the day's `RequestQuotaLedger` object, which checks the current minute as its subject in the same transaction (the harvest's share instead, and the part of it a lane spends, for the harvest's misses: the new follows' share for a run a new follow started, otherwise the nightly run's), so a reservation is one Durable Object request rather than two. Filing the answer's budget reading (**Observed ceiling**, below) is one more: a billed miss costs a reservation and a reading, and a free entity miss costs a reading only.
+Both ceilings are one call to the day's `RequestQuotaLedger` object, which checks the current minute as its subject in the same transaction (the harvest's share instead, and the part of it a lane spends, for the harvest's misses: the new follows' share for a run a new follow started, otherwise the nightly run's), so a reservation is one Durable Object request rather than two. Filing the answer's budget reading (**Observed ceiling**, below) is one more: a billed miss costs a reservation and a reading, and a free entity miss costs a reading and one reservation of its caller's lookup allowance, in a ledger object of its own (see **Caller allowances** below).
 
 The global search palette asks the author index first (`/authors?search=` with 100 candidates; OpenAlex charged $0.001 for that search at 25 and at 100 per page, read 2026-10-25), because a page of work bylines sorted by citations keeps only the most cited namesakes of a common name. If none of the candidates matches the name, it tries one query over work bylines, which reads at most 25 works: the phrase, plus typo and prefix variants where the words allow them, and none for a script the operators cannot read. Both use the client's existing priority lane so background profile lookups cannot occupy every available slot. They share a five-second cancellation signal, started before the first request is queued, and neither retries. If other priority requests fill the queue too, a queued request is not released early when that signal fires, so the palette's nine-second section deadline bounds that wait and institution localization. A failed request stays an error and does not trigger the byline query. This costs ten units ($0.001) when the index answers on a cache miss, or up to twenty ($0.002) when both queries miss the caches. The standalone search page continues to use one direct `/authors` search of ten.
 
@@ -1129,14 +1129,29 @@ The global search palette asks the author index first (`/authors?search=` with 1
 
 | Tier | Share | What spends it |
 | --- | --- | --- |
-| essential | 100% | One work by identifier with `per-page=1` (or `per_page=1`): a paper being opened, such as the public paper page's OpenAlex lookup of an arXiv paper, asked beside arXiv as both its fallback and its enrichment. |
+| essential | 100% (see **The harvest's part of the day**) | One work by identifier with `per-page=1` (or `per_page=1`): a paper being opened, such as the public paper page's OpenAlex lookup of an arXiv paper, asked beside arXiv as both its fallback and its enrichment. |
 | feed | 95% | The paper harvest, whatever it asks: the topic, venue, notable and area lanes and working-paper series, followed entities, searches and projects, and enrichment. It goes through `handleHarvestOpenAlex`, and its misses also count against its own 4,000 units a day (`OPENALEX_HARVEST_DAILY_UNITS`) in place of the minute's ceiling, as two ledger subjects: 300 for the runs new follows start (`OPENALEX_NEW_FOLLOWS_DAILY_UNITS`) and 3,700 for the nightly run. A category or nightly followed lane's misses count against its part of the nightly run's share too (steps 2 to 4 of the paper harvest). |
 | enrichment | 80% | `works` lists filtered only by `doi`, `openalex`, `ids.openalex` or `locations.landing_page_url` (cards already shown, followed DOIs, saved papers a list holds with no field), and the share pages' billed lookups. |
 | exploration | 60% | Graph expansions (`select=id,ids`), every search, `/citation-graph`, autocomplete, profile pages and lookups, and any shape not listed above. Also every OpenAlex request for a scheduled or test email. |
 
-`openAlexCostFor` in `openalex-api.ts` reads the tier from the rebuilt upstream URL, the same one the cache key and the bill come from. It reads no client header or parameter, so a cached bundle gets its tier from what it asks for and one URL always has one tier for a reader. The feed's topic lanes and series are exploration when a reader asks for them: the browser no longer does, and the harvest spends `feed` through `handleHarvestOpenAlex` whatever it asks. Entity lookups cost nothing, reserve nothing and are never refused; the ledger sees them only through the reading their answer files. Tiers rank organic demand. Reader misses also reserve a per-IP allowance of 300 units per UTC minute in the same transaction as the shared minute and daily ceilings, regardless of tier. Networks behind NAT share that allowance; multiple IPs can still spend the shared ceilings. The shares are code, not variables, because changing a variable needs a Worker deploy all the same; retune them from `/health/openalex/budget`. Edge and KV are read before any reservation, so a closed tier still serves stored answers.
+`openAlexCostFor` in `openalex-api.ts` reads the tier from the rebuilt upstream URL, the same one the cache key and the bill come from. It reads no client header or parameter, so a cached bundle gets its tier from what it asks for and one URL always has one tier for a reader. The feed's topic lanes and series are exploration when a reader asks for them: the browser no longer does, and the harvest spends `feed` through `handleHarvestOpenAlex` whatever it asks. Entity lookups cost no unit and reserve none of the day; the day's ledger sees them only through the reading their answer files. Tiers rank organic demand. The shares are code, not variables, because changing a variable needs a Worker deploy all the same; retune them from `/health/openalex/budget`. Edge and KV are read before any reservation, so a closed tier still serves stored answers.
 
 Every refusal of the budget, at the minute ceiling, a tier's share or the full ceiling, is the Worker's own `429 { code: 'PROVIDER_RATE_LIMITED' }` with `x-papertok-budget-tier: <tier>`, exposed beside `retry-after`. The browser's OpenAlex client (`src/services/open-alex-client.ts`) fails only that request when the header is there, and closes OpenAlex for the whole tab only on a 429 without it, which is OpenAlex refusing the key. Closing the tab on a tier refusal would stop the opened paper, card enrichment and the free lookups the tiers protect. A closed tier is asked again on the next user action, which costs one Worker request and one ledger transaction, not OpenAlex units. Searches are exploration, so they pause from 60% of the day's ceiling: the search page then says OpenAlex searches are paused and that PaperTok keeps the rest of the day's budget for opening papers and the feed, and the recent-impact score says its request is paused (`isOpenAlexBudgetRefusal`). An Explorer page's publications and authors lists are exploration too; when the Worker refuses one and neither the browser's saved copy nor another source (an institution's Crossref rows) fills it, the list says PaperTok has paused it (`explorerListErrorCode`) instead of asking the reader to check their connection. None of these blames OpenAlex or counts down the refusal's `retry-after`, because a new reading can reopen the tier sooner; all give 00:00 UTC as the latest it reopens, and the search page and the Explorer lists keep Retry. This contract change runs the other way from a new route: deploy the frontend to production before the Worker. A bundle without the header check closes OpenAlex for the whole tab on any tier refusal, so once the day passes 60% a refused search would stop the opened paper, card enrichment and the free lookups in that tab for five minutes. Vercel builds production from a push to `main`; a branch push builds only a Preview.
+
+**Caller allowances (ENG-223, ENG-225).** The tiers do not stop one caller from spending a tier for everyone. A reader's or an agent's miss therefore also counts against the address Cloudflare reports, an IPv6 address as its /64 prefix (see [Public lookup caller limits](#public-lookup-caller-limits)), whatever its tier:
+
+| What | Per address, per UTC minute | Where it is counted |
+| --- | --- | --- |
+| Billed misses | 300 units | A part of the reservation in the day's object, in the same transaction as the shared minute and day |
+| Lookups by id (`/openalex/<entity>/<id>`) | 300 misses | A caller-only reservation (`reserveCallerMinute`, namespace `openalex-lookups`), deleted a minute after its window |
+
+Until ENG-223 a lookup by id had no allowance at all, because it costs no unit: each miss is still a call on the key, a KV write and a reading filed with the day's ledger, and a script asking for random ids made as many as it liked. The 300 comes from what the web sends (read from `src/` on 2026-11-22, not from production traffic): opening a paper by DOI, work id or PMID is 1 lookup, an author's Explorer page 1 or 2, an author card in the reader 1 per author, a citation opened in the reader 1, and feed cards ask for none. A heavy session is 30 to 60 in all and the worst minute about 60 (a sweep over a long byline), so 300 is five times that minute for the people who share an address.
+
+Only a miss is counted: an answer at the edge or in the shared store is served first, to a caller past its allowance too, and a request that joins a miss in flight spends nothing. A refusal is the same `429 { code: 'PROVIDER_RATE_LIMITED' }` with `x-papertok-budget-tier` as a tier's (a lookup's names `essential`) and `retry-after: 60`, so the browser fails that request only: cards keep the metadata the store gave them, a paper page opened by arXiv id shows the arXiv record, an Explorer page shows its saved copy or its load-failed state, and the feed is not affected. People behind one NAT share an allowance, and many addresses can still spend the shared ceilings. A missing caller address or `PDF_RATE_LIMIT_SECRET` refuses the miss with `503 PROVIDER_QUOTA_NOT_CONFIGURED`, a lookup's too, and so does a missing ledger; a lookup whose ledger answers with an error or cannot be reached gets the same 503. A lookup miss therefore now waits for the ledger before OpenAlex is asked, where it used to reach the ledger only for its reading. The harvest is not a caller and none of this applies to it. Routes that have verified an account ask for their lookups by id in-process through `handleAccountOpenAlex` (the paper store's lookups of liked papers, the author metrics' identifiers): those carry no address, are bounded by the route's own allowance for the account and are not counted here.
+
+Neither allowance has a share of the day yet: an address can still spend 300 units in every minute, and ask for 300 lookups in every minute, until the shared ceilings or the part of the day below stop it.
+
+**The harvest's part of the day (ENG-225).** The harvest's 4,000 units were a ceiling on the harvest only: readers could take the day past the harvest's 95% before the 02:30 run, or while it ran, and the feed got no new papers. Everything that is not the harvest (readers, agents, `/citation-graph`, share pages, emails) now has a part of the day of its own, 55% of the ceiling (`OPENALEX_REST_PERCENT` in `provider-runtime.ts`): the harvest's 95% less its 4,000 units of the 10,000-unit day. Each of those reservations names the harvest's two ledger subjects, and the ledger counts the day's usage less theirs and refuses the reservation when that, with its own units, would pass 55% of the ceiling, in the same transaction as every other check. So whatever the others ask, at whatever hour and from however many addresses, the harvest finds 40% of the ceiling unspent, and what the harvest spends frees nothing for them. That is its whole 4,000 at a ceiling of 10,000, 3,920 once a reading has lowered the ceiling by its 200-unit margin, and less on a day spend outside the ledger lowers the ceiling further; with `OPENALEX_GLOBAL_DAILY_LIMIT` unset the cap is 8,000 and the harvest's part 3,200. Two costs, both meant. `essential` stops there too, not at 100%: the last 5% of the day is spent by nobody and stays as room for spend outside the ledger (the digest cron, the health probe). And on a night the harvest spends little, what it leaves is not given to readers. On a normal night the harvest spends about 3,500 units, so exploration (60% of the whole day) and enrichment (80%) still close first, at about 2,500 and 4,500 units of the others' spend, and one paper being opened at 5,500. While the harvest has spent nothing, as before 02:30, all three close together at 5,500. A ceiling lowered by a reading lowers both parts alike. Such a refusal is tallied as the tier's own and answers `retry-after: 300`. Within their part, one address can still spend what other readers would have.
 
 **Observed ceiling.** OpenAlex reports the key's day on every answer: `x-ratelimit-remaining-usd` and `x-ratelimit-reset`. The relay files each reading with the day's ledger, free lookups and OpenAlex's own refusals included (`observeOpenAlexBudget`). A reading is what is left, in list calls of $0.0001, less a margin of 200 units (`OPENALEX_OBSERVATION_MARGIN`) for misses already reserved but not yet billed, about twenty searches in flight; the margin is an estimate, not a measurement. The ledger stores the day's usage plus that reading as the observed ceiling, and the latest reading replaces the last. The effective ceiling is the lower of `OPENALEX_GLOBAL_DAILY_LIMIT` and the observed ceiling, so the variable is both a cap and the fallback before the day's first reading or whenever the headers are missing. Spend outside the ledger (such as the health probe) and units reserved but never billed stop distorting the ceiling at the next reading, a refusal reporting $0 closes billed misses at once, and credit added mid-day reopens them without a deploy. A reading is dropped when a header is missing or not a number, or when the reset does not end the UTC day the relay reserved under (120 s tolerance), so a reading from yesterday's counter just after midnight cannot close the new day. The relay waits at most 250 ms for the ledger to take a reading (`OPENALEX_OBSERVATION_WAIT_MS`), alongside the KV write, and then answers without it, so a slow or stuck ledger cannot hold a free lookup or the readers sharing its miss; the next answer brings another reading. The citation graph does not take readings, and `/health/openalex` does not file one. Whether OpenAlex still serves free lookups once the key reaches $0 is unverified; the margin keeps the Worker's own traffic from taking it there.
 
@@ -1149,11 +1164,12 @@ Every refusal of the budget, at the minute ceiling, a tier's share or the full c
   observedAt,             // ISO time of that reading, or null
   ceiling,                // min(cap, observedCeiling ?? cap)
   used, remaining,        // remaining = max(0, ceiling - used)
+  rest: { percent, limit, used },  // everything but the harvest: its part of the ceiling and what it has spent
   tiers: { essential | feed | enrichment | exploration: { percent, limit, share, used, refused, open } },  // share: feed only
   kinds: { search | list | graph | share: { used, refused } } }
 ```
 
-`tiers[tier].used` is that tier's own units; `open` says whether a one-unit miss of the tier would be accepted now (`used + 1 <= limit`, with the whole day's `used`; for `feed` also the nightly run's own units `+ 1 <= share`, its 3,700 of the harvest's 4,000). `feed.used` counts the runs new follows start too, so it can pass `share` while `feed.open` is still true. It counts units, not calls. Entity lookups cost nothing and never appear. Scheduled and test emails count in `exploration`. `refused` adds up the units of each miss refused by a tier's share or by the full ceiling, so a closed tier asked again counts again; a refusal by the minute ceiling is a burst, not a closed tier, and is not counted. Nor is a refusal by one of the harvest's two shares, which the ledger checks as subjects like the minute; `feed.open` shows the nightly run's share closing, and the body does not report the new follows' 300. A refusal by a part of the nightly run's share (steps 2 to 4 of the paper harvest) is not counted either, and the body does not report the parts: `feed.open` is for a nightly miss that names no part, such as enrichment's. Units reserved by a Worker deployed before the tiers count in `used` but in no tier. The body carries aggregates only: no subject hashes, minute rows, URLs, ids, queries or users.
+`tiers[tier].used` is that tier's own units; `open` says whether a one-unit miss of the tier would be accepted now (`used + 1 <= limit`, with the whole day's `used`; for `feed` also the nightly run's own units `+ 1 <= share`, its 3,700 of the harvest's 4,000; for every other tier also `rest.used + 1 <= rest.limit`). It does not know the caller: an address past its own allowance for the minute is refused while the tier is open. `feed.used` counts the runs new follows start too, so it can pass `share` while `feed.open` is still true. It counts units, not calls. Entity lookups cost nothing and never appear, and neither do the callers' allowances. Scheduled and test emails count in `exploration`. `refused` adds up the units of each miss refused by a tier's share or by the full ceiling, so a closed tier asked again counts again; a refusal by the minute ceiling is a burst, not a closed tier, and is not counted. Nor is a refusal by one of the harvest's two shares, which the ledger checks as subjects like the minute; `feed.open` shows the nightly run's share closing, and the body does not report the new follows' 300. A refusal by a part of the nightly run's share (steps 2 to 4 of the paper harvest) is not counted either, and the body does not report the parts: `feed.open` is for a nightly miss that names no part, such as enrichment's. Units reserved by a Worker deployed before the tiers count in `used` but in no tier. The body carries aggregates only: no subject hashes, minute rows, URLs, ids, queries or users.
 
 `/sources/scopus` does not call Elsevier. `api.elsevier.com` is served by Cloudflare and so is this
 Worker, so a subrequest never leaves Cloudflare's network and Elsevier answers it with
@@ -1487,7 +1503,7 @@ reservation because an attempt was made. Invalid URLs, disallowed Origins,
 unsupported methods and OPTIONS preflights spend neither allowance.
 
 The caller identity comes only from `CF-Connecting-IP`, which Cloudflare sets
-on ingress. Equivalent IPv6 spellings normalize to the same address. The Worker
+on ingress. An IPv6 address counts as its /64 prefix, whatever its spelling. The Worker
 computes an HMAC-SHA-256 over the PDF namespace, UTC minute and address using
 `PDF_RATE_LIMIT_SECRET`; the quota client hashes this identifier before sending
 it to the ledger. The stored counters contain no raw IP, account ID or paper URL.
@@ -1640,10 +1656,14 @@ seconds for a project lane.
 
 ## Public lookup caller limits
 
-Public cache misses on `/arxiv`, `/oa`, `/resources/figures`, `/resources/full-text`, billed
+Public cache misses on `/arxiv`, `/oa`, `/resources/figures`, `/resources/full-text`,
 `/openalex/*` requests and `/share/*` lookups reuse the PDF relay’s
 `CF-Connecting-IP` normalization and
-`PDF_RATE_LIMIT_SECRET`. The HMAC includes the route namespace and UTC minute;
+`PDF_RATE_LIMIT_SECRET`. The caller is an IPv4 address or the /64 prefix of an IPv6
+address (`normalizeCallerAddress` in `caller-quota.ts`): a network hands one subscriber at
+least a /64, so counting each full IPv6 address gave one machine as many allowances as
+addresses it used, on every route below (ENG-225). An IPv4-mapped IPv6 address counts as
+its IPv4 address. The HMAC includes the route namespace and UTC minute;
 no raw address is sent to the quota ledger, analytics or logs. Configure that
 existing secret before deploying these routes. Local requests need a test
 `CF-Connecting-IP` header and a secret of at least 32 characters.
@@ -1655,13 +1675,15 @@ existing secret before deploying these routes. Local requests need a test
 | `/resources/figures` | 20 cache misses | The route's own 60/minute ceiling (`FIGURES_GLOBAL_MINUTE_LIMIT`) |
 | `/resources/full-text` | 20 cache misses | The route's own 60/minute ceiling (`FULL_TEXT_GLOBAL_MINUTE_LIMIT`) |
 | Billed `/openalex/*` | 300 units (30 searches or 300 lists) | Existing minute, daily and tier ceilings |
+| `/openalex/*` lookups by id | 300 cache misses | None: a lookup costs no unit |
 | `/share/*` | 20 uncached lookups | Existing 60/minute and 1,000/day lookup ceilings and provider budgets |
 | `/mcp` | 30 tool calls, cache hits included | The limits above of the routes its tools call (see [MCP server](#mcp-server)) |
 
 OpenAlex and share attach the caller as the existing reservation’s second
-subject, so a refused caller spends no shared quota. Their minute-specific
+subject, so a refused caller spends no shared
+quota. Their minute-specific
 identifiers expire with the daily ledger’s three-day cleanup. arXiv, OA,
-figures, full text and MCP each take a caller-only reservation, with cleanup
+figures, full text, OpenAlex lookups by id and MCP each take a caller-only reservation, with cleanup
 scheduled one minute after the window ends. arXiv gives that unit back when
 pacing refuses a seat. Figures and full text take the caller's unit before
 their minute ceiling: a caller past its 20 spends none of the 60, and a miss
@@ -1672,7 +1694,7 @@ unavailable. Missing caller identity or secret refuses lookup when a caller
 reservation is required. A share refusal serves the generic page; other
 refusals use `429 PROVIDER_RATE_LIMITED` with `Retry-After`.
 
-Edge-cache hits, OpenAlex shared-cache hits and free entity lookups reserve no
+Edge-cache hits and OpenAlex shared-cache hits reserve no
 caller allowance. In-process paper harvesting uses its existing provider
 budgets and pacing without a visitor IP. The public router cannot select those
 harvest entry points, nor the agent entry points the MCP server calls. Test these paths with `node --test worker/index.test.ts
@@ -1775,7 +1797,8 @@ points:
   search's ten units, and the one unit of each one-work list `get_paper` asks
   for, which a reader opening a paper spends in `essential`: the arXiv
   fallback, and the `filter=doi:` list for a DOI the relay cannot carry in its
-  path (`doiPathId`). A lookup by id is a free entity lookup.
+  path (`doiPathId`). A lookup by id is a free entity lookup, counted against
+  the caller's lookup allowance as a reader's is.
 - `handleAgentArxiv` takes the beat's seat only for the current three-second
   period, never one ahead, and like any request from outside the Worker only a
   public (even) seat. Readers book seats up to four seconds ahead, so an agent

@@ -146,7 +146,9 @@ test('equivalent IPv6 addresses and readers behind the same IP share an allowanc
   const h = harness(t);
   for (let i = 0; i < 30; i++) assert.equal((await h.ask('2001:db8::1')).status, 200);
   assert.equal((await h.ask('2001:0db8:0:0:0:0:0:1', NATIVE)).status, 429);
-  assert.equal((await h.ask('2001:db8::2', NATIVE)).status, 200);
+  // Another address of the same /64 is the same caller (ENG-225); another /64 is not.
+  assert.equal((await h.ask('2001:db8::2', NATIVE)).status, 429);
+  assert.equal((await h.ask('2001:db8:0:1::1', NATIVE)).status, 200);
 });
 
 test('missing identity, secret or ledger fails closed even for a cached PDF', async t => {

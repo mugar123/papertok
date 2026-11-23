@@ -2294,9 +2294,10 @@ test("a recent paper a reader liked, looked up by id, is filed under its lanes w
 // PAP-88: readers' searches and profile lists stop at 60 % of the day's
 // OpenAlex ceiling, their card batches at 80 %. A followed author, search or
 // project asks OpenAlex in those same shapes, and a run started by a new follow
-// can come at any hour, so the harvest spends its own share up to 95 % and
-// leaves the rest to papers being opened.
-test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the harvest leaves the last share to an opened paper", async t => {
+// can come at any hour, so the harvest spends its own share up to 95 %. The
+// last 5 % is nobody's since ENG-225: an opened paper stops with everything
+// else that is not the harvest, at their own part of the day.
+test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the harvest stops at its 95 % of the day", async t => {
   const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   const ceiling = 1_000;
   const share = (tier: keyof typeof OPENALEX_TIER_PERCENT) => Math.floor(ceiling * OPENALEX_TIER_PERCENT[tier] / 100);
@@ -2325,7 +2326,8 @@ test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the ha
   const opened = await handleOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=1', {
     headers: { 'cf-connecting-ip': '192.0.2.1' },
   }), env);
-  assert.equal(opened.status, 200, 'a paper being opened still has the rest of the ceiling');
+  assert.equal(opened.status, 429, 'a paper being opened has no part of the day left either');
+  assert.equal(opened.headers.get('x-papertok-budget-tier'), 'essential');
 });
 
 // The harvest's share is counted in the day's OpenAlex ledger, on a miss only:

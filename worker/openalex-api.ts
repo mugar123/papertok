@@ -4,7 +4,7 @@ import type { OpenAlexBudget, OpenAlexTier, UpstreamError } from './provider-run
 export type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 
 import { sha256 } from './ai-explanation.ts';
-import { callerSubject } from './caller-quota.ts';
+import { callerSubject, reserveCallerMinute } from './caller-quota.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import {
   boundedText,
@@ -14,6 +14,7 @@ import {
   numberOrNull,
   observeOpenAlexBudget,
   OPENALEX_CALLS,
+  openAlexRefusal,
   reserveOpenAlexBudget,
   serveCached,
   SOURCE_UPSTREAM_TIMEOUT_MS,
@@ -43,6 +44,15 @@ const OPENALEX_SHARED_PREFIX = 'openalex:v1:';
 // spend the minute for every other reader. Thirty searches, or 300 card
 // batches; people behind one NAT share it.
 const OPENALEX_CALLER_MINUTE_UNITS = 300;
+// Lookups by id cost no unit, so they had no allowance at all: each miss is
+// still a call on PaperTok's key, a KV write and a reading filed with the
+// day's ledger, without limit for anyone asking for random ids (ENG-223). One
+// address's misses are now counted by the minute. The web's worst minute is
+// about 60 (a sweep over a long byline's author cards, one lookup per author;
+// citations opened in the reader): five times that, for the people who share
+// an address. A miss only: an answer at the edge or in the shared store is
+// served before anything is counted.
+const OPENALEX_CALLER_MINUTE_LOOKUPS = 300;
 // OpenAlex bills per call against a daily budget, so the browser can no longer
 // hold the credential. These are the entities and parameters the app actually
 // asks for; the URL is rebuilt from them rather than forwarded.
@@ -317,10 +327,34 @@ export function openAlexCostFor(target: URL): OpenAlexBudget {
   return list('exploration');
 }
 
+// Who asks the relay, beside the harvest: a reader over the network, an AI
+// client through the MCP server, or a route that has verified an account.
+type Asker = 'reader' | 'agent' | 'account';
+
+async function refused(response: Response): Promise<RelayedAnswer> {
+  return { status: response.status, body: await response.text(), headers: response.headers, budgetRefusal: true };
+}
+
+/**
+ * One lookup by id of the caller's allowance for the minute, a caller-only
+ * reservation as `/oa` and `/arxiv` take. Null when accepted. A lookup now
+ * waits for the ledger and stops without it, as every billed miss does: a
+ * ledger that throws is answered like one that cannot answer.
+ */
+async function refuseLookup(request: Request, env: WorkerEnv) {
+  const { reading } = await reserveCallerMinute(request, env, 'openalex-lookups', OPENALEX_CALLER_MINUTE_LOOKUPS)
+    .catch((error: unknown) => {
+      console.warn('OpenAlex lookup ledger unreachable', error);
+      return { reading: { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' } };
+    });
+  // A lookup is a paper or a profile being opened, the tier a billed one spends.
+  return reading.accepted ? null : openAlexRefusal(env, '', reading, 'essential', false);
+}
+
 // An edge miss: the shared store first, then -- and only then -- a reservation
 // and the call. Resolves without an origin so that everyone waiting on the
 // same miss can put their own on.
-async function relayMiss(request: Request, target: URL, cacheKey: Request, env: WorkerEnv, harvest: HarvestAsk | null, agent: boolean): Promise<RelayedAnswer> {
+async function relayMiss(request: Request, target: URL, cacheKey: Request, env: WorkerEnv, harvest: HarvestAsk | null, asker: Asker): Promise<RelayedAnswer> {
   const key = await sharedKey(cacheKey);
   const shared = await readShared(env, key);
   if (shared) {
@@ -340,17 +374,22 @@ async function relayMiss(request: Request, target: URL, cacheKey: Request, env: 
     cost.tier = 'feed';
     cost.part = harvest.part;
     cost.newFollow = harvest.newFollow;
-  } else if (agent) {
+  } else if (asker === 'agent') {
     cost.tier = 'exploration';
+  }
+  const lookup = cost.kind === 'entity';
+  // A lookup by id spends one of its caller's own. An account's route has
+  // charged the account for its lookups and has no address to charge;
+  // anything it asks that is billed needs a caller, like any billed miss.
+  if (lookup && !harvest && asker !== 'account') {
+    const refusal = await refuseLookup(request, env);
+    if (refusal) return refused(refusal);
   }
   if (cost.units > 0 && !harvest) {
     // A reader's miss also spends the caller's own allowance for the minute,
     // checked in the same transaction as the minute and the day.
     const subject = await callerSubject(request, env, `openalex:${now.slice(0, 16)}`);
-    if (!subject) {
-      const refusal = json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, { 'cache-control': 'no-store' });
-      return { status: refusal.status, body: await refusal.text(), headers: refusal.headers, budgetRefusal: true };
-    }
+    if (!subject) return refused(json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, { 'cache-control': 'no-store' }));
     cost.part = { subject, limit: OPENALEX_CALLER_MINUTE_UNITS };
   }
   if (cost.units > 0) {
@@ -363,7 +402,7 @@ async function relayMiss(request: Request, target: URL, cacheKey: Request, env: 
       console.warn('OpenAlex ledger unreachable for the harvest', error);
       return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, { 'cache-control': 'no-store' }) };
     });
-    if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers, budgetRefusal: true };
+    if (budget.error) return refused(budget.error);
   }
 
   const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
@@ -393,7 +432,18 @@ async function relayMiss(request: Request, target: URL, cacheKey: Request, env: 
 }
 
 export function handleOpenAlex(request: Request, env: WorkerEnv) {
-  return relayOpenAlex(request, env, null, false);
+  return relayOpenAlex(request, env, null, 'reader');
+}
+
+/**
+ * The relay as a route that has verified an account asks it in-process for a
+ * lookup by id (the paper store's lookups of liked papers, the author metrics'
+ * identifiers). The request carries no address, and the route's own allowance
+ * for the account bounds what it asks, so the lookup is not counted against a
+ * caller. A billed request is refused, as any request without a caller is.
+ */
+export function handleAccountOpenAlex(request: Request, env: WorkerEnv) {
+  return relayOpenAlex(request, env, null, 'account');
 }
 
 /**
@@ -403,7 +453,7 @@ export function handleOpenAlex(request: Request, env: WorkerEnv) {
  * there, so they stop before readers' cards and opened papers do.
  */
 export function handleAgentOpenAlex(request: Request, env: WorkerEnv) {
-  return relayOpenAlex(request, env, null, true);
+  return relayOpenAlex(request, env, null, 'agent');
 }
 
 // What a billed harvest miss spends: the new follows' share for a run a new
@@ -417,10 +467,10 @@ export type HarvestAsk = Pick<OpenAlexBudget, 'part' | 'newFollow'>;
  * `ask` names rather than a reader's tier.
  */
 export function handleHarvestOpenAlex(request: Request, env: WorkerEnv, ask: HarvestAsk = {}) {
-  return relayOpenAlex(request, env, ask, false);
+  return relayOpenAlex(request, env, ask, 'reader');
 }
 
-async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestAsk | null, agent: boolean) {
+async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestAsk | null, asker: Asker) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -454,7 +504,7 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestA
     const answer = await pending;
     if (!answer.budgetRefusal) return forOrigin(answer, origin, env);
   }
-  const pending = relayMiss(request, target, cacheKey, env, harvest, agent).finally(() => inFlight.delete(cacheKey.url));
+  const pending = relayMiss(request, target, cacheKey, env, harvest, asker).finally(() => inFlight.delete(cacheKey.url));
   inFlight.set(cacheKey.url, pending);
   return forOrigin(await pending, origin, env);
 }

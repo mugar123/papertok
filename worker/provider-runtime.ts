@@ -122,8 +122,11 @@ export const OPENALEX_CALLS = Object.freeze({
 // one paper being opened only at the ceiling. The whole day's usage counts
 // against each share, so a tier is closed for everyone once the day passes it.
 // Readers' searches and card batches therefore cannot close the harvest, and
-// the harvest leaves the last 5 % to papers being opened. Entity lookups cost
-// nothing and are never refused. Code rather than variables, because changing
+// the harvest stops at 95 %. Every tier but `feed` also stops once everything
+// that is not the harvest has spent its own part of the ceiling
+// (`OPENALEX_REST_PERCENT`), which is where one paper being opened now stops.
+// Entity lookups cost nothing here; each address has an allowance of them of
+// its own (openalex-api.ts). Code rather than variables, because changing
 // a variable needs a Worker deploy all the same; retune from the day's tally on
 // `/health/openalex/budget`.
 export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Object.freeze({
@@ -146,6 +149,22 @@ export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Obj
 // transaction (`HARVEST_OPENALEX_PARTS` in paper-sources.ts).
 export const OPENALEX_HARVEST_DAILY_UNITS = 4_000;
 export const OPENALEX_NEW_FOLLOWS_DAILY_UNITS = 300;
+// How much of the day's ceiling everything that is not the harvest may spend
+// in all, in percent: readers, agents, the citation graph, share pages and
+// emails (ENG-225). The harvest's share was a ceiling on the harvest only, so
+// the others could take the day past the harvest's 95 % before the 02:30 run
+// or while it ran, and the feed got no new papers that night. 55 % is the
+// harvest's 95 % less its 4,000 units of the 10,000-unit day (wrangler.toml):
+// whatever the others ask, at whatever hour and from however many addresses,
+// the harvest finds 40 % of the ceiling unspent, its whole share at 10,000
+// and 3,920 units once a reading has taken its 200-unit margin off. The ledger counts the others as
+// the day's usage less the harvest's two subjects, in the reservation's own
+// transaction. Two costs, both meant: the last 5 % of the day is spent by
+// nobody and is room for spend outside the ledger (the digest cron, the
+// health probe), and what the harvest leaves on a night it spends little is
+// not given to the others. A percent, so a ceiling lowered by a reading
+// lowers both parts alike.
+export const OPENALEX_REST_PERCENT = 55;
 // Names the tier on every refusal of the OpenAlex budget, so the client can
 // tell the Worker's own refusal of one request from OpenAlex refusing the key:
 // only the second closes OpenAlex for the whole tab. `open-alex-client.ts` reads
@@ -655,6 +674,18 @@ export function boundedText(value: unknown, maxLength: number) {
 // day's share as the subject instead of the minute: the new follows' share for
 // a run a new follow started, otherwise the nightly run's, with the part of it
 // a lane spends when it names one.
+//
+// Every other reservation is counted apart from the harvest's two subjects,
+// within `OPENALEX_REST_PERCENT` of the ceiling.
+const HARVEST_SUBJECTS = {
+  nightly: { subject: 'openalex:harvest', limit: OPENALEX_HARVEST_DAILY_UNITS - OPENALEX_NEW_FOLLOWS_DAILY_UNITS },
+  newFollows: { subject: 'openalex:harvest:new-follows', limit: OPENALEX_NEW_FOLLOWS_DAILY_UNITS },
+};
+const APART_FROM_HARVEST = {
+  percent: OPENALEX_REST_PERCENT,
+  subjects: Object.values(HARVEST_SUBJECTS).map(share => share.subject),
+};
+
 function openAlexLedgerRequest(env: WorkerEnv, now: string, budget?: Pick<OpenAlexBudget, 'tier' | 'part' | 'newFollow'>): QuotaRequest {
   const day = {
     periodKey: `openalex:day:${now.slice(0, 10)}`,
@@ -666,16 +697,16 @@ function openAlexLedgerRequest(env: WorkerEnv, now: string, budget?: Pick<OpenAl
       subject: `openalex:minute:${now.slice(0, 16)}`,
       subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
       ...(budget?.part ? { part: budget.part } : {}),
+      apartFrom: APART_FROM_HARVEST,
     };
   }
-  return budget.newFollow
-    ? { ...day, subject: 'openalex:harvest:new-follows', subjectLimit: OPENALEX_NEW_FOLLOWS_DAILY_UNITS }
-    : {
-      ...day,
-      subject: 'openalex:harvest',
-      subjectLimit: OPENALEX_HARVEST_DAILY_UNITS - OPENALEX_NEW_FOLLOWS_DAILY_UNITS,
-      ...(budget.part ? { part: budget.part } : {}),
-    };
+  const share = budget.newFollow ? HARVEST_SUBJECTS.newFollows : HARVEST_SUBJECTS.nightly;
+  return {
+    ...day,
+    subject: share.subject,
+    subjectLimit: share.limit,
+    ...(!budget.newFollow && budget.part ? { part: budget.part } : {}),
+  };
 }
 
 // The tier's share of the ceiling travels with the reservation, so the share is
@@ -690,37 +721,47 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budg
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (reservation.accepted) return { reservations: [ledgerRequest] };
+  // The harvest's subject is its day's share, so its every refusal is a day's.
+  const day = reservation.scope === 'global' || budget.tier === 'feed';
+  return { error: openAlexRefusal(env, origin, reservation, budget.tier, day) };
+}
+
+/**
+ * The Worker's own refusal of an OpenAlex request, for a reservation the
+ * ledger did not accept: 503 when the ledger could not answer, otherwise the
+ * 429 that names `tier`. `day` says a day's allowance refused, not a minute's.
+ */
+export function openAlexRefusal(env: WorkerEnv, origin: string, reservation: QuotaReading, tier: OpenAlexTier, day: boolean) {
   if (reservation.code) {
-    return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
       ...corsHeaders(origin, env),
       'cache-control': 'no-store',
-    }) };
+    });
   }
-  return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+  return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
     ...corsHeaders(origin, env),
     // On every refusal, the minute's and the full ceiling's too: a refusal
     // without it is OpenAlex's own, and the client closes OpenAlex for the tab.
     // The relay reserves with no origin and puts the asker's on afterwards,
     // keeping the names exposed here.
     'access-control-expose-headers': `retry-after, ${OPENALEX_BUDGET_TIER_HEADER}`,
-    [OPENALEX_BUDGET_TIER_HEADER]: budget.tier,
+    [OPENALEX_BUDGET_TIER_HEADER]: tier,
     'cache-control': 'no-store',
     // The day's refusal is not the true seconds until UTC midnight: a tier
     // closes every day and can reopen at the next budget reading, and a
     // `retry-after` of several hours is a client that stops asking until
     // someone reloads the tab. It bounds how soon a client may ask again, not
     // when the tier reopens, so the browser shows no countdown for a refusal
-    // naming its tier (`isOpenAlexBudgetRefusal` in open-alex-client.ts). The
-    // harvest's subject is its day's share, so its every refusal is a day's.
-    'retry-after': reservation.scope === 'global' || budget.tier === 'feed' ? '300' : '60',
-  }) };
+    // naming its tier (`isOpenAlexBudgetRefusal` in open-alex-client.ts).
+    'retry-after': day ? '300' : '60',
+  });
 }
 
 // The most the ledger accepts as `remaining`.
 const MAX_OBSERVED_UNITS = 1_000_000;
-// How long an answer waits for its reading to be filed. A work opened by id
-// reaches the ledger only for its reading, and a slow or stuck ledger must not
-// hold that reader, or everyone waiting on the same miss. A reading dropped
+// How long an answer waits for its reading to be filed. The reading comes
+// after OpenAlex has answered, and a slow or stuck ledger must not hold that
+// answer, or everyone waiting on the same miss. A reading dropped
 // here is followed by the next answer's, and the margin covers the gap.
 const OPENALEX_OBSERVATION_WAIT_MS = 250;
 
@@ -779,7 +820,7 @@ export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOS
   const request = openAlexLedgerRequest(env, now, { tier: 'feed' });
   let reading: QuotaReading;
   try {
-    reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, request);
+    reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, { ...request, apartFrom: APART_FROM_HARVEST });
   } catch {
     return { code: 'QUOTA_LEDGER_UNAVAILABLE' };
   }
@@ -791,6 +832,8 @@ export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOS
   const observedCeiling = reading.observed?.ceiling ?? null;
   const ceiling = observedCeiling === null ? cap : Math.min(cap, observedCeiling);
   const used = reading.globalUsage ?? 0;
+  // What everything but the harvest has spent, and the most it may.
+  const rest = { percent: OPENALEX_REST_PERCENT, limit: Math.floor(ceiling * OPENALEX_REST_PERCENT / 100), used: reading.rest ?? 0 };
   const tiers = Object.fromEntries(Object.entries(OPENALEX_TIER_PERCENT).map(([tier, percent]) => {
     const limit = Math.floor(ceiling * percent / 100);
     // The nightly run's share of the harvest's day closes `feed` too. `used`
@@ -803,7 +846,9 @@ export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOS
       used: sumTally(reading.tally?.used, spentBy => spentBy === tier),
       refused: sumTally(reading.tally?.refused, spentBy => spentBy === tier),
       // Whether a one-unit miss of this tier would be accepted now.
-      open: used + 1 <= limit && (!harvest || (reading.subjectUsage ?? 0) + 1 <= request.subjectLimit),
+      open: used + 1 <= limit && (harvest
+        ? (reading.subjectUsage ?? 0) + 1 <= request.subjectLimit
+        : rest.used + 1 <= rest.limit),
     }];
   }));
   const kinds = Object.fromEntries(OPENALEX_REPORTED_KINDS.map(kind => [kind, {
@@ -822,6 +867,7 @@ export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOS
       ceiling,
       used,
       remaining: Math.max(0, ceiling - used),
+      rest,
       tiers,
       kinds,
     },
