@@ -31,7 +31,7 @@ import {
   mergeWrite,
   FirestoreAdminError,
 } from './firestore-admin.ts';
-import { purgeEmailSubscription } from './email-notifications.ts';
+import { endEmailSubscription, purgeEmailSubscription } from './email-notifications.ts';
 
 export const ACCOUNT_DELETE_PATH = '/account/delete';
 
@@ -306,12 +306,12 @@ async function deleteAuthAccount(env: WorkerEnv, idToken: string | undefined, { 
   throw new AccountDeletionError('AUTH_DELETE_FAILED', 502);
 }
 
-async function purgeAfterAuthDelete(env: WorkerEnv, uid: string, keys: Set<string>) {
+async function onceMoreAfterAuthDelete(cleanup: () => Promise<unknown>) {
   try {
-    await purgeEmailSubscription(env, uid, keys);
+    await cleanup();
   } catch {
     await new Promise(resolve => { setTimeout(resolve, KV_SAME_KEY_WRITE_INTERVAL_MS); });
-    await purgeEmailSubscription(env, uid, keys);
+    await cleanup();
   }
 }
 
@@ -386,12 +386,13 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   // failure here would tell the reader a deleted account still exists. The log
   // only says which cleanup failed and why: it names no account, subscription
   // or share, so whatever that cleanup missed stays behind untraced.
-  const [purge, sweep, fenceCleanup] = await Promise.allSettled([
-    purgeAfterAuthDelete(env, uid, subscriptionKeys),
+  const [end, purge, sweep, fenceCleanup] = await Promise.allSettled([
+    onceMoreAfterAuthDelete(() => endEmailSubscription(env, uid)),
+    onceMoreAfterAuthDelete(() => purgeEmailSubscription(env, uid, subscriptionKeys)),
     deleteUserTree(admin, uid),
     commitBestEffort(admin, [deleteWrite(userName)]),
   ]);
-  for (const [cleanup, outcome] of [['subscription purge', purge], ['user tree sweep', sweep], ['account deletion fence', fenceCleanup]] as const) {
+  for (const [cleanup, outcome] of [['subscription end', end], ['subscription purge', purge], ['user tree sweep', sweep], ['account deletion fence', fenceCleanup]] as const) {
     if (outcome.status === 'rejected') {
       const reason = outcome.reason as { code?: unknown; name?: unknown } | null;
       console.error(`Account deletion: ${cleanup} after the Auth delete failed`, String(reason?.code || reason?.name || 'unknown'));

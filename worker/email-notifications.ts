@@ -22,6 +22,7 @@ export type DigestPaper = Partial<Omit<NonNullable<ReturnType<typeof sanitizePap
 type IdentityPaper = Pick<PaperInput, 'title' | 'authors' | 'doi' | 'id'>;
 type PreferencesInput = Partial<Record<'maxPapers' | 'enabled' | 'frequency' | 'language', unknown>>;
 type PreferencesBody = PreferencesInput & { sync?: unknown; follows?: FollowInput[]; previewItems?: PaperInput[]; interests?: unknown };
+type OptInBody = Pick<PreferencesBody, 'follows' | 'previewItems' | 'interests'> & { consent?: unknown };
 type Preferences = ReturnType<typeof sanitizePreferences>;
 interface SourceCounts { attempted: number; succeeded: number; failed: number; requestAttempts: number; retried: number }
 export interface SourceReport extends SourceCounts {
@@ -47,6 +48,12 @@ export interface Subscription extends Partial<Preferences>, DeliveryState {
   version?: number;
   /** Phase 1 KV record only: the object version the save that wrote it reopened. */
   revision?: number;
+  /**
+   * The version of the welcome's wording the reader said yes to, on a
+   * subscription `POST /notifications/opt-in` created (src/utils/digest-consent.ts).
+   * One started in Settings has none. It lasts as long as the record.
+   */
+  welcomeConsent?: string;
 }
 type EmailIdentity = { uid: string; email: string; displayName: string };
 interface ArxivEntry {
@@ -91,6 +98,7 @@ import type { OpenAireProduct } from '../src/services/open-aire-records.ts';
 import { XMLParser } from 'fast-xml-parser';
 import { CATEGORIES, getAllLeafCategories, getAreaLeaves, getCategoryLabel } from '../src/data/category-taxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/area-accent.ts';
+import { DIGEST_CONSENT_FROM_SIGNUP, DIGEST_OPT_IN_CONSENTS } from '../src/utils/digest-consent.ts';
 import { DIGEST_FOLLOW_TYPES } from '../src/utils/following.ts';
 import { isValidOrcidId } from '../src/utils/orcid-id.ts';
 import { canonicalDoiOf } from '../src/utils/paper-canonical-key.ts';
@@ -132,6 +140,41 @@ const DEFAULT_DAILY_SEND_LIMIT = 100;
 // fifth of production's 100 (Pablo, 2026-10-24).
 const TEST_ACCOUNT_DAILY_LIMIT = 3;
 const TEST_GLOBAL_DAILY_LIMIT = 20;
+// The app sends a welcome yes once, with up to three retries, and an older
+// pending yes once per session, so ten an hour is far above what one account
+// needs. Each request costs an identity lookup and reads of the reader's
+// object and KV, which this bounds per account.
+const OPT_IN_ACCOUNT_HOURLY_LIMIT = 10;
+// How long the opt-in waits for its two index puts before it answers a
+// retryable failure. A put that lands later writes a value the key may already
+// hold and cannot replace anything else (see startDigestOptIn).
+const INDEX_WRITE_DEADLINE_MS = 5_000;
+// Workers KV refuses a second write to one key within a second (429).
+const KV_SAME_KEY_WRITE_INTERVAL_MS = 1000;
+// Every unsubscribe-link index expires this long after its last write. A save
+// that writes it, and every email before it goes out (checkDraft), write it
+// again, and the schedule renews it while the subscription is active
+// (renewSubscriptionKeys), so the link of each email keeps working. One a late
+// write left for a cancelled subscription, or for a deleted account, goes on
+// its own. The same period as the delivery state's.
+const LINK_INDEX_TTL_SECONDS = 120 * 24 * 60 * 60;
+// The same for the schedule's key of a reader (SUBSCRIPTION_PREFIX), which in
+// phase 1 is the record itself, address included: one a write in flight puts
+// back after a cancellation or an account deletion goes on its own.
+const SUBSCRIPTION_KEY_TTL_SECONDS = 120 * 24 * 60 * 60;
+// The schedule renews an active reader's keys once less than this is left, so
+// each is written about once a month, and retried in every window until then.
+const SUBSCRIPTION_KEY_RENEW_BELOW_SECONDS = 90 * 24 * 60 * 60;
+// At most this many readers' keys are renewed per window: the first windows
+// after the deploy find every key without an expiry.
+const SUBSCRIPTION_KEY_RENEWALS_PER_RUN = 60;
+// Unsubscribe-link indexes without an expiry are given one by a sweep, this
+// many per window; once it has passed them all it rests a month (the value
+// stored is `done:` and when it finished).
+const LINK_EXPIRY_SWEEP_KEY = 'notification:schedule:link-expiry-sweep';
+const LINK_EXPIRY_SWEEP_PAGE_SIZE = 100;
+const LINK_EXPIRY_SWEEP_DONE = 'done:';
+const LINK_EXPIRY_SWEEP_REST_MS = 30 * 24 * 60 * 60 * 1000;
 const SCHEDULE_STATUS_KEY = 'notification:schedule:last-run';
 const SCHEDULE_HISTORY_PREFIX = 'notification:schedule:history:';
 const SCHEDULE_CURSOR_KEY = 'notification:schedule:cursor';
@@ -237,8 +280,8 @@ function cleanText(value: unknown, maxLength = 300) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
-async function readBoundedJson(request: Request, maximumBytes = MAX_PREFERENCES_REQUEST_BYTES) {
-  return readBoundedRequestJson<PreferencesBody>(request, maximumBytes, {
+async function readBoundedJson<Body = PreferencesBody>(request: Request, maximumBytes = MAX_PREFERENCES_REQUEST_BYTES) {
+  return readBoundedRequestJson<Body>(request, maximumBytes, {
     tooLarge: () => new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413),
     invalid: () => new EmailNotificationError('EMAIL_INVALID_REQUEST', 400),
   });
@@ -709,6 +752,16 @@ function wait(delayMs: number) {
   return new Promise<void>(resolve => setTimeout(resolve, delayMs));
 }
 
+/** A KV write or delete, tried once more after the second in which KV refuses another write to its key. */
+async function kvWrite(step: () => Promise<unknown>) {
+  try {
+    await step();
+  } catch {
+    await wait(KV_SAME_KEY_WRITE_INTERVAL_MS);
+    await step();
+  }
+}
+
 // `beforeAttempt` runs ahead of every attempt, the retry too, so a source that
 // is metered counts each call it will receive. What it throws ends the call
 // without another attempt.
@@ -1076,7 +1129,7 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
     // `behind`: the record may be older than the last save (see readKvRecord),
     // so the last check before a send would cancel a digest prepared from it.
     return {
-      slot: cancelled ? { ...kv, subscription: null, migratable: false, ...cleanup } : { ...kv, ...cleanup },
+      slot: cancelled ? { ...kv, subscription: null, migratable: false, ...cleanup } : { ...kv, reactivation: slot.reactivation, consentRevision: slot.consentRevision, ...cleanup },
       inKv: true,
       objectVersion: slot.version,
       behind: !cancelled && kv.revision !== slot.version,
@@ -1088,7 +1141,12 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
   // `token` is the unsubscribe token that save gave the subscription, so a
   // save computed from this miss keeps the links of its earlier emails.
   const behind = !slot.subscription && slot.migratable && slot.version > 0;
-  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind, token: behind ? slot.token : undefined };
+  // A reader the welcome opt-in subscribed (`resident`) is written to their
+  // object again when they subscribe after a cancellation, never to KV. Their
+  // schedule key then only ever holds the index, so an index write of the
+  // opt-in or of a sync that lands late puts the same value and cannot replace
+  // a record.
+  return { slot, inKv: !slot.subscription && !slot.resident, objectVersion: slot.version, behind, token: behind ? slot.token : undefined };
 }
 
 /**
@@ -1146,7 +1204,7 @@ async function closeBeforeCancelling(env: WorkerEnv, uid: string, token?: string
   // added for a record the object held), the schedule key is how a later
   // request finds this reader: it goes once they are removed (deleteScheduleIndex).
   const indexKept = Boolean((close.slot.cleanup ?? slot.cleanup)?.length);
-  if (!indexKept) await env.NOTIFICATION_STORE!.delete(`${SUBSCRIPTION_PREFIX}${uid}`);
+  if (!indexKept) await kvWrite(() => env.NOTIFICATION_STORE!.delete(`${SUBSCRIPTION_PREFIX}${uid}`));
   return { closed: true, held: slot.subscription, indexKept };
 }
 
@@ -1197,7 +1255,7 @@ async function readSubscriptionSlot(env: WorkerEnv, uid: string): Promise<Stored
     return undone.slot;
   }
   // Leave KV only the index a save writes, not a second copy of the record.
-  await store.put(key, JSON.stringify({ uid }));
+  await store.put(key, JSON.stringify({ uid }), { expirationTtl: SUBSCRIPTION_KEY_TTL_SECONDS });
   return moved.slot;
 }
 
@@ -1245,17 +1303,18 @@ async function changeSubscription(
     if (record === null) {
       // The key stays while the cleanup journal lists entries, as in closeBeforeCancelling.
       const cleanup = (await markSubscription(env, uid, false)).slot.cleanup ?? slot.cleanup;
-      if (!cleanup?.length) await env.NOTIFICATION_STORE!.delete(key);
+      if (!cleanup?.length) await kvWrite(() => env.NOTIFICATION_STORE!.delete(key));
       return { changed: true, previous, subscription: null, inKv: true, slot: { ...slot, cleanup }, indexKept: Boolean(cleanup?.length) };
     }
     // The object keeps the record's token, which the unsubscribe link checks
     // while KV may still return the index and record of a cancelled subscription.
-    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion, token: record.unsubscribeToken });
+    const reopened = await callSubscriptionStore(env, uid, { action: 'mark', migratable: true, expectedVersion: phase1.objectVersion, token: record.unsubscribeToken, email: record.email });
     if (reopened.accepted) {
       // The object's version, not one past the KV read: that read may be stale,
       // and two saves computed from it would write the same version.
       const version = reopened.slot.version;
-      await env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version, revision: version }));
+      // Tried once more a second later: the schedule's renewal may have just written this key.
+      await kvWrite(() => env.NOTIFICATION_STORE!.put(key, JSON.stringify({ ...storedRecord(record), version, revision: version }), { expirationTtl: SUBSCRIPTION_KEY_TTL_SECONDS }));
       return { changed: true, previous, subscription: withVersion({ version, subscription: storedRecord(record), migratable: true }), inKv: true, slot: reopened.slot };
     }
     phase1 = await readPhase1Slot(env, uid);
@@ -1292,10 +1351,26 @@ async function changeSubscription(
   throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
 }
 
-/** `behind`: phase 1 read a KV record behind the object (see readPhase1Slot). */
-async function loadSubscriptionRecord(env: WorkerEnv, key: string, read?: Awaited<ReturnType<typeof readPhase1Slot>>) {
+/**
+ * A read that found no subscription while the reader's object says a KV record
+ * may still exist: a save or a reminder grant reopened the object and no
+ * cancellation closed it since, so the miss may be a cached or not yet moved
+ * KV record, not an unsubscribe.
+ */
+function waitingForKv(slot: StoredSlot) {
+  return slot.migratable && !slot.subscription && (slot.version > 0 || Boolean(slot.reactivation));
+}
+
+/**
+ * `behind`: phase 1 read a KV record behind the object (see readPhase1Slot).
+ * `settled`: refuse with `EMAIL_UNAVAILABLE` when the read is waiting for KV,
+ * rather than answer as not subscribed.
+ */
+async function loadSubscriptionRecord(env: WorkerEnv, key: string, read?: Awaited<ReturnType<typeof readPhase1Slot>>, settled = false) {
   const phase1 = read ?? (subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key)) : null);
-  const subscription = withVersion(phase1 ? phase1.slot : await readSubscriptionSlot(env, subscriptionUid(key)));
+  const slot = phase1 ? phase1.slot : await readSubscriptionSlot(env, subscriptionUid(key));
+  if (settled && waitingForKv(slot)) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  const subscription = withVersion(slot);
   if (!subscription) return null;
   const stateKey = deliveryStateKey(key, subscription);
   const state = await env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json');
@@ -1310,8 +1385,8 @@ function subscriptionWithState(record: NonNullable<Awaited<ReturnType<typeof loa
   };
 }
 
-async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
-  const record = await loadSubscriptionRecord(env, key);
+async function loadSubscriptionWithState(env: WorkerEnv, key: string, settled = false) {
+  const record = await loadSubscriptionRecord(env, key, undefined, settled);
   return record && subscriptionWithState(record);
 }
 
@@ -1449,7 +1524,7 @@ async function deleteScheduleIndex(env: WorkerEnv, uid: string, deleted?: Set<st
   }
   await env.NOTIFICATION_STORE!.delete(indexKey);
   const { slot: now } = await callSubscriptionStore(env, uid, { action: 'read' });
-  if (now.subscription?.enabled || (!phase1 && now.cleanup?.length)) await env.NOTIFICATION_STORE!.put(indexKey, JSON.stringify({ uid }));
+  if (now.subscription?.enabled || (!phase1 && now.cleanup?.length)) await env.NOTIFICATION_STORE!.put(indexKey, JSON.stringify({ uid }), { expirationTtl: SUBSCRIPTION_KEY_TTL_SECONDS });
 }
 
 /**
@@ -1492,6 +1567,259 @@ export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys =
   return { purged: true };
 }
 
+/**
+ * Account deletion, once the sign-in account is gone: the reader's object keeps
+ * its marks for 30 more days, then deletes them (forget in
+ * email-subscription-store.ts). Never before the Auth delete, which can still be
+ * refused and the account kept. It reads no KV, so a purge that KV fails does
+ * not leave the object without its end date.
+ */
+export async function endEmailSubscription(env: WorkerEnv, uid: string) {
+  if (!env.EMAIL_SUBSCRIPTIONS) return;
+  await callSubscriptionStore(env, uid, { action: 'forget' });
+}
+
+/** The follows and previews of a request body, as a subscription stores them. */
+function digestBodyItems(body: Pick<PreferencesBody, 'follows' | 'previewItems'>) {
+  return {
+    follows: Array.isArray(body.follows)
+      ? (body.follows.map(sanitizeFollow).filter(Boolean) as Follow[]).slice(0, MAX_FOLLOWS)
+      : [],
+    previewItems: Array.isArray(body.previewItems)
+      ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
+      : [],
+  };
+}
+
+/**
+ * The record a save or an opt-in stores, made from the reader's `current` one.
+ * `state` is the delivery state read for `current`: with one, the copies of its
+ * fields that a record from before delivery states still carries are dropped.
+ * `sameSubscription` and `heldToken` are changeSubscription's.
+ */
+function subscriptionRecord({ current, state, settings, identity, follows, previewItems, interests, sameSubscription, heldToken }: {
+  current: Subscription | null; state: DeliveryState | null; settings: Partial<Preferences>; identity: EmailIdentity;
+  follows: Follow[]; previewItems: DigestPaper[]; interests: string[]; sameSubscription?: Subscription; heldToken?: string;
+}): Subscription {
+  const now = new Date().toISOString();
+  return {
+    ...(state && current ? stripDeliveryState(current) : (current || {})),
+    ...settings,
+    uid: identity.uid,
+    email: identity.email,
+    displayName: identity.displayName,
+    follows,
+    previewItems,
+    interests,
+    // Every email of a subscription carries the same link (ENG-193).
+    unsubscribeToken: current?.unsubscribeToken || sameSubscription?.unsubscribeToken || heldToken || crypto.randomUUID().replace(/-/g, ''),
+    // An older KV copy of the same subscription keeps its delivery state,
+    // including none for a record from before delivery states had an id.
+    ...(!current ? { stateId: sameSubscription ? sameSubscription.stateId : crypto.randomUUID().replace(/-/g, '') } : {}),
+    createdAt: current?.createdAt || now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * What an opt-in decides from, read the way every write reads the reader.
+ * `current`: the reader's record, in KV (a phase 1 record written since
+ * the last cancellation) or in their object. `behind`: no record was read, yet
+ * the object says one may exist where this read cannot show it (waitingForKv,
+ * or a KV copy too old to move in). `objectVersion` is always the object's own
+ * version, never a KV record's `version` or `revision`. `unannounced` is the
+ * token of a subscription a welcome yes created in the object whose start no
+ * request has been answered with yet. `indexOnly`: the record is in the
+ * reader's object and their schedule key only ever holds the index (phase 2,
+ * or a reader the welcome opt-in subscribed in phase 1; see readPhase1Slot),
+ * so the opt-in may write that index. A reader phase 2 moved whom a rollback
+ * left in phase 1 is not one: phase 1 writes them to KV again after a
+ * cancellation, where an index put that landed late would replace the record,
+ * so their indexes are left to their app's sync, as before.
+ */
+async function readOptInState(env: WorkerEnv, uid: string) {
+  const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, uid) : null;
+  const slot: StoredSlot & { unmoved?: Subscription } = phase1 ? phase1.slot : await readSubscriptionSlot(env, uid);
+  const current = slot.subscription;
+  return {
+    current,
+    behind: !current && (waitingForKv(slot) || (slot.migratable && Boolean(slot.unmoved))),
+    objectVersion: phase1 ? phase1.objectVersion : slot.version,
+    indexOnly: Boolean(current) && !phase1?.inKv && (!phase1 || Boolean(slot.resident)),
+    unannounced: slot.unannounced,
+  };
+}
+
+/**
+ * `POST /notifications/opt-in`: starts the weekly email for a reader who said
+ * yes to it on the welcome screen, unless they have ever decided about it.
+ *
+ * The gate is the version of the reader's object. It is 0 only while nothing
+ * has reached that object: since phase 1 every save that subscribes, every
+ * unsubscribe (Settings, the email's link, the app's shut-off) and every
+ * account purge raises it in the object's own transaction, and the object
+ * keeps it while the account exists. So the subscription is written only at `expectedVersion: 0`,
+ * in both deploy phases: a decision recorded first makes the write fail and
+ * the answer `declined`, one that lands afterwards cancels the subscription as
+ * usual. An unsubscribe that a Worker from before phase 1 handled left no mark
+ * and does not count.
+ *
+ * `created` is answered at most once per account, and the reader's object
+ * decides it, never a KV read. The write marks the subscription as unannounced
+ * in its own transaction. The request that has written both indexes asks the
+ * object to announce it (`announce`), and the one the object says yes to
+ * answers `created`: the first attempt when all goes well, or the retry that
+ * completes a creation whose index write failed. Every other request answers
+ * `on`. An answer lost after the object announced it is not repeated.
+ *
+ * `consent` names the welcome wording the yes was given under and is kept only
+ * as the record's `welcomeConsent`. Each wording's promise is checked here too:
+ * the topics one needs a leaf interest, the first-follow one a digest follow.
+ * The record goes into the object in phase 1 as well, like a reader phase 2
+ * moved, so KV holds only its two indexes and never a copy with the address.
+ *
+ * The Worker writes the two indexes, the link first and the schedule index
+ * only once the link is there, so a put that fails never leaves a reader the
+ * schedule reaches and whose unsubscribe link does not work. Nothing waits on
+ * them but this request: the reader's object is never held while KV answers, so
+ * an unsubscribe never waits behind an index write. The indexes are not the
+ * truth, only pointers the schedule and the unsubscribe link check against the
+ * object. A put that lands late, after a failure, after this request gave up
+ * or after a later decision, writes `{"uid"}` at a key that for this reader
+ * never holds anything else (readPhase1Slot), or a link index that cancels
+ * nothing once the object holds another token. After its puts the route asks
+ * the object what it holds, and removes what it wrote for a subscription that
+ * was cancelled meanwhile.
+ *
+ * One account may send ten of these an hour, counted in the quota ledger under
+ * the hashed uid after the body is validated. No ORCID or Firestore read and
+ * no email.
+ */
+async function startDigestOptIn(request: Request, env: WorkerEnv, identity: EmailIdentity) {
+  const store = env.NOTIFICATION_STORE;
+  if (!store) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const body = await readBoundedJson<OptInBody>(request);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
+  const consent = typeof body.consent === 'string' && DIGEST_OPT_IN_CONSENTS.includes(body.consent) ? body.consent : null;
+  if (!consent) throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
+  const { follows, previewItems } = digestBodyItems(body);
+  const interests = sanitizeInterests(body.interests);
+  if (consent === DIGEST_CONSENT_FROM_SIGNUP ? !interests.length : !follows.length) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
+
+  const { uid, email } = identity;
+  // Reserved before the reader's object or KV is touched, and not given back:
+  // a refused or failed attempt has made its reads too.
+  const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `email-opt-in:hour:${Math.floor(Date.now() / (60 * 60 * 1000))}`,
+    subject: uid,
+    subjectLimit: OPT_IN_ACCOUNT_HOURLY_LIMIT,
+    // The hour paces one account and counts nothing app-wide.
+    globalLimit: OPT_IN_ACCOUNT_HOURLY_LIMIT,
+    globalAmount: 0,
+  });
+  if (quota.code) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  if (!quota.accepted) throw new EmailNotificationError('EMAIL_OPT_IN_RATE_LIMIT', 429);
+
+  const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  // Writes both indexes of a subscription the object holds, then asks the
+  // object what it holds now. `created` when the object announces the start,
+  // `on` when the subscription is there and was announced before, and
+  // `changed` when it was cancelled or replaced while the indexes were
+  // written: what this request wrote for it is then removed.
+  const complete = async (subscription: Subscription, announce: boolean) => {
+    const linkKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
+    let expired = false;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    // The link first, and the schedule index only once the link is there: the
+    // schedule never reaches a reader whose unsubscribe link answers 400. One
+    // deadline covers both puts, and nothing more is written once it has passed.
+    const indexed = await Promise.race([
+      (async () => {
+        await store.put(linkKey, uid, { expirationTtl: LINK_INDEX_TTL_SECONDS });
+        if (expired) return false;
+        await store.put(key, JSON.stringify({ uid }), { expirationTtl: SUBSCRIPTION_KEY_TTL_SECONDS });
+        return true;
+      })().catch(() => false),
+      new Promise<false>((resolve) => {
+        deadline = setTimeout(() => {
+          expired = true;
+          resolve(false);
+        }, INDEX_WRITE_DEADLINE_MS);
+      }),
+    ]);
+    clearTimeout(deadline);
+    // A put that failed, or one still unanswered at the deadline. Retryable:
+    // the record is in the object, and the retry writes both indexes again.
+    if (!indexed) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+    const { slot } = await callSubscriptionStore(env, uid, announce ? { action: 'announce', token: subscription.unsubscribeToken } : { action: 'read' });
+    if (slot.subscription?.unsubscribeToken === subscription.unsubscribeToken) return slot.announced ? 'created' as const : 'on' as const;
+    // Best effort, each step tried once more after a second: KV refuses a
+    // second write to one key within a second, and these keys were written
+    // just now. The answer is what the object holds either way. What is left
+    // goes by itself: the link index expires (LINK_INDEX_TTL_SECONDS), and the
+    // schedule's next window removes an index that points at no subscription.
+    // The log names no error text: a KV error can quote the key, and with it
+    // the unsubscribe token or the uid.
+    const tidy = (step: () => Promise<unknown>) => kvWrite(step).catch((error: unknown) => {
+      const reason = error as { code?: unknown; name?: unknown } | null;
+      console.warn('Could not remove an index the opt-in wrote', String(reason?.code || reason?.name || 'unknown'));
+    });
+    await tidy(() => store.delete(linkKey));
+    // The schedule key goes only when the reader has no subscription: one
+    // they made since owns it. deleteScheduleIndex leaves a record alone and
+    // puts the index back if they subscribe while it runs.
+    if (!slot.subscription) await tidy(() => deleteScheduleIndex(env, uid));
+    return 'changed' as const;
+  };
+  // The answer for a reader the opt-in may not write for; null at version 0,
+  // and `changed` when the reader's object moved on under this read.
+  const settled = async ({ current, behind, objectVersion, indexOnly, unannounced }: Awaited<ReturnType<typeof readOptInState>>) => {
+    if (current?.enabled) {
+      let outcome: 'on' | 'created' = 'on';
+      if (indexOnly && current.unsubscribeToken) {
+        // A welcome yes created this subscription and no request was answered
+        // with its start (its index write failed, or its Worker stopped): this
+        // one completes it. Otherwise an index lost since is written again,
+        // since this request may be its only retry; a read that misses a key
+        // that exists only costs a put of the same value. A KV record (phase
+        // 1) is its own schedule key, and the reader's app restores its link.
+        const starting = unannounced === current.unsubscribeToken;
+        const missing = starting || await Promise.all([store.get(key), store.get(`${UNSUBSCRIBE_PREFIX}${current.unsubscribeToken}`)])
+          .then(([index, owner]) => !index || owner !== uid);
+        if (missing) {
+          const completed = await complete(current, starting);
+          if (completed === 'changed') return 'changed' as const;
+          outcome = completed;
+        }
+      }
+      const state = await store.get<DeliveryState>(deliveryStateKey(key, current), 'json');
+      return { outcome, preferences: publicSubscription({ ...current, ...deliveryStateFromSubscription(current), ...(state || {}) }, email) };
+    }
+    if (current) return { outcome: 'declined', preferences: publicSubscription(current, email) };
+    // Answering `declined` here would show the digest as off while a record
+    // the read missed may still send: the app retries instead.
+    if (behind) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+    return objectVersion === 0 ? null : { outcome: 'declined', preferences: publicSubscription(null, email) };
+  };
+
+  // A second read when something reached the reader's object under the first:
+  // its version is then above 0 for good, so that read answers and nothing is written.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const answer = await settled(await readOptInState(env, uid));
+    if (answer === 'changed') continue;
+    if (answer) return answer;
+    const record: Subscription = {
+      ...subscriptionRecord({ current: null, state: null, settings: sanitizePreferences({ enabled: true }), identity, follows, previewItems, interests }),
+      welcomeConsent: consent,
+    };
+    const written = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: record, welcome: true });
+    if (!written.accepted) continue;
+    const completed = await complete(record, true);
+    if (completed !== 'changed') return { outcome: completed, preferences: publicSubscription(record, email) };
+  }
+  throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+}
+
 async function saveSubscription(request: Request, env: WorkerEnv, identity: EmailIdentity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const store = env.NOTIFICATION_STORE;
@@ -1512,12 +1840,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     return publicSubscription(null, identity.email);
   }
 
-  const follows = Array.isArray(body.follows)
-    ? (body.follows.map(sanitizeFollow).filter(Boolean) as Follow[]).slice(0, MAX_FOLLOWS)
-    : [];
-  const previewItems = Array.isArray(body.previewItems)
-    ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
-    : [];
+  const { follows, previewItems } = digestBodyItems(body);
   const read: { state: DeliveryState | null; selectionChanged: boolean } = { state: null, selectionChanged: false };
   const { changed, subscription, inKv } = await changeSubscription(env, identity.uid, async (current, behind, sameSubscription, heldToken) => {
     // The read found no record over an object a save reopened (see
@@ -1567,24 +1890,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     ) {
       return undefined;
     }
-    const now = new Date().toISOString();
-    return {
-      ...(read.state && current ? stripDeliveryState(current) : (current || {})),
-      ...settings,
-      uid: identity.uid,
-      email: identity.email,
-      displayName: identity.displayName,
-      follows,
-      previewItems,
-      interests,
-      // Every email of a subscription carries the same link (ENG-193).
-      unsubscribeToken: current?.unsubscribeToken || sameSubscription?.unsubscribeToken || heldToken || crypto.randomUUID().replace(/-/g, ''),
-      // An older KV copy of the same subscription keeps its delivery state,
-      // including none for a record from before delivery states had an id.
-      ...(!current ? { stateId: sameSubscription ? sameSubscription.stateId : crypto.randomUUID().replace(/-/g, '') } : {}),
-      createdAt: current?.createdAt || now,
-      updatedAt: now,
-    };
+    return subscriptionRecord({ current, state: read.state, settings, identity, follows, previewItems, interests, sameSubscription, heldToken });
   });
   if (!subscription?.enabled) return publicSubscription(subscription, identity.email);
 
@@ -1599,10 +1905,11 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   // Otherwise a key that still holds a record, left by a move or a save whose
   // index write failed, becomes the index too, so KV keeps no copy of it.
   const [indexed, owner] = changed ? [null, null] : await Promise.all([inKv ? null : store.get<Subscription>(key, 'json'), store.get(unsubscribeKey)]);
-  await Promise.all([
-    inKv || (indexed && !indexed.unsubscribeToken) ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
-    owner === identity.uid ? null : store.put(unsubscribeKey, identity.uid),
-  ]);
+  // The link first, and the schedule index only once the link is there, so a
+  // put that fails never leaves a reader the schedule reaches and whose
+  // unsubscribe link answers 400.
+  if (owner !== identity.uid) await store.put(unsubscribeKey, identity.uid, { expirationTtl: LINK_INDEX_TTL_SECONDS });
+  if (!inKv && !(indexed && !indexed.unsubscribeToken)) await store.put(key, JSON.stringify({ uid: identity.uid }), { expirationTtl: SUBSCRIPTION_KEY_TTL_SECONDS });
   if (changed && read.selectionChanged) {
     await updateDeliveryState(env, key, subscription, () => ({ heldDigest: null }));
   }
@@ -2967,17 +3274,46 @@ function draftMatchesSubscription(draft: { provider?: string; subscriptionVersio
  * record counts only while its revision is the object's version: a KV read can
  * return the record from before the last save, and a save reopens the object,
  * raising its version, before it writes KV.
+ *
+ * Before that, the draft's unsubscribe link: its index is written again, which
+ * also renews its expiry, so an email never goes out with a link that answers
+ * 400. A save whose link write failed, while an index of the reader's
+ * schedule key outlived the cancellation before it, left exactly that.
+ * A test email follows its own save, which wrote that key a moment before, so
+ * the write is tried once more after a second (kvWrite), still before the
+ * object is read. `link-unavailable` when KV cannot write it: the send waits for
+ * a later window. An index written here for a subscription the object no
+ * longer holds is deleted again, also when it was there and a cancellation
+ * removed it meanwhile.
  */
-async function checkDraft(env: WorkerEnv, key: string, draft: Parameters<typeof draftMatchesSubscription>[0] & { orcidConnectedAt?: string }) {
+async function checkDraft(env: WorkerEnv, key: string, draft: Parameters<typeof draftMatchesSubscription>[0] & { orcidConnectedAt?: string; unsubscribeUrl?: string | null }) {
   const uid = subscriptionUid(key);
   if (draft.orcidConnectedAt
     && (await readDigestOrcid(env, uid).catch(() => null))?.connectedAt !== draft.orcidConnectedAt) return 'orcid-changed';
+  const store = env.NOTIFICATION_STORE!;
+  const token = draft.provider === 'resend' && draft.unsubscribeUrl ? new URL(draft.unsubscribeUrl).searchParams.get('token') : null;
+  const linkKey = token && `${UNSUBSCRIBE_PREFIX}${token}`;
+  let written = false;
+  if (linkKey) {
+    try {
+      written = (await store.get(linkKey)) !== uid;
+      await kvWrite(() => store.put(linkKey, uid, { expirationTtl: LINK_INDEX_TTL_SECONDS }));
+    } catch {
+      return 'link-unavailable';
+    }
+  }
   const kv = subscriptionInKv(env) ? await readKvRecord(env, uid) : null;
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
   const current = slot.subscription ? slot
     : kv && slot.migratable && kv.revision === slot.version ? kv : null;
   const subscription = current && withVersion(current);
-  return subscription?.enabled && draftMatchesSubscription(draft, subscription) ? 'current' : 'subscription-changed';
+  if (subscription?.enabled && draftMatchesSubscription(draft, subscription)) return 'current';
+  // The object, read after the write, names another subscription, or is closed and holds none.
+  const named = slot.subscription?.unsubscribeToken ?? slot.token;
+  const spent = named ? named !== token : !slot.migratable && !slot.subscription;
+  // Best effort: an index left here expires with the rest (LINK_INDEX_TTL_SECONDS).
+  if (linkKey && (written || spent) && subscription?.unsubscribeToken !== token && slot.token !== token) await kvWrite(() => store.delete(linkKey)).catch(() => undefined);
+  return 'subscription-changed';
 }
 
 async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEnv, {
@@ -3028,6 +3364,10 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
     // The earlier send may have reached Resend. Keep its ledger entry so an
     // ORCID change or outage cannot turn a potentially sent edition into a new send.
     if (current === 'orcid-changed') return { pending: true, cancelled: true };
+    // Nothing is sent with a link that may answer 400. The reservation stays,
+    // and a later window settles it as uncertain without sending, as for any
+    // retry that did not go out; the first attempt may have reached Resend.
+    if (current === 'link-unavailable') return { pending: true };
     if (current === 'subscription-changed') {
       await releaseEmailDelivery(env, reservationId, ledgerTime);
       return { pending: true, cancelled: true };
@@ -3090,10 +3430,16 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   // The last check, right before the send: a draft goes out only while the
   // subscription is the version it was prepared from. A new address, a follow
   // removed or an unsubscribe since then cancels it.
-  if (await checkDraft(env, key, reservedDraft) !== 'current') {
+  const verdict = await checkDraft(env, key, reservedDraft);
+  if (verdict !== 'current') {
     if (reservation.duplicate) return { pending: true };
     await releaseEmailDelivery(env, reservationId, now);
-    return { cancelled: true };
+    if (verdict !== 'link-unavailable') return { cancelled: true };
+    // Not sent with a link that may answer 400: the schedule tries again in a
+    // later window, and a test email answers a retryable failure.
+    const postponed = new EmailNotificationError('EMAIL_UNSUBSCRIBE_LINK_UNAVAILABLE', 503);
+    postponed.transient = true;
+    throw postponed;
   }
   return deliverReservedDraft(env, reservationId, reservedDraft, now);
 }
@@ -3153,14 +3499,59 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
   };
 }
 
-export async function handleEmailNotificationRequest(request: Request, env: WorkerEnv, pathname: string) {
+async function handleReactivation(request: Request, env: WorkerEnv, identity: Pick<EmailIdentity, 'uid' | 'email'>, emailVerified: boolean, visit: boolean) {
+  const reading = request.method === 'GET';
+  let expectedConsentRevision: number | undefined;
+  if (!reading) {
+    const body = await readBoundedJson<{ enabled?: unknown; revision?: unknown }>(request, 128);
+    if (!visit && body?.enabled === false && Object.keys(body).length === 1) {
+      const { slot } = await callSubscriptionStore(env, identity.uid, { action: 'reactivation-off' });
+      return { enabled: false, revision: slot.consentRevision };
+    }
+    if (!body || (!visit && body.enabled !== true) || Object.keys(body).length !== (visit ? 1 : 2)
+      || typeof body.revision !== 'number' || !Number.isSafeInteger(body.revision) || body.revision < 0) {
+      throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
+    }
+    if (!emailVerified) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
+    expectedConsentRevision = body.revision;
+  }
+
+  if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+  const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, identity.uid) : null;
+  const slot = phase1?.slot ?? await readSubscriptionSlot(env, identity.uid);
+  const revision = slot.consentRevision ?? 0;
+  if (!reading && expectedConsentRevision !== revision) {
+    throw new EmailNotificationError('EMAIL_REACTIVATION_CHANGED', 409);
+  }
+  if (phase1?.behind || waitingForKv(slot)) {
+    throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+  }
+  const token = slot.subscription?.unsubscribeToken;
+  const eligible = Boolean(slot.subscription?.enabled && slot.subscription.email === identity.email && token);
+  const consent = eligible && slot.reactivation?.email === identity.email && slot.reactivation?.token === token;
+  if (reading) return { enabled: consent, revision };
+  if (visit && !consent) throw new EmailNotificationError('EMAIL_REACTIVATION_CHANGED', 409);
+  if (!eligible) throw new EmailNotificationError('EMAIL_REACTIVATION_REQUIRES_DIGEST', 409);
+
+  const result = await callSubscriptionStore(env, identity.uid, {
+    action: visit ? 'visit' : 'reactivation-on',
+    expectedVersion: phase1?.objectVersion ?? slot.version,
+    expectedConsentRevision,
+    email: identity.email,
+    token,
+  });
+  if (!result.accepted) throw new EmailNotificationError('EMAIL_REACTIVATION_CHANGED', 409);
+  return visit ? { ok: true } : { enabled: true, revision: result.slot.consentRevision };
+}
+
+async function notificationIdentity(request: Request, env: WorkerEnv, allowCache: boolean) {
   let verified;
   try {
     // Only the settings read may use the 60 s identity cache. A write stores the
     // reader's address and name or sends mail, and account deletion purges the
     // subscription before it deletes Auth, so a cached identity would let a
     // deleted account's token create the subscription again.
-    verified = await verifyFirebaseIdentity(request, env, { allowCache: request.method === 'GET' });
+    verified = await verifyFirebaseIdentity(request, env, { allowCache });
   } catch (error) {
     if (!(error instanceof WorkerAuthError)) throw error;
     const code = error.code === 'AUTH_REQUIRED' ? 'EMAIL_AUTH_REQUIRED'
@@ -3168,6 +3559,20 @@ export async function handleEmailNotificationRequest(request: Request, env: Work
     throw new EmailNotificationError(code, error.status);
   }
   if (!verified.email) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
+  return verified;
+}
+
+export async function handleEmailReactivationRequest(request: Request, env: WorkerEnv, pathname: string) {
+  const visit = pathname === '/notifications/visit';
+  if (visit ? request.method !== 'POST' : !['GET', 'PUT'].includes(request.method)) {
+    throw new EmailNotificationError('EMAIL_METHOD_NOT_ALLOWED', 405);
+  }
+  const identity = await notificationIdentity(request, env, false);
+  return handleReactivation(request, env, identity, identity.emailVerified, visit);
+}
+
+export async function handleEmailNotificationRequest(request: Request, env: WorkerEnv, pathname: string) {
+  const verified = await notificationIdentity(request, env, request.method === 'GET');
   if (!verified.ownsEmail) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
   // The verifier already collapsed and capped the name.
   const identity = { uid: verified.uid, email: verified.email, displayName: verified.displayName ?? '' };
@@ -3175,11 +3580,17 @@ export async function handleEmailNotificationRequest(request: Request, env: Work
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
 
   if (pathname === '/notifications/preferences' && request.method === 'GET') {
-    const subscription = await loadSubscriptionWithState(env, key);
+    // Settings reads a miss as an unsubscribe, so a miss that may be a cached
+    // or unmoved KV record is a failed read instead, and Settings keeps
+    // reminder withdrawal available.
+    const subscription = await loadSubscriptionWithState(env, key, true);
     return { preferences: publicSubscription(subscription, identity.email) };
   }
   if (pathname === '/notifications/preferences' && request.method === 'PUT') {
     return { preferences: await saveSubscription(request, env, identity) };
+  }
+  if (pathname === '/notifications/opt-in' && request.method === 'POST') {
+    return startDigestOptIn(request, env, identity);
   }
   if (pathname === '/notifications/test' && request.method === 'POST') {
     return testSubscription(env, identity);
@@ -3561,6 +3972,101 @@ async function persistScheduleCursor(store: KVNamespace, cursor: string | undefi
   else await store.delete(SCHEDULE_CURSOR_KEY);
 }
 
+type ListedKey = { name: string; expiration?: number };
+
+/**
+ * Renews the expiry of a reader's KV keys while their subscription is active:
+ * the schedule's key and the unsubscribe-link index. `active` is what the
+ * schedule's read showed; this checks it again in the object.
+ *
+ * Active in phase 1 means a record that is on, with the object open at the
+ * version the record carries (not behind, see readPhase1Slot), or an index for
+ * a subscription the object holds. The renewal writes the record it just read;
+ * the object is read again after the writes, and a cancellation (unsubscribe,
+ * account deletion) that landed in between has the keys deleted once more,
+ * except the schedule key while the cleanup journal lists entries, as the
+ * cancellation does. A save that lands in between may find its record replaced
+ * by the one renewed, which then reads as behind until the app's next sync
+ * writes it again, as after a save whose KV write failed. In phase 2, where the
+ * object is the record, the schedule key of a subscription the object holds is
+ * written as its `{"uid"}` index, whatever the read returned.
+ *
+ * A key the list shows without an expiry, written before keys had one, gets one
+ * whatever the subscription's state, so none stays for good, except a phase 1
+ * record whose object a cancellation closed: it is a copy the cancellation was
+ * deleting, perhaps returned by a cached read, so it is deleted rather than
+ * written back. An inactive reader's key that already expires is left to expire.
+ */
+async function renewSubscriptionKeys(env: WorkerEnv, key: ListedKey, now: Date, active: boolean, renewals: { left: number }) {
+  const left = key.expiration ? key.expiration - now.getTime() / 1000 : undefined;
+  if (left !== undefined && (!active || left >= SUBSCRIPTION_KEY_RENEW_BELOW_SECONDS)) return;
+  if (renewals.left <= 0) return;
+  renewals.left -= 1;
+  const store = env.NOTIFICATION_STORE!;
+  const uid = subscriptionUid(key.name);
+  const phase1 = subscriptionInKv(env);
+  const { slot: before } = await callSubscriptionStore(env, uid, { action: 'read' });
+  const raw = await store.get(key.name);
+  if (raw === null) return;
+  let value: unknown = null;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    // Not a value this Worker wrote: it only gets an expiry.
+  }
+  const record = phase1 && value && typeof value === 'object' && Object.keys(value).some(field => field !== 'uid') ? value as Subscription : null;
+  if (record && !before.migratable) {
+    if (left === undefined && !before.cleanup?.length) await kvWrite(() => store.delete(key.name));
+    return;
+  }
+  const live = record
+    ? Boolean(record.enabled) && (Number(record.revision) || 0) === before.version
+    : Boolean(before.subscription?.enabled);
+  if (left !== undefined && !live) return;
+  const written = !phase1 && before.subscription ? JSON.stringify({ uid }) : raw;
+  const token = live ? (record ?? before.subscription)?.unsubscribeToken : undefined;
+  const linkKey = token ? `${UNSUBSCRIBE_PREFIX}${token}` : '';
+  const linked = Boolean(linkKey) && await store.get(linkKey) === uid;
+  await kvWrite(() => store.put(key.name, written, { expirationTtl: SUBSCRIPTION_KEY_TTL_SECONDS }));
+  if (linked) await kvWrite(() => store.put(linkKey, uid, { expirationTtl: LINK_INDEX_TTL_SECONDS }));
+  if (!live && !record) return;
+  const { slot: after } = await callSubscriptionStore(env, uid, { action: 'read' });
+  if (record ? after.migratable : after.subscription) return;
+  if (!after.cleanup?.length) await kvWrite(() => store.delete(key.name));
+  if (linked) await kvWrite(() => store.delete(linkKey));
+}
+
+/**
+ * Gives an expiry to the unsubscribe-link indexes that have none, a page per
+ * window: those written before links expired, and any a Worker from before
+ * this one writes after a rollback. Once it has passed every link it rests for
+ * LINK_EXPIRY_SWEEP_REST_MS and then starts again. The link of an active
+ * subscription is renewed with its reader's keys (renewSubscriptionKeys). A
+ * link a cancellation deletes while this reads it can be put back, now with an
+ * expiry: it points at no subscription, and the next POST from that link
+ * removes it.
+ */
+async function sweepUnexpiringLinks(store: KVNamespace, now: Date) {
+  const state = cleanText(await store.get(LINK_EXPIRY_SWEEP_KEY), 2_000);
+  const finished = state.startsWith(LINK_EXPIRY_SWEEP_DONE);
+  if (finished && now.getTime() - Number(state.slice(LINK_EXPIRY_SWEEP_DONE.length)) < LINK_EXPIRY_SWEEP_REST_MS) return;
+  const cursor = finished ? undefined : state || undefined;
+  let page;
+  try {
+    page = await store.list({ prefix: UNSUBSCRIBE_PREFIX, cursor, limit: LINK_EXPIRY_SWEEP_PAGE_SIZE });
+  } catch (error) {
+    if (!cursor) throw error;
+    // A cursor KV no longer accepts starts the sweep again.
+    await store.delete(LINK_EXPIRY_SWEEP_KEY);
+    return;
+  }
+  await Promise.all((page.keys as ListedKey[]).filter(key => !key.expiration).map(async (key) => {
+    const uid = await store.get(key.name);
+    if (uid !== null) await store.put(key.name, uid, { expirationTtl: LINK_INDEX_TTL_SECONDS });
+  }));
+  await store.put(LINK_EXPIRY_SWEEP_KEY, page.list_complete || !page.cursor ? `${LINK_EXPIRY_SWEEP_DONE}${now.getTime()}` : page.cursor);
+}
+
 function failureCodeCounts(sourceReport?: SourceReportInput, code?: string) {
   const counts = { ...(sourceReport?.failureCodes || {}) };
   if (code) counts[code] = (counts[code] || 0) + 1;
@@ -3648,7 +4154,13 @@ async function persistScheduledDelivery(env: WorkerEnv, key: string, subscriptio
   };
 }
 
-async function processScheduledSubscription(env: WorkerEnv, key: { name: string }, now: Date, openAlexRequests: OpenAlexRequests): Promise<ScheduledOutcome> {
+async function processScheduledSubscription(
+  env: WorkerEnv,
+  key: ListedKey,
+  now: Date,
+  openAlexRequests: OpenAlexRequests,
+  renewals: { left: number },
+): Promise<ScheduledOutcome> {
   const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, subscriptionUid(key.name)) : undefined;
   const record = await loadSubscriptionRecord(env, key.name, phase1);
   // Phase 1 removes what the object's cleanup journal lists for a reader
@@ -3658,7 +4170,18 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
   if (phase1?.slot.cleanup?.length && !record) {
     await acknowledgeCleanup(env, subscriptionUid(key.name), await deleteJournaledKeys(env, subscriptionUid(key.name), phase1.slot));
   }
+  // A reader the welcome opt-in subscribed has only an index at the schedule
+  // key, never a record (readPhase1Slot). One left for a closed, empty object,
+  // by an index write that landed after an unsubscribe or an account deletion,
+  // points at nothing, so phase 1 removes it too (deleteScheduleIndex keeps a
+  // record, and puts the index back if they subscribe meanwhile).
+  if (phase1 && !record && phase1.slot.resident && !phase1.slot.migratable) await deleteScheduleIndex(env, subscriptionUid(key.name));
   const outcome = await processLoadedSubscription(env, key, now, openAlexRequests, record);
+  await renewSubscriptionKeys(env, key, now, Boolean(record?.subscription.enabled && !record.behind), renewals).catch((error: unknown) => {
+    // A fixed code, never the message: a KV error can name the key, and so the
+    // reader's uid or unsubscribe token. The key is still due in the next window.
+    console.warn('Could not renew the expiry of an email subscription key', error instanceof EmailNotificationError ? error.code : 'EMAIL_KEY_RENEWAL_FAILED');
+  });
   // A listed key whose KV read returned nothing counts too, when the object
   // holds a reopened reader (see readPhase1Slot): a cached miss must not make
   // the window look clean.
@@ -3681,7 +4204,8 @@ async function processLoadedSubscription(
   const subscription = record && subscriptionWithState(record);
   // An index a save wrote just after an unsubscribe points at no subscription.
   // In phase 1 the key is the record itself, and a read that missed it may be
-  // a stale one, so only a cancellation deletes it.
+  // a stale one, so only a cancellation deletes it; the caller has removed the
+  // index of a reader the welcome opt-in subscribed, which is never a record.
   if (!subscription && !subscriptionInKv(env)) await deleteScheduleIndex(env, subscriptionUid(key.name));
   if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
@@ -3916,6 +4440,7 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
   // One per run, never module-level: the isolate outlives the run, so a shared
   // map would hand one run's answers to the next and grow without bound.
   const openAlexRequests: OpenAlexRequests = new Map();
+  const renewals = { left: SUBSCRIPTION_KEY_RENEWALS_PER_RUN };
   let inventoryComplete = false;
   while (!inventoryComplete) {
     const elapsed = Date.now() - startedAt;
@@ -3945,6 +4470,7 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
       key,
       now,
       openAlexRequests,
+      renewals,
     )));
     processed += batch.length;
     scanned += batch.length;
@@ -3975,6 +4501,12 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
       console.warn('Could not persist email schedule cursor', (error as EmailNotificationError)?.message || error);
     }
     if (!batch.length && !cursor) inventoryComplete = true;
+  }
+  try {
+    await sweepUnexpiringLinks(env.NOTIFICATION_STORE, now);
+  } catch {
+    // A fixed message, never the error's: a KV error can name a link's key.
+    console.warn('Could not give the unsubscribe links an expiry');
   }
   const summary: ScheduleSummary = {
     scheduledAt: now.toISOString(),
@@ -4017,6 +4549,7 @@ export const emailNotificationInternals = {
   fetchOpenAlexUpdates,
   fetchOpenAlexDigestPayload,
   saveSubscription,
+  startDigestOptIn,
   loadSubscriptionWithState,
   mergePapers,
   arxivCategoriesForFollow,
