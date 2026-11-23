@@ -147,6 +147,14 @@ test('the page says what a full-paper translation sends to Anthropic, what Paper
   assert.match(html, /Anthropic may process the text in any region it serves and ordinarily deletes API inputs and outputs within 30 days, subject to its agreement with PaperTok and exceptions for policy enforcement and legal obligations\./);
 });
 
+// worker/email-subscription-store.ts: only `forget` sets `forgetAt`; worker/account-deletion.ts tries it twice.
+test('the page says the count of email changes can stay with no set end if the request that schedules its deletion fails', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /If, when you delete your account, the request that schedules this deletion fails or gets no reply both times PaperTok sends it, the deletion may never be scheduled\. The count, and the mark and record identifiers if the object holds them, can then stay with no set end; none of them holds your address or preferences\./);
+  const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(kept, /If the request that schedules the count's deletion fails, the count can stay with no set end \(see Email updates\)\./);
+});
+
 // Digest reminders (#555): the visit hour kept in the account's EmailSubscriptionStore with the reader's consent.
 test('the page says what opt-in digest reminders keep, for how long, and that they stay apart from analytics', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');

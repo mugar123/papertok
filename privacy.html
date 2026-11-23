@@ -383,13 +383,11 @@
         everything else the object holds; deleting an account that never had the email
         leaves one for those 30 days too. If deleting the subscription's other email records
         is still failing then, the object waits for it, for at most 30 more days. The mark
-        is kept and deleted with the count.
-        <!-- PENDING PABLO: the #570 lane's lost-reply exception replaces the next sentence once
-        Pablo approves its exact wording; update its clause in PRIVACY_POLICY_CHANGE_EVIDENCE
-        (src/legal/privacy-policy.ts) with it. -->
-        If the reply to an account deletion is lost, only the count of changes, without your
-        address or preferences, may remain.
-        In the rare case that Cloudflare's storage
+        is kept and deleted with the count. If, when you delete your account, the request
+        that schedules this deletion fails or gets no reply both times PaperTok sends it,
+        the deletion may never be scheduled. The count, and the mark and record identifiers
+        if the object holds them, can then stay with no set end; none of them holds your
+        address or preferences. In the rare case that Cloudflare's storage
         answers late while the email is being started, its settings saved or an email sent,
         an entry with
         your account identifier and the unsubscribe identifier, without your address, can be
@@ -675,7 +673,9 @@
         email subscription, which holds neither your address nor your preferences, stays for
         30 more days, or at most 60 if deleting your other email records keeps failing, and
         an email subscription or reminder consent deleted from your account's Durable Object
-        can remain in Cloudflare's 30-day storage history (see Email updates). The mark that
+        can remain in Cloudflare's 30-day storage history (see Email updates). If the request
+        that schedules the count's deletion fails, the count can stay with no set end (see
+        Email updates). The mark that
         the email was started from the welcome screen is kept and deleted with the count. An
         entry that links an unsubscribe identifier to your account identifier, which a late
         write can leave in Cloudflare Workers KV, expires 120 days after it was written. The

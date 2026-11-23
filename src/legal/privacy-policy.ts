@@ -214,8 +214,10 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['opt-in reminders', /you can opt in to digest reminders in Settings/],
     ['use your last signed-in visit hour for 30 days', /PaperTok uses the visit for 30 days from the hour it records/],
     ['last signed-in visit hour', /keeps only the hour of your last signed-in visit when the app is visible/],
-    // PENDING PABLO: replace with the #570 lane's lost-reply sentence once approved.
-    ['If an account deletion reply is lost, only a change counter, with no address or preferences, may remain', /If the reply to an account deletion is lost, only the count of changes, without your address or preferences, may remain/],
+    // EmailSubscriptionStore's `forget` (endEmailSubscription, tried twice by account deletion) schedules the end.
+    ['If an account deletion reply is lost', /the request that schedules this deletion fails or gets no reply both times PaperTok sends it, the deletion may never be scheduled/],
+    ['only a change counter', /The count, and the mark and record identifiers if the object holds them, can then stay with no set end/],
+    ['with no address or preferences', /none of them holds your address or preferences/],
   ],
   unsaid: [
     [/(stores?|keeps?|logs?|records?|counts?) (your|the) IP address/i, 'the counters hold a derived identifier, not the address'],
