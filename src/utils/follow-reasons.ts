@@ -1,4 +1,6 @@
 import type { Paper, PaperAuthor, PaperFollowMatch } from '../models/paper.ts';
+import type { FollowEntity } from './following.ts';
+import { getFollowDisplayName } from './follow-display-name.ts';
 
 type FollowType = PaperFollowMatch['type'];
 
@@ -19,16 +21,14 @@ const TYPES: FollowType[] = ['author', 'topic', 'institution', 'project', 'journ
  * the card's own check, which also holds outside the Following tab. Legacy
  * string matches carry no type and are skipped. A match counts only while
  * `isFollowing` still holds it, so a card kept in a feed or its cache stops
- * saying so after an unfollow. The name is the reader's stored follow's
- * (`nameOf`), else the one the corpus echoed; a match the corpus could not
- * name carries its id as its name, which is no name to show: `name` is then
- * empty.
+ * saying so after an unfollow. The reader's stored name takes precedence.
+ * When the corpus only echoed the id, the card can still name the type.
  */
 export function followedOnCard(
   matches: Paper['_followedEntityMatches'],
   followedAuthor: PaperAuthor | string | null,
   isFollowing: (match: PaperFollowMatch) => boolean,
-  nameOf: (match: PaperFollowMatch) => string | undefined = () => undefined,
+  storedFollow?: (match: PaperFollowMatch) => FollowEntity | undefined,
 ): CardFollow | null {
   const followed = (matches || []).filter((match): match is PaperFollowMatch => (
     Boolean(match) && typeof match === 'object' && TYPES.includes(match.type) && isFollowing(match)
@@ -36,7 +36,10 @@ export function followedOnCard(
   for (const type of TYPES) {
     const match = followed.find(candidate => candidate.type === type);
     if (match) {
-      const name = (nameOf(match) || match.displayName).trim();
+      const stored = storedFollow?.(match);
+      const namedMatch = match.displayName.trim() !== match.canonicalId ? match : null;
+      const follow = stored ?? namedMatch;
+      const name = follow ? getFollowDisplayName(follow).trim() : '';
       return { type, name: name === match.canonicalId ? '' : name, source: 'request' };
     }
     if (type === 'author' && followedAuthor) {
