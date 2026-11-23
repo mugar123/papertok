@@ -68,8 +68,7 @@ const OAI_STEP = { retries: { limit: 3, delay: '1 minute', backoff: 'exponential
 // next time.
 const OAI_MAX_WAIT_SECONDS = 300;
 const OAI_MAX_WAITS = 3;
-// A failed author list waits until the next night, with successful batches already in D1.
-const AUTHOR_STEP = { retries: { limit: 0, delay: '1 minute' }, timeout: '10 minutes' } as const;
+const AUTHOR_STEP = { ...PAGE_STEP, timeout: '10 minutes' } as const;
 const LANE_STEP = { retries: { limit: 2, delay: '1 minute', backoff: 'exponential' }, timeout: '10 minutes' } as const;
 
 /** Where a set's harvest starts: the last day it was harvested to the end, else the corpus window. */

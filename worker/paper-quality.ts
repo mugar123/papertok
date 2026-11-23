@@ -1,15 +1,17 @@
 import type { OpenAlexAuthor, OpenAlexPage } from '../src/services/adapters/open-alex-types.ts';
 import type { WorkerEnv } from './env.ts';
 
-import { handleHarvestOpenAlex, openAlexFilterBatches } from './openalex-api.ts';
+import { fetchHarvestOpenAlexList, openAlexFilterBatches } from './openalex-api.ts';
 import { CORPUS_DAYS, daysFromNow } from './paper-store.ts';
 
 const AUTHOR_REFRESH_DAYS = 30;
 const AUTHOR_RETENTION_DAYS = 365;
-// Provisional until the post-harvest /health/openalex/budget reading. The newest week took 576 calls.
+// After the 2026-11-23 harvest, 2,830 of 3,700 units remained. Other nights can leave fewer.
 const AUTHOR_NIGHTLY_CALLS = 600;
 export const AUTHOR_IMPACT_PART = { subject: 'openalex:harvest:author-impact', limit: AUTHOR_NIGHTLY_CALLS };
 const AUTHORS_PER_CALL = 100;
+// An empty large batch can hide a provider outage and postpone every missing author for 30 days.
+const MIN_AUTHORS_REQUIRING_ANSWER = 20;
 const PAPERS_PER_PAGE = 500;
 const AUTHOR_CAP = 0.035;
 const HF_CAP = 0.025;
@@ -36,30 +38,43 @@ function authorId(value: unknown) {
   return typeof value === 'string' ? /^(?:https?:\/\/(?:api\.)?openalex\.org\/(?:authors\/)?)?(A\d+)$/i.exec(value.trim())?.[1].toUpperCase() : undefined;
 }
 
+const harvestLimits: Record<string, string> = {
+  user: 'nightly share spent',
+  part: 'author part spent',
+  global: 'daily feed ceiling reached',
+};
+
 async function fetchImpact(env: WorkerEnv, ids: string[]) {
   const url = new URL('https://papertok.internal/openalex/authors');
   url.searchParams.set('filter', 'openalex:' + ids.toSorted().join('|'));
   url.searchParams.set('select', 'id,summary_stats');
   url.searchParams.set('per_page', String(AUTHORS_PER_CALL));
-  const response = await handleHarvestOpenAlex(new Request(url), env, { part: AUTHOR_IMPACT_PART });
-  if (response.status === 429) return null;
-  if (!response.ok) throw new Error(`OpenAlex author list returned HTTP ${response.status}`);
+  const response = await fetchHarvestOpenAlexList(url, env, { part: AUTHOR_IMPACT_PART });
+  if (!response.ok) {
+    const scope = response.headers.get('x-papertok-harvest-scope');
+    const spent = harvestLimits[scope ?? ''];
+    throw new Error(`OpenAlex author list returned HTTP ${response.status}${spent ? ' (' + spent + ')' : ''}`);
+  }
   const page = await response.json<OpenAlexPage<OpenAlexAuthor>>();
   if (!Array.isArray(page?.results)) throw new Error('OpenAlex author list is missing results');
 
   // Only a valid record says anything: an author the answer leaves out, or
   // returns malformed, is not known to have no h-index, so it gets no entry
-  // and keeps whatever value the cache already holds (`storeAuthorBatches`).
+  // and keeps whatever value the cache already holds (`storeAuthorBatch`).
   const requested = new Set(ids);
   const metrics = new Map<string, number | null>();
   for (const author of page.results) {
     const id = authorId(author?.id);
-    if (!id || !requested.has(id)) continue;
-    const h = author.summary_stats?.h_index;
+    const stats = author?.summary_stats;
+    if (!id || !requested.has(id) || !stats || typeof stats !== 'object' || Array.isArray(stats)) continue;
+    const h = stats.h_index;
     if (h != null && (!Number.isSafeInteger(h) || h < 0)) continue;
     metrics.set(id, h ?? null);
   }
-  const unanswered = ids.filter(id => !metrics.has(id)).length;
+  if (!metrics.size && ids.length >= MIN_AUTHORS_REQUIRING_ANSWER) {
+    throw new Error(`OpenAlex author list gave no valid records for ${ids.length} requested authors`);
+  }
+  const unanswered = ids.length - metrics.size;
   if (unanswered) console.warn(`OpenAlex author list gave no valid record for ${unanswered} of ${ids.length} authors`);
   return metrics;
 }
@@ -118,26 +133,26 @@ async function qualityPage(db: D1Database, now: number, after: QualityCursor | n
 
 export type AuthorProgress = { after: QualityCursor | null; pending: string[] } | 'refresh';
 
-async function storeAuthorBatches(db: D1Database, env: WorkerEnv, batches: string[][]) {
-  for (const batch of batches) {
-    const fetched = await fetchImpact(env, batch);
-    if (!fetched) return false;
-    const fetchedAt = new Date().toISOString();
-    const unanswered = batch.filter(id => !fetched.has(id));
-    // Checkpoint each successful request. An answered author takes the new
-    // value; one the answer left out stays unknown when new and keeps its
-    // last known h-index otherwise, so a refresh never erases a known value.
-    await db.batch([
-      db.prepare(`INSERT INTO openalex_author_impact (author_id, h_index, fetched_at)
-        SELECT key, value, ? FROM json_each(?) WHERE true
-        ON CONFLICT (author_id) DO UPDATE SET h_index = excluded.h_index, fetched_at = excluded.fetched_at, refresh_requested_at = NULL
-        WHERE fetched_at <= excluded.fetched_at`).bind(fetchedAt, JSON.stringify(Object.fromEntries(fetched))),
-      db.prepare(`INSERT INTO openalex_author_impact (author_id, h_index, fetched_at)
-        SELECT value, NULL, ? FROM json_each(?) WHERE true
-        ON CONFLICT (author_id) DO UPDATE SET fetched_at = excluded.fetched_at, refresh_requested_at = NULL
-        WHERE fetched_at <= excluded.fetched_at`).bind(fetchedAt, JSON.stringify(unanswered)),
-    ]);
-  }
+async function storeAuthorBatch(db: D1Database, env: WorkerEnv, batch: string[]) {
+  const fetched = await fetchImpact(env, batch).catch((error: Error) => {
+    console.warn(`Stopping author impact for this run: ${error.message}`);
+    return null;
+  });
+  if (!fetched) return false;
+  const fetchedAt = new Date().toISOString();
+  const unanswered = batch.filter(id => !fetched.has(id));
+  // A D1 retry skips committed batches. If this write fails, the same sorted
+  // filter can reuse the relay's shared 24-hour answer before reserving another unit.
+  await db.batch([
+    db.prepare(`INSERT INTO openalex_author_impact (author_id, h_index, fetched_at)
+      SELECT key, value, ? FROM json_each(?) WHERE true
+      ON CONFLICT (author_id) DO UPDATE SET h_index = excluded.h_index, fetched_at = excluded.fetched_at, refresh_requested_at = NULL
+      WHERE fetched_at <= excluded.fetched_at`).bind(fetchedAt, JSON.stringify(Object.fromEntries(fetched))),
+    db.prepare(`INSERT INTO openalex_author_impact (author_id, h_index, fetched_at)
+      SELECT value, NULL, ? FROM json_each(?) WHERE true
+      ON CONFLICT (author_id) DO UPDATE SET fetched_at = excluded.fetched_at, refresh_requested_at = NULL
+      WHERE fetched_at <= excluded.fetched_at`).bind(fetchedAt, JSON.stringify(unanswered)),
+  ]);
   return true;
 }
 
@@ -147,8 +162,10 @@ export async function loadPaperAuthorImpact(db: D1Database, env: WorkerEnv, now:
     const due = await db.prepare(`SELECT author_id FROM openalex_author_impact WHERE refresh_requested_at = ?
       ORDER BY fetched_at, author_id LIMIT ?`).bind(runDate, AUTHORS_PER_CALL).all<{ author_id: string }>();
     const batches = openAlexFilterBatches('openalex', due.results.map(row => row.author_id), AUTHORS_PER_CALL);
-    const completed = await storeAuthorBatches(db, env, batches);
-    return completed && due.results.length === AUTHORS_PER_CALL ? 'refresh' : null;
+    // One filter per refresh step keeps its cache key stable if the D1 write fails.
+    const batch = batches[0];
+    if (!batch || !await storeAuthorBatch(db, env, batch)) return null;
+    return due.results.length === AUTHORS_PER_CALL || batches.length > 1 ? 'refresh' : null;
   }
 
   const { papers, next } = await qualityPage(db, now, progress.after);
@@ -167,7 +184,9 @@ export async function loadPaperAuthorImpact(db: D1Database, env: WorkerEnv, now:
   const last = batches.at(-1);
   const pending = next && last && last.length < AUTHORS_PER_CALL ? last : [];
   if (pending.length) batches.pop();
-  if (!await storeAuthorBatches(db, env, batches)) return null;
+  for (const batch of batches) {
+    if (!await storeAuthorBatch(db, env, batch)) return null;
+  }
   return next ? { after: next, pending } : 'refresh';
 }
 

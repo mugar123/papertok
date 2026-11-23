@@ -532,6 +532,19 @@ export function handleHarvestOpenAlex(request: Request, env: WorkerEnv, ask: Har
   return relayOpenAlex(request, env, ask, 'reader');
 }
 
+// OpenAlex's short rate limit can clear during a harvest step. The ledger's
+// five-minute refusal means the harvest has spent its allowance for the night.
+export async function fetchHarvestOpenAlexList(url: URL, env: WorkerEnv, ask?: HarvestAsk) {
+  const request = new Request(url);
+  const response = await handleHarvestOpenAlex(request, env, ask);
+  const wait = Number(response.headers.get('retry-after'));
+  if (response.status === 429 && wait > 0 && wait <= 60) {
+    await new Promise(resolve => setTimeout(resolve, wait * 1000));
+    return handleHarvestOpenAlex(request, env, ask);
+  }
+  return response;
+}
+
 async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestAsk | null, asker: Asker) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';

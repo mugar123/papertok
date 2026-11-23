@@ -274,7 +274,9 @@ attempt, after 8 minutes, in a fresh one, a 16-minute stall. The 84 batches,
 372 backfill steps and 500 eviction steps that followed shared the fresh
 invocation without reaching the default again. `wrangler.toml` sets the limit
 to 100,000. The longest run is estimated at **83,000 subrequests** for the measured
-corpus. The earlier estimate of 66,000 includes 150 enrichment batches, every
+corpus. A [harvest test](paper-harvest.test.ts) checks that 150 enrichment batches
+with typical DOIs, including their embedding steps, fit within half the configured
+subrequest limit. The earlier estimate of 66,000 includes 150 enrichment batches, every
 notable lane on the same night, 400 followed lanes, full PubMed backfill and
 eviction. Allow up to 12,000 more for the harvest's 4,000 daily OpenAlex misses:
 two shared-cache calls and a ledger write when OpenAlex reports its balance
@@ -286,6 +288,23 @@ in batches of 2,000 would add 347 calls. Corpus size, cache hits and retries
 affect the actual total.
 Subrequests are not billed themselves; each provider's calls stay bounded by
 their budgets.
+
+Workflow steps have a separate limit. On 2026-11-23, Cloudflare listed 10,000
+steps per instance by default on Workers Paid, configurable up to 25,000.
+`step.sleep` does not count. The production harvests on November 21, 22 and 23,
+2026 took 2,311, 1,953 and 1,930 steps respectively, counted with
+`wrangler workflows instances describe`. [Cloudflare Workflows limits](https://developers.cloudflare.com/workflows/reference/limits/)
+
+With 258,000 recent papers, a complete author discovery pass and a complete
+scoring pass add 517 steps each. Each reads 516 full pages of 500 and one empty
+page to finish. Refresh reads up to 100 authors per step. With all 600 units
+available for refresh and no relay cache hits, allow up to 600 billed steps
+and one final empty or refused step. Cache hits can add steps without spending
+units. Each prune step deletes up to 2,000 expired rows from each table and
+repeats if either deletion fills its batch. With one prune step, the largest
+of those three runs would reach about 3,950 steps, under half the default.
+A run that exhausts its step limit during quality would lose the remaining
+embedding, backfill, eviction and leaf filing phases.
 
 The paper store's placement. D1 keeps `papertok-paper-store` in Western Europe
 (WEUR) with read replication off, so every D1 call is a round trip from the
@@ -486,12 +505,16 @@ The older version then refreshes each of those rows once its `enriched_at` is mo
 
 The 02:30 UTC harvest runs [paper-quality.ts](paper-quality.ts) after enrichment and before the remaining embeddings and backfill. Migration [0014](migrations/0014_work_quality.sql) creates two tables. The nightly job is their only consumer.
 
-- `openalex_author_impact` is the table called `author_metrics` in the design. It stores the OpenAlex author ID, h-index and fetch time. Metrics are due for refresh at 30 days and pruned at 365 days. A lookup that returns no matching ID or no valid h-index stores NULL for that author. A reported zero stays zero.
+- `openalex_author_impact` stores the OpenAlex author ID and h-index. For a batch the job accepts, `fetched_at` records when it last asked about the author, even if the response omitted that ID. An omitted or malformed record preserves a cached value and leaves a new author NULL. A valid `summary_stats` object with a null or absent `h_index` replaces even a cached value with NULL. A reported zero stays zero. Refresh is due 30 days after `fetched_at`, and pruning after 365 days.
 - `work_quality` stores a row only while a paper has a positive signal. Its columns give the highest known h-index among the selected authors, positive Hugging Face votes, each weighted contribution and the capped sum. The publication date indexes expiry for retained papers. Deleting a work cascades to its quality row.
 
 The job reads papers newer than the 90-day cutoff, including future publication dates, newest first with work ID breaking ties. Papers with at least five known citations lose any stored note. An unknown count (missing or stored as zero with `citationCountKnown: false`) remains eligible, so an uncounted arXiv paper can qualify through Hugging Face votes.
 
-For bylines of up to 30 authors, the job reads the first author and the last three in `works.paper.authors`. It looks up missing author IDs first in batches of up to 100, then refreshes eligible cached authors in order of oldest fetch. Each billed list spends one of the nightly share’s 3,700 units and one of the 600 allowed for author lookups. The cap is provisional pending a post-harvest reading of `/health/openalex/budget`. A refusal or provider failure stops author requests for that run. Completed batches stay cached for the next night. A second pass computes scores from the stored h-index, including values still waiting for refresh, and positive `huggingFaceUpvotes`.
+For bylines of up to 30 authors, the job reads the first author and the last three in `works.paper.authors`. It looks up missing author IDs first in batches of up to 100, then refreshes eligible cached authors in order of oldest fetch. Each billed list spends one of the nightly share’s 3,700 units and one of the 600 allowed for author lookups. After the 2026-11-23 harvest finished at 04:27 UTC, `/health/openalex/budget` showed 870 of 3,700 units used. That left 2,830 units that night, enough for the 600-call cap. Enrichment can use the whole nightly share before author lookups begin.
+
+The relay retries a short OpenAlex rate limit once when the requested wait is at most 60 seconds. A remaining refusal, a failed or malformed list, or zero valid requested records in a batch of 20 or more ends author lookups for the night. The job logs the reason and leaves that batch due. Earlier batches stay in D1. A D1 failure retries the page and can reuse the relay’s shared answer for 24 hours.
+
+A second pass computes scores from the stored h-index, including values still waiting for refresh, and positive `huggingFaceUpvotes`.
 
 Each contribution is its cap times `min(1, log1p(value) / log1p(100))`. The author contribution reaches 0.035 at h = 100, and votes reach 0.025 at 100 votes. Their sum stops at 0.05. The job removes rows whose signals disappear and leaves unchanged scores unwritten.
 

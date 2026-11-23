@@ -98,12 +98,14 @@ test('unknowns and zero votes leave no row, large bylines can qualify through HF
 
 test('a spent nightly share stops calls across pages and the next night resumes from the cached batch', async t => {
   const { env, db, add } = corpus();
+  const warnings = t.mock.method(console, 'warn', () => {});
   // The actual ledger has one unit left for tonight, including after earlier callers spent the rest.
   const batches = openAlex(t, ids => Response.json({ results: ids.map(id => ({ id, summary_stats: { h_index: 5 } })) }));
   const reservation = await reserveOpenAlexBudget(env, '', { tier: 'feed', kind: 'list', units: OPENALEX_HARVEST_DAILY_UNITS - OPENALEX_NEW_FOLLOWS_DAILY_UNITS - 1 });
   assert.ok(reservation.reservations);
   for (let id = 1; id <= 501; id++) add(id, { authors: [{ id: 'A' + id }], huggingFaceUpvotes: id === 501 ? 3 : 0 }, now - (id <= 2 ? 2 * day : day));
   await run(env);
+  assert.equal(warnings.mock.calls.filter(call => String(call.arguments[0]).includes('nightly share spent')).length, 1);
   assert.deepEqual(batches, [Array.from({ length: 100 }, (_, i) => 'A' + (i + 3)).sort()]);
   assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact').get()?.n, 100);
   assert.equal(db.prepare('SELECT count(*) AS n FROM work_quality').get()?.n, 101);
@@ -149,10 +151,54 @@ test('a malformed OpenAlex list leaves the batch retryable and still materialize
   const { env, db, add } = corpus();
   openAlex(t, () => Response.json({ error: 'invalid response' }));
   add(1, { authors: [{ id: 'A1' }], huggingFaceUpvotes: 10 });
-  await assert.rejects(loadPaperAuthorImpact(env.PAPER_STORE, env, now, { after: null, pending: [] }), /missing results/);
+  assert.equal(await loadPaperAuthorImpact(env.PAPER_STORE, env, now, { after: null, pending: [] }), null);
   await computePaperQuality(env.PAPER_STORE, now, null);
   assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact').get()?.n, 0);
   assert.equal(db.prepare('SELECT hf_upvotes FROM work_quality').get()?.hf_upvotes, 10);
+});
+
+for (const [size, answered, stored] of [[19, 0, 19], [20, 0, 0], [20, 1, 20]]) {
+  test(`a batch of ${size} requested authors with ${answered} valid records stores ${stored} authors`, async t => {
+    const { env, db, add } = corpus();
+    const batches = openAlex(t, () => Response.json({ results: answered
+      ? [{ id: 'A1', summary_stats: {} }]
+      : [{ id: 'A1', summary_stats: null }, { id: 'A999', summary_stats: {} }] }));
+    for (let id = 1; id <= size; id++) add(id, { authors: [{ id: 'A' + id }] });
+    const progress = await loadPaperAuthorImpact(env.PAPER_STORE, env, now, { after: null, pending: [] });
+    assert.equal(progress, stored ? 'refresh' : null);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact').get()?.n, stored);
+    t.mock.timers.setTime(now + day);
+    await run(env, now + day);
+    assert.equal(batches.length, stored ? 1 : 2);
+  });
+}
+
+test('only an answered author can replace its cached h-index with an unknown value', async t => {
+  const { env, db, add } = corpus();
+  openAlex(t, () => Response.json({ results: [
+    { id: 'A1', summary_stats: { h_index: null } }, { id: 'A2' },
+    { id: 'A3', summary_stats: null }, { id: 'A4', summary_stats: {} },
+  ] }));
+  for (let id = 1; id <= 4; id++) {
+    add(id, { authors: [{ id: 'A' + id }] });
+    db.prepare('INSERT INTO openalex_author_impact (author_id, h_index, fetched_at) VALUES (?, 9, ?)')
+      .run('A' + id, new Date(now - 31 * day).toISOString());
+  }
+  await run(env);
+  const rows = db.prepare('SELECT h_index, fetched_at FROM openalex_author_impact ORDER BY author_id').all();
+  assert.deepEqual(rows.map(row => row.h_index), [null, 9, 9, null]);
+  assert.ok(rows.every(row => row.fetched_at === new Date(now).toISOString()));
+});
+
+test('a short OpenAlex rate limit is waited out once for author lookups', async t => {
+  const { env, db, add } = corpus();
+  let asks = 0;
+  openAlex(t, () => ++asks === 1 ? new Response(null, { status: 429, headers: { 'retry-after': '1' } })
+    : Response.json({ results: [{ id: 'A1', summary_stats: { h_index: 4 } }] }));
+  add(1, { authors: [{ id: 'A1' }] });
+  await run(env);
+  assert.equal(asks, 2);
+  assert.equal(db.prepare('SELECT max_h_index FROM work_quality').get()?.max_h_index, 4);
 });
 
 test('sparse misses across publication pages share a single author request', async t => {
@@ -182,6 +228,7 @@ test('invalid author records and unrequested IDs leave only their own metrics un
 test('missing authors precede the oldest eligible refreshes and the author cap leaves other feed calls available', async t => {
   const { env, db, add } = corpus();
   const batches = openAlex(t, ids => Response.json({ results: ids.map(id => ({ id, summary_stats: { h_index: 9 } })) }));
+  const warnings = t.mock.method(console, 'warn', () => {});
   const reserve = await reserveOpenAlexBudget(env, '', { tier: 'feed', kind: 'list', part: AUTHOR_IMPACT_PART, units: AUTHOR_IMPACT_PART.limit - 2 });
   assert.ok(reserve.reservations);
   const seed = db.prepare('INSERT INTO openalex_author_impact (author_id, h_index, fetched_at) VALUES (?, 3, ?)');
@@ -198,6 +245,7 @@ test('missing authors precede the oldest eligible refreshes and the author cap l
   await prunePaperQuality(env.PAPER_STORE, now);
   assert.equal(db.prepare("SELECT count(*) AS n FROM openalex_author_impact WHERE author_id = 'A998'").get()?.n, 0);
   await run(env);
+  assert.equal(warnings.mock.calls.filter(call => String(call.arguments[0]).includes('author part spent')).length, 1);
   assert.deepEqual(batches, [['A501'], Array.from({ length: 100 }, (_, i) => 'A' + (i + 2)).sort()]);
   assert.equal(db.prepare('SELECT max_h_index FROM work_quality WHERE work_id = 1').get()?.max_h_index, 3);
   assert.equal(db.prepare('SELECT count(*) AS n FROM work_quality WHERE max_h_index = 9').get()?.n, 101);

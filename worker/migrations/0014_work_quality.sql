@@ -18,7 +18,7 @@ CREATE TABLE work_quality (
   hf_upvotes INTEGER CHECK (hf_upvotes > 0),
   author_bonus REAL NOT NULL CHECK (author_bonus >= 0),
   hf_bonus REAL NOT NULL CHECK (hf_bonus >= 0),
-  score REAL NOT NULL CHECK (score > 0 AND score <= 0.05),
+  score REAL NOT NULL CHECK (score > 0),
   CHECK (COALESCE(max_h_index, 0) > 0 OR hf_upvotes IS NOT NULL)
 );
 

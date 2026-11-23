@@ -755,6 +755,7 @@ export function openAlexRefusal(env: WorkerEnv, origin: string, reservation: Quo
     // keeping the names exposed here.
     'access-control-expose-headers': `retry-after, ${OPENALEX_BUDGET_TIER_HEADER}`,
     [OPENALEX_BUDGET_TIER_HEADER]: tier,
+    ...(tier === 'feed' && reservation.scope ? { 'x-papertok-harvest-scope': reservation.scope } : {}),
     'cache-control': 'no-store',
     // The day's refusal is not the true seconds until UTC midnight: a tier
     // closes every day and can reopen at the next budget reading, and a

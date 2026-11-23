@@ -135,13 +135,36 @@ test('the nightly run stores quality after enrichment even when author lookup fa
   assert.equal(db.prepare('SELECT count(*) AS n FROM work_quality').get()?.n, 0);
 
   const nightly = workflowStep({ skipLanes: true, fail: name => name.startsWith('backfill ') || name.startsWith('evict ') });
-  const errors = t.mock.method(console, 'error', () => {});
+  const warnings = t.mock.method(console, 'warn', () => {});
   await runPaperHarvest(env, dailyRun(), nightly.step);
   assert.ok(nightly.steps.indexOf('author impact 0') > nightly.steps.indexOf('enrich 0'));
   assert.ok(nightly.steps.indexOf('paper quality 0') < nightly.steps.indexOf('embed 0'));
   assert.equal(asked.filter(url => url.pathname === '/authors').length, 1);
-  assert.ok(errors.mock.calls.some(call => String(call.arguments[0]).includes('author impact')));
+  assert.equal(warnings.mock.calls.filter(call => String(call.arguments[0]).includes('HTTP 401')).length, 1);
   assert.deepEqual(db.prepare('SELECT max_h_index, hf_upvotes FROM work_quality').all().map(Object.values), [[null, 4]]);
+});
+
+test('a failed D1 author write reuses the relay answer and the nightly run refreshes stale authors', async t => {
+  const { env, db } = corpus();
+  const stored = { ...paper('2610.30006', 'An author refresh'), authors: [{ id: 'A8', name: 'First' }, { id: 'A9', name: 'Last' }] };
+  await ingestPapers(env, [{ paper: stored, lanes: ['cs.CL'] }]);
+  db.prepare("INSERT INTO openalex_author_impact (author_id, h_index, fetched_at) VALUES ('A9', 2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-31 days'))").run();
+  const entries = new Map<string, { value: string; metadata: unknown }>();
+  Object.assign(env, { NOTIFICATION_STORE: {
+    getWithMetadata: async (key: string) => entries.get(key) ?? { value: null, metadata: null },
+    put: async (key: string, value: string, options: { metadata: unknown }) => { entries.set(key, { value, metadata: options.metadata }); },
+  } });
+  const asked = providers(t, url => {
+    if (url.pathname !== '/authors') return undefined;
+    const id = url.searchParams.get('filter')?.slice('openalex:'.length);
+    if (id === 'A8') {
+      t.mock.method(env.PAPER_STORE!, 'batch', async () => { throw new Error('D1_ERROR: SQLITE_NOMEM'); }, { times: 1 });
+    }
+    return Response.json({ results: [{ id, summary_stats: { h_index: 7 } }] });
+  });
+  await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+  assert.deepEqual(asked.filter(url => url.pathname === '/authors').map(url => url.searchParams.get('filter')), ['openalex:A8', 'openalex:A9']);
+  assert.deepEqual(db.prepare('SELECT author_id, h_index FROM openalex_author_impact ORDER BY author_id').all().map(Object.values), [['A8', 7], ['A9', 7]]);
 });
 
 test('open and closed articles are embedded before backfill and maintenance without repeating unchanged text', async t => {

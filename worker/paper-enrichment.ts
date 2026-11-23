@@ -16,7 +16,7 @@ import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cit
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
 import { withCrossrefType } from '../src/services/feed-publication-rules.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
-import { handleHarvestOpenAlex, openAlexFilterBatches } from './openalex-api.ts';
+import { fetchHarvestOpenAlexList, openAlexFilterBatches } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
 import { fetchWithDeadline, reserveInternalCall } from './provider-runtime.ts';
 import { database, rewriteWorks } from './paper-store.ts';
@@ -90,21 +90,11 @@ async function openAlexChunk(env: EnrichEnv, filter: string) {
   // a full page would leave the last papers' works, retractions included, out.
   url.searchParams.set('per_page', '100');
   url.searchParams.set('select', OPENALEX_ENRICHMENT_SELECT);
-  for (let attempt = 0; ; attempt += 1) {
-    // A timeout or a refused connection is OpenAlex failing, like a 5xx.
-    const response = await handleHarvestOpenAlex(new Request(url), env).catch((error: Error) => {
-      throw new OpenAlexUnavailable(`OpenAlex enrichment failed: ${error?.name || error}`);
-    });
-    if (response.ok) return (await response.json<{ results?: OpenAlexWork[] }>()).results || [];
-    // A short wait (OpenAlex's own rate limit) is waited out once; a spent day
-    // or harvest share, which the relay refuses with five minutes, is not.
-    const wait = Number(response.headers.get('retry-after')) || 0;
-    if (response.status === 429 && attempt === 0 && wait > 0 && wait <= 60) {
-      await new Promise(resolve => setTimeout(resolve, wait * 1000));
-      continue;
-    }
-    throw new OpenAlexUnavailable(`OpenAlex enrichment answered ${response.status}`);
-  }
+  const response = await fetchHarvestOpenAlexList(url, env).catch((error: Error) => {
+    throw new OpenAlexUnavailable(`OpenAlex enrichment failed: ${error?.name || error}`);
+  });
+  if (!response.ok) throw new OpenAlexUnavailable(`OpenAlex enrichment answered ${response.status}`);
+  return (await response.json<{ results?: OpenAlexWork[] }>()).results || [];
 }
 
 function openAlexFilters(key: string, values: string[], perFilter: number) {
