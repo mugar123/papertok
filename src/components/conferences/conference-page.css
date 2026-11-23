@@ -1,0 +1,138 @@
+.conference-page {
+  width: min(100%, 54rem);
+  margin-inline: auto;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.conference-header {
+  border-block: 1px solid var(--border-default);
+  padding-block: clamp(2rem, 6vw, 4rem);
+}
+
+.conference-page h1,
+.conference-page h3 {
+  font-family: var(--font-serif);
+  line-height: var(--lh-tight);
+}
+
+.conference-page h1 { font-size: clamp(2rem, 7vw, 4rem); }
+.conference-page h3 { font-size: clamp(1.25rem, 4vw, 1.65rem); }
+
+.conference-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block: var(--space-5);
+}
+
+.conference-filter select {
+  min-height: 2.75rem;
+  max-width: 100%;
+  padding-inline: var(--space-3);
+  border: 1px solid var(--text-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.conference-group {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) minmax(0, 4fr);
+  gap: var(--space-4);
+  padding-block: var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+.conference-group h2,
+.conference-field,
+.conference-count {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+}
+
+.conference-field { color: var(--conference-ink); }
+
+.conference-list,
+.conference-dates {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conference-list > li {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: var(--space-3);
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.conference-marker {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  align-self: start;
+  border: 1px solid var(--conference-ink);
+  color: var(--conference-ink);
+  background: color-mix(in srgb, var(--conference-ink) 8%, var(--bg-card));
+}
+
+.conference-list a,
+.conference-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.conference-back {
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.conference-dates {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.conference-dates li { margin-block: var(--space-2); }
+.conference-dates span { display: block; }
+.conference-dates svg { vertical-align: -0.125em; }
+
+.conference-hero {
+  padding-inline: clamp(1rem, 4vw, 3rem);
+  border-top: 3px solid var(--conference-ink);
+  background: color-mix(in srgb, var(--conference-ink) 8%, var(--bg-card));
+}
+
+.conference-details { padding-block: var(--space-5); }
+.conference-hero .conference-field { color: var(--text-primary); }
+.conference-details .conference-dates { margin-bottom: var(--space-4); }
+.conference-source { margin-top: var(--space-3); }
+
+.conference-credits {
+  margin-top: var(--space-5);
+  padding-block: var(--space-4);
+  border-top: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.conference-credits a { text-decoration: underline; }
+
+.conference-page [data-field="cs"] { --conference-ink: var(--gradient-cs); }
+.conference-page [data-field="physics"] { --conference-ink: var(--gradient-physics); }
+.conference-page [data-field="statistics"] { --conference-ink: var(--gradient-stat); }
+.conference-page [data-field="math"] { --conference-ink: var(--gradient-math); }
+.conference-page [data-field="medicine"] { --conference-ink: var(--gradient-med); }
+.conference-page [data-field="biology"] { --conference-ink: var(--gradient-bio); }
+.conference-page [data-field="economics"] { --conference-ink: var(--gradient-econ); }
+.conference-page [data-field="engineering"] { --conference-ink: var(--gradient-mech); }
+.conference-page [data-field="chemistry"] { --conference-ink: var(--gradient-chem); }
+
+@media (max-width: 600px) {
+  .conference-group { grid-template-columns: minmax(0, 1fr); }
+}

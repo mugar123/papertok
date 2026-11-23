@@ -13,7 +13,7 @@ import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts';
 import { useFeedTabs } from '../../hooks/use-feed-tabs.ts';
 import type { Icon } from '@phosphor-icons/react';
 import type { FeedTabEntry, FeedTabKey } from '../../utils/feed-tabs.ts';
-import { CaretDown, Check, ClockCounterClockwise, MagnifyingGlass, Plus, Stack, UserCheck } from '@phosphor-icons/react';
+import { CalendarBlank, CaretDown, Check, ClockCounterClockwise, MagnifyingGlass, Plus, Stack, UserCheck } from '@phosphor-icons/react';
 import { customFeedIdFromPath } from '../../utils/feed-tabs.ts';
 import AccountMenu from './account-menu.tsx';
 import RailMenu from '../feed/rail-menu.tsx';
@@ -326,6 +326,14 @@ function useSearchFieldResize(fieldRef: RefObject<HTMLElement | null>, onSearchP
   }, [fieldRef, onSearchPage]);
 }
 
+function ConferenceLink({ compact = false }: { compact?: boolean }) {
+  return (
+    <NavLink to="/conferences" className={`navbar-icon-btn navbar-conferences${compact ? ' navbar-conferences--compact' : ''}`} aria-label="Conference calendar" title="Conference calendar">
+      <CalendarBlank size={19} aria-hidden="true" />
+    </NavLink>
+  );
+}
+
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, onSearchSlot }: { onOpenSearch?: () => void; searchOpen?: boolean; onSearchSlot?: (node: HTMLDivElement | null) => void }) {
   const { user } = useAuth();
   const [arriving, setArriving] = useState(() => !navbarHasArrived);
@@ -563,6 +571,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
           </button>
         )}
 
+        <ConferenceLink />
         <div
           className="navbar-links"
           ref={linksRef}
@@ -630,6 +639,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
             </button>
           )}
 
+          <ConferenceLink compact />
           {user && (
             <div className="navbar-profile">
               <AccountMenu />
