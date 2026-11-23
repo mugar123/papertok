@@ -127,8 +127,8 @@ export interface PaperRecommendationScore {
   // from its lane in the corpus (`_followedEntityMatches`) and get no boost.
   followedEntityMatches: Record<Exclude<PaperFollowMatch['type'], 'journal'>, boolean>;
   isExploration: boolean;
-  // What the examples the page was ranked by are: liked, saved or read at
-  // length. Absent when the reader has none.
+  // Interactions behind the positive IDs sent for this card's page. Omitted
+  // when the client scores without a plan or the request supplied no kinds.
   exampleKinds?: ReadonlyArray<'liked' | 'saved' | 'read'>;
   explanation: string;
 }
@@ -236,6 +236,8 @@ export interface Paper {
   _fetchedFor?: string[];
   // Request-scoped semantic relevance in [-1, 1], including explicit rejections.
   _semanticScore?: number;
+  // Captured with the response so a re-rank can still explain this score.
+  _semanticExampleKinds?: PaperRecommendationScore['exampleKinds'];
   // Set by the corpus on a notable paper it adds to a page, which the feed
   // places (placeNotableCards): one of the most-cited papers of the reader's
   // categories.

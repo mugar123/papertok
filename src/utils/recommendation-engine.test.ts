@@ -350,6 +350,23 @@ function lastCardOfRerank(category: string, memoryOnPass: (pass: 'first' | 'late
   }).at(-1)!._debugScore!;
 }
 
+test('the same shuffle drops example attribution when it scores a card without a plan', () => {
+  const paper: Partial<Paper> = { id: 'queued', _semanticScore: 0.9, _semanticExampleKinds: ['liked'] };
+  const observed = new Set<string | undefined>();
+  diversifiedWeightedShuffle([paper, { ...paper, id: 'next' }], {
+    scorePaper(card) {
+      observed.add(card.id);
+      const planned = scorePaperForRecommendation(card, { now: NOW, hasFeedPlan: true });
+      const unplanned = scorePaperForRecommendation(card, { now: NOW });
+      assert.deepEqual(planned.exampleKinds, ['liked']);
+      assert.equal(unplanned.exampleKinds, undefined);
+      assert.equal(unplanned.total, planned.total);
+      return applyRecommendationScore(card, { now: NOW });
+    },
+  });
+  assert.deepEqual([...observed].sort(), ['next', 'queued']);
+});
+
 test('a re-rank scores with the progress it holds now, not the one an earlier call cached', () => {
   const memory = {
     first: { interestProgress: { 'econ.EM': 0 }, coldAdded: ['econ.EM'], interactionCount: 300 },

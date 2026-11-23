@@ -1,11 +1,13 @@
 import type { Paper, PaperFollowMatch, PaperRecommendationScore } from '../models/paper.ts';
 
-export type FeedReason = { kind: 'follow' | 'classic' | 'similar' | 'area'; text: string };
+import { getCategoryArea, getCategoryLabel } from '../data/category-taxonomy.ts';
 
-// The least similarity, in the client's points (0 to 100), that the card calls
-// similar: 25 is a cosine of 0.5 to the closest example (`_semanticScore` is 0
-// at a cosine of 0.4 and 1 at 0.8, worker/paper-store.ts `scorer`).
-const SIMILAR_MIN = 25;
+export type FeedReason =
+  | { kind: 'follow'; followType: PaperFollowMatch['type']; text: string }
+  | { kind: 'classic' | 'similar' | 'area'; text: string };
+
+// A cosine of 0.5 on the Worker's semantic scale, before the client's ranking weights.
+const SIMILAR_MIN = (0.5 - 0.4) / 0.4;
 
 // The least citations a notable card needs to be called highly cited. The
 // Worker's notable lanes are each leaf's 100 most cited papers of a year, and
@@ -28,31 +30,29 @@ function examplesText(kinds: NonNullable<PaperRecommendationScore['exampleKinds'
   return kinds.length > 1 ? 'liked or saved' : kinds[0];
 }
 
-/**
- * Why the feed shows a card, from the parts of its score the app computed
- * (`_debugScore`, recommendation-engine.ts) and the follow the card found on
- * it (follow-reasons.ts), or null when none of the reasons holds, as on a
- * search result, which no feed scored. A follow comes first, as it did when
- * the card said "Followed author"; then a notable card, which the Worker adds
- * as one of its area's most cited; then similarity to the reader's examples,
- * when it is at least SIMILAR_MIN and outweighs the card's other signals;
- * then a card of an area the reader picked. A card the feed added after the
- * reader opened a paper (`graphBoost`) was ranked by that paper, which need
- * not be an example, so it is never called similar to them.
- */
+/** A follow takes precedence on every surface. Only For You scores the other reasons. */
 export function feedReason(
-  paper: Pick<Paper, '_debugScore' | '_notable' | 'citationCount'>,
+  paper: Pick<Paper, '_debugScore' | '_notable' | '_fetchedFor' | '_semanticScore' | '_semanticExampleKinds' | 'citationCount'>,
   followed: { type: PaperFollowMatch['type']; name: string } | null,
-  areaLabel: string | null | undefined,
+  surface: string,
 ): FeedReason | null {
   if (followed) {
-    return { kind: 'follow', text: followed.name ? `Because you follow ${followed.name}` : `Because you follow this ${followed.type}` };
+    const causal = surface === 'feed' || surface === 'following' || surface === 'custom_feed';
+    const subject = followed.name || `this ${followed.type}`;
+    return { kind: 'follow', followType: followed.type, text: `${causal ? 'Because you follow' : 'You follow'} ${subject}` };
   }
-  if (paper._notable === true && areaLabel && (paper.citationCount ?? 0) >= HIGHLY_CITED_MIN) return { kind: 'classic', text: `Highly cited in ${areaLabel}` };
+  if (surface !== 'feed') return null;
+  if (paper._notable) {
+    if (!paper.citationCount || paper.citationCount < HIGHLY_CITED_MIN) return null;
+    // On a notable card the Worker returns its notable lanes as taxonomy leaf IDs.
+    const leaf = paper._fetchedFor?.find(id => getCategoryArea(id));
+    if (leaf) return { kind: 'classic', text: `Highly cited in ${getCategoryLabel(leaf)}` };
+  }
   const score = paper._debugScore;
   if (!score) return null;
   const similarity = score.corpusSimilarity ?? 0;
-  if (score.exampleKinds?.length && !score.graphBoost && similarity >= SIMILAR_MIN
+  // Older snapshots have score kinds taken from the profile but no request evidence.
+  if (paper._semanticExampleKinds?.length && score.exampleKinds?.length && !score.graphBoost && (paper._semanticScore ?? 0) >= SIMILAR_MIN
     && OWN_PARTS.every(part => (score[part] ?? 0) < similarity)) {
     return { kind: 'similar', text: `Similar to papers you ${examplesText(score.exampleKinds)}` };
   }

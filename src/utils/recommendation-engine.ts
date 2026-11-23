@@ -20,10 +20,8 @@ export interface RecommendationContext {
   // nothing of a dormant paper; without the list none is.
   interestProgress?: Record<string, number>; coldAdded?: string[]; dormantCategories?: string[];
   temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
-  // How the reader made the examples the Worker ranked the page by
-  // (positiveExampleKinds). Not scored: the card names them when it says it is
-  // similar to them (feed-reason.ts).
-  exampleKinds?: PaperRecommendationScore['exampleKinds'];
+  // Without a plan, scoring cannot attribute the card to examples.
+  hasFeedPlan?: boolean;
 }
 interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
 type StableScore = ReturnType<typeof computeStableScore>;
@@ -337,7 +335,7 @@ function isDormant(paper: Partial<Paper>, categories: string[], dormant: string[
 // recency. A diversified shuffle asks for the same paper once per remaining
 // pool slot, and only the diversity boost differs between those calls, so this
 // half is computed once per paper and reused (see beginScoringRun).
-function computeStableScore(paper: Partial<Paper>, context: RecommendationContext) {
+function computeStableScore(paper: Partial<Paper>, context: RecommendationContext, exampleKinds: Paper['_semanticExampleKinds']) {
   const weights = mergeRecommendationWeights(context.weights);
   const now = context.now || Date.now();
   const userPreferences = context.userPreferences || [];
@@ -488,7 +486,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     dormantCategories: context.dormantCategories,
     temporalPreference: context.temporalPreference,
     explicitNow: context.now,
-    exampleKinds: context.exampleKinds,
+    exampleKinds,
 
     stableParts,
     stableTotal: Object.values(stableParts).reduce((sum, value) => sum + value, 0),
@@ -542,7 +540,8 @@ function beginScoringRun() {
 
 function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
   const run = activeScoringRun;
-  if (!run) return computeStableScore(paper, context);
+  const exampleKinds = context.hasFeedPlan ? paper._semanticExampleKinds : undefined;
+  if (!run) return computeStableScore(paper, context, exampleKinds);
 
   const cached = run.get(paper);
   if (cached
@@ -560,11 +559,11 @@ function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
     && cached.dormantCategories === context.dormantCategories
     && cached.temporalPreference === context.temporalPreference
     && cached.explicitNow === context.now
-    && cached.exampleKinds === context.exampleKinds) {
+    && cached.exampleKinds === exampleKinds) {
     return cached;
   }
 
-  const stable = computeStableScore(paper, context);
+  const stable = computeStableScore(paper, context, exampleKinds);
   run.set(paper, stable);
   return stable;
 }

@@ -1294,10 +1294,9 @@ const PaperCard = memo(function PaperCard({
   };
 
   const { label: categoryLabel, topic: primaryTopic, sourceLabel: classificationSource } = useMemo(() => getPaperClassification(paper), [paper]);
-  // Read from the score the card last rendered with: the feed re-scores papers
-  // in place (`_debugScore`) without re-rendering a memoised card, so the
-  // reason is the one that held when the card was drawn.
-  const reason = feedReason(paper, followed, categoryLabel);
+  // Re-ranking mutates the score in place. Keep the reason for this paper,
+  // follow and surface so an unrelated render cannot rewrap the kicker.
+  const reason = useMemo(() => feedReason(paper, followed, analyticsSurface), [paper, followed, analyticsSurface]);
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
@@ -2047,7 +2046,7 @@ const PaperCard = memo(function PaperCard({
             <>
               {categoryLabel && <span className="pc-meta-dot">·</span>}
               <span className="pc-feed-reason">
-                {reason.kind === 'follow' && <UserCheck size={12} aria-hidden="true" />} {reason.text}
+                {reason.kind === 'follow' && reason.followType === 'author' && <UserCheck size={12} aria-hidden="true" />} {reason.text}
               </span>
             </>
           )}

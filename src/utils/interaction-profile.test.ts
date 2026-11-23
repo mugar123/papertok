@@ -23,6 +23,7 @@ import {
   deserializeInteractionProfile,
   isPaperKnown,
   lacksLearnedAffinities,
+  positiveExampleKinds,
   readProfileSignals,
   recordInteractionEvent,
   seedLearnedAffinities,
@@ -142,7 +143,6 @@ test('a new profile is empty and at the current schema version', () => {
     interactionCount: 0,
     dwellMedianSeconds: 6,
     positiveExamples: [],
-    exampleKinds: [],
     temporal: { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: 0 },
   });
   assert.equal(curatedIds(profile, 'liked').length, 0);
@@ -1222,16 +1222,14 @@ test('once two thousand cards were shown every count is halved, and an unlike af
   assert.deepEqual(temporalOf(reloaded), { notable: { shown: 100, engaged: 0 }, recent: { shown: 900, engaged: 0 }, lean: 0 });
 });
 
-test('the example kinds say how the reader made the examples the feed ranks by', () => {
+test('the plan keeps both actions on one example and omits a saved paper it did not request', () => {
   const profile = createEmptyInteractionProfile();
-  assert.deepEqual(readProfileSignals(profile, NOW).exampleKinds, []);
-
-  recordInteractionEvent(profile, { paperId: 's', kind: 'save', category: 'cs.LG' }, NOW);
-  assert.deepEqual(readProfileSignals(profile, NOW).exampleKinds, ['saved']);
-
-  recordInteractionEvent(profile, { paperId: 'a', kind: 'like', category: 'cs.AI' }, NOW);
-  assert.deepEqual(readProfileSignals(profile, NOW).exampleKinds, ['liked', 'saved']);
-
-  recordInteractionEvent(profile, { paperId: 's', kind: 'unsave', category: 'cs.LG' }, NOW);
-  assert.deepEqual(readProfileSignals(profile, NOW).exampleKinds, ['liked']);
+  recordInteractionEvent(profile, { paperId: 'both', kind: 'like', category: 'cs.LG' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'both', kind: 'save', category: 'cs.LG' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'long-read', kind: 'viewTime', viewTime: 60, category: 'cs.LG' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'other', kind: 'save', category: 'cs.AI' }, NOW);
+  const kinds = positiveExampleKinds(profile, ['both', 'long-read']);
+  recordInteractionEvent(profile, { paperId: 'both', kind: 'unsave', category: 'cs.LG' }, NOW);
+  assert.deepEqual([...kinds], [['both', ['liked', 'saved']], ['long-read', ['read']]]);
+  assert.deepEqual(positiveExampleKinds(profile, ['both']).get('both'), ['liked']);
 });

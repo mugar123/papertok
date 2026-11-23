@@ -7,6 +7,7 @@ import { areaKeyForCategory } from '../utils/area-accent.ts';
 import { DEFAULT_INTEREST_MIX, INTEREST_MIXES, priorityForArea, type InterestSettings } from '../utils/area-preferences.ts';
 import { resolveWithin } from '../utils/async-timing.ts';
 import { coldAddedInterests, dormantCategories, interestProgress, planInterestGroups } from '../utils/interest-memory.ts';
+import { positiveExampleKinds, type InteractionProfile } from '../utils/interaction-profile.ts';
 import { PAGE_SIZE } from './feed-pagination.ts';
 
 // How many papers the followed entities add to a page.
@@ -23,6 +24,7 @@ export interface FeedPlan {
   groups: InterestGroup[];
   unassignedPositiveIds: string[];
   positiveIds: string[];
+  exampleKindsById?: CorpusPageRequest['exampleKindsById'];
   dormantCategories: string[];
   interestProgress: Record<string, number>;
   coldAdded: string[];
@@ -36,7 +38,7 @@ type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 
  * and the Worker's pages follow one ranking only while the groups stay the
  * same. A later page with no plan (the list came from a snapshot) plans anew.
  */
-export function feedPlanFor(current: FeedPlan | null, page: number, input: InterestMemoryInput, settings: InterestSettings = {}): FeedPlan {
+export function feedPlanFor(current: FeedPlan | null, page: number, input: InterestMemoryInput, settings: InterestSettings = {}, profile?: InteractionProfile): FeedPlan {
   if (current && page > 0) return current;
   const { groups, unassignedPositiveIds } = planInterestGroups(input);
   const priorities = groups.map(group => priorityForArea(settings, areaKeyForCategory(group.categories[0])));
@@ -52,10 +54,12 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
       return { ...group, weight: 10 * shares[priority] * group.weight / totals[priority] };
     })
     : groups;
+  const positiveIds = corpusPositiveIds(groups, unassignedPositiveIds);
   return {
     groups: weightedGroups,
     unassignedPositiveIds,
-    positiveIds: corpusPositiveIds(groups, unassignedPositiveIds),
+    positiveIds,
+    ...(profile && { exampleKindsById: positiveExampleKinds(profile, positiveIds) }),
     dormantCategories: dormantCategories(input.selected, input.deselected),
     interestProgress: interestProgress(input),
     coldAdded: coldAddedInterests(input),
@@ -84,7 +88,7 @@ export function waitsAsFirstScreen({ reset, hasPapers, listShown = hasPapers, re
 
 /** The reader's interests, asked by group. */
 export function mainCorpusRequest(plan: FeedPlan, shared: SharedRequest): CorpusPageRequest {
-  return { ...shared, groups: plan.groups, positiveIds: plan.unassignedPositiveIds, pageSize: PAGE_SIZE };
+  return { ...shared, groups: plan.groups, positiveIds: plan.unassignedPositiveIds, exampleKindsById: plan.exampleKindsById, pageSize: PAGE_SIZE };
 }
 
 /**
@@ -126,6 +130,7 @@ export function followedCorpusRequest(plan: FeedPlan, followedEntities: FollowEn
     categories: [...new Set(categoryFollows.flatMap(entry => entry.categoryIds))],
     follows: followedEntities,
     positiveIds: plan.positiveIds,
+    exampleKindsById: plan.exampleKindsById,
     pageSize: FOLLOWED_PER_PAGE,
   };
   return { request, categoryFollows };

@@ -8,6 +8,8 @@ import { awaitScreenSources, feedPlanFor, followedCorpusRequest, mainCorpusReque
 import { automaticRetry } from './feed-load-failure.ts';
 import { fetchCorpusPage } from '../services/paper-store-service.ts';
 import { getFollowedTopicCategoryIds } from '../services/topic-retrieval-service.ts';
+import { createEmptyInteractionProfile, readProfileSignals, recordInteractionEvent } from '../utils/interaction-profile.ts';
+import { feedReason } from '../utils/feed-reason.ts';
 import { scorePaperForRecommendation } from '../utils/recommendation-engine.ts';
 
 const memory = (input: Partial<InterestMemoryInput>): InterestMemoryInput => ({
@@ -58,6 +60,36 @@ test('a followed topic fills only the follows request, ranked by the examples of
   assert.deepEqual(follows.categories, physicsCategories);
   assert.deepEqual(main.positiveIds, ['econ.EM-0', 'econ.EM-1', 'quant-ph-0']);
   assert.deepEqual(follows.positiveIds, ['econ.EM-0', 'econ.EM-1', 'quant-ph-0']);
+});
+
+test('queued cards and later pages keep their request examples across an unlike and a new save', async () => {
+  const profile = createEmptyInteractionProfile();
+  const input = () => memory({ selected: ['cs.LG'], examples: readProfileSignals(profile).positiveExamples });
+  recordInteractionEvent(profile, { paperId: 'old', kind: 'like', category: 'cs.LG' });
+  const first = feedPlanFor(null, 0, input(), {}, profile);
+  const fetchPage = (request: Parameters<typeof fetchCorpusPage>[0], expectedIds: string[]) => fetchCorpusPage(request, {
+    apiBase: 'https://store.example',
+    fetchWorker: async (_url, init) => {
+      const body = JSON.parse(String(init.body)) as { positiveIds: string[] };
+      assert.deepEqual(body.positiveIds, expectedIds);
+      return Response.json({ papers: [{ id: 'queued', _semanticScore: 0.9 }] });
+    },
+  }).then(answer => answer.papers[0]);
+  const queued = fetchPage(mainCorpusRequest(first, shared), ['old']);
+  recordInteractionEvent(profile, { paperId: 'old', kind: 'unlike', category: 'cs.LG' });
+  recordInteractionEvent(profile, { paperId: 'new', kind: 'save', category: 'cs.LG' });
+  const later = feedPlanFor(first, 1, input(), {}, profile);
+  const fresh = feedPlanFor(first, 0, input(), {}, profile);
+  const cardReason = (card: Awaited<typeof queued>, hasFeedPlan = true) => {
+    const score = scorePaperForRecommendation(card, { hasFeedPlan });
+    assert.equal(score.total, scorePaperForRecommendation(card).total);
+    return feedReason({ ...card, _debugScore: score }, null, 'feed')?.text;
+  };
+  const oldCard = await queued;
+  assert.equal(cardReason(oldCard, false), undefined);
+  assert.equal(cardReason(await fetchPage(followedCorpusRequest(later, [], () => [], shared).request, ['old'])), 'Similar to papers you liked');
+  assert.equal(cardReason(await fetchPage(mainCorpusRequest(fresh, shared), ['new'])), 'Similar to papers you saved');
+  assert.equal(cardReason(oldCard), 'Similar to papers you liked');
 });
 
 test("a list's later pages ask by the groups its first page planned", async () => {

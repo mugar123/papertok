@@ -19,42 +19,66 @@ const paper: Partial<Paper> = {
   abstract: 'A long enough abstract about learning representations from data, with methods and results described in it.',
 };
 
-test('a follow is named first, before every other reason', () => {
-  const card = scored({ ...paper, _notable: true, _semanticScore: 0.9 }, { userPreferences: ['cs.LG'], exampleKinds: ['liked'] });
-  assert.deepEqual(feedReason(card, { type: 'author', name: 'Yann LeCun' }, 'Machine Learning'), { kind: 'follow', text: 'Because you follow Yann LeCun' });
-  assert.equal(feedReason(card, { type: 'topic', name: '' }, 'Machine Learning')?.text, 'Because you follow this topic');
+test('only a feed that placed the card gives a causal follow reason', () => {
+  const card = scored({ ...paper, _notable: true, citationCount: 500, _fetchedFor: ['cs.LG'] });
+  for (const surface of ['feed', 'following', 'custom_feed']) {
+    assert.deepEqual(feedReason(card, { type: 'author', name: 'Yann LeCun' }, surface),
+      { kind: 'follow', followType: 'author', text: 'Because you follow Yann LeCun' });
+    assert.equal(feedReason(card, { type: 'topic', name: '' }, surface)?.text, 'Because you follow this topic');
+  }
+  for (const surface of ['search', 'lists', 'explorer', 'other', 'connections', 'recent']) {
+    assert.deepEqual(feedReason(card, { type: 'journal', name: 'Nature' }, surface),
+      { kind: 'follow', followType: 'journal', text: 'You follow Nature' });
+    assert.equal(feedReason(card, { type: 'author', name: '' }, surface)?.text, 'You follow this author');
+    assert.equal(feedReason(card, null, surface), null);
+  }
+  assert.equal(feedReason(card, null, 'custom_feed'), null);
 });
 
-test('a notable card is highly cited in its area only with the citations to show for it', () => {
-  const card = scored({ ...paper, _notable: true, citationCount: 4200 }, { userPreferences: ['cs.LG'] });
-  assert.deepEqual(feedReason(card, null, 'Machine Learning'), { kind: 'classic', text: 'Highly cited in Machine Learning' });
-  assert.equal(feedReason({ _notable: true, citationCount: 2 }, null, 'Machine Learning'), null);
-  assert.equal(feedReason({ _notable: true }, null, 'Machine Learning'), null);
-  assert.equal(feedReason({ _notable: true, citationCount: 4200 }, null, null), null);
+test('a highly cited card names its notable leaf even if its own classification differs', () => {
+  const card = { ...paper, primaryCategory: 'cs.CV', _notable: true, citationCount: 100, _fetchedFor: ['cs.LG', 'cs.AI'] };
+  assert.deepEqual(feedReason(card, null, 'feed'), { kind: 'classic', text: 'Highly cited in Machine Learning' });
+  assert.equal(feedReason({ ...card, citationCount: 99 }, null, 'feed'), null);
+  assert.equal(feedReason({ ...card, citationCount: undefined }, null, 'feed'), null);
 });
 
-test('similarity names the examples the reader has', () => {
+test('a notable card without a known notable leaf falls through', () => {
+  const card = { ...paper, journal: 'Nature', _notable: true, citationCount: 4200 };
+  for (const lanes of [undefined, ['Nature', 'cs', 'cs.unknown']]) {
+    const unproven = { ...card, _fetchedFor: lanes };
+    assert.equal(feedReason(unproven, null, 'feed'), null);
+    assert.equal(feedReason(scored(unproven, { userPreferences: ['cs.LG'] }), null, 'feed')?.text, 'In your area');
+  }
+});
+
+test('similarity names only the interactions behind the request', () => {
   const close = { ...paper, _semanticScore: 0.8 };
-  assert.equal(feedReason(scored(close, { userPreferences: ['cs.LG'], exampleKinds: ['liked'] }), null, 'Machine Learning')?.text, 'Similar to papers you liked');
-  assert.equal(feedReason(scored(close, { exampleKinds: ['saved'] }), null, 'Machine Learning')?.text, 'Similar to papers you saved');
-  assert.equal(feedReason(scored(close, { exampleKinds: ['liked', 'saved'] }), null, null)?.text, 'Similar to papers you liked or saved');
-  assert.equal(feedReason(scored(close, { exampleKinds: ['liked', 'saved', 'read'] }), null, null)?.text, 'Similar to papers you engaged with');
-  assert.equal(feedReason(scored(close, { exampleKinds: ['read'] }), null, null)?.text, 'Similar to papers you engaged with');
+  function label(kinds: Paper['_semanticExampleKinds']) {
+    return feedReason(scored({ ...close, _semanticExampleKinds: kinds }, { hasFeedPlan: true, userPreferences: ['cs.LG'] }), null, 'feed')?.text;
+  }
+  assert.equal(label(['liked']), 'Similar to papers you liked');
+  assert.equal(label(['saved']), 'Similar to papers you saved');
+  assert.equal(label(['liked', 'saved']), 'Similar to papers you liked or saved');
+  assert.equal(label(['liked', 'saved', 'read']), 'Similar to papers you engaged with');
+  assert.equal(label(['read']), 'Similar to papers you engaged with');
+  const oldSnapshot = { ...close, _debugScore: { corpusSimilarity: 80, exampleKinds: ['saved'] as const } };
+  assert.equal(feedReason(oldSnapshot, null, 'feed'), null);
 });
 
-test('no similarity label without examples, or with a weak or outweighed match', () => {
-  const inArea = { userPreferences: ['cs.LG'] };
-  assert.equal(feedReason(scored({ ...paper, _semanticScore: 0.8 }, inArea), null, 'Machine Learning')?.kind, 'area');
-  assert.equal(feedReason(scored({ ...paper, _semanticScore: 0.1 }, { ...inArea, exampleKinds: ['liked'] }), null, 'Machine Learning')?.kind, 'area');
-  const outweighed = scored({ ...paper, authors: ['Ada Lovelace'], _semanticScore: 0.3 }, { ...inArea, followedAuthors: ['Ada Lovelace'], exampleKinds: ['liked'] });
-  assert.equal(feedReason(outweighed, null, 'Machine Learning')?.kind, 'area');
-  // Added after the reader opened a paper, and ranked by that paper.
-  const opened = scored({ ...paper, _semanticScore: 0.9, _isGraphCandidate: true }, { ...inArea, exampleKinds: ['liked'] });
-  assert.equal(feedReason(opened, null, 'Machine Learning')?.kind, 'area');
+test('no similarity label without a plan, or with a weak, outweighed or graph match', () => {
+  const inArea = { userPreferences: ['cs.LG'], hasFeedPlan: true };
+  const close = { ...paper, _semanticScore: 0.8, _semanticExampleKinds: ['liked'] as const };
+  assert.equal(feedReason(scored(close, { ...inArea, hasFeedPlan: false }), null, 'feed')?.kind, 'area');
+  assert.equal(feedReason(scored({ ...close, _semanticScore: 0.1 }, inArea), null, 'feed')?.kind, 'area');
+  const weighted = scored({ ...close, _semanticScore: 0.2 }, { ...inArea, weights: { maxCorpusSimilarity: 200 } });
+  assert.equal(feedReason(weighted, null, 'feed')?.kind, 'area');
+  const outweighed = scored({ ...close, authors: ['Ada Lovelace'], _semanticScore: 0.3 }, { ...inArea, followedAuthors: ['Ada Lovelace'] });
+  assert.equal(feedReason(outweighed, null, 'feed')?.kind, 'area');
+  assert.equal(feedReason(scored({ ...close, _isGraphCandidate: true }, inArea), null, 'feed')?.kind, 'area');
 });
 
-test('a card of an area the reader picked is in their area; other cards and unscored ones have no reason', () => {
-  assert.deepEqual(feedReason(scored(paper, { userPreferences: ['cs.LG'] }), null, 'Machine Learning'), { kind: 'area', text: 'In your area' });
-  assert.equal(feedReason(scored(paper, { userPreferences: ['math.NT'] }), null, 'Machine Learning'), null);
-  assert.equal(feedReason(paper, null, 'Machine Learning'), null);
+test('only a scored card of a chosen area has the area reason', () => {
+  assert.deepEqual(feedReason(scored(paper, { userPreferences: ['cs.LG'] }), null, 'feed'), { kind: 'area', text: 'In your area' });
+  assert.equal(feedReason(scored(paper, { userPreferences: ['math.NT'] }), null, 'feed'), null);
+  assert.equal(feedReason(paper, null, 'feed'), null);
 });

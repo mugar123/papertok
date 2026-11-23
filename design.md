@@ -317,11 +317,15 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   Containers, "A card with no abstract"). On a tablet the column stops at a
   40rem reading measure.
 - **The kicker** reads field · reason · year · citations and wraps when it has
-  to. The reason (`utils/feed-reason.ts`) says why the feed shows the card, in
-  `--text-secondary`: "Because you follow …", "Highly cited in …", "Similar to
-  papers you liked" (saved, liked or saved, engaged with) or "In your area". A
-  card no feed ranked, such as a search result, has none unless the reader
-  follows something on it.
+  to. The reason (`utils/feed-reason.ts`) uses `--text-secondary`. A matching
+  follow comes first ("Because you follow …" in For You,
+  Following and custom feeds, "You follow …" elsewhere). A notable card needs
+  at least 100 citations and a known notable lane for "Highly cited in [field]".
+  "Similar to papers you liked" (saved, liked or saved, engaged with) needs
+  a cosine of at least 0.5 and must outweigh each of the card's own signals.
+  Area preference and affinity do not compete. A remaining For You card in a
+  selected area reads "In your area". Custom feeds, Most recent and notable
+  cards below 100 citations show only a matching follow.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 
