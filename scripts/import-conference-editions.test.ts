@@ -101,8 +101,8 @@ test('keeps venue and deadlines in date order and rejects unusable ones', () => 
 
 test('keeps the hour of a deadline and drops a zone that comes without one', () => {
   const timeOf = (timeText: string) => convertConferenceDetails({ venue: null, checkedOn: '2026-11-23', deadlines: [{ label: 'Papers due', date: '2026-12-20', timeText, sourceUrl: 'https://example.org' }] })?.deadlines?.[0].timeText;
-  for (const timeText of ['AoE', '11:59 PM ET', '2 p.m. ET', '23.55 GMT', 'midnight PST']) assert.equal(timeOf(timeText), timeText);
-  for (const timeText of ['PT', 'UTC', 'UTC+0', 'UTC-8', 'Eastern Time', 'Europe/Paris']) assert.equal(timeOf(timeText), undefined, timeText);
+  for (const timeText of ['AoE', '11:59 PM ET', '2 p.m. ET', '23.55 GMT', 'midnight PST', '23:59 UTC+5:30']) assert.equal(timeOf(timeText), timeText);
+  for (const timeText of ['PT', 'UTC', 'UTC+0', 'UTC-8', 'UTC+5:30', 'GMT+05:30', 'UTC-03:00', 'UTC+1.00', 'Eastern Time', 'Europe/Paris']) assert.equal(timeOf(timeText), undefined, timeText);
 });
 
 test('drops the remarks a deadline label ends with and keeps that a date is tentative', () => {

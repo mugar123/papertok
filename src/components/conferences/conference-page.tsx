@@ -42,9 +42,9 @@ function Sites({ edition }: { edition: ConferenceEdition }) {
   );
 }
 
-function ConferenceCard({ edition, search }: { edition: ConferenceEdition; search: string }) {
+function ConferenceCard({ edition, search, deadlineDay }: { edition: ConferenceEdition; search: string; deadlineDay: string }) {
   const subtitle = conferenceSubtitle(edition);
-  const deadline = nextDeadline(edition, deadlineToday(new Date()));
+  const deadline = nextDeadline(edition, deadlineDay);
   return (
     <li className="conference-card" data-field={edition.field}>
       <ConferenceCover edition={edition} />
@@ -58,19 +58,19 @@ function ConferenceCard({ edition, search }: { edition: ConferenceEdition; searc
           </Link>
         </h3>
         <Sites edition={edition} />
-        {deadline && <p className="conference-chip">{deadline.label} · {formatConferenceDates(deadline.date, null)}</p>}
+        {deadline && <p className="conference-chip">{deadline.label} · {formatDeadline(deadline)}</p>}
       </div>
     </li>
   );
 }
 
-function EditionGroup({ title, editions, search }: { title: string; editions: readonly ConferenceEdition[]; search: string }) {
+function EditionGroup({ title, editions, search, deadlineDay }: { title: string; editions: readonly ConferenceEdition[]; search: string; deadlineDay: string }) {
   if (!editions.length) return null;
   return (
     <section className="conference-group">
       <h2>{title}</h2>
       <ul className="conference-list">
-        {editions.map(edition => <ConferenceCard key={edition.id} edition={edition} search={search} />)}
+        {editions.map(edition => <ConferenceCard key={edition.id} edition={edition} search={search} deadlineDay={deadlineDay} />)}
       </ul>
     </section>
   );
@@ -93,6 +93,7 @@ function Calendar() {
   const [params, setParams] = useSearchParams();
   const filters = readConferenceFilters(params);
   const today = localCalendarDate(new Date());
+  const deadlineDay = deadlineToday(new Date());
   const editions = filterConferences(conferenceEditions, filters);
   const { upcoming, undated, past } = groupConferences(editions, today, filters.month);
   const search = params.toString();
@@ -113,10 +114,10 @@ function Calendar() {
         <ClearFilters filters={filters} params={params} onChange={replace} />
       </div>
       {[...upcoming].map(([month, rows]) => (
-        <EditionGroup key={month} title={formatConferenceMonth(month)} editions={rows} search={search} />
+        <EditionGroup key={month} title={formatConferenceMonth(month)} editions={rows} search={search} deadlineDay={deadlineDay} />
       ))}
-      <EditionGroup title="Dates to be announced" editions={undated} search={search} />
-      <EditionGroup title="Past conferences" editions={past} search={search} />
+      <EditionGroup title="Dates to be announced" editions={undated} search={search} deadlineDay={deadlineDay} />
+      <EditionGroup title="Past conferences" editions={past} search={search} deadlineDay={deadlineDay} />
       <Credits editions={conferenceEditions} />
     </>
   );
@@ -197,7 +198,7 @@ function Overview({ edition }: { edition: ConferenceEdition }) {
         </div>
         {dateText && <div><dt>Dates in the organizer’s words</dt><dd>{dateText}</dd></div>}
         {venue && <div><dt>Venue</dt><dd>{venue}</dd></div>}
-        {place && <div><dt>Location</dt><dd>{place}</dd></div>}
+        {place && place !== venue && <div><dt>Location</dt><dd>{place}</dd></div>}
       </dl>
       {deadlines && <Deadlines deadlines={deadlines} />}
     </>

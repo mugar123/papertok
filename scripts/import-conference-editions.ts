@@ -43,10 +43,13 @@ function deadlineLabel(label: string) {
 /** An hour, or AoE, which is the end of the day. A bare zone would claim an hour the source does not give. */
 const saysWhen = /\d{1,2}[:.]\d{2}|\d\s*[ap]\.?m\b|\b(?:midnight|noon|AoE)\b/i;
 
+/** A zone's offset, whose digits are not an hour. */
+const zoneOffset = /\b(?:UTC|GMT)\s*[+\-\u2212]\s*\d{1,2}(?:[:.]\d{2})?/gi;
+
 function deadlineOf(value: unknown): ConferenceDeadline | null {
   const { label, date, timeText, sourceUrl } = (value ?? {}) as Record<string, unknown>;
   if (!text(label) || !iso(date) || !https(sourceUrl) || !(timeText === null || timeText === undefined || text(timeText))) return null;
-  return { label: deadlineLabel(label), date, ...(text(timeText) && saysWhen.test(timeText) ? { timeText: timeText.trim() } : {}), sourceUrl: withoutTracking(sourceUrl) };
+  return { label: deadlineLabel(label), date, ...(text(timeText) && saysWhen.test(timeText.replace(zoneOffset, '')) ? { timeText: timeText.trim() } : {}), sourceUrl: withoutTracking(sourceUrl) };
 }
 
 /** A details row, or null when one of its values is not usable. */
@@ -181,6 +184,7 @@ function main() {
   const details = readDetails(dir, allowPartial);
   const launchDetails: Record<string, ConferenceDetails> = {};
   const joined = new Set<string>();
+  const unconfirmedSeen = new Set<string>();
   const launchIds = new Set(['neurips-2026', 'iclr-2026', 'iclr-2027', 'icml-2026', 'colm-2026']);
   for (const field of Object.keys(fields) as (keyof typeof fields)[]) {
     const filename = field + '.json';
@@ -195,11 +199,12 @@ function main() {
     for (const [index, value] of input.entries()) {
       const converted = convertConferenceEdition(value, field);
       const key = detailsKey(value);
-      joined.add(key);
+      if (converted && unconfirmedDeadlines.has(converted.series)) unconfirmedSeen.add(converted.series);
       const { venue, deadlines } = details.get(key) ?? {};
       const found = converted && { ...(venue ? { venue } : {}), ...(deadlines && !unconfirmedDeadlines.has(converted.series) ? { deadlines } : {}) };
       const row = converted && { ...converted, ...found };
       if (found && launchIds.has(converted.id) && Object.keys(found).length) launchDetails[converted.id] = found;
+      if (converted && launchIds.has(converted.id)) joined.add(key);
       const sameId = row && rows.find(edition => edition.id === row.id);
       const sameEdition = row && sameId && sameId.dates[0]?.start === row.dates[0]?.start
         && (slugOf(sameId.series) === slugOf(row.series) || sameId.sourceUrl === row.sourceUrl);
@@ -213,11 +218,13 @@ function main() {
         continue;
       }
       rows.push({ ...row, id });
+      joined.add(key);
       imported++;
     }
     console.log(field + ': imported ' + imported + ' of ' + input.length);
   }
-  for (const key of details.keys()) if (!joined.has(key)) console.warn('details.json: no edition matches ' + key);
+  for (const key of details.keys()) if (!joined.has(key)) console.warn('details.json: no imported edition uses ' + key);
+  for (const series of unconfirmedDeadlines) if (!unconfirmedSeen.has(series)) console.warn('Left-out deadlines match no series: ' + series);
   if (!rows.length) throw new Error('No verified editions to import.');
   const nameCounts = new Map<string, number>();
   for (const row of rows) nameCounts.set(row.name, (nameCounts.get(row.name) ?? 0) + 1);
