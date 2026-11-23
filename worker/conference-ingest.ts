@@ -4,7 +4,7 @@ import type { OpenReviewNote } from '../src/services/open-review-service.ts';
 import { mapOpenReviewNote } from '../src/services/open-review-service.ts';
 import { storedPaper } from './paper-store.ts';
 import { conferenceMembership, conferenceSortKey, conferenceSources, openReviewField } from './conference-membership.ts';
-import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount, openReviewUnavailable } from './open-review-api.ts';
+import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount, openReviewSearchUrl, openReviewUnavailable } from './open-review-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { findConferenceEdition } from '../src/data/conferences.ts';
@@ -15,7 +15,6 @@ const minuteLimit = 12;
 const pageSize = 100;
 const maxOffset = 10_000;
 const dayMs = 86_400_000;
-const searchUrl = 'https://api2.openreview.net/notes/search';
 const pageStep = { retries: { limit: 0, delay: '1 second' }, timeout: '2 minutes' } as const;
 
 type EditionState = { edition_id: string; generation: number; term: number; offset: number; expected_count: number };
@@ -155,10 +154,9 @@ async function ingestPage(db: D1Database, state: EditionState, request: typeof f
   const source = conferenceSources.get(state.edition_id);
   if (!source) throw new Error('Unknown conference edition');
   if (state.offset >= maxOffset) throw new Error('Conference search offset limit');
-  const url = new URL(searchUrl);
-  url.search = new URLSearchParams({
-    term: terms[state.term], source: 'forum', venueid: source.venueId, limit: String(pageSize), offset: String(state.offset), count: 'true',
-  }).toString();
+  const url = openReviewSearchUrl(terms[state.term], pageSize, state.offset);
+  url.searchParams.set('venueid', source.venueId);
+  url.searchParams.set('count', 'true');
   const response = await request(url, { headers: { accept: 'application/json', 'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)' } }, 15_000);
   if (!response.ok) throw new Error('OpenReview search failed');
   const payload = await response.json<Partial<SearchPage>>();

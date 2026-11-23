@@ -617,6 +617,16 @@ a.pc-citations {
   }
 }
 
+.pc-accepted {
+  color: var(--text-secondary);
+}
+
+.pc-about-accepted {
+  margin: 0;
+  font: var(--fw-medium) var(--fs-sm)/1.4 var(--font-body);
+  color: var(--text-secondary);
+}
+
 .pc-feed-reason {
   overflow-wrap: anywhere;
   display: inline-flex;

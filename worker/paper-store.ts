@@ -1,4 +1,5 @@
 import type { BloomFilter } from 'bloomfilter';
+import { mergeConferenceMarks } from '../src/models/paper-evidence.ts';
 import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
 import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 import type { WorkerEnv } from './env.ts';
@@ -474,6 +475,19 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
   return storedPaper({ ...merged, ...arxivCategoriesOf(row), id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
 }
 
+// Resolve the mark against the row at write time. An unrelated, late enrichment
+// must not restore a withdrawn mark. Conflicting concurrent corrections leave it unknown.
+const incomingPaper = "j.value ->> 'paper'";
+const incomingMark = `(${incomingPaper}) -> 'acceptedConference'`;
+const liveMark = "works.paper -> 'acceptedConference'";
+const beforeMark = "j.value -> 'beforeMark'";
+const revisedPaper = `json_set(CASE
+  WHEN ${liveMark} IS ${beforeMark} OR ${liveMark} IS ${incomingMark} THEN ${incomingPaper}
+  ELSE json_patch(json_remove(${incomingPaper}, '$.acceptedConference'),
+    json_object('acceptedConference', CASE WHEN ${incomingMark} IS ${beforeMark} THEN ${liveMark} END))
+  END, '$.corpusUpdatedAt', max(CAST(? AS INTEGER), coalesce(works.paper ->> 'corpusUpdatedAt', 0) + 1,
+    coalesce((${incomingPaper}) ->> 'corpusUpdatedAt', 0) + 1))`;
+
 /**
  * Makes each stored OpenAlex working-paper row that an OpenAlex journal-article
  * record of `articles` was filed under (by the article's work id or DOI) the
@@ -492,7 +506,7 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
   const keysOf = (article: Paper) => [`id:${article.id.toLowerCase()}`, normalizeDoi(article.doi).toLowerCase()];
   const found = await lookUpKeys(db, [...new Set(articles.flatMap(keysOf))]);
   const works = await readWorks(db, [...new Set(found.values())]);
-  const upgrades: Array<{ id: number; paper: string; published: string; keptUntil: string; textChanged: boolean; lanes: Array<{ lane: string; arrived: string | null }> }> = [];
+  const upgrades: Array<{ id: number; beforeMark?: Paper['acceptedConference']; paper: string; published: string; keptUntil: string; textChanged: boolean; lanes: Array<{ lane: string; arrived: string | null }> }> = [];
   const since = daysFromNow(-CORPUS_DAYS, now);
   // In id order, so the same records upgrade a row the same way in any order.
   for (const [id, work] of [...works].sort(([a], [b]) => a - b)) {
@@ -507,6 +521,7 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
     const published = publishedOf(upgraded, now) || publishedOf(row, now);
     upgrades.push({
       id,
+      beforeMark: row.acceptedConference,
       paper: JSON.stringify(upgraded),
       published,
       keptUntil: [daysFromNow(CORPUS_DAYS, Date.parse(published)), work.kept_until].sort().at(-1)!,
@@ -527,8 +542,8 @@ async function upgradeWorkingPapers(db: D1Database, articles: Paper[], now: numb
     const slice = upgrades.slice(start, start + WRITE_CHUNK);
     const chunk = JSON.stringify(slice);
     await db.batch([
-      db.prepare(`UPDATE works SET paper = j.value ->> 'paper', published = j.value ->> 'published',
-        kept_until = max(works.kept_until, j.value ->> 'keptUntil') FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(chunk),
+      db.prepare(`UPDATE works SET paper = ${revisedPaper}, published = j.value ->> 'published',
+        kept_until = max(works.kept_until, j.value ->> 'keptUntil') FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(now, chunk),
       db.prepare(`UPDATE work_lanes SET published = j.value ->> 'published' FROM json_each(?) j
         WHERE work_lanes.work_id = j.value ->> 'id' AND work_lanes.published != j.value ->> 'published'`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, arrived)
@@ -645,7 +660,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
 
   const existingByKey = await lookUpKeys(db, [...new Set(groups.flatMap(group => [...group.keys]))]);
   const works = await readWorks(db, [...new Set(existingByKey.values())]);
-  const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
+  const rows: Array<{ id: number; beforeMark?: Paper['acceptedConference']; paper: string; published: string; keptUntil: string }> = [];
   const keyRows: Array<{ key: string; id: number }> = [];
   const filings: Array<{ id: number; paper: Paper; published: string; lanes: Set<string>; stored: boolean }> = [];
   const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null; arrived: string | null }> = [];
@@ -669,9 +684,18 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       id = await workIdFor(paper);
     } else {
       // The stored row is the base: its id is the one readers already hold.
-      const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
-      paper = stored.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other.paper, other.paper.provider || other.paper.sources?.primary), base);
+      paper = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
+      let previous = paper.acceptedConference;
+      for (const other of stored.slice(1)) {
+        paper = PaperBuilder.merge(paper, other.paper, other.paper.provider || other.paper.sources?.primary);
+        // Revision stamps order copies of one row. Each folded row supplies independent text evidence.
+        previous = mergeConferenceMarks(previous, other.paper.acceptedConference, paper.openReviewVenueId);
+      }
+      // A fresh listing replaces its own text, including a withdrawn acceptance.
+      const provider = previous?.evidence === 'openreview' ? 'openreview' : 'arxiv';
+      const relisted = previous && [...group.keys].some(key => key.startsWith('id:') && listed.has(sourceRecordKey(provider, key.slice(3))));
       paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
+      paper.acceptedConference = mergeConferenceMarks(relisted ? undefined : previous, group.paper.acceptedConference, group.paper.openReviewVenueId ?? paper.openReviewVenueId);
       // A batch that lists another source's record of the paper before its
       // eprint brings the eprint's categories inside that record, which
       // `merge` takes none from (ENG-206).
@@ -690,7 +714,9 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const json = JSON.stringify(paper);
     // D1 bills rows written: a paper a source lists again unchanged is not rewritten.
     const before = ids.length === 1 ? works.get(id)! : null;
-    if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
+    if (!before || before.paper !== json || before.kept_until < keptUntil) {
+      rows.push({ id, beforeMark: stored[0]?.paper.acceptedConference, paper: json, published, keptUntil });
+    }
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
     // The merged row can be one the feed does not show: a retracted paper,
     // whether this record or the stored row says so. It is filed under no
@@ -746,9 +772,10 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   }
   for (let start = 0; start < rows.length; start += WRITE_CHUNK) {
     statements.push(db.prepare(`INSERT INTO works (id, paper, published, kept_until)
-      SELECT value ->> 'id', value ->> 'paper', value ->> 'published', value ->> 'keptUntil' FROM json_each(?) WHERE true
+      SELECT j.value ->> 'id', ${revisedPaper}, j.value ->> 'published', j.value ->> 'keptUntil'
+      FROM json_each(?) j LEFT JOIN works ON works.id = j.value ->> 'id' WHERE true
       ON CONFLICT (id) DO UPDATE SET paper = excluded.paper, published = excluded.published,
-        kept_until = max(works.kept_until, excluded.kept_until)`).bind(JSON.stringify(rows.slice(start, start + WRITE_CHUNK))));
+        kept_until = max(works.kept_until, excluded.kept_until)`).bind(now, JSON.stringify(rows.slice(start, start + WRITE_CHUNK))));
   }
   for (let start = 0; start < keyRows.length; start += WRITE_CHUNK * 4) {
     statements.push(db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
@@ -780,7 +807,7 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
     .map(update => ({ ...update, published: publishedOf(update.paper, now) || publishedOf(update.before, now) }));
   const followed = await followedLanesAmong(db, updated.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
   const changed = updated.map(({ id, before, paper, published }) => ({
-    text: { id, paper: JSON.stringify(paper) },
+    text: { id, beforeMark: before.acceptedConference, paper: JSON.stringify(paper) },
     filing: {
       id,
       published,
@@ -800,8 +827,8 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
     const slice = changed.slice(start, start + WRITE_CHUNK);
     const chunk = JSON.stringify(slice.map(change => change.filing));
     await db.batch([
-      db.prepare(`UPDATE works SET paper = j.value ->> 'paper' FROM json_each(?) j WHERE works.id = j.value ->> 'id'`)
-        .bind(JSON.stringify(slice.map(change => change.text))),
+      db.prepare(`UPDATE works SET paper = ${revisedPaper} FROM json_each(?) j WHERE works.id = j.value ->> 'id'`)
+        .bind(now, JSON.stringify(slice.map(change => change.text))),
       db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'textChanged')`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
         SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`).bind(chunk),

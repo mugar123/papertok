@@ -1,5 +1,5 @@
 import type { Paper } from '../src/models/paper.ts';
-import { trialRegistrationFromAbstract, withPaperEvidenceOf } from '../src/models/paper-evidence.ts';
+import { mergeConferenceMarks, trialRegistrationFromAbstract, withPaperEvidenceOf } from '../src/models/paper-evidence.ts';
 import { withPublicationEvidenceOf } from '../src/models/paper.ts';
 import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 import type { EuropePmcRecord } from '../src/utils/europe-pmc-record.ts';
@@ -15,6 +15,7 @@ import { OPENALEX_ENRICHMENT_SELECT, mapOpenAlexEnrichmentWork } from '../src/ut
 import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cite-records.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
 import { withCrossrefType } from '../src/services/feed-publication-rules.ts';
+import { canonicalArxivIdOf } from '../src/utils/paper-canonical-key.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
 import { OpenAlexUnavailable, handleHarvestOpenAlex, openAlexFilterBatches, shortOpenAlexWait } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
@@ -471,8 +472,19 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   // no abstract (`interrupted` below).
   const missingArxiv = getMissingArxivAbstractIds(enriched);
   const missingDois = getMissingAbstractDois(enriched);
+  const arxivRecords = missingArxiv.length ? await fetchArxivPapers(env, missingArxiv).catch(() => []) : [];
+  if (arxivRecords.length) {
+    const byId = new Map(arxivRecords.map(record => [canonicalArxivIdOf(record), record]));
+    enriched = enriched.map(paper => {
+      const id = canonicalArxivIdOf(paper);
+      const fresh = id && byId.get(id);
+      if (!fresh) return paper;
+      const previous = paper.acceptedConference;
+      return { ...paper, acceptedConference: mergeConferenceMarks(previous?.evidence === 'openreview' ? previous : undefined, fresh.acceptedConference, paper.openReviewVenueId) };
+    });
+  }
   const recovered = [
-    ...(missingArxiv.length ? await fetchArxivPapers(env, missingArxiv).catch(() => []) : []),
+    ...arxivRecords,
     ...(missingDois.length ? await fetchInspireAbstracts(missingDois).catch(() => []) : []),
   ];
   if (recovered.length) enriched = mergeFeedAbstracts(enriched, recovered);

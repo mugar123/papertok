@@ -143,7 +143,7 @@ import { rewriteUseHint } from './rewrite-use-hint.ts';
 import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
-import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
+import { acceptedConferenceText, accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 import type { StatusTagKey } from '../../utils/paper-status.ts';
 import { trialRegistrationUrl, type StudyType } from '../../models/paper-evidence.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
@@ -1318,6 +1318,7 @@ const PaperCard = memo(function PaperCard({
     () => feedReason(paper, followed, analyticsSurface, categoryLabel),
     [paper, followed, analyticsSurface, categoryLabel],
   );
+  const acceptedAt = acceptedConferenceText(paper);
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
@@ -1917,6 +1918,7 @@ const PaperCard = memo(function PaperCard({
       })()}
     </AnimatePresence>
             </div>
+            {acceptedAt && <p className="pc-about-accepted">{acceptedAt}</p>}
           </section>
           {topicItems.length > 0 && (
             <section className="pc-about-section">
@@ -2077,13 +2079,19 @@ const PaperCard = memo(function PaperCard({
               <span className="pc-date">{paper.year}</span>
             </>
           ) : null}
+          {acceptedAt && (
+            <>
+              {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot">·</span> : null}
+              <span className="pc-accepted">{acceptedAt}</span>
+            </>
+          )}
 
           {(paper.citationCountKnown || paper.citationCount! > 0) && (
             <>
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
                   enriquecimiento se pasa del techo montan tarde juntos. */}
-              {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+              {(categoryLabel || reason || paper.year || acceptedAt) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"

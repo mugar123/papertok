@@ -12,7 +12,7 @@ interface HuggingFaceResources extends Record<string, unknown> {
 
 import { normalizeOpenReviewId } from '../src/utils/public-navigation.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
-import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount } from './open-review-api.ts';
+import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount, openReviewSearchUrl } from './open-review-api.ts';
 import {
   cacheResponse,
   DEGRADED_CACHE_SECONDS,
@@ -294,11 +294,7 @@ export async function handleOpenReview(request: Request, env: WorkerEnv) {
   if (!query) return json({ error: 'Missing OpenReview query' }, 400, corsHeaders(context.origin, env));
 
   return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.openreview, async () => {
-    const url = new URL('https://api2.openreview.net/notes/search');
-    url.searchParams.set('term', query);
-    url.searchParams.set('source', 'forum');
-    url.searchParams.set('limit', String(Math.min(50, context.limit * 3)));
-    url.searchParams.set('offset', String((context.page - 1) * context.limit));
+    const url = openReviewSearchUrl(query, Math.min(50, context.limit * 3), (context.page - 1) * context.limit);
     // No `sort` on the URL. api2's search accepts `cdate:desc` (and refuses
     // `tcdate`, `mdate` and `pdate` with a 400) but does not act on it: measured
     // 2026-09-02, `cdate:asc`, `cdate:desc`, `tmdate:*` and no sort at all

@@ -29,6 +29,12 @@ import { fetchWithDeadline, SOURCE_UPSTREAM_TIMEOUT_MS } from './provider-runtim
  */
 const OPENREVIEW_API = 'https://api2.openreview.net';
 const HEADERS = { accept: 'application/json', 'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)' };
+
+export function openReviewSearchUrl(term: string, limit: number, offset: number) {
+  const url = new URL(`${OPENREVIEW_API}/notes/search`);
+  url.search = new URLSearchParams({ term, source: 'forum', limit: String(limit), offset: String(offset) }).toString();
+  return url;
+}
 // OpenReview's client documents a token as lasting an hour. A token is
 // replaced before that rather than on a refusal, because what an expired one
 // is answered with was not observed: a 401 is handled below, a 403 would look

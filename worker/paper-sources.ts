@@ -35,6 +35,7 @@ import { KEYWORD_LANE_PREFIX, isKeywordLane, keywordFilter, keywordSearchText } 
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
 import { EUROPE_PMC_NOTABLE_QUERIES } from './europepmc-notable-leaves.generated.ts';
 import { ADS_NOTABLE_OWN_CLASS_LEAVES } from './ads-notable-leaves.generated.ts';
+import { conferenceInText } from './accepted-conference.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -196,7 +197,7 @@ export function parseArxivAtom(xml: string) {
 
 /** An arXiv record as the paper the browser built from the same record. */
 export function arxivRecordPaper(record: ArxivRecord): Paper {
-  return arxivPaper({
+  const paper = arxivPaper({
     arxivId: record.arxivId,
     title: record.title,
     abstract: record.abstract,
@@ -208,6 +209,9 @@ export function arxivRecordPaper(record: ArxivRecord): Paper {
     allCategories: record.categories,
     primaryCategory: record.categories[0],
   });
+  const mark = conferenceInText(record.comments, record.categories[0], 'arxiv-comment');
+  if (mark) paper.acceptedConference = mark;
+  return paper;
 }
 
 /**
@@ -219,7 +223,7 @@ export function arxivRecordPaper(record: ArxivRecord): Paper {
  * revision: it is filed with no arrival in any lane, and a lane that had
  * trimmed it does not put it on top of its day-by-day feed.
  */
-export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionToken }: { set: string; from: string; resumptionToken?: string }) {
+export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionToken, conferenceBackfillUntil }: { set: string; from: string; resumptionToken?: string; conferenceBackfillUntil?: string }) {
   const url = new URL(OAI_ENDPOINT);
   url.searchParams.set('verb', 'ListRecords');
   if (resumptionToken) url.searchParams.set('resumptionToken', resumptionToken);
@@ -227,6 +231,7 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
     url.searchParams.set('metadataPrefix', 'arXivRaw');
     url.searchParams.set('set', set);
     url.searchParams.set('from', from);
+    if (conferenceBackfillUntil) url.searchParams.set('until', conferenceBackfillUntil);
   }
   // On the same beat as every export.arxiv.org call. A seat refused, or a
   // ledger that cannot answer, is waited out like arXiv's own 503, until the
@@ -238,6 +243,22 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
   if (response.status === 503) return { stored: 0, listed: 0, resumptionToken: resumptionToken || '', retryAfterSeconds: Number(response.headers.get('retry-after')) || 30 };
   if (!response.ok) throw new PaperStoreError(`OAI_HTTP_${response.status}`, 502);
   const page = parseOaiPage(await response.text());
+  if (conferenceBackfillUntil) {
+    const marks = page.papers.flatMap(record => {
+      const mark = conferenceInText(record.comments, record.categories[0], 'arxiv-comment');
+      return mark ? [{ key: `arxiv:${record.arxivId.toLowerCase()}`, mark }] : [];
+    });
+    const db = database(env);
+    const { results } = await db.prepare(`SELECT w.id, j.value -> 'mark' AS mark, w.paper ->> 'corpusUpdatedAt' AS stamp
+      FROM json_each(?) j JOIN work_keys k ON k.key = j.value ->> 'key' JOIN works w ON w.id = k.work_id
+      WHERE w.paper -> 'acceptedConference' IS NULL`).bind(JSON.stringify(marks)).all<{ id: number; mark: string; stamp: number | null }>();
+    // Recheck the row at write time so a concurrent listing keeps its decision.
+    const answer = results.length && await db.prepare(`UPDATE works AS w SET paper = json_set(w.paper,
+      '$.acceptedConference', json(j.value ->> 'mark'), '$.corpusUpdatedAt', max(CAST(? AS INTEGER), coalesce(w.paper ->> 'corpusUpdatedAt', 0) + 1))
+      FROM json_each(?) j WHERE w.id = j.value ->> 'id' AND w.paper -> 'acceptedConference' IS NULL
+      AND w.paper ->> 'corpusUpdatedAt' IS j.value ->> 'stamp'`).bind(Date.now(), JSON.stringify(results)).run();
+    return { stored: answer ? answer.meta.changes : 0, listed: page.papers.length, resumptionToken: page.resumptionToken, retryAfterSeconds: 0 };
+  }
   const since = daysFromNow(-CORPUS_DAYS);
   const announced = daysFromNow(-LATE_ARRIVAL_DAYS);
   const recent = page.papers.filter(paper => paper.published >= since);
@@ -584,7 +605,14 @@ function domainSource(source: string, perPage: number): SourceSpec['fetchPage'] 
     const request = domainSourceRequests(plan, eligible, page, perPage, 'recent').find(candidate => candidate.source === source);
     if (!request) return { items: [], newest: '', full: false };
     const response = await withShortWaits(waits, () => askRoute(DOMAIN_ROUTES[source], request.path, request.params, env));
-    return pageOf(filed(request.read(await response.json()), lane), Math.min(Number(request.params.limit) || perPage, perPage));
+    const papers = request.read(await response.json());
+    if (source === 'openreview') {
+      for (const paper of papers) {
+        if (!paper) continue;
+        paper.acceptedConference = conferenceInText(paper.conference, lane, 'openreview', paper.openReviewVenueId);
+      }
+    }
+    return pageOf(filed(papers, lane), Math.min(Number(request.params.limit) || perPage, perPage));
   };
 }
 

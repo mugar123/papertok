@@ -35,6 +35,17 @@ service cloud.firestore {
       return value is string && value.size() > 0 && value.size() <= maximum;
     }
 
+    function validConferenceMark(paper) {
+      let mark = paper.get('acceptedConference', {});
+      return (paper.get('corpusUpdatedAt', 0) is int && paper.get('corpusUpdatedAt', 0) >= 0)
+        && (!('acceptedConference' in paper) || (mark is map
+        && mark.keys().hasOnly(['id', 'label', 'year', 'evidence'])
+        && validNonEmptyString(mark.id, 100)
+        && validNonEmptyString(mark.label, 100)
+        && mark.evidence in ['arxiv-comment', 'openreview']
+        && (!('year' in mark) || (mark.year is int && mark.year >= 1000 && mark.year <= 9999))));
+    }
+
     // OpenAlex's primary topic as a stored copy keeps it (`storedClassification`
     // in src/models/paper.ts): the topic, its subfield, field and domain, each
     // by id and name, and nothing else.
@@ -269,7 +280,8 @@ service cloud.firestore {
             || request.resource.data.tags is list && request.resource.data.tags.size() <= 12)
           && (!('paperAuthors' in request.resource.data)
             || request.resource.data.paperAuthors is list && request.resource.data.paperAuthors.size() <= 20)
-          && (!('paper' in request.resource.data) || request.resource.data.paper is map);
+          && (!('paper' in request.resource.data)
+            || (request.resource.data.paper is map && validConferenceMark(request.resource.data.paper)));
       }
 
       // Derived aggregate of the interactions subcollection above, so a feed
@@ -487,9 +499,10 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly([
             'title', 'authors', 'primaryCategory', 'categories', 'primaryTopic',
             'classificationVersion', 'published', 'arxivId',
-            'summary', 'abstractSource', 'doi', 'landingPageUrl', 'savedAt'
+            'summary', 'abstractSource', 'doi', 'landingPageUrl', 'savedAt', 'acceptedConference', 'corpusUpdatedAt'
           ])
           && validString(request.resource.data.title, 1000)
+          && validConferenceMark(request.resource.data)
           && (!('savedAt' in request.resource.data)
             || validString(request.resource.data.savedAt, 300)
             || (resource != null && request.resource.data.savedAt == resource.data.get('savedAt', null))

@@ -1476,7 +1476,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
       if (requestId !== feedRequestId.current) return;
 
-      if ((!reset || keepThroughVisible) && newPapers.some(paper => paper.studyType || paper.trialRegistration)) {
+      if ((!reset || keepThroughVisible) && newPapers.some(paper => paper.corpusUpdatedAt !== undefined || paper.acceptedConference || paper.studyType || paper.trialRegistration)) {
         const userId = activeUserId.current;
         const signature = feedPreferenceSignature(userPreferences);
         setPapers(current => {

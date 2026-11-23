@@ -1304,3 +1304,25 @@ test('a retraction PubMed records after the paper was stored reaches it from Eur
   await enrichPending(env, 50, LISTED + 15 * DAY_MS);
   assert.deepEqual(statusAndLanes(db), { 'pmid:9500320': ['retracted', []], 'pmid:42934083': ['published', ['med.peds']] });
 });
+
+test('an arXiv abstract lookup can confirm the conference of the matching stored work', async t => {
+  const { env, db } = await corpus();
+  const paper = { ...preprint, id: 'openalex:W4400000002', arxivId: '2610.98765', sources: { primary: 'openalex', enrichedBy: [] },
+    title: 'A separate paper awaiting an arXiv abstract', abstract: '' };
+  await ingestPapers(env, [{ paper, lanes: [] }], { now: NOW });
+  providers(t);
+  const upstream = globalThis.fetch;
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.hostname !== 'export.arxiv.org') return upstream(input, init);
+    assert.equal(url.searchParams.get('id_list'), '2610.98765');
+    return new Response(`<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom"><entry>
+      <id>http://arxiv.org/abs/2610.98765v1</id><published>2026-10-10</published><title>A separate paper</title>
+      <summary>We recover the abstract from the matching arXiv record.</summary><category term="cs.LG"/>
+      <arxiv:comment>Accepted at NeurIPS 2026</arxiv:comment></entry></feed>`);
+  });
+  await enrichPending(env, 50, NOW);
+  const works = stored(db);
+  assert.deepEqual(works[paper.id].paper.acceptedConference, { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' });
+  assert.equal(works[preprint.id].paper.acceptedConference, undefined);
+});
