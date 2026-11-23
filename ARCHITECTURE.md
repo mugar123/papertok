@@ -233,7 +233,7 @@ The Worker records a conference when the arXiv author attributes the paper to it
 or OpenReview assigns it a matching venue. OpenAlex source IDs can span main and
 companion proceedings, so OpenAlex attribution is deferred. The corpus, feed and
 library copies carry the resulting `acceptedConference`. The [harvest contract](worker/README.md#conference-evidence)
-covers event years, measured coverage and the one-off arXiv reload.
+covers event years, measured coverage and the arXiv reload after recognizer changes.
 Every save of a corpus paper also writes `corpusUpdatedAt`. Deploy compatible
 Firestore rules before the app and retain them through an app rollback so
 documents that carry this field can still be saved.

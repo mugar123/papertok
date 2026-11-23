@@ -535,7 +535,9 @@ optional event year and one of two text sources.
 - **arXiv** (`arxiv-comment`) records the author’s claim of acceptance,
   publication or presentation. A proceedings citation, camera-ready statement
   or recognised presentation format can also identify the venue. The Worker
-  matches the whole destination, ignores URLs and discards the comment.
+  matches the whole destination in the acceptance statement. It checks link
+  text, including decoded URL paths, for workshop and other rejection cues
+  before removing links from venue matching. It discards the comment.
 
 OpenAlex attribution is deferred because one source ID can cover both main
 and companion proceedings. If the two texts name different conferences,
@@ -545,19 +547,26 @@ evidence, so a withdrawal can clear a mark. When two corpus rows fold into one,
 the Worker combines their text evidence. The mark is independent of
 `conference` and `publicationStatus`.
 
-Findings proceedings have their own catalogue entries. Side-track qualifiers
-can occur anywhere in the comment. A second venue, another event’s acronym or a short
-track name in a separate clause leaves the paper unmarked. Poster, oral and
-spotlight qualify for NeurIPS, ICML and ICLR. CVPR, ICCV and ECCV also qualify
-for oral presentations.
+Findings proceedings have their own catalogue entries. Every clause in an arXiv
+comment must identify the same acceptance or match a recognised neutral form.
+These include page, figure and table counts, resource links, a code and data
+availability note, an equal-contribution label, a named corresponding author
+and a camera-ready version label. Any other note leaves the paper unmarked.
+A bare poster, oral or spotlight presentation qualifies at NeurIPS, ICML and
+ICLR. CVPR, ICCV and ECCV also qualify for oral presentations.
+
 Strict acronyms require an eligible primary arXiv category or OpenReview lane.
+Some short spellings have narrower category rules because other meetings use
+the same initials. If a year would fall after the next UTC calendar year,
+the Worker refuses the whole mark. An abbreviated number can name an edition.
 Regenerate the [catalogue](conference-catalogue.generated.ts) from the local
 terms and rules with `node scripts/generate-conference-catalogue.mjs /path/to/catalogo-final.json`.
 The [recognizer](accepted-conference.ts) applies the attribution and venue rules.
 
-On November 23, 2026, the recognizer marked 58,070 of 173,779 versioned arXiv
-comments in the local catalogue sample (33.42%) and 57 of 808 recent comments
-(7.05%). It marked 138 of 2,600 records on two recorded arXiv OAI pages.
+On November 23, 2026, the strict rules marked 55,091 of 173,779 versioned
+comments in the local catalogue sample (31.70%, down from 58,070). On the
+recorded arXiv listing for that day, they marked 51 of the 808 records with
+comments (6.31%, down from 57).
 
 An older Worker checks only `payload.lanes`, so it ignores
 `arxivConferenceBackfill` and runs the full nightly harvest a second time,
@@ -566,22 +575,28 @@ spending that night's provider budgets. Before triggering the reload, run
 matches the version ID printed by the deploy. You can also find that ID with
 `npx wrangler deployments list`.
 
-Run the one-off 30-day reload outside the nightly
-harvest, for example between 12:00 and 13:00 UTC:
+Run the 30-day reload after each recognizer change. Wait for any earlier reload
+to finish and run outside the nightly harvest, for example between 12:00 and
+13:00 UTC. Set `WORKER_VERSION_ID` to the deployed version ID you checked above.
+The instance ID prevents duplicate runs for that version.
 
 ```sh
-npx wrangler workflows trigger papertok-paper-harvest '{"arxivConferenceBackfill":true}' --id arxiv-conference-backfill-30d
+npx wrangler workflows trigger papertok-paper-harvest '{"arxivConferenceBackfill":true}' --id "arxiv-conference-${WORKER_VERSION_ID:?}"
 ```
 
-The fixed ID prevents a second concurrent instance. The reload is idempotent.
-After a failure, restart the instance or trigger the workflow with a new ID.
-The reload reads arXiv OAI records updated in the 30 UTC dates ending on the
-run date. For existing works with an arXiv key and no mark, it writes only the
-mark and row stamp.
-Two recorded pages (2,600 records, 1,252 stored works) filled 43 marks. Replaying
-both pages wrote zero rows. Allow about 60 OAI pages and 10–11 minutes plus
-provider waits. Pages with writes used two D1 statements each, and pages with
-no writes used one. Remove this Workflow option and its reload path after the run.
+The reload reads arXiv OAI updates for the 30 UTC dates ending on the run date.
+For existing works it sets, replaces or clears the arXiv-comment mark according
+to the current comment. OpenReview marks take precedence. A changed row also
+gets a stamp at least one millisecond above its previous value. A listing that
+updates the row between the read and write keeps its decision. Each request
+step reports `set`, `changed` and `cleared` counts. Replaying unchanged records
+writes nothing. After a failure, restart the instance.
+
+The nightly harvest skips papers first submitted more than 90 days ago. For
+those works this reload can correct a mark only if arXiv lists an update within
+its 30-day window. If two arXiv records on one page map to one work and disagree,
+the reload clears its arXiv mark. The store keeps no history of conflicts across
+separate folds, so later evidence can restore a mark.
 
 Library copies store the corpus row stamp in `corpusUpdatedAt`. When the app
 receives a newer row it adopts that row’s mark, including a withdrawal. Two

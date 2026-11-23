@@ -206,14 +206,67 @@ test('a second event or short track note makes the acceptance ambiguous', () => 
   ]) assert.equal(conferenceInText(comment, 'cs.CL', 'arxiv-comment'), undefined, comment);
 });
 
+test('every additional clause must identify a neutral note or the same acceptance', () => {
+  for (const note of [
+    'Part of the Show and Tell program', 'Selected for the Creative AI program',
+    'This is a work-in-progress paper', 'One of the Doctoral Colloquium papers this year',
+    'A two page abstract only', 'Later the acceptance was revoked',
+    'These are the lecture notes for the invited lecture', 'This is a blackboxnlp contribution',
+    'The authors contributed equally to this work', 'The paper appeared there with IEEE support',
+    'The experiments were completed in 2025', 'The ICML proceedings include this work',
+    'Corresponding author: Alex Smith for the side event', 'Code: side-event',
+  ]) {
+    assert.equal(conferenceInText(`Accepted at ICML 2025. ${note}`, 'cs.LG', 'arxiv-comment'), undefined, note);
+    assert.equal(conferenceInText(`${note}; Accepted at ICML 2025`, 'cs.LG', 'arxiv-comment'), undefined, note);
+  }
+});
+
+test('checks rejection cues inside links before interpreting a resource note', () => {
+  for (const url of [
+    'https://icml.cc/virtual/2025/workshop/1234', 'https://ai4science-icml-workshop.github.io',
+    'https://example.org/late_breaking', 'https://example.org/student%20abstract',
+    'https://example.org/%77orkshop', 'https://example.org/icmlw2025', 'https://example.org/%zz',
+  ]) {
+    assert.equal(conferenceInText(`Accepted at ICML 2025. ${url}`, 'cs.LG', 'arxiv-comment'), undefined, url);
+    assert.equal(conferenceInText(`Accepted at ICML 2025, code: ${url}`, 'cs.LG', 'arxiv-comment'), undefined, url);
+  }
+  assert.equal(conferenceInText('Accepted at ASRU workshop. Website: https://example.org/workshop', 'cs.CL', 'arxiv-comment'), undefined);
+  assert.equal(conferenceInText('Accepted at SP 2025. Data: https://example.org/signal_processing', 'cs.CR', 'arxiv-comment'), undefined);
+});
+
+test('an edition beyond next year refuses the entire mark', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 11, 31, 23, 59) });
+  for (const venue of ["MICRO'58", "DAC'62", 'ISCA52', "HICSS'59", "STOC'57", 'CDC64', 'NeurIPS 2028']) {
+    assert.equal(conferenceInText(`Accepted at ${venue}`, 'cs.AR', 'arxiv-comment'), undefined, venue);
+  }
+  assert.equal(conferenceInText("Accepted at ICML'27", 'cs.LG', 'arxiv-comment')?.year, 2027);
+  assert.equal(conferenceInText("Accepted at ICML'28", 'cs.LG', 'arxiv-comment'), undefined);
+  assert.equal(conferenceInText('ICML', 'cs.LG', 'openreview', 'ICML.cc/2028/Conference'), undefined);
+  t.mock.timers.tick(60_000);
+  assert.equal(conferenceInText("Accepted at ICML'28", 'cs.LG', 'arxiv-comment')?.year, 2028);
+});
+
+test('requires a compatible primary category for shared short venue spellings', () => {
+  for (const [term, allowed, collision, label] of [
+    ['FSE', 'cs.SE', 'cs.CR', 'ESEC/FSE'], ['SA', 'cs.GR', 'cs.SE', 'SIGGRAPH Asia'], ['SP', 'cs.CR', 'eess.SP', 'S&P'],
+    ['IV', 'cs.RO', 'cs.HC', 'IV'], ['CEC', 'cs.NE', 'cs.SE', 'CEC'], ['SDM', 'cs.DB', 'eess.SY', 'SDM'],
+    ['HT', 'cs.HC', 'math.AP', 'HT'], ['SAC', 'cs.SE', 'cs.CR', 'SAC'], ['SAC', 'cs.AI', 'quant-ph', 'SAC'],
+  ]) {
+    assert.equal(conferenceInText(`Accepted at ${term} 2025`, collision, 'arxiv-comment'), undefined, term);
+    assert.equal(conferenceInText(`Accepted at ${term} 2025`, allowed, 'arxiv-comment')?.label, label, term);
+  }
+  assert.equal(conferenceInText('Accepted at SIGGRAPH Asia 2025', 'cs.SE', 'arxiv-comment')?.label, 'SIGGRAPH Asia');
+  assert.equal(conferenceInText('Accepted at S&P 2025', 'eess.SP', 'arxiv-comment')?.label, 'S&P');
+});
+
 test('recognises neutral notes, count prefixes and parenthesised symposium names', () => {
   for (const note of ['12 pages, 3 figures, 1 table', 'Code: https://example.org/BioNLP',
     'Project page: https://example.org/AI4Science', 'Data: https://example.org/WMT',
     'Website: https://example.org/Industry', 'Camera-ready version', 'Equal contribution',
-    'Corresponding author: Alex Smith', 'The authors contributed equally to this work',
+    'Corresponding author: Alex Smith',
     '12pages,12figures', '4+1 pages, 2 figures', 'XX pages, X figures', 'Code: GitHub', 'Data: GitHub https://example.org/WMT', 'Code and data: https://example.org/SoLaR',
-    'The paper appeared there with IEEE support', 'The experiments were completed in 2025',
-    'The ICML proceedings include this work', 'Project webpage: https://example.org/BioNLP',
+    'Code is available at https://example.org/code', 'Project page is at https://example.org/project',
+    '29 pages, including references and appendices', 'Project webpage: https://example.org/BioNLP',
     'Dataset available: https://example.org/SoLaR']) {
     assert.equal(conferenceInText(`Accepted at ICML 2026. ${note}`, 'cs.LG', 'arxiv-comment')?.label, 'ICML', note);
   }
@@ -267,6 +320,7 @@ test('only accepts presentation formats that identify papers at that venue', () 
     ['Accepted at CVPR 2025 (oral)', 'CVPR'],
     ['Oral presentation at ICCV 2025', 'ICCV'],
     ['ECCV 2024 (oral)', 'ECCV'],
+    ['Accepted at ICML 2026. Poster presentation', 'ICML'],
     ['Accepted by CVPR 2025. Project Page: https://poster-maker.github.io', 'CVPR'],
   ]) assert.equal(conferenceInText(comment, 'cs.LG', 'arxiv-comment')?.label, label, comment);
 });
