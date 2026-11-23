@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Open PaperTok
+    url: https://papertok.app
+    about: Try the current app before reporting a problem.
+  - name: Contribution guide
+    url: https://github.com/mugar123/papertok/blob/main/CONTRIBUTING.md
+    about: Read the setup, verification, and contribution guidance.
