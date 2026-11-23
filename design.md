@@ -212,7 +212,9 @@ that only the data is allowed to pick.
   the rail's own states.
   The reader may also pick `accent-teal`, `accent-sky`, `accent-violet` or
   `accent-rose` for a highlight in a paper's full text, as an alternative to
-  the default yellow; their `-soft` surfaces paint the mark.
+  the default yellow; their `-soft` surfaces paint the mark. A clicked
+  highlight is painted with its ink mixed 35% into that wash, and the dashed
+  rule of its entry in the notes sidebar turns solid.
 - **Link Blue** (`link-blue`): the secondary accent, for links in running text.
 
 ### Tertiary

@@ -69,8 +69,6 @@
   .pdf-info, .pdf-info[data-starting-style], .pdf-info[data-ending-style] { clip-path: none; transition: opacity 150ms linear; }
   .pdf-info[data-starting-style], .pdf-info[data-ending-style] { opacity: 0; }
 }
-.pdf-info .pc-menu-share { flex-wrap: wrap; }
-.pdf-info .pc-menu-link { flex-basis: 100%; }
 .pdf-menu-title { font: 600 1.25rem/1.25 var(--font-serif); letter-spacing: -0.01em; color: var(--text-primary); }
 
 @media (pointer: coarse) {

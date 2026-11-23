@@ -71,6 +71,7 @@ import { ListRowAuthors } from '../lists/list-row.tsx';
 import HighlightedScientificText from './highlighted-scientific-text.tsx';
 import UsesCount from './uses-count.tsx';
 import ThinkingDots from './thinking-dots.tsx';
+import '../ui/tag.css';
 import './paper-reader.css';
 import './annotations.css';
 import { EASE_OUT, EASE_OUT_EXPO, MOTION_BASE_S } from '../../utils/motion-curves.ts';
@@ -119,7 +120,6 @@ const COPY = {
     settings: 'Settings',
     annotateParagraphInstructions: 'Press Enter to open annotation options for this paragraph: highlight it, write a note on it, or ask the AI to explain it.',
     annotateParagraphBadge: 'Enter: annotate',
-    explainThis: 'Explain this to me',
     oneUse: '1 use',
     noUsesLeftShort: 'no uses',
     noUsesLeft: 'Today’s AI uses have run out.',
@@ -913,9 +913,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   };
 
   const { ask: askAnnotation } = annotations;
-  const askAboutPassage = useCallback(() => {
+  const askAboutPassage = useCallback((question = '') => {
     setNotesOpen(true);
-    return askAnnotation();
+    return askAnnotation(question);
   }, [askAnnotation]);
 
   const userHighlightIndex = useMemo(() => {
@@ -1461,13 +1461,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             returnFocus={annotationOrigin}
             sheet={touch}
             ask={{
-              label: copy.explainThis,
               price: quota?.unlimited ? null
                 : quota?.dailyLimit ? <UsesCount left={quota.remainingUses} limit={quota.dailyLimit} copy={copy} />
                   : canSpendUse ? copy.oneUse : copy.noUsesLeftShort,
               disabled: !canSpendUse,
               title: canSpendUse ? undefined : copy.noUsesLeft,
-              onAsk: () => { void askAboutPassage(); },
+              onAsk: (question) => { void askAboutPassage(question); },
             }}
             onSave={(note, color) => { void saveAnnotation(note, color); }}
             onCancel={() => { setFailedNote(null); annotations.dismiss(); }}

@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/user-settings.ts';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -49,12 +49,13 @@ import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
-import { ZoteroMark } from '../pdf/zotero-mark.tsx';
 import { connectZotero, disconnectZotero, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
 import { GithubMark } from '../ui/github-mark.tsx';
 import { Label } from '../ui/label.tsx';
+import { ZoteroMark } from '../pdf/zotero-mark.tsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
 import { Switch } from '../ui/switch.tsx';
+import { readShowAbstract, saveShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import usePopupReady from '../../hooks/use-popup-ready.ts';
@@ -69,7 +70,7 @@ import './settings-page.css';
 const SETTINGS_PAGES: { slug: string; label: string; summary: string; Icon: Icon; to?: string }[] = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
   { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },
-  { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
+  { slug: 'reading', label: 'Reading & AI', summary: 'AI level, the reader and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics and author statistics', Icon: ShieldCheck },
   { slug: 'help', label: 'Help', summary: 'What each button and gesture does', Icon: Question, to: '/help' },
@@ -212,7 +213,7 @@ function ZoteroSection({ uid }: { uid: string }) {
       <div className="settings-list">
         <div className="settings-row settings-row-side">
           <div className="settings-row-content">
-            <h3 className="settings-method-name"><ZoteroMark size={16} />Zotero</h3>
+            <h3 className="settings-method-name"><span className="settings-brand-plate"><ZoteroMark size={18} /></span>Zotero</h3>
           </div>
           {(status || failed) && (
             <RowAction
@@ -661,10 +662,30 @@ function ReadingPage() {
           </Label>
         </div>
       </section>
+      <ReaderSection />
       {/* Keyed by account: another account starts from an empty list, and a
           page still loading for the previous one is dropped with it. */}
       {user && <SummaryHistory key={user.uid} uid={user.uid} />}
     </>
+  );
+}
+
+function ReaderSection() {
+  const showAbstract = useSyncExternalStore(subscribeShowAbstract, readShowAbstract);
+  const label = 'Show the abstract';
+  return (
+    <section className="settings-section" aria-labelledby="settings-reader-heading">
+      <SectionHeading id="settings-reader-heading" title="Reader" description="How a paper's full text opens. Saved in this browser." />
+      <div className="profile-fields">
+        <Label className="profile-switch">
+          <span className="profile-switch-copy">
+            <span className="profile-switch-label">{label}</span>
+            <span className="profile-switch-hint" id="settings-reader-abstract-hint">Start each paper with its abstract, above the first section.</span>
+          </span>
+          <Switch className="settings-toggle" checked={showAbstract} aria-label={label} aria-describedby="settings-reader-abstract-hint" onCheckedChange={saveShowAbstract} />
+        </Label>
+      </div>
+    </section>
   );
 }
 

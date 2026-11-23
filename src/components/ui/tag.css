@@ -1,0 +1,25 @@
+/* The tag: a small mono label on a tinted ground. The reader's paper tags and the
+   AI uses count wear it; `--ai` is the violet one for anything the AI spends or wrote. */
+.rd-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
+  font: 500 0.6875rem/1.5 var(--font-mono);
+  white-space: nowrap;
+}
+
+.rd-uses {
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.rd-tag--ai {
+  border-color: var(--tint-violet-line);
+  background: var(--tint-violet-bg);
+  color: var(--tint-violet-fg);
+}

@@ -1,51 +1,74 @@
 import type { Paper } from '../../models/paper.ts';
 import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { usePassageAnnotations } from '../../hooks/use-passage-annotations.ts';
 import { FULL_TEXT_LEVEL, HIGHLIGHT_COLORS, MAX_QUOTE_LENGTH, highlightColor } from '../../services/user-highlight-service.ts';
 import { HIGHLIGHT_MIN_QUOTE_LENGTH } from '../../utils/text-highlights.ts';
 import type { PassageSelection } from './passage-range.ts';
 import type { HighlightColor } from '../../services/user-highlight-service.ts';
-import { blockPassage, passageRange, selectedPassage } from './passage-range.ts';
+import { blockPassage, blockText, overlapping, passageAt, passageRange, selectedPassage } from './passage-range.ts';
+import { newestFirst } from './passage-order.ts';
+import { lastKnownAIUses, refreshAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 
 const PAINT = 'viewer-passage';
 const PENDING = 'viewer-passage-pending';
+const ACTIVE = 'viewer-passage-active';
 export const SAVE_ERROR = 'Could not save. Check your connection and try again.';
 
-const readingOrder = (passage: PassageAnnotation) => [passage.sectionId[0] === 'a' ? 0 : 1, Number(passage.sectionId.slice(1)) || 0];
-
-export function useViewerNotes(paper: Paper, uid: string | null) {
+export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string) {
   const paperId = paper.id || paper.doi || paper.arxivId || '';
-  const notes = usePassageAnnotations({ uid, paper, paperId, level: FULL_TEXT_LEVEL, language: 'en' });
-  const passages = useMemo(() => notes.annotations
-    .filter(item => item.level === FULL_TEXT_LEVEL)
-    .sort((a, b) => {
-      const [ra, ia] = readingOrder(a);
-      const [rb, ib] = readingOrder(b);
-      return ra - rb || ia - ib;
-    }), [notes.annotations]);
+  // The day's AI allowance, from the store the reader and cards share.
+  const [seededQuota] = useState(() => lastKnownAIUses(uid));
+  const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(uid));
+  useEffect(() => {
+    if (!uid) return undefined;
+    const controller = new AbortController();
+    void refreshAIUses(uid, controller.signal);
+    return () => controller.abort();
+  }, [uid]);
+  // Until the worker has answered, a use is assumed to be there: the worker refuses if not.
+  const canAsk = quota === null || quota === seededQuota || Boolean(quota.unlimited) || quota.remainingUses > 0;
+  const notes = usePassageAnnotations({ uid, paper, paperId, level: FULL_TEXT_LEVEL, aiLevel, language: 'en' });
+  const passages = useMemo(() => newestFirst(notes.annotations.filter(item => item.level === FULL_TEXT_LEVEL)), [notes.annotations]);
   const [status, setStatus] = useState('');
   const [origin, setOrigin] = useState<HTMLElement | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  // The passage the reader clicked. Derived against the list, so a deleted one simply drops out.
+  const [picked, setPicked] = useState<string | null>(null);
+  const active = passages.some(passage => passage.id === picked) ? picked : null;
 
   const pickPassage = (passage: PassageSelection | null, from: HTMLElement | null) => {
     if (!passage || passage.quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return;
     setFailed(null);
     setOrigin(from);
-    notes.begin({ sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), occurrence: passage.occurrence, anchor: passage.anchor });
+    notes.begin({ sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), occurrence: passage.occurrence, anchor: passage.anchor, context: passage.context.slice(0, 4_000) });
   };
   const pick = (root: HTMLElement | null) => {
     if (root) pickPassage(selectedPassage(root), root);
   };
   const pickBlock = (block: HTMLElement) => pickPassage(blockPassage(block), block);
+  // A click on the text marks the highlight under it, or clears the mark off a highlight.
+  // Returns whether it landed on one.
+  const pickAt = (target: EventTarget | null, x: number, y: number) => {
+    const id = passageAt(target, passages, x, y)?.id ?? null;
+    setPicked(id);
+    return id !== null;
+  };
 
+  // A selection over the reader's own highlights replaces them, keeping their notes.
   const save = async (note: string, color?: HighlightColor) => {
     const passage = notes.pending;
-    const saved = note ? await notes.saveNote(note, color) : await notes.highlight(color);
+    const block = passage && document.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
+    const replaced = block && passage
+      ? overlapping(blockText(block), passage, passages.filter(item => item.kind === 'user' && item.sectionId === passage.sectionId))
+      : [];
+    const text = [note, ...replaced.map(item => item.note)].filter(Boolean).join('\n\n');
+    const saved = text ? await notes.saveNote(text, color) : await notes.highlight(color);
     if (saved) {
       window.getSelection()?.removeAllRanges();
       origin?.focus({ preventScroll: true });
-      setStatus(note ? 'Note saved' : 'Highlight saved');
+      const removed = await Promise.all(replaced.filter(item => item.id !== saved.id).map(item => notes.remove(item.id)));
+      setStatus(removed.every(Boolean) ? (text ? 'Note saved' : 'Highlight saved') : 'Saved, but the old highlight could not be removed. Try deleting it.');
       return;
     }
     if (passage) notes.begin(passage);
@@ -58,11 +81,20 @@ export function useViewerNotes(paper: Paper, uid: string | null) {
     notes.dismiss();
   };
 
+  // The question goes out and the editor closes; the answer lands in the notes as an AI entry.
+  const ask = async (question: string) => {
+    window.getSelection()?.removeAllRanges();
+    origin?.focus({ preventScroll: true });
+    setStatus('Asking the AI');
+    const answer = await notes.ask(question);
+    setStatus(answer ? 'Answer added to the notes' : 'Could not get an answer. Try again.');
+  };
+
   const remove = async (id: string) => {
     setStatus(await notes.remove(id) ? 'Highlight deleted' : 'Could not delete. Check your connection and try again.');
   };
 
-  return { ...notes, passages, status, origin, failed, pick, pickBlock, pickPassage, save, dismiss, remove };
+  return { ...notes, passages, active, status, origin, failed, pick, pickAt, pickBlock, pickPassage, save, ask, quota, canAsk, dismiss, remove };
 }
 
 export function useTouchSelection(root: HTMLElement | null) {
@@ -87,7 +119,7 @@ export function useTouchSelection(root: HTMLElement | null) {
   return root ? passage : null;
 }
 
-export function usePaintedPassages(root: HTMLElement | null, passages: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'color' | 'occurrence'>[], pending: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'> | null) {
+export function usePaintedPassages(root: HTMLElement | null, passages: Pick<PassageAnnotation, 'id' | 'sectionId' | 'quote' | 'color' | 'occurrence'>[], pending: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'> | null, active: string | null = null) {
   useEffect(() => {
     if (!root || typeof CSS === 'undefined' || !('highlights' in CSS)) return undefined;
     const ranges = (list: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'>[]) => list.flatMap((passage) => {
@@ -98,6 +130,10 @@ export function usePaintedPassages(root: HTMLElement | null, passages: Pick<Pass
     const paint = () => {
       for (const color of HIGHLIGHT_COLORS) {
         CSS.highlights.set(`${PAINT}-${color}`, new Highlight(...ranges(passages.filter(passage => highlightColor(passage) === color))));
+        // The clicked passage is painted again, darker, above its colour's wash.
+        const picked = new Highlight(...ranges(passages.filter(passage => passage.id === active && highlightColor(passage) === color)));
+        picked.priority = 1;
+        CSS.highlights.set(`${ACTIVE}-${color}`, picked);
       }
       CSS.highlights.set(PENDING, new Highlight(...ranges(pending ? [pending] : [])));
     };
@@ -111,8 +147,11 @@ export function usePaintedPassages(root: HTMLElement | null, passages: Pick<Pass
     return () => {
       observer.disconnect();
       cancelAnimationFrame(frame);
-      for (const color of HIGHLIGHT_COLORS) CSS.highlights.delete(`${PAINT}-${color}`);
+      for (const color of HIGHLIGHT_COLORS) {
+        CSS.highlights.delete(`${PAINT}-${color}`);
+        CSS.highlights.delete(`${ACTIVE}-${color}`);
+      }
       CSS.highlights.delete(PENDING);
     };
-  }, [root, passages, pending]);
+  }, [root, passages, pending, active]);
 }

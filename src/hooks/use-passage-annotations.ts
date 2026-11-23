@@ -5,6 +5,8 @@ export interface PassageSelection { sectionId: string; paragraphIndex: number; q
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
 interface AnnotationOptions {
   uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
+  /** The reading level the AI writes at, when the stored level is not one (the full text's). */
+  aiLevel?: string;
   trackEvent?: (name: ProductAnalyticsEvent, params: Record<string, unknown>) => unknown;
 }
 
@@ -60,6 +62,7 @@ export function usePassageAnnotations({
   paper,
   paperId,
   level,
+  aiLevel = level,
   language,
   trackEvent,
 }: AnnotationOptions) {
@@ -173,7 +176,7 @@ export function usePassageAnnotations({
     if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level, paper_id: paperId });
     setPending(null);
     return saved;
-  }, [level, paper?.title, paperId, store, trackEvent]);
+  }, [level, paperId, store, trackEvent]);
 
   const saveNote = useCallback(async (text: string, color?: HighlightColor) => {
     const note = String(text || '').trim();
@@ -187,9 +190,9 @@ export function usePassageAnnotations({
     } finally {
       setBusy(IDLE);
     }
-  }, [level, paper?.title, paperId, store, trackEvent]);
+  }, [level, paperId, store, trackEvent]);
 
-  const ask = useCallback(async () => {
+  const ask = useCallback(async (question = '') => {
     if (!pending) return null;
     // The passage is captured before the request goes out: the menu closes
     // immediately, and what the request is about must not depend on state the
@@ -208,7 +211,8 @@ export function usePassageAnnotations({
       const answer = await annotatePassage(paper, {
         quote: passage.text ?? passage.quote,
         context: passage.context,
-        level,
+        question,
+        level: aiLevel,
         language,
         signal: controller.signal,
       });
@@ -258,7 +262,7 @@ export function usePassageAnnotations({
     } finally {
       setBusy(IDLE);
     }
-  }, [language, level, paper, paperId, pending, scheduleSettle, setLoaded, trackEvent, uid]);
+  }, [aiLevel, language, level, paper, paperId, pending, scheduleSettle, setLoaded, trackEvent, uid]);
 
   const remove = useCallback(async (annotationId: string) => {
     if (!annotationId) return false;
