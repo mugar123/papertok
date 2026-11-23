@@ -40,7 +40,7 @@ export function PaperTranslationButton({ state, onAuthRequired, onChooseLanguage
       size="sm"
       className="paper-translation-button"
       translate="no"
-      aria-label={showing ? undefined : 'Translate'}
+      aria-label={showing ? 'Show original title and abstract' : 'Translate title and abstract'}
       aria-disabled={pending}
       aria-busy={pending}
       onClick={() => {
@@ -87,7 +87,9 @@ export function PaperTranslationPicker({ state, focusRequested, onFocus }: {
           {Object.entries(TRANSLATION_LANGUAGES).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
         </select>
       </label>
-      <Button type="submit" variant="ghost" size="sm" aria-disabled={state.current.pending}>Translate paper</Button>
+      <Button type="submit" variant="ghost" size="sm" aria-label="Translate abstract and title" aria-disabled={state.current.pending}>
+        Translate abstract
+      </Button>
     </form>
   );
 }
@@ -98,7 +100,7 @@ export function PaperTranslationStatus({ state, announce = true }: { state: Pape
   return (
     <span role={announce ? 'status' : undefined} translate="no" className={error ? 'paper-translation-error' : 'visually-hidden'}>
       {pending ? 'Translating title and abstract.'
-        : error || (translation && (showing ? `Showing AI translation in ${TRANSLATION_LANGUAGES[translation.language]}.` : 'Showing original title and abstract.'))}
+        : error || (translation && (showing ? `Showing AI translation of the title and abstract in ${TRANSLATION_LANGUAGES[translation.language]}.` : 'Showing original title and abstract.'))}
     </span>
   );
 }
