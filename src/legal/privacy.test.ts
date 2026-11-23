@@ -157,6 +157,15 @@ test('the page says the count of email changes can stay with no set end if the r
   assert.match(summary, /\(see Email updates\)\. In one rare case, explained there, the count can stay longer\./);
 });
 
+// worker/full-text.ts fromArxiv asks arxiv.org/html, then ar5iv.labs.arxiv.org; worker/account-deletion.ts never reaches REQUEST_QUOTA_LEDGER.
+test('the page names ar5iv as a source of the reader text and says AI counters outlive a deleted account', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /from <strong>ar5iv<\/strong> \(ar5iv\.labs\.arxiv\.org, also served at ar5iv\.org\), a community service separate from arXiv/);
+  assert.match(html, /directly from the service that hosts it \(arXiv, ar5iv, PubMed Central or Europe PMC\)/);
+  const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(kept, /Nor are the daily counters of AI explanations, rewrites and translations, kept under a hashed account identifier: their deletion stays scheduled for within three days/);
+});
+
 // Digest reminders (#555): the visit hour kept in the account's EmailSubscriptionStore with the reader's consent.
 test('the page says what opt-in digest reminders keep, for how long, and that they stay apart from analytics', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');

@@ -547,9 +547,13 @@
         minute using a secret key.
       </p>
       <p>
-        The text of a paper comes through that server too, but its figures do not: your
+        The text of a paper comes through that server too. For an arXiv paper, the server
+        takes it from arXiv's own HTML version or, when arXiv has none, from
+        <strong>ar5iv</strong> (ar5iv.labs.arxiv.org, also served at ar5iv.org), a community
+        service separate from arXiv that converts older papers. When neither has it, and
+        for other papers, the text comes from Europe PMC. Its figures do not come through that server: your
         browser loads each figure, and a PDF shown in the reader on a computer, directly
-        from the repository that hosts it (arXiv, PubMed Central or Europe PMC), which
+        from the service that hosts it (arXiv, ar5iv, PubMed Central or Europe PMC), which
         receives your IP address as with any image on the web.
       </p>
       <p>
@@ -683,7 +687,10 @@
         counts Cloudflare keeps under hashed account identifiers, to limit test emails,
         requests to start the email and citation lookups, are not deleted with the account
         either: they expire on their own within three days, or at the end of their week for
-        citation lookups (see Email updates).
+        citation lookups (see Email updates). Nor are the daily counters of AI explanations,
+        rewrites and translations, kept under a hashed account identifier: their deletion
+        stays scheduled for within three days, and the recovery history described below
+        applies to them.
       </p>
 
       <p id="request-counter-retention">
