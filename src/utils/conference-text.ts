@@ -60,10 +60,18 @@ export function formatDeadline({ date, timeText }: ConferenceDeadline) {
   return [formatConferenceDates(date, null), timeText].filter(Boolean).join(' · ');
 }
 
-/** Zones a source names by an abbreviation that fixes its offset, in minutes east of UTC. */
+/** Zones a source names by an abbreviation of standard time, in minutes east of UTC. */
 const fixedZones: Readonly<Record<string, number>> = {
-  aoe: -720, utc: 0, gmt: 0, wet: 0, bst: 60, cet: 60, cest: 120, eet: 120, eest: 180,
-  est: -300, edt: -240, cst: -360, cdt: -300, mst: -420, mdt: -360, pst: -480, pdt: -420,
+  aoe: -720, utc: 0, gmt: 0, wet: 0, cet: 60, eet: 120, est: -300, cst: -360, mst: -420, pst: -480,
+};
+
+/**
+ * Summer-time abbreviations and the zone whose clock they name. Out of season a source
+ * most likely means that zone's local time, so the later of the two readings counts.
+ */
+const summerZones: Readonly<Record<string, readonly [number, string]>> = {
+  bst: [60, 'Europe/London'], cest: [120, 'Europe/Paris'], eest: [180, 'Europe/Athens'],
+  edt: [-240, 'America/New_York'], cdt: [-300, 'America/Chicago'], mdt: [-360, 'America/Denver'], pdt: [-420, 'America/Los_Angeles'],
 };
 
 /** Zones a source names without saying whether summer time applies. */
@@ -74,19 +82,36 @@ const regionalZones: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(?:PT|pacific(?: time)?)\b/i, 'America/Los_Angeles'],
 ];
 
-const zoneOffset = /\b(?:UTC|GMT)\s*([+\-−])\s*(\d{1,2})(?:[:.]?(\d{2}))?/i;
+/** Words that make "Central" or "Eastern" another region's zone, such as Central European Time. */
+const otherRegions = /\b(?:europe(?:an)?|australia(?:n)?|africa(?:n)?|brazil(?:ian)?|china|india|japan|korea)\b/i;
 
-/** The minutes after midnight that a time of day names, or null. Midnight ends the day. */
+/** A UTC offset, not one inside a zone name such as Etc/GMT+12. */
+const zoneOffset = /(?<![/\w])(?:UTC|GMT)\s*([+\-−])\s*(\d{1,2})(?:[:.]?(\d{2}))?/gi;
+
+/** An IANA zone name such as Europe/Paris or Etc/GMT+12. */
+const ianaZone = /\b[A-Z][a-z]+\/[A-Za-z_]+(?:[+-]\d{1,2})?/g;
+
+const timeOfDay =/\b(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?\s*m\b|\b(\d{1,2})[:.](\d{2})\b|\b(midnight|noon)\b/gi;
+
+/**
+ * The minutes after midnight that the one time in a text names, or null when it names
+ * none or several. Midnight, 12 AM and 00:00 end the day, so a deadline is never early.
+ */
 function minutesOfDay(text: string) {
-  if (/\bmidnight\b/i.test(text)) return 24 * 60;
-  if (/\bnoon\b/i.test(text)) return 12 * 60;
-  const twelve = /\b(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?\s*m\b/i.exec(text);
-  if (twelve) {
-    if (Number(twelve[1]) > 12) return null;
-    return (Number(twelve[1]) % 12 + (twelve[3].toLowerCase() === 'p' ? 12 : 0)) * 60 + Number(twelve[2] ?? 0);
+  const times = [...text.matchAll(timeOfDay)];
+  if (times.length !== 1) return null;
+  const [, hour12, minute12, half, hour24, minute24, word] = times[0];
+  if (word) return word.toLowerCase() === 'noon' ? 12 * 60 : 24 * 60;
+  const hour = Number(hour12 ?? hour24);
+  const minute = Number(minute12 ?? minute24 ?? 0);
+  if (minute > 59) return null;
+  if (half) {
+    if (hour < 1 || hour > 12) return null;
+    if (hour === 12) return half.toLowerCase() === 'a' ? 24 * 60 + minute : 12 * 60 + minute;
+    return (hour + (half.toLowerCase() === 'p' ? 12 : 0)) * 60 + minute;
   }
-  const clock = /\b(\d{1,2})[:.](\d{2})\b/.exec(text);
-  return clock && Number(clock[1]) <= 24 && Number(clock[2]) < 60 ? Number(clock[1]) * 60 + Number(clock[2]) : null;
+  if (hour > 24 || (hour === 24 && minute > 0)) return null;
+  return hour === 0 && minute === 0 ? 24 * 60 : hour * 60 + minute;
 }
 
 /** How far a zone's clock is ahead of UTC at an instant, in minutes. */
@@ -96,34 +121,55 @@ function offsetIn(timeZone: string, instant: number) {
   return (Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute')) - Math.floor(instant / 60000) * 60000) / 60000;
 }
 
+/** A zone's offset at a wall-clock time, checked again across a change of summer time. */
+function offsetAtWallClock(timeZone: string, wallClock: number) {
+  return offsetIn(timeZone, wallClock - offsetIn(timeZone, wallClock) * 60000);
+}
+
 /**
- * The instant a deadline closes, in milliseconds. A source that gives an hour and a
- * zone this can read closes then. Any other deadline closes when its day ends in
- * AoE, the last zone on Earth, so it is never shown as passed too early.
+ * The offset, in minutes east of UTC, of the one zone a text names, or null when it
+ * names none, several, or one this cannot read.
+ */
+function zoneOf(text: string, wallClock: number) {
+  const iana = text.match(ianaZone) ?? [];
+  const offsets = [...text.matchAll(zoneOffset)];
+  const rest = offsets.reduce((left, offset) => left.replace(offset[0], ' '), text).replace(ianaZone, ' ');
+  if (otherRegions.test(rest)) return null;
+  const named = (names: string[]) => names.filter(name => new RegExp(`\\b${name}\\b`, 'i').test(rest));
+  const fixed = named(Object.keys(fixedZones));
+  const summer = named(Object.keys(summerZones));
+  const regional = regionalZones.filter(([pattern]) => pattern.test(rest)).map(([, zone]) => zone);
+  if (offsets.length + fixed.length + summer.length + regional.length + iana.length !== 1) return null;
+  try {
+    if (offsets.length) {
+      const [, sign, hours, minutes] = offsets[0];
+      if (Number(hours) > 14 || Number(minutes ?? 0) > 59) return null;
+      return (sign === '+' ? 1 : -1) * (Number(hours) * 60 + Number(minutes ?? 0));
+    }
+    if (fixed.length) return fixedZones[fixed[0]];
+    if (summer.length) {
+      const [literal, zone] = summerZones[summer[0]];
+      return Math.min(literal, offsetAtWallClock(zone, wallClock));
+    }
+    return offsetAtWallClock(regional[0] ?? iana[0], wallClock);
+  } catch {
+    // A zone name the browser does not know.
+    return null;
+  }
+}
+
+/**
+ * The instant a deadline closes, in milliseconds. A source that gives one hour and one
+ * zone this can read closes then. Any other deadline closes when its day ends in AoE,
+ * the last zone on Earth, so it is never shown as passed too early.
  */
 export function deadlineCloses({ date, timeText = '' }: Pick<ConferenceDeadline, 'date' | 'timeText'>) {
   const [year, month, day] = date.split('-').map(Number);
   const wallClock = (minutes: number) => Date.UTC(year, month - 1, day) + minutes * 60000;
   const endOfDayAoe = wallClock(24 * 60 + 720);
-  const offset = zoneOffset.exec(timeText);
-  const rest = offset ? timeText.replace(offset[0], ' ') : timeText;
-  const minutes = minutesOfDay(rest);
-  if (minutes === null) return endOfDayAoe;
-  if (offset) {
-    const sign = offset[1] === '+' ? 1 : -1;
-    return wallClock(minutes) - sign * (Number(offset[2]) * 60 + Number(offset[3] ?? 0)) * 60000;
-  }
-  const fixed = Object.keys(fixedZones).find(name => new RegExp(`\\b${name}\\b`, 'i').test(rest));
-  if (fixed) return wallClock(minutes) - fixedZones[fixed] * 60000;
-  const regional = regionalZones.find(([pattern]) => pattern.test(rest))?.[1] ?? /\b[A-Z][a-z]+\/[A-Za-z_]+\b/.exec(rest)?.[0];
-  if (!regional) return endOfDayAoe;
-  try {
-    // The offset at that wall-clock time, checked again across a change of summer time.
-    const guess = wallClock(minutes) - offsetIn(regional, wallClock(minutes)) * 60000;
-    return wallClock(minutes) - offsetIn(regional, guess) * 60000;
-  } catch {
-    return endOfDayAoe;
-  }
+  const minutes = minutesOfDay(timeText.replace(zoneOffset, ' '));
+  const offset = minutes === null ? null : zoneOf(timeText, wallClock(minutes));
+  return minutes === null || offset === null ? endOfDayAoe : wallClock(minutes) - offset * 60000;
 }
 
 /** The first deadline that has not closed at `now`, in milliseconds. */

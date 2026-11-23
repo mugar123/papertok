@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ArrowLeft, ArrowUpRight, CalendarBlank, CalendarPlus, MapPin } from '@phosphor-icons/react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '../ui/button.tsx';
@@ -93,7 +94,8 @@ function Calendar() {
   const [params, setParams] = useSearchParams();
   const filters = readConferenceFilters(params);
   const today = localCalendarDate(new Date());
-  const now = new Date().getTime();
+  // Read once, so one render compares every deadline with the same instant.
+  const [now] = useState(() => Date.now());
   const editions = filterConferences(conferenceEditions, filters);
   const { upcoming, undated, past } = groupConferences(editions, today, filters.month);
   const search = params.toString();
@@ -163,7 +165,8 @@ function DeadlineList({ deadlines }: { deadlines: readonly ConferenceDeadline[] 
 }
 
 function Deadlines({ deadlines }: { deadlines: readonly ConferenceDeadline[] }) {
-  const now = new Date().getTime();
+  // Read once, so one render compares every deadline with the same instant.
+  const [now] = useState(() => Date.now());
   const open = deadlines.filter(deadline => deadlineCloses(deadline) > now);
   const passed = deadlines.filter(deadline => deadlineCloses(deadline) <= now);
   return (

@@ -72,7 +72,7 @@ test('a deadline with an hour and a zone closes at that instant', () => {
   const egu = { deadlines: [{ label: 'Support applications due', date: '2026-12-01', timeText: '13:00 CET', sourceUrl: 'https://example.org' }] };
   assert.equal(nextDeadline(egu, Date.parse('2026-12-01T11:59:00Z'))?.label, 'Support applications due');
   assert.equal(nextDeadline(egu, Date.parse('2026-12-01T13:00:00Z')), undefined);
-  assert.equal(closes('2027-03-10', '23.55 BST'), '2027-03-10T22:55:00.000Z');
+  assert.equal(closes('2027-04-12', '23.55 BST'), '2027-04-12T22:55:00.000Z');
   assert.equal(closes('2027-03-10', '18:30 UTC+05:30'), '2027-03-10T13:00:00.000Z');
   assert.equal(closes('2027-03-10', '23:59 UTC-3'), '2027-03-11T02:59:00.000Z');
   assert.equal(closes('2027-03-10', '23:59 AoE'), '2027-03-11T11:59:00.000Z');
@@ -85,7 +85,21 @@ test('a deadline with an hour and a zone closes at that instant', () => {
   assert.equal(closes('2027-07-15', '23:59 Europe/Paris'), '2027-07-15T21:59:00.000Z');
   assert.equal(closes('2027-01-15', '11:59 PM CST'), '2027-01-16T05:59:00.000Z');
   assert.equal(closes('2027-01-15', 'midnight PST'), '2027-01-16T08:00:00.000Z');
-  // An hour without a zone, or a zone this does not know, ends with the day in AoE.
+  assert.equal(closes('2027-03-10', '23:59 UTC\u22123'), '2027-03-11T02:59:00.000Z');
+  assert.equal(closes('2027-03-10', '23:59 Etc/GMT+12'), '2027-03-11T11:59:00.000Z');
+  // A summer-time zone out of season is read as that zone's local time, the later reading.
+  assert.equal(closes('2026-11-04', '11:59 pm EDT'), '2026-11-05T04:59:00.000Z');
+  assert.equal(closes('2027-01-15', '23:59 BST'), '2027-01-15T23:59:00.000Z');
+  assert.equal(closes('2027-07-15', '11:59 pm EDT'), '2027-07-16T03:59:00.000Z');
+  // 12 AM and 00:00 end the day, as midnight does; 12 PM is noon.
+  assert.equal(closes('2027-03-10', '12:00 AM ET'), '2027-03-11T05:00:00.000Z');
+  assert.equal(closes('2027-03-10', '00:00 CET'), '2027-03-10T23:00:00.000Z');
+  assert.equal(closes('2027-03-10', '12 PM PT'), '2027-03-10T20:00:00.000Z');
+  // An hour without a zone, a zone this does not know, or several times or zones end
+  // with the day in AoE, so no deadline is shown as passed early.
+  for (const timeText of ['11:59 PM PT (2:59 AM ET next day)', '11:59 PM Pacific / 2:59 AM Eastern', '23:59 PST (07:59 GMT next day)', '11:59 PM ET (04:59 UTC)', '23:59 UTC+530', '23:59 Central European Time', '23:59 Mars/Olympus']) {
+    assert.equal(closes('2027-03-10', timeText), '2027-03-11T12:00:00.000Z', timeText);
+  }
   assert.equal(closes('2027-03-10', 'AoE'), '2027-03-11T12:00:00.000Z');
   assert.equal(closes('2027-03-10', '17:00'), '2027-03-11T12:00:00.000Z');
   assert.equal(closes('2027-03-10', '17:00 IST'), '2027-03-11T12:00:00.000Z');
