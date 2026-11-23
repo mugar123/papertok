@@ -223,14 +223,13 @@ export interface HarvestParams { lanes?: string[]; arxivConferenceBackfill?: boo
  * notable lanes due their weekly listing, the lanes readers follow, and
  * embeddings before historical reads or maintenance. Each enriched batch is
  * embedded before the next one; backfill has a final embedding pass within the
- * same daily budget. Eviction follows them, and last the filing of the areas'
- * journal articles under leaves, which reads the vectors. After enrichment,
- * the paper-quality phases prune `work_quality`, look up author h-indexes
- * within their own OpenAlex part and score recent papers (paper-quality.ts).
- * A run for newly
- * followed lanes (`payload.lanes`) harvests those within the new follows' share
- * of OpenAlex and embeds only their papers: the rest of the corpus is the daily
- * run's to embed.
+ * same daily budget. After eviction, the run files the areas' journal articles
+ * under leaves using their vectors. The final phases prune expired quality
+ * data, look up author h-indexes within their OpenAlex allowance and score
+ * recent papers (paper-quality.ts).
+ * A run for newly followed lanes (`payload.lanes`) harvests those within the
+ * new follows' share of OpenAlex and embeds only their papers: the rest of
+ * the corpus is the daily run's to embed.
  */
 export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<HarvestParams | undefined>>, step: WorkflowStep) {
   if (!env.PAPER_STORE) throw new Error('PAPER_STORE is not bound');
@@ -302,6 +301,31 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
       if (enriched.stop) break;
     }
   });
+  await phase('embed', () => embedAll(env, step));
+  // Each retry replays at most the lane's backfillPages allowance.
+  for (const job of categoryLaneJobs().filter(job => SOURCES[job.source].backfillPages)) {
+    for (let round = 0; round < BACKFILL_STEPS; round += 1) {
+      const name = `backfill ${job.source} ${job.lane}${round ? ` ${round}` : ''}`;
+      if (!await phase(name, () => step.do(name, LANE_STEP, () => backfillLane(env, job)))) break;
+    }
+  }
+  await phase('embed backfill', () => embedAll(env, step, undefined, 'embed backfill'));
+  await phase('evict', async () => {
+    let after: number | null = 0;
+    for (let batch = 0; after !== null; batch += 1) {
+      const cursor: number = after;
+      after = await step.do(`evict ${batch}`, PAGE_STEP, () => evictExpired(env, started, cursor));
+    }
+    await step.do('forget followed lanes', () => forgetFollowedLanes(db, started));
+  });
+  await phase('thin leaves', () => step.do('thin leaves', async () => {
+    const report = thinLeavesReport(await thinLeaves(db, started));
+    console.log(report.line);
+    return report.summary;
+  }));
+  // Apart, so a failed recomputation still files by the last run's centroids.
+  await phase('leaf centroids', () => step.do('leaf centroids', () => storeLeafCentroids(env, started)));
+  await phase('file area papers', () => step.do('file area papers', () => fileAreaPapers(env)));
   await phase('prune paper quality', async () => {
     for (let batch = 0; ; batch += 1) {
       if (!await step.do(`prune paper quality ${batch}`, PAGE_STEP, () => prunePaperQuality(db, started))) break;
@@ -346,31 +370,6 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
       if (!after) break;
     }
   });
-  await phase('embed', () => embedAll(env, step));
-  // Each retry replays at most the lane's backfillPages allowance.
-  for (const job of categoryLaneJobs().filter(job => SOURCES[job.source].backfillPages)) {
-    for (let round = 0; round < BACKFILL_STEPS; round += 1) {
-      const name = `backfill ${job.source} ${job.lane}${round ? ` ${round}` : ''}`;
-      if (!await phase(name, () => step.do(name, LANE_STEP, () => backfillLane(env, job)))) break;
-    }
-  }
-  await phase('embed backfill', () => embedAll(env, step, undefined, 'embed backfill'));
-  await phase('evict', async () => {
-    let after: number | null = 0;
-    for (let batch = 0; after !== null; batch += 1) {
-      const cursor: number = after;
-      after = await step.do(`evict ${batch}`, PAGE_STEP, () => evictExpired(env, started, cursor));
-    }
-    await step.do('forget followed lanes', () => forgetFollowedLanes(db, started));
-  });
-  await phase('thin leaves', () => step.do('thin leaves', async () => {
-    const report = thinLeavesReport(await thinLeaves(db, started));
-    console.log(report.line);
-    return report.summary;
-  }));
-  // Apart, so a failed recomputation still files by the last run's centroids.
-  await phase('leaf centroids', () => step.do('leaf centroids', () => storeLeafCentroids(env, started)));
-  await phase('file area papers', () => step.do('file area papers', () => fileAreaPapers(env)));
 }
 
 /**

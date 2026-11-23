@@ -2193,9 +2193,8 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all(), [], 'its progress is not recorded: the next run reads it again');
 });
 
-// Enrichment runs last in the nightly run and can always use more units. A
-// reader who follows something new after it has finished must still have the
-// follow harvested at once, not the next night.
+// Even when enrichment spends the nightly share, a reader's new follow can
+// still be harvested that day.
 test("followed searches stop at their part of the nightly run's OpenAlex share, category lanes and enrichment keep the rest of it, and new follows keep their own 300", async t => {
   const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.

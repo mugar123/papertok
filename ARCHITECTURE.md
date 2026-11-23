@@ -202,7 +202,7 @@ flowchart TD
     Trigger --> Harvest --> Sources --> Corpus
     Harvest --> Vectors --> Corpus
     Corpus --> Vectors
-    Harvest -->|Nightly, after enrichment| Quality
+    Harvest -->|Nightly, after filing area papers| Quality
     Corpus --> API --> Feed --> UI
     API --> Custom --> UI
     API --> Recent --> UI
@@ -225,7 +225,7 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 [paper-enrichment.ts](worker/paper-enrichment.ts) populate it using the shared
 [Paper](src/models/paper.ts) contract and
 [PaperBuilder](src/services/paper-builder.ts). Harvesting and embedding have
-separate bounded steps. After enrichment, [paper-quality.ts](worker/paper-quality.ts)
+separate bounded steps. After area filing, [paper-quality.ts](worker/paper-quality.ts)
 computes the stored signals from the paper bylines, OpenAlex author metrics
 and Hugging Face votes.
 
