@@ -1,3 +1,4 @@
+import { mergeFeedEvidence } from '../src/models/paper-evidence.ts';
 import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
 import type { OpenAlexLocation } from '../src/services/adapters/open-alex-types.ts';
 import type { KeptRanking, RankingCache } from './paper-store.ts';
@@ -266,15 +267,18 @@ test('a listing without a real title is not filed, and does not rename the store
   assert.deepEqual(rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)).title), ['A cardiology trial']);
 });
 
-test('a record that names two stored papers folds them into one, keeping one id and every lane', async () => {
+test('a record that names two stored papers folds them into one, keeping the arXiv acceptance, one id and every lane', async () => {
   const { env, db } = corpus();
   const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
-  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }, { paper: journal, lanes: ['bio.comp'] }], { now: NOW });
+  const mark = { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' as const };
+  await ingestPapers(env, [{ paper: { ...arxivRecord, acceptedConference: mark }, lanes: [] }], { now: NOW });
+  await ingestPapers(env, [{ paper: journal, lanes: ['bio.comp'] }], { now: NOW + 1 });
   assert.equal(rows(db, 'SELECT id FROM works').length, 2, 'nothing yet says they are one paper');
   const bridge = { ...journal, id: 'openalex:W2', arxivId: '2610.11111' };
-  await ingestPapers(env, [{ paper: bridge, lanes: [] }], { now: NOW });
+  await ingestPapers(env, [{ paper: bridge, lanes: [] }], { now: NOW + 2 });
   const works = rows(db, 'SELECT id, paper FROM works');
   assert.equal(works.length, 1);
+  assert.deepEqual(JSON.parse(String(works[0].paper)).acceptedConference, mark);
   assert.deepEqual(rows(db, 'SELECT DISTINCT work_id FROM work_keys').map(row => row.work_id), [works[0].id], 'every key names the remaining row');
   assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['bio.comp', 'cs.CL', 'cs.LG']);
 });
@@ -3554,6 +3558,29 @@ test("an enrichment step's papers are written back however long their text, with
   const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
   await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, citationCount: 7, citationCountKnown: true } })));
   assert.equal(rows(db, "SELECT id FROM works WHERE paper ->> 'citationCount' = 7").length, 500);
+});
+
+test('a late rewrite advances beyond the intermediate row already on a card', async () => {
+  const { env, db } = corpus();
+  const mark = { id: 'S4306419637', label: 'ICLR', evidence: 'openreview' as const };
+  await ingestPapers(env, [{ paper: { ...arxivRecord, acceptedConference: mark }, lanes: [] }], { now: NOW });
+  const [row] = rows(db, 'SELECT id, paper FROM works');
+  const id = Number(row.id);
+  const before = JSON.parse(String(row.paper)) as Paper;
+  const read = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper)) as Paper;
+  await rewriteWorks(env, [{ id, before, after: { ...before, citationCount: 4 } }], NOW + 1000);
+  const shown = read();
+  assert.equal(shown.corpusUpdatedAt, NOW + 1000);
+  assert.deepEqual(shown.acceptedConference, mark);
+  await rewriteWorks(env, [{ id, before, after: { ...before, acceptedConference: undefined } }], NOW + 1);
+  const late = read();
+  assert.equal(late.corpusUpdatedAt, NOW + 1001);
+  assert.equal(mergeFeedEvidence([shown], [late])[0].acceptedConference, undefined);
+  await rewriteWorks(env, [{ id, before, after: { ...before, citationCount: 5 } }], NOW + 2);
+  assert.equal(read().acceptedConference, undefined, 'an unrelated stale enrichment keeps the withdrawal');
+  await rewriteWorks(env, [{ id, before: late, after: { ...late, acceptedConference: mark } }], NOW + 3);
+  await rewriteWorks(env, [{ id, before: late, after: { ...late, citationCount: 6 } }], NOW + 4);
+  assert.deepEqual(read().acceptedConference, mark, 'an unrelated stale enrichment keeps a later confirmation');
 });
 
 test('a stored row keeps the merged citation count and drops the OpenAlex payload', async () => {

@@ -1520,6 +1520,19 @@ test('search_papers bounds arXiv by submission date when since is given', async 
   });
 });
 
+test('arXiv search and lookup return the conference named in the acceptance comment', async () => {
+  const entry = ARXIV_LAB_ENTRY.replace('</entry>', '<arxiv:comment>Accepted at NeurIPS 2026</arxiv:comment></entry>');
+  await withUpstream(() => new Response(arxivFeed(entry)), async () => {
+    const search = await callTool(routeEnv(), 'search_papers', { query: 'graphene', sources: ['arxiv'] });
+    const [listed] = search.answer.result?.structuredContent?.papers as Array<Record<string, unknown>>;
+    const lookup = await callTool(routeEnv(), 'get_paper', { id: '2603.01234' });
+    const detail = lookup.answer.result?.structuredContent?.paper as Record<string, unknown>;
+    for (const paper of [listed, detail]) {
+      assert.deepEqual(paper.acceptedConference, { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' });
+    }
+  });
+});
+
 test('one OpenAlex work has one id, whichever tool and identifier found it', async () => {
   await withUpstream(url => {
     if (url.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [OPENALEX_WORK] });

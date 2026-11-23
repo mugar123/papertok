@@ -215,6 +215,8 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
   ]);
 }
 
+export interface HarvestParams { lanes?: string[]; arxivConferenceBackfill?: boolean }
+
 /**
  * One run a day, as `PaperHarvestWorkflow` (instrumentation.ts): every arXiv
  * set harvested from where it last finished, every other source's lanes, the
@@ -230,7 +232,7 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
  * of OpenAlex and embeds only their papers: the rest of the corpus is the daily
  * run's to embed.
  */
-export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
+export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<HarvestParams | undefined>>, step: WorkflowStep) {
   if (!env.PAPER_STORE) throw new Error('PAPER_STORE is not bound');
   const db = env.PAPER_STORE;
   const started = event.timestamp.getTime();
@@ -245,15 +247,16 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
 
   // The day the run started, so a run that crosses midnight records the day it covered.
   const today = event.timestamp.toISOString();
+  const backfill = event.payload?.arxivConferenceBackfill === true;
   for (const set of ARXIV_HARVEST_SETS) {
     // A set that fails is harvested from the same day on the next run, and so
     // are the ones after it: arXiv is down, and each would wait out its retries.
-    const harvested = await phase(`arXiv ${set}`, async () => {
-      const from = await step.do(`${set}: start`, () => harvestStart(db, set));
+    const harvestSet = async () => {
+      const from = backfill ? daysFromNow(-29, started).slice(0, 10) : await step.do(`${set}: start`, () => harvestStart(db, set));
       let resumptionToken = '';
       // Step names are the replay keys, so each request gets its own number.
       for (let request = 0, waits = 0, done = false; !done; request += 1) {
-        const page = await step.do(`${set}: request ${request}`, OAI_STEP, () => harvestArxivPage(env, { set, from, resumptionToken }));
+        const page = await step.do(`${set}: request ${request}`, OAI_STEP, () => harvestArxivPage(env, { set, from, resumptionToken, conferenceBackfillUntil: backfill ? today.slice(0, 10) : undefined }));
         if (page.retryAfterSeconds) {
           waits += 1;
           if (waits > OAI_MAX_WAITS || page.retryAfterSeconds > OAI_MAX_WAIT_SECONDS) {
@@ -267,13 +270,16 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
         done = !resumptionToken;
         if (!done) await step.sleep(`${set}: gap ${request}`, PAGE_GAP);
       }
+      if (backfill) return;
       await step.do(`${set}: finish`, async () => {
         await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES ('arxiv-oai', ?, ?)
           ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(set, today).run();
       });
-    });
-    if (!harvested) break;
+    };
+    if (backfill) await harvestSet();
+    else if (!await phase(`arXiv ${set}`, harvestSet)) break;
   }
+  if (backfill) return;
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
   await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));

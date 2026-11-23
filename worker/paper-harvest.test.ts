@@ -923,3 +923,46 @@ test("the old store's vector moves to a row with the same text, never to a revis
   await carryArxivVectors(binding)();
   assert.deepEqual(carried(), ['arxiv:2610.11111'], 'the revised paper waits for the embedding pass');
 });
+
+test('the arXiv-only reload fills existing works by ID and leaves lane state and existing marks intact', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-23T02:30:03Z') });
+  const { env, db } = corpus();
+  delete env.REQUEST_QUOTA_LEDGER;
+  const icml = { id: 'S4306419644', label: 'ICML', evidence: 'openreview' as const };
+  await ingestPapers(env, [
+    { paper: paper('2611.00100', 'First paper'), lanes: ['cs.CL'] },
+    { paper: { ...paper('2611.00101', 'Second paper'), acceptedConference: icml }, lanes: ['cs.LG'] },
+    { paper: paper('2610.00102', 'Earlier submission'), lanes: ['cs.LG'] },
+  ]);
+  const state = () => db.prepare('SELECT * FROM work_lanes ORDER BY lane, work_id').all();
+  const before = state();
+  const rec = (id: string, date: string) => `<record><metadata><arXivRaw><id>${id}</id>
+    <title>A different title</title><abstract>A full abstract.</abstract><categories>cs.LG</categories>
+    <version><date>${date}</date></version><comments>Accepted at NeurIPS 2026</comments></arXivRaw></metadata></record>`;
+  const asked = providers(t, url => {
+    assert.equal(url.hostname, 'oaipmh.arxiv.org');
+    if (url.searchParams.get('resumptionToken') === 'page2') {
+      return new Response(`<OAI-PMH><ListRecords>${rec('2611.00100', '2026-11-02')}${rec('2611.00101', '2026-11-03')}
+        ${rec('2610.00102', '2026-10-24')}${rec('2611.09999', '2026-11-05')}</ListRecords></OAI-PMH>`);
+    }
+    assert.equal(url.searchParams.get('from'), '2026-10-25');
+    assert.equal(url.searchParams.get('until'), '2026-11-23');
+    return new Response(url.searchParams.get('set') === 'cs'
+      ? '<OAI-PMH><ListRecords><resumptionToken>page2</resumptionToken></ListRecords></OAI-PMH>'
+      : '<OAI-PMH><error code="noRecordsMatch"/></OAI-PMH>');
+  });
+  const event = { ...dailyRun(), payload: { arxivConferenceBackfill: true } };
+  await runPaperHarvest(env, event, workflowStep().step);
+  const written = db.prepare('SELECT * FROM works ORDER BY id').all();
+  await runPaperHarvest(env, event, workflowStep().step);
+  assert.deepEqual(db.prepare('SELECT * FROM works ORDER BY id').all(), written);
+  assert.ok(asked.length > 0);
+  const papers = db.prepare('SELECT paper FROM works ORDER BY paper ->> \'title\'').all().map(row => JSON.parse(String(row.paper)));
+  assert.deepEqual(papers.map(p => [p.title, p.acceptedConference]), [
+    ['Earlier submission', { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' }],
+    ['First paper', { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' }],
+    ['Second paper', icml],
+  ]);
+  assert.deepEqual(state(), before);
+  assert.deepEqual(db.prepare('SELECT * FROM lane_state').all(), []);
+});

@@ -207,3 +207,14 @@ export function accessTagForPaper(paper: Partial<Paper> | null | undefined, { op
   const tag = weakerCopy ? ACCESS_TAGS.openCopy : ACCESS_TAGS[status];
   return localize(tag);
 }
+
+/**
+ * The line that says a conference of the catalogue accepted the paper, as the
+ * Worker recorded it (`acceptedConference`), or null when it recorded none.
+ * The year is left out when the evidence did not give one.
+ */
+export function acceptedConferenceText(paper: Pick<Paper, 'acceptedConference'> | null | undefined) {
+  const accepted = paper?.acceptedConference;
+  if (!accepted?.label) return null;
+  return `Accepted at ${accepted.label}${accepted.year ? ` ${accepted.year}` : ''}`;
+}

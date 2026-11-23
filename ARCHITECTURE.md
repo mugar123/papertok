@@ -187,7 +187,7 @@ ORDER BY cohort_week
 flowchart TD
     Trigger["Cron or newly requested followed lane"]
     Harvest["PaperHarvestWorkflow"]
-    Sources["Scientific sources · normalize and merge Paper records"]
+    Sources["Scientific sources · normalize papers and record conference evidence"]
     Vectors["Workers AI · paper embeddings"]
     Corpus[("D1 · papers, lanes and vectors")]
     Quality[("D1 · author h-index cache and paper quality")]
@@ -228,6 +228,15 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 separate bounded steps. After enrichment, [paper-quality.ts](worker/paper-quality.ts)
 computes the stored signals from the paper bylines, OpenAlex author metrics
 and Hugging Face votes.
+
+The Worker records a conference when the arXiv author attributes the paper to it
+or OpenReview assigns it a matching venue. OpenAlex source IDs can span main and
+companion proceedings, so OpenAlex attribution is deferred. The corpus, feed and
+library copies carry the resulting `acceptedConference`. The [harvest contract](worker/README.md#conference-evidence)
+covers event years, measured coverage and the one-off arXiv reload.
+Every save of a corpus paper also writes `corpusUpdatedAt`. Deploy compatible
+Firestore rules before the app and retain them through an app rollback so
+documents that carry this field can still be saved.
 
 Paper cards display native category names, including arXiv categories outside the
 selectable feed leaves. When no native category is available, the masthead names

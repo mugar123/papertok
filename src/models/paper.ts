@@ -132,6 +132,13 @@ export interface PaperRecommendationScore {
   explanation: string;
 }
 
+export interface ConferenceMark {
+  id: string;
+  label: string;
+  year?: number;
+  evidence: 'arxiv-comment' | 'openreview';
+}
+
 /**
  * Shared by provider normalization, PaperBuilder and stored papers.
  * Optional and nullable fields preserve missing source data. This is a type
@@ -180,6 +187,9 @@ export interface Paper {
   // otherwise. The lane of a followed journal is filed by it (ENG-123).
   venueId?: string;
   conference?: string;
+  // Last update time of the corpus row, including updates to fields other than the conference mark.
+  corpusUpdatedAt?: number;
+  acceptedConference?: ConferenceMark;
   publisher?: string;
   // Providers retain their vocabulary (article, report, thesis, letter, etc.).
   publicationType?: string;
