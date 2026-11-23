@@ -97,8 +97,9 @@ flowchart TD
   restoration and revalidates in the background. A confirmed missing list clears
   that entry; a failed refresh leaves the already-read list visible. Reloads
   and new history entries read afresh.
-- The navbar calendar icon opens the public `/conferences` route.
-  `/conferences/:editionId` opens a public event page. Both routes use the
+- `/conferences` is the public conference calendar and
+  `/conferences/:editionId` a public event page. Nothing in the app links to
+  them until after the 0.4 release; they open by direct link. Both routes use the
   static [edition registry](src/data/conferences.ts) and the Vercel SPA rewrite.
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
