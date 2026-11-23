@@ -31,10 +31,22 @@ export function defaultTranslationLanguage(languages: readonly string[]): Transl
 }
 
 export function preferredTranslationLanguage(uid: string, languages: readonly string[], storage: Pick<Storage, 'getItem'> | undefined) {
-  const saved = storage?.getItem(`papertok:paper-translation-language:${uid}`);
+  const saved = storage?.getItem(getTranslationLanguageStorageKey(uid));
   return isTranslationLanguage(saved) ? saved : defaultTranslationLanguage(languages);
 }
 
 export function rememberTranslationLanguage(uid: string, language: TranslationLanguage, storage: Pick<Storage, 'setItem'>) {
-  storage.setItem(`papertok:paper-translation-language:${uid}`, language);
+  storage.setItem(getTranslationLanguageStorageKey(uid), language);
+}
+
+export function getTranslationLanguageStorageKey(uid: string) {
+  return `papertok:paper-translation-language:${uid}`;
+}
+
+export function forgetTranslationLanguage(uid: string, storage?: Pick<Storage, 'removeItem'> | null) {
+  try {
+    (storage ?? (typeof window === 'undefined' ? null : window.localStorage))?.removeItem(getTranslationLanguageStorageKey(uid));
+  } catch {
+    // Storage cleanup must not interrupt account deletion.
+  }
 }

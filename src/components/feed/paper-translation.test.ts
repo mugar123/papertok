@@ -6,7 +6,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { loadPaperTranslation } from '../../../tests/dom/component-modules.ts';
 import { stubWorker } from '../../../tests/dom/worker-stub.ts';
 import type { Paper } from '../../models/paper.ts';
-import { defaultTranslationLanguage, rememberTranslationLanguage, translationSource } from '../../utils/paper-translation.ts';
+import { defaultTranslationLanguage, preferredTranslationLanguage, rememberTranslationLanguage, translationSource } from '../../utils/paper-translation.ts';
+import { parseTranslationText } from '../../utils/paper-translation-contract.ts';
 
 const paper: Paper = {
   id: 'arxiv:2611.00829',
@@ -39,6 +40,13 @@ test('the language default uses the first supported browser preference', () => {
   assert.equal(defaultTranslationLanguage(['gl-ES']), 'gl');
   assert.equal(defaultTranslationLanguage(['eu-ES']), 'eu');
   assert.equal(defaultTranslationLanguage(['en-GB', 'sv']), '');
+});
+
+test('the translation parser rejects an oversized title or abstract', () => {
+  const text = { title: 'x'.repeat(1_500), abstract: 'x'.repeat(9_000) };
+  assert.deepEqual(parseTranslationText(text), text);
+  assert.equal(parseTranslationText({ ...text, title: text.title + 'x' }), null);
+  assert.equal(parseTranslationText({ ...text, abstract: text.abstract + 'x' }), null);
 });
 
 test('reader can translate, see the original again and switch accounts without sharing a result or preference', async t => {
@@ -103,10 +111,25 @@ test('reader can translate, see the original again and switch accounts without s
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'de' } });
   fireEvent.click(screen.getByRole('button', { name: 'Translate paper' }));
   await late.requested();
+  assert.equal(preferredTranslationLanguage('reader-1', [], localStorage), 'ja');
+  // The SDK can switch accounts before React commits the new account context.
+  firebase.auth.currentUser = { uid: 'reader-2', getIdToken: async () => 'new-test-token' };
+  await act(async () => { late.refuse(401, 'AI_AUTH_REQUIRED'); });
+  assert.equal(signInPrompts, 0);
+  assert.equal(preferredTranslationLanguage('reader-1', [], localStorage), 'ja');
+
+  view.rerender(createElement(Reader, { uid: 'reader-2' }));
+  firebase.auth.currentUser = { uid: 'reader-1', getIdToken: async () => 'test-token' };
+  view.rerender(createElement(Reader, { uid: 'reader-1' }));
+  const lateSuccess = worker.hold('/ai/translate');
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'de' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Translate paper' }));
+  await lateSuccess.requested();
+  firebase.auth.currentUser = { uid: 'reader-2', getIdToken: async () => 'new-test-token' };
   view.rerender(createElement(Reader, { uid: 'reader-2' }));
   assert.equal(screen.queryByText(title), null);
   await act(async () => {
-    late.answer({ title: 'Entfernung zu Sternen', abstract: 'Zwei Methoden messen die Entfernung.', language: 'de' });
+    lateSuccess.answer({ title: 'Entfernung zu Sternen', abstract: 'Zwei Methoden messen die Entfernung.', language: 'de' });
   });
   assert.equal(screen.queryByText('Entfernung zu Sternen'), null);
   assert.equal(signInPrompts, 0);

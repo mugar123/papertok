@@ -54,7 +54,7 @@ export function parseTranslationText(value: unknown): (PaperTranslationText & { 
   if (typeof value.title !== 'string' || typeof value.abstract !== 'string') return null;
   const title = value.title.trim();
   const abstract = value.abstract.trim();
-  if (!title || !abstract) return null;
+  if (!title || title.length > 1_500 || !abstract || abstract.length > 9_000) return null;
   const reported = 'sourceLanguage' in value && typeof value.sourceLanguage === 'string'
     ? value.sourceLanguage.toLowerCase()
     : undefined;
