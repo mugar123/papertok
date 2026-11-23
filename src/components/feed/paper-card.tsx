@@ -1291,7 +1291,12 @@ const PaperCard = memo(function PaperCard({
   };
 
   const { label: categoryLabel, topic: primaryTopic, sourceLabel: classificationSource } = useMemo(() => getPaperClassification(paper), [paper]);
-  const reason = feedReason(paper, followed, analyticsSurface, categoryLabel);
+  // Re-ranking mutates the score in place. Keep the reason for this paper,
+  // follow and surface so an unrelated render cannot rewrap the kicker.
+  const reason = useMemo(
+    () => feedReason(paper, followed, analyticsSurface, categoryLabel),
+    [paper, followed, analyticsSurface, categoryLabel],
+  );
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
