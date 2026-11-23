@@ -110,7 +110,7 @@ export function fullTextListen(doc: FullText, { withAbstract }: { withAbstract: 
 }
 
 /** The voice speaks about this many characters a second, until a clip's real length is known. */
-const CHARS_PER_SECOND = 15;
+export const CHARS_PER_SECOND = 15;
 
 /**
  * Where each passage and chapter sits in the listen, in seconds: the clip's own

@@ -162,3 +162,54 @@ test('system controls resume and seek the paper, and hidden playback advances to
     Clip.instances = [];
   }
 });
+
+test('the browser voice\'s place moves with time when it reports no words, and follows its word boundaries when it does', async () => {
+  const { useReadAloud, firebase, close } = await loadReadAloud();
+  const worker = stubWorker();
+  const route = worker.hold('/tts/paragraph');
+  const spoken: Array<{ text: string; onstart: (() => void) | null; onboundary: ((event: { name: string; charIndex: number }) => void) | null }> = [];
+  const originalSynthesis = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
+  const originalUtterance = Object.getOwnPropertyDescriptor(globalThis, 'SpeechSynthesisUtterance');
+  const originalNow = Object.getOwnPropertyDescriptor(performance, 'now');
+  let now = 5_000;
+  Object.defineProperty(performance, 'now', { configurable: true, value: () => now });
+  Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { speak: (utterance: (typeof spoken)[number]) => spoken.push(utterance), cancel: () => {} } });
+  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
+    configurable: true,
+    value: class { text: string; lang = ''; onstart = null; onboundary = null; onend = null; onerror = null; constructor(text: string) { this.text = text; } },
+  });
+  let unmount = () => {};
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const sentence = 'Agents read untrusted text from the web every day.';
+    const view = renderHook(() => useReadAloud([{ passage: 'b0', utterances: [sentence] }], [], {
+      title: 'Agents paper',
+      onFallback: () => {},
+      onError: () => assert.fail('the browser voice should read'),
+    }));
+    unmount = view.unmount;
+    act(() => view.result.current.play(0));
+    route.refuse(429, 'AI_QUOTA_EXHAUSTED');
+    await waitFor(() => assert.equal(spoken.length, 1));
+    const utterance = spoken[0];
+    const fraction = () => view.result.current.live().fraction;
+
+    utterance.onstart?.();
+    now = 6_000;
+    assert.equal(fraction(), 15 / sentence.length);
+    utterance.onboundary?.({ name: 'sentence', charIndex: 0 });
+    assert.equal(fraction(), 15 / sentence.length);
+    now = 65_000;
+    assert.equal(fraction(), 1);
+    utterance.onboundary?.({ name: 'word', charIndex: 7 });
+    assert.equal(fraction(), 7 / sentence.length);
+  } finally {
+    unmount();
+    worker.stop();
+    await close();
+    for (const [target, name, original] of [[window, 'speechSynthesis', originalSynthesis], [globalThis, 'SpeechSynthesisUtterance', originalUtterance], [performance, 'now', originalNow]] as const) {
+      if (original) Object.defineProperty(target, name, original);
+      else Reflect.deleteProperty(target, name);
+    }
+  }
+});

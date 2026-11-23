@@ -1,12 +1,14 @@
 import type { CharacterTimings, ReadAloudChapter, SpokenPassage } from './read-aloud.ts';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
-import { locateInListen, passageText, readAloudTimeline } from './read-aloud.ts';
+import { CHARS_PER_SECOND, locateInListen, passageText, readAloudTimeline } from './read-aloud.ts';
 import { ReadAloudError, fetchParagraphAudio, fetchParagraphTimings } from '../../services/read-aloud-service.ts';
 
 const hasBrowserVoice = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 /** Passages one listener asks for at once, well inside the plan's concurrent generations shared by every listener. */
 const WORKERS = 3;
 const BUSY_RETRIES = 3;
+/** A sentence shorter than this is mostly the voice starting and stopping, so it does not time the pace. */
+const TIMED_SENTENCE_CHARS = 40;
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -47,6 +49,11 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   // Passages whose timings were asked for, so each is asked once, as it starts playing.
   const timed = useRef(new Set<string>());
   const spokenChars = useRef(0);
+  // The sentence the browser's voice is on. Some voices (Android's) report no word
+  // boundaries, so its progress is estimated from the time since it started, at the
+  // pace its longer sentences have been read so far.
+  const browserSentence = useRef({ before: 0, length: 0, startedAt: 0, heard: false });
+  const pace = useRef({ chars: 0, seconds: 0 });
   // Every passage has been asked for, so any still missing will not come.
   const [prepareDone, setPrepareDone] = useState(false);
   const run = useRef(0);
@@ -172,9 +179,21 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       const before = item.utterances.slice(0, sentence).reduce((sum, line) => sum + line.length + 1, 0);
       voice.current = 'browser';
       spokenChars.current = before;
-      utterance.onboundary = (event) => { if (current()) spokenChars.current = before + event.charIndex; };
+      const said = { before, length: item.utterances[sentence].length, startedAt: 0, heard: false };
+      browserSentence.current = said;
+      utterance.onstart = () => { said.startedAt = performance.now(); };
+      utterance.onboundary = (event) => {
+        // Some voices report only sentence boundaries, which say nothing within one.
+        if (!current() || event.name !== 'word') return;
+        said.heard = true;
+        spokenChars.current = before + event.charIndex;
+      };
       utterance.onend = () => {
         if (!current()) return;
+        if (said.startedAt && said.length >= TIMED_SENTENCE_CHARS) {
+          pace.current.chars += said.length;
+          pace.current.seconds += (performance.now() - said.startedAt) / 1000;
+        }
         setProgress((sentence + 1) / item.utterances.length);
         speakWithBrowser(index, sentence + 1);
       };
@@ -314,7 +333,14 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   const live = useCallback(() => {
     const element = audio.current;
     const item = paragraph === null ? null : queue[paragraph];
-    if (playing && voice.current === 'browser' && item) return { seconds: null, fraction: spokenChars.current / Math.max(1, passageText(item).length) };
+    if (playing && voice.current === 'browser' && item) {
+      const said = browserSentence.current;
+      const chars = said.heard || !said.startedAt
+        ? spokenChars.current
+        : said.before + Math.min(said.length, ((performance.now() - said.startedAt) / 1000)
+          * (pace.current.seconds > 0 ? pace.current.chars / pace.current.seconds : CHARS_PER_SECOND));
+      return { seconds: null, fraction: chars / Math.max(1, passageText(item).length) };
+    }
     if (playing && voice.current === 'audio' && element && Number.isFinite(element.duration) && element.duration > 0) {
       return { seconds: element.currentTime, fraction: element.currentTime / element.duration };
     }
