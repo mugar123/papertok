@@ -55,9 +55,11 @@ export async function loadReaderText() {
 export async function loadReadAloud() {
   const { modules: [hook, firebase], close } = await loadModules<[
     { useReadAloud: (queue: SpokenPassage[], chapters: ReadAloudChapter[], callbacks: {
+      title: string;
       onFallback: (error: unknown) => void;
       onError: () => void;
     }) => {
+      playing: boolean;
       prepared: { ready: number; total: number; failed: boolean };
       timeline: ReadAloudTimeline;
       paragraph: number | null;

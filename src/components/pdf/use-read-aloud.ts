@@ -1,5 +1,5 @@
 import type { CharacterTimings, ReadAloudChapter, SpokenPassage } from './read-aloud.ts';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { locateInListen, passageText, readAloudTimeline } from './read-aloud.ts';
 import { ReadAloudError, fetchParagraphAudio, fetchParagraphTimings } from '../../services/read-aloud-service.ts';
 
@@ -30,7 +30,8 @@ function clipSeconds(url: string) {
  * a passage without audio is read by the browser's own voice, which can only
  * start a passage from its beginning.
  */
-export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { onFallback, onError }: {
+export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, onFallback, onError }: {
+  title: string;
   onFallback: (error: unknown) => void;
   onError: () => void;
 }) {
@@ -250,6 +251,62 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     }
   };
 
+  const resumeFromSystem = useEffectEvent(() => play(paragraph ?? 0, progress));
+  const seekFromSystem = useEffectEvent((details: MediaSessionActionDetails) => {
+    if (details.action === 'seekto' && details.seekTime !== undefined) seek(details.seekTime);
+    else seek(position + (details.action === 'seekbackward' ? -1 : 1) * (details.seekOffset ?? 15));
+  });
+  const listening = paragraph !== null;
+
+  useEffect(() => {
+    if (!listening || !('audioSession' in navigator)) return;
+    const session = navigator.audioSession;
+    if (!session || typeof session !== 'object' || !('type' in session) || typeof session.type !== 'string') return;
+    const previous = session.type;
+    session.type = 'playback';
+    return () => { session.type = previous; };
+  }, [listening]);
+
+  useEffect(() => {
+    if (!listening || !('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
+    session.metadata = new MediaMetadata({ title, artist: 'PaperTok' });
+    const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
+      ['play', () => resumeFromSystem()],
+      ['pause', pause],
+      ['stop', reset],
+      ['seekbackward', details => seekFromSystem(details)],
+      ['seekforward', details => seekFromSystem(details)],
+      ['seekto', details => seekFromSystem(details)],
+    ];
+    const registered: MediaSessionAction[] = [];
+    for (const [action, handler] of handlers) {
+      try {
+        session.setActionHandler(action, handler);
+        registered.push(action);
+      } catch (error) {
+        // Browsers can expose Media Session without supporting every action.
+        if (!(error instanceof DOMException && error.name === 'NotSupportedError')) throw error;
+      }
+    }
+    return () => {
+      for (const action of registered) session.setActionHandler(action, null);
+      session.metadata = null;
+      session.playbackState = 'none';
+      session.setPositionState?.();
+    };
+  }, [listening, title, pause, reset]);
+
+  useEffect(() => {
+    if (!listening || !('mediaSession' in navigator)) return;
+    navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+    if (timeline.duration > 0) navigator.mediaSession.setPositionState?.({
+      duration: timeline.duration,
+      position: Math.min(position, timeline.duration),
+      playbackRate: 1,
+    });
+  }, [listening, title, playing, position, timeline.duration]);
+
   /**
    * Where the voice is in the current passage now, read from the playing audio or the
    * browser voice's last word rather than from `position`, which moves a few times a second.
@@ -264,9 +321,17 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     return { seconds: at ? progress * (at.end - at.start) : null, fraction: progress };
   }, [at, paragraph, playing, progress, queue]);
 
+  /** The paper's audio as one MP3, its clips in reading order; only once every passage has one. */
+  const audioFile = useCallback(async () => {
+    const urls = await Promise.all(queue.map(item => clips.current.get(passageText(item)) ?? Promise.reject(new ReadAloudError('AI_AUDIO_NOT_STORED'))));
+    const parts = await Promise.all(urls.map(url => fetch(url).then(response => response.blob())));
+    return new Blob(parts, { type: 'audio/mpeg' });
+  }, [queue]);
+
   return {
     timeline,
     timings,
+    audioFile,
     live,
     /** How much of the paper's audio exists yet; `failed` once a passage was refused and the rest will not come. */
     prepared: { ready, total: queue.length, failed: prepareDone && ready < queue.length },

@@ -5,12 +5,13 @@ import { lazy, Suspense, useEffect, useEffectEvent, useImperativeHandle, useMemo
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { useFeed } from '../../context/feed-context.tsx';
-import { ArrowSquareOut, CircleNotch, FilePdf, Highlighter, NotePencil, SpeakerHigh, TextAlignLeft, X } from '@phosphor-icons/react';
+import { ArrowSquareOut, CircleNotch, Highlighter, NotePencil, SpeakerHigh, TextAlignLeft, X } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { Toggle } from '../ui/toggle.ts';
 import { readShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
+import { saveFile } from '../../utils/save-file.ts';
 import './pdf-viewer.css';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
@@ -125,11 +126,6 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const handlePagesUndrawable = useCallback(() => setDrawFailed(true), []);
   const [pagesDrawn, setPagesDrawn] = useState(false);
   const handlePagesDrawn = useCallback(() => setPagesDrawn(true), []);
-  const showPdf = () => {
-    setIframeLoaded(false);
-    setShowFallback(false);
-    setView('pdf');
-  };
 
   const { trackPdfBounce } = useFeed();
   const startTimeRef = useRef<number | null>(null);
@@ -250,6 +246,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // Read aloud: the paper's prose in PaperTok's voice, for a signed-in reader of an English text.
   const spoken = useMemo(() => (fullText ? fullTextListen(fullText, { withAbstract: abstractShown }) : null), [fullText, abstractShown]);
   const readAloud = useReadAloud(spoken?.queue ?? NO_PASSAGES, spoken?.chapters ?? NO_CHAPTERS, {
+    title: paper.title,
     onFallback: cause => toast(cause instanceof ReadAloudError && (cause.code === 'AI_QUOTA_EXHAUSTED' || cause.code === 'AI_AUDIO_NOT_STORED')
       ? 'Parts of this paper have no PaperTok audio yet, so this browser’s voice reads them.'
       : 'PaperTok’s voice is not available right now, so this browser’s voice reads instead.'),
@@ -307,6 +304,14 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
     }
     return () => block.removeAttribute('data-speaking');
   }, [spokenPassage, textScroll]);
+  const savingAudio = useRef(false);
+  const downloadAudio = () => {
+    if (savingAudio.current) return;
+    savingAudio.current = true;
+    readAloud.audioFile()
+      .then(file => saveFile(file, paper.title, 'mp3'), () => toast.error('Could not save the audio.'))
+      .finally(() => { savingAudio.current = false; });
+  };
   const playPause = () => {
     if (readAloud.playing) {
       readAloud.pause();
@@ -465,9 +470,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             <PaperDock
               scroll={showsText ? textScroll : null}
               pinned={playerOpen}
-              menu={playerOpen ? undefined : { paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText ? [showsText
-                ? { id: 'view', label: 'Show PDF', hint: 'The paper as published', Icon: FilePdf, onSelect: showPdf }
-                : { id: 'view', label: 'Show text', hint: 'The paper as text you can annotate and listen to', Icon: TextAlignLeft, onSelect: () => setView('text') }] : [] }}
+              menu={playerOpen ? undefined : { paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText
+                ? [{ id: 'view', label: 'Show text', hint: 'The paper as text you can annotate and listen to', Icon: TextAlignLeft, onSelect: () => setView('text') }]
+                : [] }}
               contents={!playerOpen && showsText && outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}
             >
                 {playerOpen ? (
@@ -479,6 +484,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                     onPlayPause={playPause}
                     onSeek={readAloud.seek}
                     onClose={closePlayer}
+                    onDownload={downloadAudio}
                     openedFrom={playerFrom}
                   />
                 ) : (
@@ -503,8 +509,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                 {zotero && (
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="pdf-dock-zotero"
+                    className="pdf-dock-toggle pdf-dock-zotero"
                     onClick={zotero.onSelect}
                     disabled={zotero.busy}
                     focusableWhenDisabled
@@ -514,6 +519,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                     data-sent={zotero.sent ? '' : undefined}
                   >
                     {zotero.busy ? <CircleNotch size={18} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ZoteroMark size={18} />}
+                    <span className="pdf-dock-label">Zotero</span>
                   </Button>
                 )}
                 {dockUrl && (

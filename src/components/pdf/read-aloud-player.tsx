@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from 'react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowClockwise, ArrowCounterClockwise, Pause, Play, X } from '@phosphor-icons/react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowClockwise, ArrowCounterClockwise, DownloadSimple, Pause, Play, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { ReadAloudTimeline } from './read-aloud.ts';
 import { chapterAt } from './read-aloud.ts';
@@ -25,7 +25,7 @@ function spokenClock(seconds: number) {
  * and play, pause and skip. Dragging the track names the chapter it would
  * land in; letting go moves the voice there.
  */
-export default function ReadAloudPlayer({ timeline, prepared, position, playing, onPlayPause, onSeek, onClose, openedFrom }: {
+export default function ReadAloudPlayer({ timeline, prepared, position, playing, onPlayPause, onSeek, onClose, onDownload, openedFrom }: {
   timeline: ReadAloudTimeline;
   /** Passages whose audio exists; until all do, the track shows what is left to prepare. */
   prepared: { ready: number; total: number; failed: boolean };
@@ -34,6 +34,8 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
   onPlayPause: () => void;
   onSeek: (seconds: number) => void;
   onClose: () => void;
+  /** Saves the paper's audio; offered once every passage has PaperTok's voice. */
+  onDownload: () => void;
   /** The closed dock's outline, which the player grows out of. */
   openedFrom: { width: number; height: number } | null;
 }) {
@@ -96,6 +98,12 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
   const PlayIcon = playing ? Pause : Play;
   const preparing = missing && slow;
   const percent = prepared.total ? Math.floor((prepared.ready / prepared.total) * 100) : 0;
+  // Why the audio cannot be saved yet, or at all once some paragraphs will not get PaperTok's voice.
+  const downloadNoteId = useId();
+  const unsaved = prepared.ready < prepared.total;
+  const downloadNote = prepared.failed
+    ? 'The audio cannot be saved: some paragraphs do not have PaperTok’s voice.'
+    : 'Available once every paragraph has PaperTok’s voice.';
   return (
     <div
       ref={root}
@@ -109,6 +117,19 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
           {chapter.number && <span className="rd-listen-number">{chapter.number}</span>}
           <span className="rd-listen-title">{chapter.title}</span>
         </p>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onDownload}
+          disabled={unsaved}
+          focusableWhenDisabled
+          aria-label="Download the audio"
+          aria-describedby={unsaved ? downloadNoteId : undefined}
+          title={unsaved ? downloadNote : 'Download the audio'}
+        >
+          <DownloadSimple size={16} aria-hidden="true" />
+        </Button>
+        {unsaved && <span id={downloadNoteId} className="visually-hidden">{downloadNote}</span>}
         <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close player" title="Close player">
           <X size={16} aria-hidden="true" />
         </Button>

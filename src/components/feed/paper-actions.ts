@@ -5,6 +5,7 @@ import { CheckCircle, DownloadSimple, Eye, Info, Prohibit } from '@phosphor-icon
 import { ACCOUNT_DISMISSAL_HINT } from '../../utils/feed-dismissal.ts';
 import { downloadCitationFile } from '../../utils/reading-library.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
+import { saveFile } from '../../utils/save-file.ts';
 
 const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 
@@ -16,14 +17,7 @@ async function downloadPdf(paper: Paper, pdfUrl: string, relayUrl: string) {
     window.open(pdfUrl, '_blank', 'noopener,noreferrer');
     return;
   }
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${(paper.title || 'paper').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 120)}.pdf`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  saveFile(blob, paper.title, 'pdf');
 }
 
 export const shareMethod = (method: string) => (method === 'clipboard' || method === 'instagram' ? 'clipboard' : 'other');

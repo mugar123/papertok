@@ -198,12 +198,14 @@
   }
 }
 
-/* Sent before: a dot beside the Z, seen without hovering for the date. */
+/* A Button among the bar's Toggles: their type and spacing, so the labels match. */
+.pdf-dock-zotero { gap: 0.375rem; font-size: 0.8125rem; font-weight: var(--fw-medium); }
+/* Sent before: a dot at the Z's corner, seen without hovering for the date. */
 .pdf-dock-zotero[data-sent] { position: relative; }
 .pdf-dock-zotero[data-sent]::after {
   position: absolute;
   top: 8px;
-  right: 8px;
+  inset-inline-start: calc(var(--space-3) + 14px);
   width: 6px;
   height: 6px;
   border-radius: 50%;
