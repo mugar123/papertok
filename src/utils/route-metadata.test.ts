@@ -17,6 +17,14 @@ test('normalizes trailing slashes', () => {
   assert.equal(routeTitle('/lists/'), 'My lists | PaperTok')
 })
 
+test('announces and titles public conference pages', () => {
+  assert.equal(routeLabel('/conferences'), 'Conference calendar')
+  assert.equal(routeTitle('/conferences'), 'Conference calendar | PaperTok')
+  assert.equal(routeTitle('/conferences/'), 'Conference calendar | PaperTok')
+  assert.equal(routeLabel('/conferences/%6Eeurips-2026'), 'NeurIPS 2026')
+  assert.equal(routeTitle('/conferences/missing'), 'Conference not found | PaperTok')
+})
+
 test('returns null for self-titled and unknown routes', () => {
   // The settings pages and the public pages already manage document.title
   // themselves (settings-page.tsx, usePublicPageMetadata); the announcer must

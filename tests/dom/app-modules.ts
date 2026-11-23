@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import type { PropsWithChildren, ReactNode } from 'react';
 import { createServer, createServerModuleRunner, type Plugin } from 'vite';
 import type { FirebaseStub } from './firebase-stub.ts';
 
@@ -8,18 +9,19 @@ import type { FirebaseStub } from './firebase-stub.ts';
  * transforms them; React, React DOM and React Router stay the one copy the test
  * imports, so a provider and the hooks that read it share a context.
  *
- * `services/firebase.ts` is the one module replaced: the real one starts a
- * Firebase app and a browser sign-in. The Worker is not replaced. The tests
+ * The Firebase configuration is replaced so tests do not start a real session.
+ * Tests that sign in also stub Firestore reads. The Worker is not replaced. The tests
  * give it an origin and answer its `fetch`, so the app's own request and error
  * code run (see `renderApp`).
  */
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const FIREBASE_STUB = fileURLToPath(new URL('./firebase-stub.ts', import.meta.url)).replaceAll('\\', '/');
+const FIRESTORE_STUB = fileURLToPath(new URL('./firestore-stub.ts', import.meta.url)).replaceAll('\\', '/');
 const WORKER_ORIGIN = 'https://api.papertok.app';
 
 /** `plugins` lets a loader stand in for one more module the tests cannot run (see `email-notifications-provider.ts`). */
-export async function startAppModules({ plugins = [] }: { plugins?: Plugin[] } = {}) {
+export async function startAppModules({ plugins = [], stubFirestore = false }: { plugins?: Plugin[]; stubFirestore?: boolean } = {}) {
   const server = await createServer({
     root,
     configFile: false,
@@ -31,7 +33,10 @@ export async function startAppModules({ plugins = [] }: { plugins?: Plugin[] } =
     optimizeDeps: { noDiscovery: true },
     define: { 'import.meta.env.VITE_PAPER_API_BASE_URL': JSON.stringify(WORKER_ORIGIN) },
     plugins,
-    resolve: { alias: [{ find: /^(?:.*\/)?firebase\.ts$/, replacement: FIREBASE_STUB }] },
+    resolve: { alias: [
+      { find: /^(?:.*\/)?firebase\.ts$/, replacement: FIREBASE_STUB },
+      ...(stubFirestore ? [{ find: /^firebase\/firestore$/, replacement: FIRESTORE_STUB }] : []),
+    ] },
   });
   const runner = createServerModuleRunner(server.environments.ssr, { hmr: false });
   return {
@@ -42,4 +47,27 @@ export async function startAppModules({ plugins = [] }: { plugins?: Plugin[] } =
       await server.close();
     },
   };
+}
+
+async function loadAppModule<T>(path: string, options?: Parameters<typeof startAppModules>[0]) {
+  const app = await startAppModules(options);
+  try {
+    return { entry: await app.load<T>(path), firebase: app.firebase, close: app.close };
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
+}
+
+export function loadPaperTranslationService() {
+  return loadAppModule<typeof import('../../src/services/paper-translation-service.ts')>('/src/services/paper-translation-service.ts');
+}
+
+interface AuthProviderModule {
+  AuthProvider: (props: PropsWithChildren) => ReactNode;
+  useAuth: () => { user: { uid: string } | null; loading: boolean };
+}
+
+export function loadAuthProvider() {
+  return loadAppModule<AuthProviderModule>('/src/context/auth-context.tsx', { stubFirestore: true });
 }

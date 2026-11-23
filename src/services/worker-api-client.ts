@@ -119,6 +119,20 @@ export async function fetchWorkerSourceJson<T = unknown>(path: string, params: R
   return response.json() as Promise<T>;
 }
 
+async function tokenWithSignal(getToken: () => Promise<string>, signal: AbortSignal) {
+  signal.throwIfAborted();
+  let onAbort = () => {};
+  const cancelled = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([cancelled, getToken()]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
 /**
  * The signed-in user a request may be sent as. Without `expectedUid` it is
  * whoever is signed in now. A caller acting for an account it read earlier
@@ -136,13 +150,24 @@ export function workerRequestUser<T extends { uid: string }>(currentUser: T | nu
  * `timeoutMs` is the request's own budget. It starts once the ID token is in
  * hand: a token refresh can take seconds, and a deadline armed before it spent
  * the feed's 3.5 s on the refresh (ENG-116). The deadline covers the response
- * body too (request-deadline.ts).
+ * body too (request-deadline.ts). Callers that budget the token wait too opt in
+ * with `abortTokenWait` and supply a signal for the whole operation.
  */
-export async function authenticatedWorkerFetch(input: string | URL, options: RequestInit = {}, timeoutMs?: number, expectedUid?: string) {
+export async function authenticatedWorkerFetch(
+  input: string | URL,
+  { abortTokenWait = false, ...options }: RequestInit & { abortTokenWait?: boolean } = {},
+  timeoutMs?: number,
+  expectedUid?: string,
+) {
   const url = trustedWorkerUrl(input);
   if (!url) throw new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED');
   const currentUser = workerRequestUser(auth.currentUser, expectedUid);
-  const token = await currentUser.getIdToken();
+  const tokenSignal = abortTokenWait ? options.signal : undefined;
+  const token = tokenSignal
+    ? await tokenWithSignal(() => currentUser.getIdToken(), tokenSignal)
+    : await currentUser.getIdToken();
+  tokenSignal?.throwIfAborted();
+  if (auth.currentUser !== currentUser) throw new WorkerApiAuthError();
   const headers = new Headers(options.headers || {});
   headers.set('authorization', `Bearer ${token}`);
   // Every caller but `publicListService` passed a signal of its own, and that one

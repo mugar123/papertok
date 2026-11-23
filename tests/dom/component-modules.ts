@@ -1,5 +1,6 @@
 import './dom-environment.ts';
 import type { ReactNode } from 'react';
+import type { usePaperTranslation as UsePaperTranslation } from '../../src/hooks/use-paper-translation.ts';
 import { startAppModules } from './app-modules.ts';
 
 /**
@@ -16,7 +17,7 @@ async function loadModules<Modules extends unknown[]>(...paths: string[]) {
   const app = await startAppModules();
   try {
     const modules = await Promise.all(paths.map(path => app.load(path))) as Modules;
-    return { modules, close: () => app.close() };
+    return { modules, firebase: app.firebase, close: () => app.close() };
   } catch (error) {
     await app.close();
     throw error;
@@ -74,4 +75,18 @@ export async function loadWelcomeShell() {
 export async function loadWelcomeProjectSupport() {
   const { modules: [preferences], close } = await loadModules<[{ WelcomeProjectSupport: Component<object> }]>('/src/components/public/guest-welcome-preferences.tsx');
   return { WelcomeProjectSupport: preferences.WelcomeProjectSupport, close };
+}
+
+export async function loadPaperTranslation() {
+  type State = ReturnType<typeof UsePaperTranslation>;
+  const { modules: [hook, controls], firebase, close } = await loadModules<[
+    { usePaperTranslation: typeof UsePaperTranslation },
+    {
+      PaperTranslationButton: Component<{ state: State; onAuthRequired: () => void; onChooseLanguage: () => void }>;
+      PaperTranslationPicker: Component<{ state: State; focusRequested?: boolean }>;
+      PaperTranslationStatus: Component<{ state: State }>;
+      TranslatedPaperText: Component<{ translation: NonNullable<State['current']['translation']> }>;
+    },
+  ]>('/src/hooks/use-paper-translation.ts', '/src/components/feed/paper-translation.tsx');
+  return { ...hook, ...controls, firebase, close };
 }

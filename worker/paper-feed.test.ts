@@ -20,6 +20,7 @@ import { handleRequest } from './router.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 // Synthetic, in the shape the arXiv harvest stores.
@@ -2153,4 +2154,127 @@ test('a successful feed response exposes the version of the Worker that served i
   assert.equal(response.headers.get('access-control-expose-headers'), 'retry-after, x-papertok-worker-version');
   const body = await response.json<{ papers: Array<{ id: string }> }>();
   assert.deepEqual(body.papers.map(paper => paper.id), ['2610.11111']);
+});
+
+// --- ENG-224: what one account may add to the store in a day -----------------
+
+// OpenAlex's record of one work by id (synthetic), and how often it was asked.
+function openAlexLookups(t: TestContext) {
+  const asked: string[] = [];
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    const id = url.pathname.split('/').pop()!;
+    asked.push(id);
+    return Response.json({
+      id: `https://openalex.org/${id}`,
+      doi: `https://doi.org/10.5555/${id.toLowerCase()}`,
+      title: `A paper only this reader asked for (${id})`,
+      type: 'article',
+      publication_date: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+      authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Pérez' } }],
+    });
+  });
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  return asked;
+}
+
+const storedWorks = (db: ReturnType<typeof store>['db']) => Number(db.prepare('SELECT COUNT(*) AS n FROM works').get()?.n);
+
+// One account could send ten unknown ids with each of its 60 requests a
+// minute, and every one was looked up and kept for 30 days: 864,000 papers a
+// day, against a 10 GB database, in the lanes that rank other readers' feeds.
+test('an account adds at most 300 papers the store lacked in a day by id; past them its ids are served from the store only, and another account still adds its own', async t => {
+  const asked = openAlexLookups(t);
+  const { ask, db } = store();
+  let next = 0;
+  const unknown = (count: number) => Array.from({ length: count }, () => `W${9_000_000 + (next += 1)}`);
+
+  // Thirty requests of ten unknown papers: the account's day.
+  let last: string[] = [];
+  for (let request = 0; request < 30; request += 1) {
+    last = unknown(10);
+    assert.equal((await ask({ ids: last })).papers.length, 10, `request ${request + 1}`);
+  }
+  assert.equal(asked.length, 300);
+  assert.equal(storedWorks(db), 300);
+
+  // Past it, nothing new is looked up or stored for that account.
+  assert.deepEqual((await ask({ ids: unknown(10) })).papers, []);
+  assert.equal(asked.length, 300, 'no lookup past the allowance');
+  assert.equal(storedWorks(db), 300);
+  // A paper the store already holds is still served.
+  assert.deepEqual((await ask({ ids: [last[0], ...unknown(2)] })).papers.map(paper => paper.id), [`openalex:${last[0]}`]);
+
+  assert.equal((await ask({ ids: unknown(3) }, 'reader-2')).papers.length, 3, 'another account has its own allowance');
+  assert.equal(storedWorks(db), 303);
+});
+
+test("an account's liked papers the store lacks count against the same 300 a day, and the page is served either way", async t => {
+  const asked = openAlexLookups(t);
+  const { ask, db, env } = store();
+  await ingestPapers(env, [{ paper: stored, lanes: ['cs.CL'] }]);
+  let next = 0;
+  const liked = (count: number) => Array.from({ length: count }, () => `W${8_000_000 + (next += 1)}`);
+  const page = async (positiveIds: string[]) => {
+    const afterAnswer: Array<Promise<unknown>> = [];
+    const answer = await ask({ categories: ['cs.CL'], positiveIds }, 'reader-1', work => { afterAnswer.push(work); });
+    await Promise.all(afterAnswer);
+    return answer.papers.map(paper => paper.id);
+  };
+
+  // All but five of the day through `ids`, then a first page with ten likes.
+  for (let request = 0; request < 29; request += 1) await ask({ ids: liked(10) });
+  await ask({ ids: liked(5) });
+  assert.equal(asked.length, 295);
+  assert.deepEqual(await page(liked(10)), ['2610.11111']);
+  assert.equal(asked.length, 300, 'the five that fit were looked up');
+  assert.deepEqual(await page(liked(10)), ['2610.11111']);
+  assert.equal(asked.length, 300);
+  assert.equal(storedWorks(db), 301);
+});
+
+test('an id no lookup serves spends none of the day when first pages bring it, and a missing ledger looks nothing up', async t => {
+  const asked = openAlexLookups(t);
+  const { ask, db, env } = store();
+  await ingestPapers(env, [{ paper: stored, lanes: ['cs.CL'] }]);
+  const page = async (positiveIds: string[]) => {
+    const afterAnswer: Array<Promise<unknown>> = [];
+    await ask({ categories: ['cs.CL'], positiveIds }, 'reader-1', work => { afterAnswer.push(work); });
+    await Promise.all(afterAnswer);
+  };
+  const unserved = Array.from({ length: 10 }, (_, index) => `biorxiv:10.1101/2026.10.0${index}`);
+  for (let load = 0; load < 5; load += 1) await page(unserved);
+  assert.deepEqual(asked, []);
+  // The whole day is still there for papers a lookup serves.
+  for (let request = 0; request < 30; request += 1) {
+    await ask({ ids: Array.from({ length: 10 }, (_, index) => `W${6_000_000 + request * 10 + index}`) });
+  }
+  assert.equal(asked.length, 300);
+  assert.equal(storedWorks(db), 301);
+
+  const without = store();
+  Object.assign(without.env, { REQUEST_QUOTA_LEDGER: undefined });
+  assert.deepEqual((await without.ask({ ids: ['W6999999'] })).papers, []);
+  assert.equal(asked.length, 300);
+});
+
+test('all accounts together add at most 6,000 papers the store lacked in a day by id', async t => {
+  const asked = openAlexLookups(t);
+  const { env, ask } = store();
+  // The day's allowance for every account, all but two papers of it, as other accounts spent it.
+  await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
+    periodKey: `store-new-papers:day:${new Date().toISOString().slice(0, 10)}`,
+    subject: 'uid:others', subjectLimit: 6_000, globalLimit: 6_000, amount: 5_998,
+  });
+  assert.equal((await ask({ ids: ['W7000001', 'W7000002', 'W7000003'] })).papers.length, 2);
+  assert.deepEqual(asked, ['W7000001', 'W7000002']);
+  assert.deepEqual((await ask({ ids: ['W7000004'] }, 'reader-2')).papers, []);
+  assert.equal(asked.length, 2);
 });
