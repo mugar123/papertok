@@ -1,4 +1,4 @@
-import { getAllLeafCategories } from '../data/category-taxonomy.ts';
+import { getAllLeafCategories, getAreaLeaves, getKnownCategoryLabel } from '../data/category-taxonomy.ts';
 import { MAX_FOLLOWED_JOURNALS } from './following.ts';
 
 // The lane a followed entity is served from, shared by the Worker, which
@@ -27,9 +27,9 @@ type FollowLaneInput = { type?: unknown; canonicalId?: unknown; displayName?: un
 /**
  * The lane a followed entity is served from: the OpenAlex entity a paper
  * names (a journal is its OpenAlex source), a search for a followed query or
- * an author known by name only, or a funded project. A topic that is one of
- * the app's categories is asked for as that category instead, and gets no
- * lane here.
+ * an author known by name only, or a funded project. The feed requests a
+ * followed leaf by category alone. For an area it requests up to 12 leaves
+ * and searches by the English taxonomy label, even for a translated follow.
  */
 export function followLane(follow: FollowLaneInput) {
   const type = text(follow?.type);
@@ -44,8 +44,13 @@ export function followLane(follow: FollowLaneInput) {
   if (type === 'journal') return entity.startsWith('source:') ? entity : '';
   if (entity && (type === 'topic' ? /^(topic|concept):/.test(entity) : entity.startsWith(`${type}:`))) return entity;
   if (LEAF_IDS.has(canonicalId)) return '';
-  // A query of only whitespace is an empty one, so the name stands in for it.
-  const query = text(type === 'topic' ? text(follow.metadata?.query) || follow.displayName : follow.displayName).toLowerCase().slice(0, 120);
+  let queryText = follow.displayName;
+  if (type === 'topic') {
+    queryText = getAreaLeaves(canonicalId)
+      ? getKnownCategoryLabel(canonicalId)
+      : text(follow.metadata?.query) || follow.displayName;
+  }
+  const query = text(queryText).toLowerCase().slice(0, 120);
   if (!query) return '';
   return type === 'author' ? `author-name:${query}` : type === 'topic' ? `query:${query}` : '';
 }

@@ -15,6 +15,7 @@ import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
 import { followedCorpusRequest } from '../src/context/feed-corpus-requests.ts';
+import { getAreaLeaves } from '../src/data/category-taxonomy.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleHarvestArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
 import { feedSeenFilter, feedSeenIds } from '../src/utils/seen-paper-filter.ts';
@@ -704,14 +705,21 @@ const physicsArticle = mapOpenAlexWork({
   },
 })!;
 
-test("the app's follows' page for follows with no lane of their own reads no area lane, and answers no papers where nothing is followed by lane or category", async t => {
+test("the app's follows page serves each area's search lane and papers from its requested leaves", async t => {
   rankingCaches(t);
   const { env, ask } = store();
   const quantum = arxivRecordPaper({
     arxivId: '2610.00021', title: 'A quantum error-correcting code', abstract: 'A code.', authors: ['Ana Pérez'], categories: ['quant-ph'],
     doi: null, journalRef: null, comments: null, published: new Date(Date.now() - 2 * DAY_MS).toISOString(), updated: '',
   });
-  await ingestPapers(env, [{ paper: quantum, lanes: [] }, { paper: physicsArticle, lanes: ['area:physics'] }]);
+  await ingestPapers(env, [
+    { paper: quantum, lanes: [] },
+    { paper: physicsArticle, lanes: ['area:physics'] },
+    { paper: stored, lanes: ['query:física'] },
+    { paper: paper('2610.00022', 'Physics of language models', 1), lanes: ['query:physics'] },
+    { paper: paper('2610.00023', 'Mathematics of sparse attention', 3), lanes: ['query:mathematics'] },
+    { paper: paper('2610.00024', 'Mining the chemistry literature', 4), lanes: ['query:chemistry'] },
+  ]);
   // The app's request, answered by this route as the router answers it.
   const fetchWorker = async (_url: string, init: RequestInit) => {
     try {
@@ -721,18 +729,27 @@ test("the app's follows' page for follows with no lane of their own reads no are
     }
   };
   const plan: FeedPlan = { groups: [], unassignedPositiveIds: [], positiveIds: [], dormantCategories: [], interestProgress: {}, coldAdded: [] };
-  const followsPage = (follows: FollowEntity[]) => fetchFollowedEntityCandidates(followedCorpusRequest(
+  const followsPage = (...follows: FollowEntity[]) => fetchFollowedEntityCandidates(followedCorpusRequest(
     plan,
     follows,
-    follow => (follow.canonicalId === 'quant-ph' ? ['quant-ph'] : []),
+    follow => (getAreaLeaves(follow.canonicalId) ?? [follow.canonicalId]).slice(0, 12),
     { page: 0, order: 'recent', negativeIds: [], excludedIds: [], seen: new Set() },
   ), { fetchWorker, apiBase: 'https://worker.example' });
-  // A reader whose only follow is one of the app's categories: the page is
-  // that category's papers, not the area's journal articles, which match no follow.
-  const categoryOnly = await followsPage([{ type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Physics' }]);
+  // The Physics journal article has no matching leaf or search lane.
+  const categoryOnly = await followsPage({ type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Physics' });
   assert.deepEqual(categoryOnly.map(item => item.id), ['2610.00021']);
+  const physics = { type: 'topic', canonicalId: 'physics', displayName: 'Física' } satisfies FollowEntity;
+  const areaOnly = await followsPage(physics);
+  assert.deepEqual(ids(areaOnly), ['2610.00022', '2610.00021']);
+  assert.deepEqual(areaOnly.map(item => item._followedEntityMatches), [[physics], [physics]]);
+
+  // Mathematics fills the request's 12 category slots before any Physics leaf.
+  const math = { type: 'topic', canonicalId: 'math', displayName: 'Mathematics' } satisfies FollowEntity;
+  assert.deepEqual(ids(await followsPage(math, physics)), ['2610.00022', '2610.00023']);
+  // The corpus has no papers under a Chemistry leaf.
+  assert.deepEqual(ids(await followsPage({ type: 'topic', canonicalId: 'chem', displayName: 'Chemistry' })), ['2610.00024']);
   // A reader who follows only an institution known by its ROR id, which no lane serves.
-  assert.deepEqual(await followsPage([{ type: 'institution', canonicalId: '00f54p054', displayName: 'Stanford University' }]), []);
+  assert.deepEqual(await followsPage({ type: 'institution', canonicalId: '00f54p054', displayName: 'Stanford University' }), []);
 });
 
 test("a reader's next pages from the kept order read each stored id once, however far they scroll", async t => {
