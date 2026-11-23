@@ -97,6 +97,9 @@ flowchart TD
   restoration and revalidates in the background. A confirmed missing list clears
   that entry; a failed refresh leaves the already-read list visible. Reloads
   and new history entries read afresh.
+- The navbar calendar icon opens the public `/conferences` route.
+  `/conferences/:editionId` opens a public event page. Both routes use the
+  static [edition registry](src/data/conferences.ts) and the Vercel SPA rewrite.
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
   routes. The frontend and Worker deploy separately.
@@ -117,7 +120,8 @@ flowchart TD
   vectors and ranking storage. [paper-feed.ts](worker/paper-feed.ts) serves its
   authenticated read API. [paper-harvest.ts](worker/paper-harvest.ts) runs the
   harvest Workflow started by cron or new followed lanes; scientific retrieval,
-  enrichment and Workers AI embeddings populate the corpus. See
+  enrichment and Workers AI embeddings populate the corpus. The nightly run also
+  stores author impact and positive paper-quality signals in D1. See
   [the paper-store contract](worker/README.md#paper-store) for budgets and retention.
 - [proxy/README.md](proxy/README.md) explains the optional Scopus egress and
   its separate credentials. Other external integrations also have direct
@@ -183,9 +187,10 @@ ORDER BY cohort_week
 flowchart TD
     Trigger["Cron or newly requested followed lane"]
     Harvest["PaperHarvestWorkflow"]
-    Sources["Scientific sources · normalize and merge Paper records"]
+    Sources["Scientific sources · normalize papers and record conference evidence"]
     Vectors["Workers AI · paper embeddings"]
     Corpus[("D1 · papers, lanes and vectors")]
+    Quality[("D1 · author h-index cache and paper quality")]
     API["/store/papers · recency and vector similarity"]
     Feed["FeedContext · client scoring and unread queue"]
     Custom["Custom feed page · one feed's exact lanes"]
@@ -197,6 +202,7 @@ flowchart TD
     Trigger --> Harvest --> Sources --> Corpus
     Harvest --> Vectors --> Corpus
     Corpus --> Vectors
+    Harvest -->|Nightly, after enrichment| Quality
     Corpus --> API --> Feed --> UI
     API --> Custom --> UI
     API --> Recent --> UI
@@ -209,7 +215,7 @@ flowchart TD
     classDef logic fill:#f0fdfa,stroke:#0f766e,color:#134e4a
     classDef view fill:#eff6ff,stroke:#2563eb,color:#172554
     class Trigger,Sources,Vectors source
-    class Corpus,Signals data
+    class Corpus,Quality,Signals data
     class Harvest,API,Feed,Custom,Recent,Search logic
     class UI view
 ```
@@ -219,7 +225,18 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 [paper-enrichment.ts](worker/paper-enrichment.ts) populate it using the shared
 [Paper](src/models/paper.ts) contract and
 [PaperBuilder](src/services/paper-builder.ts). Harvesting and embedding have
-separate bounded steps; the diagram summarizes the resulting data flow.
+separate bounded steps. After enrichment, [paper-quality.ts](worker/paper-quality.ts)
+computes the stored signals from the paper bylines, OpenAlex author metrics
+and Hugging Face votes.
+
+The Worker records a conference when the arXiv author attributes the paper to it
+or OpenReview assigns it a matching venue. OpenAlex source IDs can span main and
+companion proceedings, so OpenAlex attribution is deferred. The corpus, feed and
+library copies carry the resulting `acceptedConference`. The [harvest contract](worker/README.md#conference-evidence)
+covers event years, measured coverage and the one-off arXiv reload.
+Every save of a corpus paper also writes `corpusUpdatedAt`. Deploy compatible
+Firestore rules before the app and retain them through an app rollback so
+documents that carry this field can still be saved.
 
 Paper cards display native category names, including arXiv categories outside the
 selectable feed leaves. When no native category is available, the masthead names

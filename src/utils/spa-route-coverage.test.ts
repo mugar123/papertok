@@ -48,6 +48,14 @@ test('the Help page has an address of its own', async () => {
   assert.ok(!matches('/helpful'));
 });
 
+test('a shared conference address opens the app directly', async () => {
+  const matches = await spaMatcher();
+  assert.ok(matches('/conferences'));
+  assert.ok(matches('/conferences/neurips-2026'));
+  assert.ok(matches('/conferences/neurips-2026/'));
+  assert.ok(!matches('/conferences/neurips-2026/extra'));
+});
+
 test('Zotero returns the browser to an address the app answers', async () => {
   const matches = await spaMatcher();
   assert.ok(matches('/zotero/callback'));

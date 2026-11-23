@@ -5,6 +5,7 @@ import {
   accessStatusForPaper,
   reviewTagForPaper,
   accessTagForPaper,
+  acceptedConferenceText,
 } from './paper-status.ts';
 import { mapOpenAlexWork } from './open-alex-work.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
@@ -238,4 +239,11 @@ test('a peer-reviewed paper carries no review tag', () => {
   assert.ok(preprint && preprint.key === 'preprint', 'la salvedad sí se señala');
   assert.equal(reviewStatusForPaper({ journal: 'Nature' }), 'verified',
     'el hecho del registro no cambia, sólo deja de pintarse');
+});
+
+test('an accepted conference reads with its year, without one when unknown, and not at all when unrecorded', () => {
+  assert.equal(acceptedConferenceText({ acceptedConference: { id: 'neurips', label: 'NeurIPS', year: 2026, evidence: 'openreview' } }), 'Accepted at NeurIPS 2026');
+  assert.equal(acceptedConferenceText({ acceptedConference: { id: 'neurips', label: 'NeurIPS', evidence: 'arxiv-comment' } }), 'Accepted at NeurIPS');
+  assert.equal(acceptedConferenceText({}), null);
+  assert.equal(acceptedConferenceText(null), null);
 });

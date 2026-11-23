@@ -1648,7 +1648,7 @@ test('opening a paper by DOI asks for the work by DOI, which is free, and a 404 
   const path = new URL(requested[0]).pathname;
   assert.ok(path.startsWith('/works/doi:'), path);
   const id = path.slice('/works/doi:'.length);
-  assert.match(id, /^[A-Za-z0-9._%/-]+$/);
+  assert.match(id, /^[A-Za-z0-9._:%|,/-]+$/);
   assert.equal(decodeURIComponent(id), sici);
 
   const notFound = Object.assign(new Error('OpenAlex API error: 404'), { status: 404 });

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { PostHog } from 'posthog-node';
 import type { WorkerEnv } from './env.ts';
-import { sanitizeExceptionProperties } from '../src/utils/error-telemetry.ts';
+import { sanitizeExceptionProperties, translationFailureCode } from '../src/utils/error-telemetry.ts';
 
 type Operation = 'http' | 'rewrite' | 'schedule' | 'durable_object' | 'workflow';
 interface Invocation { client: PostHog | null; waitUntil(promise: Promise<unknown>): void; reported: boolean }
@@ -22,7 +22,7 @@ function errorClient(token: string | undefined) {
     disableGeoip: true,
     before_send: event => {
       const properties = event.event === '$exception' && event.properties ? sanitizeExceptionProperties(event.properties) : null;
-      return properties && { ...event, properties: { ...properties, $process_person_profile: false } };
+      return properties && { ...event, properties: { ...properties, $process_person_profile: false, $geoip_disable: true } };
     },
   });
   return client;
@@ -56,6 +56,11 @@ export function captureWorkerException(error: unknown, operation: Operation = 'h
 
 export function captureEmailSendLimit() {
   report(new Error('Email send limit reached'), { operation: 'schedule', email_limit: 'reached' });
+}
+
+export function captureWorkerTranslationFailure(code: string, status: number) {
+  if (status < 500) return;
+  report(new Error(), { translation_failure: translationFailureCode(code) ?? 'AI_UNAVAILABLE' });
 }
 
 export function captureWorkerResponseFailure(status: number) {

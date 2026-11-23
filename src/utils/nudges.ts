@@ -157,10 +157,13 @@ export function syncLocalPrivacyNotice({ uid, storage, saveToAccount }: { uid: s
  * could not be told apart from someone who read the old policy. An account
  * created at or after `effectiveAt` (an ISO instant: when the change went
  * live) started under the policy as it is and has nothing to be told; one whose
- * creation time is unknown is told.
+ * creation time is unknown is told. Nobody is told before `shownFrom` (an ISO
+ * instant, read against `now`, the reader's clock in milliseconds): the notice
+ * waits for it, whatever the effective instant says.
  */
-export function privacyNoticeOwed({ version, effectiveAt, acknowledged, accountCreated, signedIn }: { version: string; effectiveAt: string; acknowledged: string | null; accountCreated?: string | null; signedIn: boolean }) {
+export function privacyNoticeOwed({ version, effectiveAt, shownFrom, now = Date.now(), acknowledged, accountCreated, signedIn }: { version: string; effectiveAt: string; shownFrom?: string; now?: number; acknowledged: string | null; accountCreated?: string | null; signedIn: boolean }) {
   if (!signedIn || policyVersionCovers(PRIVACY_NOTICE_BASELINE_VERSION, version)) return false;
+  if (shownFrom && now < new Date(shownFrom).getTime()) return false;
   // Release 0.4 replaces this rule with material-change notices, capped at one per account per day.
   if (policyVersionCovers(acknowledged, PRIVACY_NOTICE_BASELINE_VERSION)) return false;
   const created = accountCreated ? new Date(accountCreated) : null;
@@ -249,11 +252,13 @@ export function accountAnswerPending({ status, uid, failedFor }: { status: 'sett
  * failed or when it belongs to the previous account, nothing is owed, so the
  * dialog never opens on a guess and then has to be taken back.
  */
-export function privacyNoticeStatus({ user, signedIn, version, effectiveAt, account, storage }: { user: { uid: string; metadata?: { creationTime?: string | null } } | null | undefined; signedIn: boolean; version: string; effectiveAt: string; account: AccountNoticeRecord | null; storage?: NudgeStorage | null }): 'settled' | 'ask-account' | 'owed' {
+export function privacyNoticeStatus({ user, signedIn, version, effectiveAt, shownFrom, now, account, storage }: { user: { uid: string; metadata?: { creationTime?: string | null } } | null | undefined; signedIn: boolean; version: string; effectiveAt: string; shownFrom?: string; now?: number; account: AccountNoticeRecord | null; storage?: NudgeStorage | null }): 'settled' | 'ask-account' | 'owed' {
   if (!user) return 'settled';
   const told = (acknowledged: string | null) => !privacyNoticeOwed({
     version,
     effectiveAt,
+    shownFrom,
+    now,
     acknowledged,
     accountCreated: user.metadata?.creationTime,
     signedIn,

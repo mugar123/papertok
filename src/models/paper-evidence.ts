@@ -1,4 +1,4 @@
-import type { Paper } from './paper.ts';
+import type { ConferenceMark, Paper } from './paper.ts';
 
 // Prefer the narrower label when a record carries both review types.
 const STUDY_TYPES = ['practice-guideline', 'meta-analysis', 'systematic-review', 'randomized-controlled-trial'] as const;
@@ -29,11 +29,14 @@ export function readStoredStudyType(copy: { studyType?: unknown; studyTypes?: un
   return studyTypeFromIds([copy.studyType, ...labels]);
 }
 
-export function storedPaperEvidence(paper: Pick<Partial<Paper>, 'studyType' | 'trialRegistration' | 'trialRegistrationSource'>) {
+export function storedPaperEvidence(paper: Pick<Partial<Paper>, 'studyType' | 'trialRegistration' | 'trialRegistrationSource' | 'acceptedConference' | 'corpusUpdatedAt'>) {
   const studyType = readStoredStudyType(paper);
+  const { corpusUpdatedAt } = paper;
   const trialRegistration = readTrialRegistration(paper.trialRegistration);
   return {
     ...(studyType && { studyType }),
+    ...(corpusUpdatedAt !== undefined && { corpusUpdatedAt }),
+    ...(paper.acceptedConference && { acceptedConference: paper.acceptedConference }),
     ...(trialRegistration && { trialRegistration }),
     ...(trialRegistration && paper.trialRegistrationSource === 'pubmed-secondary-source'
       && { trialRegistrationSource: paper.trialRegistrationSource }),
@@ -42,6 +45,23 @@ export function storedPaperEvidence(paper: Pick<Partial<Paper>, 'studyType' | 't
 
 function firstTrialId(first: string | undefined, second: string | undefined) {
   return first && second && first > second ? second : first ?? second;
+}
+
+export function mergeConferenceMarks(first?: ConferenceMark, second?: ConferenceMark, openReviewVenueId?: string): ConferenceMark | undefined {
+  if (!first || !second) return first ?? second;
+  const preferred = second.evidence === 'openreview' ? second : first;
+  if (first.id !== second.id) return first.evidence === second.evidence ? undefined : preferred;
+  let year = first.year ?? second.year;
+  if (first.year && second.year && first.year !== second.year) year = undefined;
+  // After a year conflict the stored mark is undated. The original OpenReview
+  // venue ID still distinguishes its edition when arXiv repeats its comment.
+  if (year && preferred.evidence === 'openreview' && openReviewVenueId && openReviewVenueId.split('/')[1] !== String(year)) year = undefined;
+  return { id: preferred.id, label: preferred.label, evidence: preferred.evidence, ...(year && { year }) };
+}
+
+function sameConference(first?: ConferenceMark, second?: ConferenceMark) {
+  return first === second || (!!first && !!second && first.id === second.id && first.label === second.label
+    && first.year === second.year && first.evidence === second.evidence);
 }
 
 export function mergedPaperEvidence(paper: Partial<Paper>, other: Partial<Paper> | null | undefined) {
@@ -55,32 +75,47 @@ export function mergedPaperEvidence(paper: Partial<Paper>, other: Partial<Paper>
   );
   const trialRegistration = indexed ?? firstTrialId(first, second);
   const trialRegistrationSource = indexed ? 'pubmed-secondary-source' as const : undefined;
-  return { studyType, trialRegistration, trialRegistrationSource };
+  const stamp = paper.corpusUpdatedAt ?? -1;
+  const otherStamp = other?.corpusUpdatedAt ?? -1;
+  const corpusUpdatedAt = Math.max(stamp, otherStamp);
+  let acceptedConference = paper.acceptedConference;
+  if (otherStamp > stamp) acceptedConference = other?.acceptedConference;
+  else if (stamp === otherStamp && other) {
+    if (stamp < 0) acceptedConference = mergeConferenceMarks(acceptedConference, other.acceptedConference, other.openReviewVenueId ?? paper.openReviewVenueId);
+    else if (!sameConference(acceptedConference, other.acceptedConference)) acceptedConference = undefined;
+  }
+  return { studyType, trialRegistration, trialRegistrationSource, acceptedConference,
+    ...(corpusUpdatedAt >= 0 && { corpusUpdatedAt }) };
 }
 
 export function withPaperEvidenceOf<T extends Partial<Paper>>(paper: T, other: Partial<Paper> | null | undefined): T {
-  const { studyType, trialRegistration, trialRegistrationSource } = mergedPaperEvidence(paper, other);
-  return studyType === paper.studyType && trialRegistration === paper.trialRegistration
-    && trialRegistrationSource === paper.trialRegistrationSource
-    ? paper
-    : { ...paper, studyType, trialRegistration, trialRegistrationSource };
+  const evidence = mergedPaperEvidence(paper, other);
+  const { studyType, trialRegistration, trialRegistrationSource, acceptedConference, corpusUpdatedAt } = evidence;
+  if (studyType === paper.studyType && trialRegistration === paper.trialRegistration
+    && trialRegistrationSource === paper.trialRegistrationSource && sameConference(acceptedConference, paper.acceptedConference)
+    && corpusUpdatedAt === paper.corpusUpdatedAt) return paper;
+  const merged = { ...paper, ...evidence };
+  if (!acceptedConference) delete merged.acceptedConference;
+  return merged;
 }
 
 /** Keep evidence from later batches even when their duplicate cards are dropped. */
 export function mergeFeedEvidence(shown: Paper[], incoming: Paper[]) {
-  const evidence = new Map<string, Paper>();
+  if (!shown.length || !incoming.length) return shown;
+  const records = new Map<string, Paper>();
   for (const paper of incoming) {
-    if (!paper.studyType && !paper.trialRegistration) continue;
-    evidence.set(paper.id, withPaperEvidenceOf(paper, evidence.get(paper.id)));
+    if (!paper.studyType && !paper.trialRegistration && !paper.acceptedConference && paper.corpusUpdatedAt === undefined) continue;
+    const other = records.get(paper.id);
+    records.set(paper.id, other ? withPaperEvidenceOf(paper, other) : paper);
   }
-  if (!evidence.size) return shown;
-  let changed = false;
-  const merged = shown.map(paper => {
-    const record = evidence.get(paper.id);
-    if (!record) return paper;
+  let merged = shown;
+  for (const [index, paper] of shown.entries()) {
+    const record = records.get(paper.id);
+    if (!record) continue;
     const next = withPaperEvidenceOf(paper, record);
-    changed ||= next !== paper;
-    return next;
-  });
-  return changed ? merged : shown;
+    if (next === paper) continue;
+    if (merged === shown) merged = shown.slice();
+    merged[index] = next;
+  }
+  return merged;
 }

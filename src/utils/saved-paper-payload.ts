@@ -87,6 +87,10 @@ export function buildSavedPaperPayload<T>(paper: Partial<Paper> | null | undefin
   if (classification.primaryTopic) payload.primaryTopic = classification.primaryTopic;
   payload.classificationVersion = classification.classificationVersion;
 
+  const corpusUpdatedAt = paper?.corpusUpdatedAt;
+  if (corpusUpdatedAt !== undefined) payload.corpusUpdatedAt = corpusUpdatedAt;
+  if (paper?.acceptedConference) payload.acceptedConference = paper.acceptedConference;
+
   const published = text(paper?.published, 300);
   if (published) payload.published = published;
 

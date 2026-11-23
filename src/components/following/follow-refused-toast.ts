@@ -1,4 +1,5 @@
 import type { FollowInput } from '../../utils/following.ts';
+import { getFollowDisplayName } from '../../utils/follow-display-name.ts';
 import type { ActionStart } from '../ui/toast.ts';
 import { afterOverlaysSince, toastError } from '../ui/toast.ts';
 import { createFollowEntity, FollowsUnavailableError, JournalFollowLimitError, MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
@@ -61,7 +62,8 @@ export function followRefusal(error: unknown, { name, following, openSettings }:
  * in that order, so the refusal does too.
  */
 export function followName(entity: FollowInput) {
-  return createFollowEntity(entity)?.displayName || 'this';
+  const follow = createFollowEntity(entity);
+  return follow ? getFollowDisplayName(follow) : 'this';
 }
 
 /**

@@ -774,6 +774,21 @@ export function curatedIds(profile: InteractionProfile | null | undefined, name:
   return set ? [...set.order] : [];
 }
 
+/** The interactions behind the plan's examples, captured before another like or save changes them. */
+export function positiveExampleKinds(profile: InteractionProfile, positiveIds: string[]) {
+  const liked = curatedSet(profile, 'liked')!.members;
+  const saved = curatedSet(profile, 'saved')!.members;
+  const kindsById = new Map<string, NonNullable<Paper['_semanticExampleKinds']>>();
+  for (const id of positiveIds) {
+    const kinds: Array<'liked' | 'saved' | 'read'> = [];
+    if (liked.has(id)) kinds.push('liked');
+    if (saved.has(id)) kinds.push('saved');
+    if (!kinds.length) kinds.push('read');
+    kindsById.set(id, kinds);
+  }
+  return kindsById;
+}
+
 /**
  * True when the paper is already known to the profile and must stay out of the
  * feed. Exact for everything inside the caps; beyond them the Bloom filter can

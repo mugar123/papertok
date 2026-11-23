@@ -92,8 +92,8 @@ export function mapOpenReviewNote(note: OpenReviewNote, requestedCategories: str
   if (!title || !openReviewId) return null;
 
   const venue = text(content.venue) || text(note?.domain);
-  const venueId = text(content.venueid) || text(note?.domain);
-  const publication = publicationDetails(venue, venueId);
+  const venueId = text(content.venueid);
+  const publication = publicationDetails(venue, venueId || text(note?.domain));
   const fallbackUrl = `https://openreview.net/forum?id=${encodeURIComponent(openReviewId)}`;
   const pdfUrl = absoluteOpenReviewUrl(content.pdf, '');
   const arxivId = extractArxivId(content, pdfUrl);
