@@ -73,6 +73,7 @@ const PDFViewer = lazyWithPreload(() => import('./components/pdf/pdf-viewer.tsx'
 const SaveToListModal = lazyWithPreload(() => import('./components/lists/save-to-list-modal.tsx'))
 const SearchPage = lazyWithPreload(() => import('./components/search/search-page.tsx'))
 const ConferencePage = lazyWithPreload(() => import('./components/conferences/conference-page.tsx'))
+const ConferencePapersPage = lazyWithPreload(() => import('./components/conferences/conference-papers-page.tsx'))
 const EntityExplorer = lazyWithPreload(() => import('./components/explorer/entity-explorer.tsx'))
 const FollowingFeedPage = lazyWithPreload(() => import('./components/following/following-feed-page.tsx'))
 const RecentFeedPage = lazyWithPreload(() => import('./components/recent/recent-feed-page.tsx'))
@@ -594,6 +595,14 @@ function AppContent() {
           />
           <Route path="/conferences" element={<PageTransition><ConferencePage /></PageTransition>} />
           <Route path="/conferences/:editionId" element={<PageTransition><ConferencePage /></PageTransition>} />
+          <Route
+            path="/conferences/:editionId/papers"
+            element={
+              <PageTransition>
+                <ConferencePapersPage appChrome={showNavbar} onAuthRequired={requestAuthentication} onOpenPdf={openPdf} onSaveToList={user ? openSaveModal : requestAuthentication} />
+              </PageTransition>
+            }
+          />
           <Route
             path="/explorer/:type/:id"
             element={

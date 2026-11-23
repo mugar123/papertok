@@ -20,6 +20,7 @@ export interface PaperCardProps {
   onUnmarkAsRead?: (paper: Paper | string) => void | Promise<void>;
   trackViewTime?: (paper: Paper, seconds: number, surface?: string) => void | Promise<void>;
   trackSkip?: (paper: Paper, surface?: string) => void | Promise<void>;
+  trackImpressions?: boolean;
   onOpenPdf?: (paper: Paper, surface: string | undefined, menu: ReaderMenu) => void | Promise<void>;
   /** `surface` overrides the one a quick-save handler reports its saves under. */
   onSaveToList?: (paper: Paper, surface?: string) => void | Promise<void>;
@@ -33,6 +34,7 @@ export interface PaperCardProps {
   getInteractionState?: (paper: Paper) => { isLiked?: boolean; isSaved?: boolean; isRead?: boolean };
   hideScrollHint?: boolean;
   titleAs?: 'h1' | 'h2';
+  titlePath?: string | null;
   publicMode?: boolean;
   onAuthRequired?: (reason: string) => void;
   translationEnabled?: boolean;
@@ -426,6 +428,7 @@ const PaperCard = memo(function PaperCard({
   onUnmarkAsRead = () => {},
   trackViewTime = () => {},
   trackSkip = () => {},
+  trackImpressions = true,
   onOpenPdf = () => {},
   onSaveToList = () => {},
   onPickList = onSaveToList,
@@ -434,6 +437,7 @@ const PaperCard = memo(function PaperCard({
   // The title's level: an h2 wherever the card is one of many, the page's h1
   // where it is the page (PublicPaperPage).
   titleAs = 'h2',
+  titlePath,
   publicMode = false,
   onAuthRequired,
   translationEnabled = true,
@@ -664,20 +668,20 @@ const PaperCard = memo(function PaperCard({
         void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id });
       }
     };
-    const visibleTime = trackVisibleTime(document, reportViewTime);
+    const visibleTime = trackImpressions ? trackVisibleTime(document, reportViewTime) : null;
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
         setIsCardVisible(entry.isIntersecting && entry.intersectionRatio >= 0.15);
         if (entry.isIntersecting && entry.intersectionRatio >= 0.15) setFiguresLit(true);
         else if (!entry.isIntersecting) setFiguresLit(false);
-        if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+        if (trackImpressions && entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (analyticsViewedPaperRef.current !== paperViewKey) {
             analyticsViewedPaperRef.current = paperViewKey;
             void trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id });
           }
         }
-        visibleTime.setInView(entry.isIntersecting && entry.intersectionRatio > 0.5);
+        visibleTime?.setInView(entry.isIntersecting && entry.intersectionRatio > 0.5);
       },
       { threshold: [0, 0.15, 0.5] }
     );
@@ -685,9 +689,9 @@ const PaperCard = memo(function PaperCard({
 
     return () => {
       observer.disconnect();
-      visibleTime.stop();
+      visibleTime?.stop();
     };
-  }, [analyticsSurface, paper, paperViewKey, position, selectedRelatedPaper, showRelated, trackEvent, trackViewTime, trackSkip]);
+  }, [analyticsSurface, paper, paperViewKey, position, selectedRelatedPaper, showRelated, trackEvent, trackViewTime, trackSkip, trackImpressions]);
 
   useEffect(() => {
     let active = true;
@@ -2126,7 +2130,13 @@ const PaperCard = memo(function PaperCard({
 
         {/* On a phone the title opens the abstract sheet, which shows it
             whole; only when there is an abstract to show under it. */}
-        {titleOpensSheet ? (
+        {titlePath ? (
+          <TitleTag className="pc-title pc-title--opens" lang={sourceLanguage ?? 'en'}>
+            <Link className="pc-paper-title-link" to={titlePath}>
+              <span className="pc-title-text" dir="auto"><ScientificText>{paper.title}</ScientificText></span>
+            </Link>
+          </TitleTag>
+        ) : titleOpensSheet ? (
           <TitleTag className="pc-title pc-title--opens" lang={sourceLanguage ?? 'en'}>
             <button
               type="button"
@@ -2727,6 +2737,7 @@ const PaperCard = memo(function PaperCard({
                 onUnmarkAsRead={onUnmarkAsRead}
                 trackViewTime={trackViewTime}
                 trackSkip={trackSkip}
+                trackImpressions={trackImpressions}
                 onOpenPdf={onOpenPdf}
                 onSaveToList={saveRelatedPaper}
                 getInteractionState={getInteractionState}

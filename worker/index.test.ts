@@ -240,8 +240,8 @@ test('proxies OpenReview forum papers while excluding imported public records', 
     }), { headers: { 'content-type': 'application/json' } });
   }, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/openreview?q=machine%20learning&limit=5&sort=recent',
-    { headers: { origin: 'https://mugar123.github.io' } },
-  ), {}));
+    { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+  ), openReviewRouteEnv()));
 
   assert.equal(response.status, 200);
   assert.match(upstreamUrl, /api2\.openreview\.net\/notes\/search/);
@@ -260,6 +260,36 @@ test('proxies OpenReview forum papers while excluding imported public records', 
 const OPENREVIEW_ACCOUNT = { OPENREVIEW_USERNAME: 'route-reader@papertok.test', OPENREVIEW_PASSWORD: 'not-a-real-password' };
 const openReviewToken = () => new Response(JSON.stringify({ token: 'token-1' }), { headers: { 'content-type': 'application/json' } });
 
+function openReviewRouteEnv(env: WorkerEnv = {}): WorkerEnv {
+  return { PDF_RATE_LIMIT_SECRET: CALLER_SECRET, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, ...env };
+}
+
+test('OpenReview caller and shared minute ceilings stop search and ID cache misses', async context => {
+  context.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 23, 2, 30) });
+  const env = openReviewRouteEnv(OPENREVIEW_ACCOUNT);
+  const openReview = (query: string, address: number) => reportApi.fetch(new Request(
+    `https://papertok-report-api.example/sources/openreview?${query}`,
+    { headers: { origin: 'https://mugar123.github.io', 'cf-connecting-ip': `192.0.2.${address}` } },
+  ), env);
+  let upstreamCalls = 0;
+  await withWorkerFetchMock(async () => {
+    upstreamCalls++;
+    return Response.json({ notes: [], count: 0 });
+  }, async () => {
+    for (let caller = 1; caller <= 5; caller++) {
+      for (let miss = 0; miss < 12; miss++) {
+        assert.equal((await openReview(`q=quota-${caller}-${miss}`, caller)).status, 200);
+      }
+      if (caller === 1) assert.equal((await openReview('id=blockedForum', caller)).status, 429);
+    }
+    const refused = await openReview('id=sharedForum', 6);
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get('retry-after'), '60');
+    assert.deepEqual(await refused.json(), { code: 'PROVIDER_RATE_LIMITED' });
+  });
+  assert.equal(upstreamCalls, 60);
+});
+
 test('answers one OpenReview submission by its forum id', async () => {
   let upstreamUrl = '';
   const response = await withWorkerFetchMock(async url => {
@@ -275,8 +305,8 @@ test('answers one OpenReview submission by its forum id', async () => {
     }), { headers: { 'content-type': 'application/json' } });
   }, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/openreview?id=5pShDP8LSm',
-    { headers: { origin: 'https://mugar123.github.io' } },
-  ), OPENREVIEW_ACCOUNT));
+    { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+  ), openReviewRouteEnv(OPENREVIEW_ACCOUNT)));
 
   assert.equal(response.status, 200);
   assert.equal(upstreamUrl, 'https://api2.openreview.net/notes?id=5pShDP8LSm');
@@ -294,8 +324,8 @@ test('an OpenReview id that names no submission answers an empty list, and a mal
       return upstream();
     }, () => reportApi.fetch(new Request(
       `https://papertok-report-api.example/sources/openreview?${query}`,
-      { headers: { origin: 'https://mugar123.github.io' } },
-    ), env)).then(async response => ({ status: response.status, body: await response.json<{ notes?: unknown[]; upstreamStatus?: number; code?: string }>(), asked }));
+      { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+    ), openReviewRouteEnv(env))).then(async response => ({ status: response.status, body: await response.json<{ notes?: unknown[]; upstreamStatus?: number; code?: string }>(), asked }));
   };
   const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -357,8 +387,8 @@ test('orders OpenReview by date itself because api2 accepts the sort and ignores
 
   const recent = await withWorkerFetchMock(fetchMock, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/openreview?q=neuroscience&limit=5&sort=recent',
-    { headers: { origin: 'https://mugar123.github.io' } },
-  ), {}));
+    { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+  ), openReviewRouteEnv()));
 
   assert.equal(recent.status, 200);
   assert.equal(upstream[0].searchParams.has('sort'), false, 'a sort api2 ignores is not worth sending');
@@ -366,8 +396,8 @@ test('orders OpenReview by date itself because api2 accepts the sort and ignores
 
   const relevance = await withWorkerFetchMock(fetchMock, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/openreview?q=neuroscience&limit=5',
-    { headers: { origin: 'https://mugar123.github.io' } },
-  ), {}));
+    { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+  ), openReviewRouteEnv()));
 
   assert.equal(relevance.status, 200);
   assert.deepEqual((await relevance.json<{ notes: Array<{ id: unknown }> }>()).notes.map(note => note.id), ['older', 'newest', 'published-late'], 'relevance keeps the upstream order');
@@ -1054,9 +1084,10 @@ test('canonical source cache keys ignore unknown query parameters', async () => 
   };
   try {
     const base = 'https://papertok-report-api.example/sources/openreview?q=security&limit=4';
-    const options = { headers: { origin: 'https://mugar123.github.io' } };
-    const first = await reportApi.fetch(new Request(`${base}&nonce=one`, options), {});
-    const second = await reportApi.fetch(new Request(`${base}&nonce=two`, options), {});
+    const options = { headers: { origin: 'https://mugar123.github.io', ...CALLER } };
+    const env = openReviewRouteEnv();
+    const first = await reportApi.fetch(new Request(`${base}&nonce=one`, options), env);
+    const second = await reportApi.fetch(new Request(`${base}&nonce=two`, options), env);
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);
     assert.equal(upstreamCalls, 1);
@@ -1086,9 +1117,10 @@ test('duplicate cache parameters cannot create cache variants for one upstream r
   };
   try {
     const base = 'https://papertok-report-api.example/sources/openreview?q=security&limit=4';
-    const options = { headers: { origin: 'https://mugar123.github.io' } };
-    const first = await reportApi.fetch(new Request(base, options), {});
-    const second = await reportApi.fetch(new Request(`${base}&limit=nonce`, options), {});
+    const options = { headers: { origin: 'https://mugar123.github.io', ...CALLER } };
+    const env = openReviewRouteEnv();
+    const first = await reportApi.fetch(new Request(base, options), env);
+    const second = await reportApi.fetch(new Request(`${base}&limit=nonce`, options), env);
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);
     assert.equal(upstreamCalls, 1);
@@ -1479,7 +1511,7 @@ const SOURCE_ROUTES: Array<[string, WorkerEnv]> = [
   ['/sources/nasa?q=malaria', {}],
   ['/sources/physics?q=malaria', { NASA_ADS_API_TOKEN: 'ads-test-token' }],
   ['/sources/scopus?terms=physics', SCOPUS_EGRESS],
-  ['/sources/openreview?q=malaria', {}],
+  ['/sources/openreview?q=malaria', openReviewRouteEnv()],
   ['/sources/huggingface?q=malaria', {}],
   ['/enrich/icite?pmids=123', {}],
   ['/resources/huggingface?arxiv_id=2607.12345', {}],
@@ -1524,7 +1556,7 @@ for (const [route, extraEnv] of SOURCE_ROUTES) {
     try {
       await withCachedIdentity(() => reportApi.fetch(new Request(
         `https://papertok-report-api.example${route}`,
-        { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+        { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token', ...CALLER } },
       ), { ...AUTHENTICATED_ENV, ...extraEnv }));
     } finally {
       globalThis.fetch = originalFetch;
@@ -1856,8 +1888,8 @@ test('a limit the route clamps cannot buy a second cache entry', async () => {
         for (const limit of [11, 12]) {
           const response = await reportApi.fetch(new Request(
             `https://papertok-report-api.example/sources/openreview?q=security&limit=${limit}`,
-            { headers: BROWSER },
-          ), {});
+            { headers: { ...BROWSER, ...CALLER } },
+          ), openReviewRouteEnv());
           assert.equal(response.status, 200);
         }
       });
@@ -3582,8 +3614,8 @@ test('names the upstream status on every source so a 400 of ours is not a 502 of
     }),
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/sources/openreview?q=neuroscience',
-      { headers: { origin: 'https://mugar123.github.io' } },
-    ), {}),
+      { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+    ), openReviewRouteEnv()),
   );
 
   assert.equal(response.status, 502);
@@ -3598,8 +3630,8 @@ test('names a timed-out upstream instead of dressing it as a generic failure', a
     async () => { throw new DOMException('aborted due to timeout', 'TimeoutError'); },
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/sources/openreview?q=neuroscience',
-      { headers: { origin: 'https://mugar123.github.io' } },
-    ), {}),
+      { headers: { origin: 'https://mugar123.github.io', ...CALLER } },
+    ), openReviewRouteEnv()),
   );
 
   assert.equal(response.status, 502);

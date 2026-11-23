@@ -37,6 +37,7 @@ import { handleOpenAccess } from './open-access.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { PaperStoreError } from './paper-store.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
+import { handleConferenceRequest } from './conference-routes.ts';
 import { FeedTimings } from './feed-timings.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
 import { handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
@@ -496,6 +497,10 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       }
     }
     return response;
+  }
+  if (url.pathname.startsWith('/conferences/')) {
+    if (origin && !allowedOrigins(env).has(origin)) return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403);
+    return handleConferenceRequest(request, env, origin, corsHeaders(origin, env));
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
   if (url.pathname === '/health') {

@@ -53,8 +53,11 @@ type NamedFeed = { id: string; name: string }
 export function routeLabel(pathname: string, feeds: readonly NamedFeed[] = []) {
   const normalized = normalize(pathname)
   if (isConferencePath(normalized)) {
-    const id = matchRoutes([{ path: '/conferences/:editionId' }], normalized)?.[0]?.params.editionId
-    return id ? findConferenceEdition(id)?.name ?? 'Conference not found' : 'Conference calendar'
+    const match = matchRoutes([{ path: '/conferences/:editionId/:tab?' }], normalized)?.[0]
+    const id = match?.params.editionId
+    if (!id) return 'Conference calendar'
+    const edition = findConferenceEdition(id)
+    return edition ? edition.name + (match.params.tab ? ' accepted papers' : '') : 'Conference not found'
   }
   const feedId = customFeedIdFromPath(normalized)
   if (feedId !== null) return feeds.find(feed => feed.id === feedId)?.name ?? null

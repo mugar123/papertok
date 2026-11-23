@@ -10,7 +10,7 @@ export interface UpstreamError extends Error {
 
 export interface MinuteCeiling {
   namespace: string;
-  variable: keyof WorkerEnv;
+  variable?: keyof WorkerEnv;
   fallback: number;
   paced?: boolean;
 }
@@ -249,6 +249,7 @@ const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> =
   // the anonymous 3 req/s it once mirrored, and it has never been the binding
   // limit (151/151 reservations accepted, 2026-09-01).
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
+  '/sources/openreview': { namespace: 'openreview', fallback: 60 },
   '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
   '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
   '/enrich/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
@@ -362,7 +363,7 @@ export function getSafeLimit(value: unknown, fallback = 8, max = 10) {
 // release time credits the next one whenever the request straddled the boundary.
 export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: WorkerEnv, origin: string): Promise<QuotaGate> {
   const minute = new Date().toISOString().slice(0, 16);
-  const limit = boundedLimit(env[ceiling.variable], ceiling.fallback, 100_000);
+  const limit = ceiling.variable ? boundedLimit(env[ceiling.variable], ceiling.fallback, 100_000) : ceiling.fallback;
   const ledgerRequest = {
     periodKey: `${ceiling.namespace}:${minute}`,
     subject: `${ceiling.namespace}:shared`,

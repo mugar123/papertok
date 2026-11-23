@@ -3,6 +3,7 @@ import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
 import { fetchWithDeadline, SOURCE_UPSTREAM_TIMEOUT_MS } from './provider-runtime.ts';
+import { readBoundedJson } from './bounded-body.ts';
 
 /**
  * OpenReview by id, signed in.
@@ -29,15 +30,27 @@ import { fetchWithDeadline, SOURCE_UPSTREAM_TIMEOUT_MS } from './provider-runtim
  */
 const OPENREVIEW_API = 'https://api2.openreview.net';
 const HEADERS = { accept: 'application/json', 'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)' };
+
+export function readOpenReviewJson<T>(response: Response, maximumBytes: number) {
+  return readBoundedJson<T>(response, maximumBytes, {
+    tooLarge: () => new Error('OpenReview response exceeds its size limit'),
+    invalid: () => new Error('OpenReview returned invalid JSON'),
+  });
+}
+
+export function openReviewSearchUrl(term: string, limit: number, offset: number) {
+  const url = new URL(`${OPENREVIEW_API}/notes/search`);
+  url.search = new URLSearchParams({ term, source: 'forum', limit: String(limit), offset: String(offset) }).toString();
+  return url;
+}
 // OpenReview's client documents a token as lasting an hour. A token is
 // replaced before that rather than on a refusal, because what an expired one
 // is answered with was not observed: a 401 is handled below, a 403 would look
 // like the bot check.
 const TOKEN_LIFETIME_MS = 50 * 60_000;
-// How long a sign-in OpenReview refused is not tried again. `/sources/openreview`
-// has no ceiling, so without this a wrong password would send the account's
-// credentials to OpenReview once per request, whoever was asking.
+// Keep a failing sign-in from using a new upstream call for each lookup.
 const REFUSED_SIGN_IN_MS = 60_000;
+export const OPENREVIEW_MAX_BACKOFF_MS = 5 * REFUSED_SIGN_IN_MS;
 
 interface Account { username: string; password: string }
 
@@ -77,18 +90,18 @@ function refusalReason(body: { name?: unknown; message?: unknown } | null, accou
   return words ? ` (${words})` : '';
 }
 
-async function signIn(account: Account, signal: AbortSignal, timeoutMs: number) {
+async function signIn(account: Account, signal: AbortSignal, timeoutMs: number, request: typeof fetchWithDeadline) {
   const refused = refusedSignIns.get(account.username);
   if (refused && refused.until > Date.now()) throw refused.error;
 
-  const response = await fetchWithDeadline(`${OPENREVIEW_API}/login`, {
+  const response = await request(`${OPENREVIEW_API}/login`, {
     method: 'POST',
     headers: { ...HEADERS, 'content-type': 'application/json' },
     body: JSON.stringify({ id: account.username, password: account.password }),
     signal,
   }, timeoutMs);
   // A 2xx that is not JSON is a refusal like any other, and is remembered.
-  const body = await response.json<{ token?: unknown; mfaPending?: unknown; name?: unknown; message?: unknown }>().catch(() => null);
+  const body = await readOpenReviewJson<{ token?: unknown; mfaPending?: unknown; name?: unknown; message?: unknown }>(response, 16 * 1024).catch(() => null);
   if (!response.ok || typeof body?.token !== 'string' || !body.token) {
     const error = signInFailure(
       !response.ok ? `answered ${response.status}${refusalReason(body, account)}`
@@ -96,7 +109,7 @@ async function signIn(account: Account, signal: AbortSignal, timeoutMs: number) 
           : 'answered no token',
     );
     const askedToWaitMs = (Number(response.headers.get('retry-after')) || 0) * 1000;
-    refusedSignIns.set(account.username, { until: Date.now() + Math.max(REFUSED_SIGN_IN_MS, askedToWaitMs), error });
+    refusedSignIns.set(account.username, { until: Date.now() + Math.min(OPENREVIEW_MAX_BACKOFF_MS, Math.max(REFUSED_SIGN_IN_MS, askedToWaitMs)), error });
     throw error;
   }
   refusedSignIns.delete(account.username);
@@ -105,28 +118,53 @@ async function signIn(account: Account, signal: AbortSignal, timeoutMs: number) 
 }
 
 export function isOpenReviewSubmission(note: OpenReviewNote) {
-  const domain = String(note?.domain || '').toLowerCase();
+  const domain = typeof note?.domain === 'string' ? note.domain.toLowerCase() : '';
   return ![
     'dblp.org',
     'openreview.net/public_article',
     'openreview.net/arxiv',
     'openreview.net/orcid',
+    'openreview.net/archive',
   ].some(prefix => domain.startsWith(prefix));
 }
 
-type ReadableNote = OpenReviewNote & { readers?: unknown };
+type ReadableNote = OpenReviewNote & { readers?: unknown; ddate?: unknown };
+type UnavailableNoteReason = 'deleted' | 'restricted';
 
-const forEveryone = (readers: unknown) => !Array.isArray(readers) || readers.includes('everyone');
+function validReaders(readers: unknown): readers is string[] {
+  return Array.isArray(readers) && readers.length > 0
+    && readers.every(reader => typeof reader === 'string' && reader.trim().length > 0);
+}
+
+function isDeleted(note: ReadableNote, now: number) {
+  return typeof note.ddate === 'number' && Number.isSafeInteger(note.ddate) && note.ddate > 0 && note.ddate <= now;
+}
+
+export function publicOpenReviewSearchNote(note: ReadableNote, now: number) {
+  return isDeleted(note, now) ? null : publicNote(note);
+}
+
+function openReviewUnavailable(note: ReadableNote): UnavailableNoteReason | null {
+  if (isDeleted(note, Date.now())) return 'deleted';
+  if (validReaders(note.readers) && !note.readers.includes('everyone')) return 'restricted';
+  return null;
+}
+
+const forEveryone = (readers: unknown) => readers === undefined || (validReaders(readers) && readers.includes('everyone'));
 
 // Only what OpenReview shows everyone. A note lists who may read it in
 // `readers`, and so can each content field (the authors of a submission under
 // double-blind review are readable by its venue and its authors only). An
 // anonymous caller is never sent the rest; a signed-in one may be.
 function publicNote(note: ReadableNote): OpenReviewNote | null {
-  if (!forEveryone(note.readers)) return null;
-  const content = Object.fromEntries(Object.entries(note.content || {})
+  if (!note || typeof note !== 'object' || Array.isArray(note) || !forEveryone(note.readers)) return null;
+  if (note.content !== undefined && (!note.content || typeof note.content !== 'object' || Array.isArray(note.content))) return null;
+  const fields = Object.keys(note.content ?? {});
+  if (fields.length > 128) return null;
+  const content = Object.fromEntries(fields.map(key => [key, note.content?.[key]])
     .filter(([, field]) => forEveryone((field as { readers?: unknown } | null)?.readers)));
-  return { ...note, content };
+  const { id, forum, domain, cdate, tcdate, pdate } = note;
+  return { id, forum, domain, cdate, tcdate, pdate, content, ...('license' in note && typeof note.license === 'string' ? { license: note.license } : {}) };
 }
 
 /**
@@ -145,7 +183,10 @@ function publicNote(note: ReadableNote): OpenReviewNote | null {
  *
  * `timeoutMs` covers the whole lookup, a sign-in included, not each request.
  */
-export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs = SOURCE_UPSTREAM_TIMEOUT_MS) {
+export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs = SOURCE_UPSTREAM_TIMEOUT_MS, {
+  request = fetchWithDeadline, retryUnauthorized = true, requireComplete = false, onUnavailable, onAbsent,
+}: { request?: typeof fetchWithDeadline; retryUnauthorized?: boolean; requireComplete?: boolean;
+  onUnavailable?: (reason: UnavailableNoteReason) => void; onAbsent?: () => void } = {}) {
   const account = openReviewAccount(env);
   if (!account) {
     const error: UpstreamError = new Error('No OpenReview account is configured');
@@ -153,33 +194,46 @@ export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs 
     throw error;
   }
   const signal = AbortSignal.timeout(timeoutMs);
-  const ask = (token: string) => fetchWithDeadline(
-    `${OPENREVIEW_API}/notes?id=${encodeURIComponent(id)}`,
+  const ask = (token: string) => request(
+    `${OPENREVIEW_API}/notes?id=${encodeURIComponent(id)}${requireComplete ? '&trash=true' : ''}`,
     { headers: { ...HEADERS, authorization: `Bearer ${token}` }, signal },
     timeoutMs,
   );
 
   const kept = sessions.get(account.username);
   const keptToken = kept && Date.now() - kept.signedInAt < TOKEN_LIFETIME_MS ? kept.token : null;
-  let response = await ask(keptToken ?? await signIn(account, signal, timeoutMs));
+  let response = await ask(keptToken ?? await signIn(account, signal, timeoutMs, request));
   // A kept token OpenReview no longer accepts gets one fresh sign-in. A token
   // issued for this very lookup and refused is a failure, not a reason to ask
   // for another.
   if (response.status === 401 && keptToken) {
     if (sessions.get(account.username)?.token === keptToken) sessions.delete(account.username);
-    response = await ask(await signIn(account, signal, timeoutMs));
+    if (retryUnauthorized) response = await ask(await signIn(account, signal, timeoutMs, request));
   }
-  if (response.status === 404) return null;
+  if (response.status === 404) {
+    onAbsent?.();
+    return null;
+  }
   if (!response.ok) {
     const error: UpstreamError = new Error(`OpenReview answered ${response.status} for a note`);
     error.status = response.status;
     error.retryAfter = response.headers.get('retry-after') || '';
     throw error;
   }
-  const payload = await response.json<{ notes?: ReadableNote[] }>();
-  const note = (payload?.notes || []).find(candidate => candidate?.id === id);
+  const payload = await readOpenReviewJson<{ notes?: ReadableNote[]; count?: number }>(response, 1024 * 1024);
+  if (!Array.isArray(payload?.notes)) return null;
+  if (payload.notes.length === 0 && (payload.count === undefined || payload.count === 0)) onAbsent?.();
+  if (requireComplete && (payload.notes.length !== 1
+    || (payload.count !== undefined && payload.count !== 1))) return null;
+  const note = payload.notes.find(candidate => candidate?.id === id);
   if (!note) return null;
   const reply = (note.forum ?? id) !== id;
-  const archived = String(note.domain || '').toLowerCase().startsWith('openreview.net/archive');
-  return !reply && isOpenReviewSubmission(note) && !archived ? publicNote(note) : null;
+  if (reply || !isOpenReviewSubmission(note)) return null;
+  if (requireComplete) {
+    if (note.forum !== id) return null;
+    const unavailable = openReviewUnavailable(note);
+    if (unavailable) onUnavailable?.(unavailable);
+    if (unavailable || !validReaders(note.readers) || !note.readers.includes('everyone')) return null;
+  }
+  return publicNote(note);
 }

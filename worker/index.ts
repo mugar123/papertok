@@ -35,6 +35,10 @@ export default {
       const id = `harvest-${new Date(controller.scheduledTime).toISOString().slice(0, 10)}`;
       if (env.PAPER_HARVEST) context.waitUntil(env.PAPER_HARVEST.create({ id }).then(() => undefined, (error: unknown) => console.error('Paper harvest did not start', error)));
       else console.error('Paper harvest did not start: PAPER_HARVEST is not bound');
+      if (env.CONFERENCE_PAPERS_ENABLED === '1' && env.CONFERENCE_INGEST) {
+        const conferenceId = 'conferences-' + new Date(controller.scheduledTime).toISOString().slice(0, 10);
+        context.waitUntil(env.CONFERENCE_INGEST.create({ id: conferenceId }).then(() => undefined, (error: unknown) => console.error('Conference ingest did not start', error)));
+      }
       // Once a day: one Firestore read when nothing has expired.
       context.waitUntil(runAuthorReceiptCleanup(env, controller.scheduledTime));
       return;

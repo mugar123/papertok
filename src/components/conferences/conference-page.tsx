@@ -6,8 +6,10 @@ import PrivacyPopover from '../public/privacy-popover.tsx';
 import { useAuth } from '../../context/auth-context.tsx';
 import { conferenceEditions, conferenceFields, findConferenceEdition } from '../../data/conferences.ts';
 import type { ConferenceEdition } from '../../data/conferences.ts';
+import { useConferenceStatus } from '../../hooks/use-conference-papers.ts';
 import { groupConferences, localCalendarDate } from '../../utils/conference-calendar.ts';
 import './conference-page.css';
+import './conference-papers-page.css';
 
 const fields = Object.entries(conferenceFields);
 const monthFormat = new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -106,6 +108,7 @@ export default function ConferencePage() {
   const { user, loading } = useAuth();
   const { editionId } = useParams();
   const edition = findConferenceEdition(editionId);
+  const status = useConferenceStatus(edition?.id);
   return (
     <main className="conference-page">
       {!user && !loading && (
@@ -124,6 +127,12 @@ export default function ConferencePage() {
                 <h1>{edition.name}</h1>
                 <p>{edition.series}</p>
               </header>
+              {status && status.listed > 0 && (
+                <nav aria-label="Conference edition" className="conference-papers-header">
+                  <Link to={'/conferences/' + edition.id} aria-current="page">Event details</Link>
+                  <Link to={'/conferences/' + edition.id + '/papers'}>Papers <span className="visually-hidden">for {edition.name}</span></Link>
+                </nav>
+              )}
               <section className="conference-details">
                 <h2>Dates and location</h2>
                 <Dates edition={edition} />
