@@ -1015,10 +1015,14 @@ async function callSubscriptionStore(env: WorkerEnv, uid: string, payload: Subsc
  * `version`, and takes no other request until they have landed
  * (email-subscription-store.ts), so a cancellation or a save that follows is
  * ordered after them. `accepted` is false when something reached the object
- * first: that request owns the indexes now, and nothing was written.
+ * first: that request owns the indexes now, and nothing was written. A put
+ * that fails throws `EMAIL_UNAVAILABLE`, once both puts have settled.
+ * `announce` is the welcome opt-in's: once both indexes are written, the object
+ * records that the start of a subscription a welcome yes created has been
+ * announced, and answers `announced: true` to the one call that did it.
  */
-function writeObjectIndexes(env: WorkerEnv, uid: string, subscription: Subscription, version: number, indexes: Array<'schedule' | 'link'> = ['schedule', 'link']) {
-  return callSubscriptionStore(env, uid, { action: 'index', expectedVersion: version, token: subscription.unsubscribeToken, indexes });
+function writeObjectIndexes(env: WorkerEnv, uid: string, subscription: Subscription, version: number, indexes: Array<'schedule' | 'link'> = ['schedule', 'link'], announce = false) {
+  return callSubscriptionStore(env, uid, { action: 'index', expectedVersion: version, token: subscription.unsubscribeToken, indexes, ...(announce ? { announce: true } : {}) });
 }
 
 /**
@@ -1576,7 +1580,9 @@ function subscriptionRecord({ current, state, settings, identity, follows, previ
  * the last cancellation) or in their object. `behind`: no record was read, yet
  * the object says one may exist where this read cannot show it (waitingForKv,
  * or a KV copy too old to move in). `objectVersion` is always the object's own
- * version, never a KV record's `version` or `revision`.
+ * version, never a KV record's `version` or `revision`. `unannounced` is the
+ * token of a subscription a welcome yes created in the object whose start no
+ * request has been answered with yet.
  */
 async function readOptInState(env: WorkerEnv, uid: string) {
   const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, uid) : null;
@@ -1587,6 +1593,7 @@ async function readOptInState(env: WorkerEnv, uid: string) {
     behind: !current && (waitingForKv(slot) || (slot.migratable && Boolean(slot.unmoved))),
     objectVersion: phase1 ? phase1.objectVersion : slot.version,
     inKv: Boolean(current) && Boolean(phase1?.inKv),
+    unannounced: slot.unannounced,
   };
 }
 
@@ -1601,8 +1608,16 @@ async function readOptInState(env: WorkerEnv, uid: string) {
  * never deleted. So the subscription is written only at `expectedVersion: 0`,
  * in both deploy phases: a decision recorded first makes the write fail and
  * the answer `declined`, one that lands afterwards cancels the subscription as
- * usual, and `created` happens at most once per account. An unsubscribe that a
- * Worker from before phase 1 handled left no mark and does not count.
+ * usual. An unsubscribe that a Worker from before phase 1 handled left no mark
+ * and does not count.
+ *
+ * `created` is answered at most once per account, and the reader's object
+ * decides it, never a KV read. The write marks the subscription as unannounced
+ * in its own transaction. The request whose index call writes both indexes
+ * announces it there and answers `created`: the first attempt when all goes
+ * well, or the retry that completes a creation whose index write failed. Every
+ * other request answers `on`. An answer lost after the object announced it is
+ * not repeated.
  *
  * `consent` names the welcome wording the yes was given under and is kept only
  * as the record's `welcomeConsent`. Each wording's promise is checked here too:
@@ -1651,23 +1666,29 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
   // The answer for a reader the opt-in may not write for; null at version 0,
   // and `changed` when the reader's object moved on under this read.
-  const settled = async ({ current, behind, objectVersion, inKv }: Awaited<ReturnType<typeof readOptInState>>) => {
+  const settled = async ({ current, behind, objectVersion, inKv, unannounced }: Awaited<ReturnType<typeof readOptInState>>) => {
     if (current?.enabled) {
-      // A subscription held in the object whose index write failed gets it
-      // again here: this request may be that write's only retry. A KV record
-      // (phase 1) is its own schedule key, and the reader's app restores its link.
-      let completed = false;
+      let outcome = 'on';
       if (!inKv && current.unsubscribeToken) {
-        const [index, owner] = await Promise.all([store.get(key), store.get(`${UNSUBSCRIBE_PREFIX}${current.unsubscribeToken}`)]);
-        if (!index || owner !== uid) {
-          if (!(await writeObjectIndexes(env, uid, current, objectVersion)).accepted) return 'changed' as const;
-          // The yes that wrote this record failed before its indexes, and was
-          // answered as a failure: this retry is where the email starts.
-          completed = !index && Boolean(current.welcomeConsent);
+        if (unannounced === current.unsubscribeToken) {
+          // A welcome yes created this subscription and no request was answered
+          // with its start: its index write failed, or its Worker stopped. This
+          // one writes both indexes, and the object says whether it is the one
+          // that announces the start.
+          const indexed = await writeObjectIndexes(env, uid, current, objectVersion, ['schedule', 'link'], true);
+          if (!indexed.accepted) return 'changed' as const;
+          if (indexed.slot.announced) outcome = 'created';
+        } else {
+          // An index lost since gets written again: this request may be its
+          // only retry. A read that misses a key that exists only costs a put
+          // of the same value. A KV record (phase 1) is its own schedule key,
+          // and the reader's app restores its link.
+          const [index, owner] = await Promise.all([store.get(key), store.get(`${UNSUBSCRIBE_PREFIX}${current.unsubscribeToken}`)]);
+          if ((!index || owner !== uid) && !(await writeObjectIndexes(env, uid, current, objectVersion)).accepted) return 'changed' as const;
         }
       }
       const state = await store.get<DeliveryState>(deliveryStateKey(key, current), 'json');
-      return { outcome: completed ? 'created' : 'on', preferences: publicSubscription({ ...current, ...deliveryStateFromSubscription(current), ...(state || {}) }, email) };
+      return { outcome, preferences: publicSubscription({ ...current, ...deliveryStateFromSubscription(current), ...(state || {}) }, email) };
     }
     if (current) return { outcome: 'declined', preferences: publicSubscription(current, email) };
     // Answering `declined` here would show the digest as off while a record
@@ -1686,10 +1707,11 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
       ...subscriptionRecord({ current: null, state: null, settings: sanitizePreferences({ enabled: true }), identity, follows, previewItems, interests }),
       welcomeConsent: consent,
     };
-    const written = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: record });
-    if (written.accepted && (await writeObjectIndexes(env, uid, record, written.slot.version)).accepted) {
-      return { outcome: 'created', preferences: publicSubscription(record, email) };
-    }
+    const written = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: record, welcome: true });
+    if (!written.accepted) continue;
+    const indexed = await writeObjectIndexes(env, uid, record, written.slot.version, ['schedule', 'link'], true);
+    // Another request of the same reader may have announced it in between.
+    if (indexed.accepted) return { outcome: indexed.slot.announced ? 'created' : 'on', preferences: publicSubscription(record, email) };
   }
   throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
 }

@@ -26,9 +26,13 @@ type SubscriptionTransaction = LedgerTransaction & Pick<DurableObjectTransaction
  * Grants and withdrawals advance `consentRevision` independently of the
  * subscription version, so they invalidate pending consent and visit writes
  * without invalidating a weekly digest draft.
+ * `unannounced` is the token of a subscription a welcome yes created whose
+ * start no caller has been told yet (see `UNANNOUNCED_KEY`); only a `read`
+ * returns it. `announced` is true on the answer of the one `index` call that
+ * announces it.
  */
-export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string; cleanup?: CleanupEntry[]; reactivation?: ReactivationConsent; consentRevision?: number }
-export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; expectedConsentRevision?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown; email?: unknown; indexes?: unknown }
+export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string; cleanup?: CleanupEntry[]; reactivation?: ReactivationConsent; consentRevision?: number; unannounced?: string; announced?: boolean }
+export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; expectedConsentRevision?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown; email?: unknown; indexes?: unknown; welcome?: unknown; announce?: unknown }
 /** What the object needs besides its storage: the KV namespace its `index` action writes, and the gate that holds other requests meanwhile. */
 type SubscriptionState = { storage: LedgerStorage<SubscriptionTransaction>; blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T> };
 type IndexStore = { put(key: string, value: string): Promise<unknown> };
@@ -54,6 +58,17 @@ const CANCELLED_AT_KEY = 'cancelledAt';
 const TOKEN_KEY = 'token';
 const CLEANUP_KEY = 'cleanup';
 const REACTIVATION_KEY = 'reactivation';
+/**
+ * The unsubscribe token of a subscription that a welcome yes created
+ * (`write` with `welcome: true`) and whose start has not been announced: no
+ * `index` call with `announce: true` has written both of its indexes yet. It is
+ * written in the same transaction as that subscription, and it goes in the
+ * transaction that announces it or with the subscription. So the answer
+ * `created` of `POST /notifications/opt-in` is decided here, once, whatever a
+ * KV read says: a creation whose index write failed is announced by the retry
+ * that completes it, and nothing announces it twice.
+ */
+const UNANNOUNCED_KEY = 'unannounced';
 const CONSENT_REVISION_KEY = 'consentRevision';
 const LAST_VISIT_KEY = 'lastVisitAt';
 /**
@@ -169,16 +184,24 @@ export class EmailSubscriptionStore {
       }));
       const uid = recordField(slot.subscription, 'uid');
       if (payload.expectedVersion !== slot.version || !uid || recordField(slot.subscription, 'unsubscribeToken') !== payload.token) return json(slot, 409);
-      try {
-        await Promise.all([
-          wanted.includes('schedule') ? indexes.put(`${SUBSCRIPTION_PREFIX}${uid}`, JSON.stringify({ uid })) : null,
-          wanted.includes('link') ? indexes.put(`${UNSUBSCRIBE_PREFIX}${payload.token}`, uid) : null,
-        ]);
-      } catch {
-        // The caller answers a retryable failure; a later request puts them again.
-        return json({ code: 'INDEX_WRITE_FAILED' }, 503);
-      }
-      return json(slot);
+      // Both puts settle before the gate opens, also when one of them fails:
+      // a put still on its way after a failed sibling would land behind a
+      // later unsubscribe and re-subscribe, which is what the gate prevents.
+      const puts = await Promise.allSettled([
+        wanted.includes('schedule') ? indexes.put(`${SUBSCRIPTION_PREFIX}${uid}`, JSON.stringify({ uid })) : null,
+        wanted.includes('link') ? indexes.put(`${UNSUBSCRIBE_PREFIX}${payload.token}`, uid) : null,
+      ]);
+      // The caller answers a retryable failure; a later request puts them again.
+      if (puts.some(put => put.status === 'rejected')) return json({ code: 'INDEX_WRITE_FAILED' }, 503);
+      // Announcing needs both indexes written by this call, so that "the email
+      // started" is said only once the schedule and the link can reach it.
+      const announced = payload.announce === true && wanted.includes('schedule') && wanted.includes('link')
+        && await this.state.storage.transaction(async (transaction) => {
+          if ((await transaction.get<string>(UNANNOUNCED_KEY)) !== payload.token) return false;
+          await transaction.delete(UNANNOUNCED_KEY);
+          return true;
+        });
+      return json({ ...slot, announced });
     });
   }
 
@@ -226,6 +249,7 @@ export class EmailSubscriptionStore {
       const token = issued?.version === version && typeof issued.token === 'string' ? issued.token : undefined;
       const reactivation = await transaction.get<ReactivationConsent>(REACTIVATION_KEY);
       const consentRevision = (await transaction.get<number>(CONSENT_REVISION_KEY)) ?? 0;
+      const unannounced = await transaction.get<string>(UNANNOUNCED_KEY);
       if (optIn || optOut || visit) {
         const slot = { version, subscription: null, migratable };
         if (optOut) {
@@ -276,7 +300,7 @@ export class EmailSubscriptionStore {
           if (cleanup.length) await transaction.put(CLEANUP_KEY, cleanup);
           else await transaction.delete(CLEANUP_KEY);
         }
-        return { status: 200, slot: { version, subscription, migratable, cancelledAt, token, reactivation, consentRevision, ...(cleanup.length ? { cleanup } : {}) } };
+        return { status: 200, slot: { version, subscription, migratable, cancelledAt, token, reactivation, consentRevision, ...(unannounced ? { unannounced } : {}), ...(cleanup.length ? { cleanup } : {}) } };
       }
       if (mark) {
         // The subscription a closing mark would cancel: the one the last
@@ -301,6 +325,7 @@ export class EmailSubscriptionStore {
         if (reopenedFor) await transaction.put(TOKEN_KEY, { token: reopenedFor, version: next });
         else await transaction.delete(TOKEN_KEY);
         await transaction.delete(SUBSCRIPTION_KEY);
+        if (unannounced) await transaction.delete(UNANNOUNCED_KEY);
         // A record the object held, which a phase 1 Worker reaches after a
         // rollback, is journaled as a deleting write's is. A mark over an
         // object that holds none reads no journal and answers without it.
@@ -325,6 +350,9 @@ export class EmailSubscriptionStore {
       // The record carries its own token from here on; a reopening mark's copy
       // would only outlive an unsubscribe or an account deletion.
       await transaction.delete(TOKEN_KEY);
+      const written = recordField(record, 'unsubscribeToken');
+      if (payload.welcome === true && written) await transaction.put(UNANNOUNCED_KEY, written);
+      else if (unannounced && unannounced !== written) await transaction.delete(UNANNOUNCED_KEY);
       if (record !== null) {
         await transaction.put(SUBSCRIPTION_KEY, record);
         return { status: 200, slot: { version: next, subscription: record, migratable: false, cancelledAt, reactivation: keepsConsent ? reactivation : undefined, consentRevision: reactivation && !keepsConsent ? consentRevision + 1 : consentRevision } };
