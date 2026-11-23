@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
+import { PRIVACY_NOTICE_SHOWN_FROM, PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -150,16 +150,19 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('the current notice summarizes the 20 November policy changes', () => {
+test('the current notice announces the 23 November policy changes and the 20 November Anthropic point', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /Anthropic.*rewrites\/explanations outside the EU/i);
-  assert.match(notice, /Verified-email saves count per account\/paper\/UTC week.*opt out: Settings→Privacy/i);
-  assert.match(notice, /Analytics ties survey level\/broad interests\/answers\/optional role to accounts/i);
-  assert.match(notice, /Day 7–13 return marks stay local.*PostHog visits/i);
-  assert.match(notice, /Accounts keep Essential\/Curiosity priorities, mix and area levels/i);
-  assert.match(notice, /My profile suggests interests, listing recent citations\/coauthors unsaved/i);
-  assert.match(notice, /flags sessions with likes\/saves\/reads before profile load/i);
-  assert.match(notice, /Weekly citation mail uses ORCID on OpenAlex/i);
+  assert.match(notice, /OpenAlex lookups now count per IP address each day.*scheduled for deletion within three days/i);
+  assert.match(notice, /Cloudflare's 30-day recovery history may keep any deleted request counter for up to 30 days more/i);
+  assert.match(notice, /Anthropic may run rewrites\/explanations outside the EU/i);
+});
+
+test('the notice start is an ISO UTC instant that is not before the effective time', () => {
+  // An unparsable start would let the notice open at once (privacyNoticeOwed compares against NaN).
+  assert.match(PRIVACY_NOTICE_SHOWN_FROM, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+  const from = Date.parse(PRIVACY_NOTICE_SHOWN_FROM);
+  assert.ok(!Number.isNaN(from), 'it parses');
+  assert.ok(from >= Date.parse(PRIVACY_POLICY_EFFECTIVE_AT), 'the notice does not start before the text is live');
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {
