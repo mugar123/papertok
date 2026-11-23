@@ -168,8 +168,9 @@ Reporting captures exceptions that escape a request, schedule, Durable Object
 call or Workflow run, failures the router, rewrites and scheduled delivery catch
 and report, and 5xx responses without a reported exception. Expected 4xx failures
 are excluded. `src/utils/error-telemetry.ts` reduces each report to the error
-type, code locations, release and allowlisted operation, status and email-limit labels, so messages,
-requests, user data, paper content and source lines are never sent. Reports have
+type, code locations, release and allowlisted operation, status and email-limit labels.
+For translation failures, the Worker sends a fixed reason code with no exception details.
+Messages, requests, user data, paper content and source lines are never sent. Reports have
 no person profile and no GeoIP lookup. Backend reporting does not depend on the
 browser's analytics choice. PostHog sends no alerts until they are set up in its
 error tracking settings; this repository does not configure them.

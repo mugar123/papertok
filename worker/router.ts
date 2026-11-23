@@ -1,5 +1,5 @@
 import { INSTITUTION_VERIFICATION_PATH, handleInstitutionVerificationRequest } from './institution-verification.ts';
-import { captureWorkerException } from './error-tracking.ts';
+import { captureWorkerException, captureWorkerTranslationFailure } from './error-tracking.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 
@@ -433,14 +433,17 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
         'cache-control': 'private, no-store',
       });
     } catch (error) {
-      if (!translate) captureWorkerException(error);
       const knownError = error instanceof AIExplanationError;
+      const code = knownError ? error.code : 'AI_UNAVAILABLE';
+      const status = knownError ? error.status : 502;
+      if (translate) captureWorkerTranslationFailure(code, status);
+      else captureWorkerException(error);
       return json(
         {
-          code: knownError ? error.code : 'AI_UNAVAILABLE',
+          code,
           ...(knownError && error.quota ? { quota: error.quota } : {}),
         },
-        knownError ? error.status : 502,
+        status,
         { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
       );
     }
