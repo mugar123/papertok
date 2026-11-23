@@ -570,7 +570,7 @@ const PaperCard = memo(function PaperCard({
       paper?._followedEntityMatches,
       followedAuthor,
       isFollowing,
-      match => followedByType[match.type]?.find(entity => entity.canonicalId === match.canonicalId)?.displayName,
+      match => followedByType[match.type]?.find(entity => entity.canonicalId === match.canonicalId),
     ),
     [paper?._followedEntityMatches, followedAuthor, isFollowing, followedByType],
   );
