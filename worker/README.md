@@ -4,7 +4,7 @@ This Cloudflare Worker protects provider keys and serves scientific queries, AI,
 
 ## Source structure
 
-Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker, its three bound Durable Object classes and the harvest Workflow to PostHog. The request and schedule implementation stays in `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)) and runs each cron of `wrangler.toml` by its expression: `*/20 7-13 * * *` runs the email schedule, `30 2 * * *` starts the paper harvest and `* * * * *` pings the paper store (see [Paper store](#paper-store)). Any other expression runs the email schedule.
+Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker, its three bound Durable Object classes and the harvest Workflow to PostHog. The request and schedule implementation stays in `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)) and runs each cron of `wrangler.toml` by its expression: `*/20 7-13 * * *` runs the email schedule, `30 2 * * *` starts the paper harvest and deletes expired author save receipts (see [Author save collection](#author-save-collection)), and `* * * * *` pings the paper store (see [Paper store](#paper-store)). Any other expression runs the email schedule.
 
 - `router.ts` owns dispatch order, the Origin checks for the feature and health routes (`/health` and `/notifications/unsubscribe` have none), Firebase identity for `PROTECTED_PROVIDER_PATHS`, institution access and `/ai/quota`, a GET-only check for every route after the AI POST routes, and error responses. Most feature handlers check their own methods.
 - Provider handlers refuse a disallowed Origin themselves. A request without an Origin passes, except on `/pdf`, which requires one. The `/sources/*` handlers check through `sourceRequestContext` in `provider-runtime.ts`. `/share/*` has no Origin check because it serves crawlers.
@@ -443,7 +443,7 @@ When the source a row was built from lists the paper again, as arXiv does with a
 ```bash
 npx wrangler d1 migrations apply PAPER_STORE --local        # or --remote before deploying (0012 before the Worker that writes `arrived`, above; 0011 came after its deploy: step 3)
 npx wrangler dev --port 8787 --test-scheduled
-curl "http://localhost:8787/__scheduled?cron=30+2+*+*+*"    # starts a harvest on local D1; embeddings use the remote AI binding
+curl "http://localhost:8787/__scheduled?cron=30+2+*+*+*"    # starts a harvest on local D1; embeddings use the remote AI binding; also runs the receipt cleanup against the Firestore project in .dev.vars
 curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"     # one ping of local D1
 npx wrangler workflows instances list papertok-paper-harvest  # production runs
 ```
@@ -829,8 +829,23 @@ previously assigned canonical IDs, collection skips the conflicting save.
 
 A browser tab writes an immutable receipt under `users/{uid}/authorMetricReceipts`
 after the save succeeds. It writes and submits the receipt in the background,
-then deletes it. The `expiresAt` field makes an abandoned receipt eligible for
-Firestore TTL deletion after five minutes. A transaction rechecks the switch,
+then deletes it. The browser sets `expiresAt` five minutes after the save. If the
+tab closes first, the receipt stays until the daily 02:30 UTC cron, which deletes
+every receipt whose `expiresAt` has passed (`runAuthorReceiptCleanup` in
+`worker/author-metrics.ts`). Firestore TTL would need billing, and the project
+stays on the free Spark plan. The cron queries the `authorMetricReceipts`
+collection group, up to five pages of 200, and logs a warning when it stops at
+that cap. A query costs one Firestore read per receipt it returns, and one read
+when it returns none. An idle day costs one read; a day with abandoned receipts
+costs one read and one delete per receipt, plus one read when the last page
+comes back empty. A run never exceeds 1,000 reads and 1,000 deletes. The query needs the
+collection-group index on `expiresAt` in `firestore.indexes.json`. Until that
+index is ready, Firestore refuses the query with `FAILED_PRECONDITION`: the cron
+logs the error code, deletes nothing and tries again the next day. A Worker
+without the service account logs `SERVICE_ACCOUNT_NOT_CONFIGURED` the same way.
+Firestore has no local emulator path here, so a local `__scheduled` call for
+`30 2 * * *` with the production service account in `.dev.vars` deletes expired
+production receipts. A transaction rechecks the switch,
 account, preference, receipt and a recent server save timestamp on the saved
 copy. The earlier server timestamp determines the week. The Worker accepts
 receipts for two minutes after they are written, including at midnight UTC.
@@ -842,8 +857,8 @@ its own preference in Settings → Privacy. Verified-email accounts count by def
 Account deletion fences new contributions before sweeping the weekly documents
 and preference. It removes the fence after deleting the sign-in account.
 
-Deploy Firestore rules, the receipt TTL configuration in `firestore.indexes.json`
-and the Worker before publishing the frontend. Collection runs outside the save
+Deploy Firestore rules, the receipt index in `firestore.indexes.json` (wait until
+it is READY) and the Worker before publishing the frontend. Collection runs outside the save
 operation. A failed or expired submission leaves the reader's save intact.
 Phase 2 will need to reconcile identifiers when new evidence connects previously
 independent mappings. It will wait for the receipt window and in-flight writes, publish one
@@ -1397,7 +1412,9 @@ more than 2 hours; a load's main page and follows' page each log one), one `slow
 line for each `POST /store/papers` slower than 1.5 s (see Slow feed requests below), a fixed line,
 `Feed quota ledger did not answer; request let through`, with the object's own error, for each feed
 request whose call to the quota ledger threw (it names no reader; an error answer or a missing
-binding logs nothing), and one `{ route, status }`
+binding logs nothing), the daily receipt cleanup's `Author receipt cleanup failed` with an error
+code or class name and `Author receipt cleanup stopped at its cap` with a count (neither names an
+account or a paper; [Author save collection](#author-save-collection)), and one `{ route, status }`
 line from `worker/index.ts` for every 429 or 5xx answer, including an uncaught throw (logged as
 500). Its `route` is the fixed part of the path, such as `/openalex/works`, `/share` or
 `/notifications/unsubscribe`, never an id, a query string or an address. On the Workers Free plan
