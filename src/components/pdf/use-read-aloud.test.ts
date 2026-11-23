@@ -71,6 +71,53 @@ test('prepared passages update with clip metadata and queue changes, while seeki
 });
 
 
+test('a refused passage is asked for again once the voice is back, and a blocked start pauses instead of falling back', async () => {
+  const { useReadAloud, firebase, close } = await loadReadAloud();
+  const worker = stubWorker();
+  const route = worker.hold('/tts/paragraph');
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  let blocked = false;
+  const play = Clip.prototype.play;
+  Clip.prototype.play = function () { return blocked ? Promise.reject(new DOMException('No gesture.', 'NotAllowedError')) : Promise.resolve(); };
+  let unmount = () => {};
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const queue: SpokenPassage[] = [{ passage: 'b0', utterances: ['The only result.'] }];
+    const failures: string[] = [];
+    const view = renderHook(() => useReadAloud(queue, [], {
+      title: 'Results paper',
+      onFallback: () => failures.push('fallback'),
+      onError: () => failures.push('error'),
+    }));
+    unmount = view.unmount;
+    act(() => view.result.current.play(0));
+    await route.requested();
+    route.refuse(503, 'AI_UNAVAILABLE');
+    await waitFor(() => assert.equal(failures.length, 1));
+
+    route.answer({});
+    act(() => view.result.current.play(0));
+    await waitFor(() => assert.ok(Clip.instances.some(clip => clip.src.startsWith('blob:'))));
+    assert.equal(view.result.current.playing, true);
+
+    act(() => view.result.current.pause());
+    blocked = true;
+    act(() => view.result.current.play(0));
+    await waitFor(() => assert.equal(view.result.current.playing, false));
+    assert.equal(view.result.current.paragraph, 0);
+    assert.equal(failures.length, 1);
+  } finally {
+    unmount();
+    worker.stop();
+    await close();
+    Clip.prototype.play = play;
+    if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
+    else Reflect.deleteProperty(globalThis, 'Audio');
+    Clip.instances = [];
+  }
+});
+
 test('system controls resume and seek the paper, and hidden playback advances to the next passage', async () => {
   const { useReadAloud, firebase, close } = await loadReadAloud();
   const worker = stubWorker();
@@ -171,6 +218,8 @@ test('the browser voice\'s place moves with time when it reports no words, and f
   const originalSynthesis = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
   const originalUtterance = Object.getOwnPropertyDescriptor(globalThis, 'SpeechSynthesisUtterance');
   const originalNow = Object.getOwnPropertyDescriptor(performance, 'now');
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
   let now = 5_000;
   Object.defineProperty(performance, 'now', { configurable: true, value: () => now });
   Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { speak: (utterance: (typeof spoken)[number]) => spoken.push(utterance), cancel: () => {} } });
@@ -207,7 +256,7 @@ test('the browser voice\'s place moves with time when it reports no words, and f
     unmount();
     worker.stop();
     await close();
-    for (const [target, name, original] of [[window, 'speechSynthesis', originalSynthesis], [globalThis, 'SpeechSynthesisUtterance', originalUtterance], [performance, 'now', originalNow]] as const) {
+    for (const [target, name, original] of [[window, 'speechSynthesis', originalSynthesis], [globalThis, 'SpeechSynthesisUtterance', originalUtterance], [performance, 'now', originalNow], [globalThis, 'Audio', originalAudio]] as const) {
       if (original) Object.defineProperty(target, name, original);
       else Reflect.deleteProperty(target, name);
     }

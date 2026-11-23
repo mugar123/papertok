@@ -72,6 +72,9 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     const controller = new AbortController();
     const release = () => { followsVoice.current = false; };
     for (const type of ['wheel', 'touchmove', 'keydown']) scroll.addEventListener(type, release, { signal: controller.signal, passive: true });
+    scroll.addEventListener('pointerdown', (event) => {
+      if (event.target === scroll) release();
+    }, { signal: controller.signal, passive: true });
     return () => controller.abort();
   }, [scroll]);
   const spokenPassage = speaking === null ? null : spoken?.queue[speaking]?.passage ?? null;

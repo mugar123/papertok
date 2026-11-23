@@ -46,6 +46,14 @@ test('the listen reads headings before their text, announces display formulas an
   ]);
 });
 
+test('a formula right after a heading, or before any text, is announced after the heading', () => {
+  const eq: Block = { t: 'equation', tex: 'E = mc^2' };
+  const { queue } = fullTextListen(doc([eq, heading('2', 'Method'), eq, p(text('We fit the model.'))]), { withAbstract: false });
+  assert.deepEqual(queue, [
+    { passage: 'b3', utterances: ['2. Method.', 'Formula omitted.', 'Formula omitted.', 'We fit the model.'], heading: '2. Method.' },
+  ]);
+});
+
 test('a hidden abstract is not read, and a paragraph longer than one request is split in parts', () => {
   const long = Array.from({ length: 60 }, (_, index) => `Sentence number ${index} says something about the method.`).join(' ');
   const { queue, chapters } = fullTextListen(doc([p(text(long))], [p(text('Hidden.'))]), { withAbstract: false });

@@ -74,6 +74,7 @@ export function fullTextListen(doc: Pick<FullText, 'abstract' | 'body'>, { withA
   const queue: SpokenPassage[] = [];
   const chapters: ReadAloudChapter[] = [];
   let heading: string | null = null;
+  let formulas = 0;
 
   const read = (blocks: Block[], prefix: string) => blocks.forEach((block, index) => {
     if (block.t === 'heading') {
@@ -85,7 +86,8 @@ export function fullTextListen(doc: Pick<FullText, 'abstract' | 'body'>, { withA
       return;
     }
     if (block.t === 'equation') {
-      queue[queue.length - 1]?.utterances.push(FORMULA_OMITTED);
+      if (heading || queue.length === 0) formulas += 1;
+      else queue[queue.length - 1].utterances.push(FORMULA_OMITTED);
       return;
     }
     if (block.t !== 'p' && block.t !== 'list') return;
@@ -93,9 +95,10 @@ export function fullTextListen(doc: Pick<FullText, 'abstract' | 'body'>, { withA
       ? spokenInlines(block.children)
       : block.items.map(item => spokenInlines(item)).join('. '));
     if (!text) return;
-    const lines = [...(heading ? [heading] : []), ...sentences(text)];
+    const lines = [...(heading ? [heading] : []), ...Array<string>(formulas).fill(FORMULA_OMITTED), ...sentences(text)];
     const said = heading;
     heading = null;
+    formulas = 0;
     for (const [part, group] of parts(lines).entries()) {
       queue.push({ passage: `${prefix}${index}`, utterances: group, ...(part === 0 && said ? { heading: said } : {}) });
     }
@@ -106,6 +109,7 @@ export function fullTextListen(doc: Pick<FullText, 'abstract' | 'body'>, { withA
     read(doc.abstract, 'a');
   }
   read(doc.body, 'b');
+  queue[queue.length - 1]?.utterances.push(...Array<string>(formulas).fill(FORMULA_OMITTED));
   return { queue, chapters: chapters.filter((chapter, index) => chapter.first < queue.length && chapter.first !== chapters[index + 1]?.first) };
 }
 

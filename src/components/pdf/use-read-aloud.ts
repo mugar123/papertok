@@ -10,6 +10,9 @@ const BUSY_RETRIES = 3;
 /** A sentence shorter than this is mostly the voice starting and stopping, so it does not time the pace. */
 const TIMED_SENTENCE_CHARS = 40;
 
+/** Refused for credits, or not stored while stored-only: the browser reads it and nothing retries. */
+const skippable = (error: unknown) => error instanceof ReadAloudError && (error.code === 'AI_QUOTA_EXHAUSTED' || error.code === 'AI_AUDIO_NOT_STORED');
+
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** How long a clip plays, read from its own metadata. */
@@ -115,18 +118,20 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
 
   const clip = (item: SpokenPassage) => {
     const text = passageText(item);
-    let pending = clips.current.get(text);
-    if (!pending) {
-      pending = request(text).then((blob) => {
-        const url = URL.createObjectURL(blob);
-        void clipSeconds(url).then((seconds) => {
-          setLengths(known => ({ ...known, [text]: seconds ?? readAloudTimeline([item], []).duration }));
-        });
-        return url;
+    const known = clips.current.get(text);
+    if (known) return known;
+    const pending = request(text).then((blob) => {
+      const url = URL.createObjectURL(blob);
+      void clipSeconds(url).then((seconds) => {
+        setLengths(lengths => ({ ...lengths, [text]: seconds ?? readAloudTimeline([item], []).duration }));
       });
-      pending.catch(() => undefined);
-      clips.current.set(text, pending);
-    }
+      return url;
+    });
+    // A passage that failed for now is asked for again the next time it is needed.
+    pending.catch((error: unknown) => {
+      if (!skippable(error) && clips.current.get(text) === pending) clips.current.delete(text);
+    });
+    clips.current.set(text, pending);
     return pending;
   };
 
@@ -149,8 +154,11 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
         try {
           await clip(order[next++]);
         } catch (error) {
-          const skippable = error instanceof ReadAloudError && (error.code === 'AI_QUOTA_EXHAUSTED' || error.code === 'AI_AUDIO_NOT_STORED');
-          if (!skippable) stopped = true;
+          if (!skippable(error) && !stopped) {
+            stopped = true;
+            fetchingAll.current = null;
+            setPrepareDone(true);
+          }
         }
       }
       working -= 1;
@@ -165,6 +173,8 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     // A jump while either voice is speaking silences it before the new place starts.
     audio.current?.pause();
     if (hasBrowserVoice()) window.speechSynthesis.cancel();
+    // Made within the press, so a browser that needs a gesture lets it play once its clip arrives.
+    audio.current ??= new Audio();
     setPlaying(true);
     fetchAll(start);
 
@@ -231,8 +241,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       voice.current = null;
       clip(queue[index]).then((url) => {
         if (!current()) return undefined;
-        const element = audio.current ?? new Audio();
-        audio.current = element;
+        const element = (audio.current ??= new Audio());
         element.onloadedmetadata = () => {
           if (from > 0 && Number.isFinite(element.duration)) element.currentTime = from * element.duration;
         };
@@ -252,7 +261,14 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
           });
         }
         return element.play();
-      }).catch((error: unknown) => fallBack(index, error));
+      }).catch((error: unknown) => {
+        // The browser refused to start audio without a fresh press: the clip is fine, so wait for one.
+        if (error instanceof DOMException && error.name === 'NotAllowedError') {
+          if (current()) pause();
+          return;
+        }
+        fallBack(index, error);
+      });
     }
 
     next(start, fraction);

@@ -375,7 +375,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {fullText !== undefined && (
             <ReadingDock
               title={paper.title} paper={paper} scroll={showsText ? textScroll : null}
-              spoken={spoken} canListen={Boolean(uid) && showsText && Boolean(spoken?.queue.length) && (!fullText?.lang || /^en\b/i.test(fullText.lang))}
+              spoken={spoken} canListen={Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
               notes={notesOn ? { id: 'viewer-notes', open: notesOpen, count: notes.passages.length, onOpenChange: setNotesOpen } : null}
               originalUrl={dockUrl}
               menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText
