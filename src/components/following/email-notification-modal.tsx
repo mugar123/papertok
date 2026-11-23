@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
@@ -18,6 +18,8 @@ import { emailFollowsNotice } from './email-follows-notice.ts';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerDescription, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { Label } from '../ui/label.tsx';
+import { Button } from '../ui/button.tsx';
+import { Checkbox } from '../ui/checkbox.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { Switch } from '../ui/switch.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
@@ -29,6 +31,8 @@ const ERROR_COPY = {
     EMAIL_NOT_CONFIGURED: 'Email updates have not been configured yet.',
     EMAIL_AUTH_REQUIRED: 'Sign in again to configure email updates.',
     EMAIL_ADDRESS_NOT_VERIFIED: 'Confirm your email address with your sign-in provider before enabling email updates.',
+    EMAIL_REACTIVATION_REQUIRES_DIGEST: 'Reload your email preferences and check that the weekly digest is on.',
+    EMAIL_REACTIVATION_CHANGED: 'Your email preferences changed while this was saving. Try again.',
     EMAIL_PROVIDER_AUTH_FAILED: 'The email provider rejected the configured credential.',
     EMAIL_SENDER_NOT_VERIFIED: 'The email sender domain has not been verified yet.',
     EMAIL_PROVIDER_LIMIT: 'The sending limit has temporarily been reached.',
@@ -63,9 +67,10 @@ const MAX_PAPERS_OPTIONS = [3, 5, 10].map(value => ({ value, label: String(value
  */
 export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { language } = useLanguage();
-  const { emailDigestPending } = useAuth();
+  const { emailDigestPending, user } = useAuth();
   const enabledId = useId();
   const countId = useId();
+  const reactivationId = useId();
   const {
     preferences,
     health,
@@ -77,6 +82,8 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     hasCitationSource,
     digestSendReady,
     digestTurnedOff,
+    digestSubscribed,
+    reactivation,
     savePreferences,
     sendTest,
   } = useEmailNotifications();
@@ -85,6 +92,12 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
   const [draft, setDraft] = useState(preferences);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testState, setTestState] = useState('idle');
+  const [savingReactivation, setSavingReactivation] = useState(false);
+  const reactivationBoxRef = useRef<HTMLElement>(null);
+  // The Retry or withdraw button that started a reminder request. Both unmount
+  // once the request succeeds; focus then moves to the checkbox, unless the
+  // reader moved it elsewhere meanwhile.
+  const reminderTrigger = useRef<HTMLElement | null>(null);
   const preferencesRef = useRef(preferences);
   const testFeedbackTimerRef = useRef<number | null>(null);
   const isPhone = useIsPhone();
@@ -107,6 +120,13 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
       clearTimeout(testFeedbackTimerRef.current!);
     };
   }, [isOpen]);
+
+  // Another tab may have granted or withdrawn reminders since the provider
+  // last read them, so every opening asks again.
+  const refreshReactivation = reactivation.refresh;
+  useEffect(() => {
+    if (isOpen) void refreshReactivation();
+  }, [isOpen, refreshReactivation]);
 
   const handleSave = async () => {
     setFeedback(null);
@@ -146,11 +166,49 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     }
   };
 
+  const handleReactivation = async (checked: boolean) => {
+    setFeedback(null);
+    setSavingReactivation(true);
+    try {
+      await reactivation.save(checked);
+      setFeedback({ type: 'success', text: checked ? 'Reminder preference saved.' : 'Reminder turned off.' });
+    } catch (error) {
+      setFeedback({ type: 'error', text: ERROR_COPY[language][(error as { code?: string }).code as keyof typeof ERROR_COPY.en] || 'Your reminder preference could not be saved. Try again.' });
+    } finally {
+      setSavingReactivation(false);
+    }
+  };
+
+  // A layout effect runs before Base UI's focus manager moves focus to the
+  // dialog itself, which it does when a focused element disappears.
+  useLayoutEffect(() => {
+    const trigger = reminderTrigger.current;
+    if (!trigger || trigger.isConnected) return;
+    reminderTrigger.current = null;
+    const active = document.activeElement;
+    if (!active || active === document.body) reactivationBoxRef.current?.focus();
+  }, [reactivation.enabled, reactivation.unavailable]);
+
   const emailService = emailServiceState(health);
   const toggleDisabled = loading || (emailService === 'down' && !draft.enabled) || (!digestCovered && !draft.enabled);
   const optionsDisabled = !draft.enabled || loading;
   const statusUnknown = !loading && emailService === 'unknown';
   const providerDown = !loading && emailService === 'down';
+  // Withdrawing never waits on the digest preferences: when their read failed,
+  // a reader who gave consent can still take it back.
+  const reactivationReason = loading || reactivation.loading ? 'Loading your reminder preference.'
+    : reactivation.unavailable ? 'Your reminder preference is temporarily unavailable. Try again.'
+    // This tab read the digest as off; the read on opening says whether another
+    // tab or device turned reminders on since.
+    : digestSubscribed === false ? (!reactivation.known ? 'Loading your reminder preference.'
+      : reactivation.enabled
+        ? 'Reminders were turned on in another tab or on another device. You can turn them off here, or reload to see your current digest settings.'
+        : 'Turn on and save your weekly digest first.')
+    : digestSubscribed === null ? (reactivation.enabled
+      ? 'Your digest settings could not be loaded. You can still turn reminders off.'
+      : 'Your digest settings could not be loaded. Reload the page to turn reminders on.')
+    : !user?.emailVerified && !reactivation.enabled ? 'Verify your email address to turn reminders on.'
+    : null;
 
   // On a phone the same content is a bottom sheet, like the other sheets
   // Settings opens; the handle and a swipe take the place of the X.
@@ -211,6 +269,40 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           />
         </div>
 
+        <div className="email-notification-toggle-row email-notification-reminder">
+          <div>
+            <Label htmlFor={reactivationId} id={`${reactivationId}-label`}><strong>Weekly digest reminder</strong></Label>
+            <small id={`${reactivationId}-description`}>
+              Allow PaperTok to keep your last signed-in visit to prepare a future digest after seven days away.
+              {' PaperTok uses it for 30 days, then usually deletes it within a day; Cloudflare’s point-in-time history may keep it 30 more days, and PaperTok never reads or restores it.'}
+              <span role="status">{reactivationReason && ` ${reactivationReason}`}</span>
+              {!reactivationReason && <> This choice saves immediately.</>}
+            </small>
+            {reactivation.unavailable && !loading && (
+              <>
+                <Button variant="outline" size="sm" disabled={savingReactivation} onClick={event => { reminderTrigger.current = event.currentTarget; void reactivation.refresh(); }}>Retry</Button>
+                {/* A failed read may hide consent another tab gave. */}
+                {!reactivation.enabled && (
+                  <Button type="button" variant="outline" size="sm" disabled={savingReactivation} onClick={event => { reminderTrigger.current = event.currentTarget; void handleReactivation(false); }}>Turn off reminders</Button>
+                )}
+              </>
+            )}
+          </div>
+          <Checkbox
+            ref={reactivationBoxRef}
+            id={reactivationId}
+            className="size-6"
+            aria-labelledby={`${reactivationId}-label`}
+            aria-describedby={`${reactivationId}-description`}
+            aria-busy={savingReactivation}
+            checked={reactivation.enabled}
+            indeterminate={reactivation.unavailable && !reactivation.enabled}
+            disabled={Boolean(reactivationReason && !reactivation.enabled) || saving || testing}
+            readOnly={savingReactivation}
+            onCheckedChange={checked => { void handleReactivation(checked); }}
+          />
+        </div>
+
         <div className={`email-notification-options ${draft.enabled ? '' : 'is-disabled'}`}>
           <div className="email-notification-count">
             <Label htmlFor={countId}>
@@ -258,7 +350,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           type="button"
           className={`email-notification-test ${testState === 'sending' ? 'is-sending' : ''} ${testState === 'sent' ? 'is-sent' : ''}`}
           onClick={() => { void handleTest(); }}
-          disabled={saving || testing || loading || !notificationDataReady || !digestCovered || !digestSendReady || emailService === 'down' || testState === 'sent'}
+          disabled={saving || testing || savingReactivation || loading || !notificationDataReady || !digestCovered || !digestSendReady || emailService === 'down' || testState === 'sent'}
           aria-live="polite"
           aria-busy={testState === 'sending'}
         >
@@ -278,7 +370,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             )}
           </AnimatePresence>
         </button>
-        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (emailService === 'down' || !digestCovered || !digestSendReady))}>
+        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || savingReactivation || loading || !notificationDataReady || (draft.enabled && (emailService === 'down' || !digestCovered || !digestSendReady))}>
           {saving
             ? ('Saving...')
             : ('Save changes')}

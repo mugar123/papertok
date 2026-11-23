@@ -357,6 +357,23 @@
         email carries a one-click unsubscribe link, and you can also turn updates off in
         Settings. Unsubscribing deletes the subscription.
       </p>
+      <p>
+        If you subscribe to the weekly digest and verify your email, you can opt in to
+        digest reminders in Settings. With your consent, PaperTok keeps only the hour
+        of your last signed-in visit when the app is visible, in your account's
+        Cloudflare Durable Object. PaperTok keeps it to tell when you have been away
+        for seven days and prepare a future digest with papers published since your
+        last visit. PaperTok uses the visit for 30 days from the hour it records, then
+        deletes it, and deletes it sooner if you turn reminders off, unsubscribe from the
+        digest or delete your account. A deletion is scheduled for the end of those 30
+        days. If it fails, PaperTok stops using the visit and usually deletes it by the
+        next day, when the morning digest run reaches your subscription; if the run does
+        not reach it, the visit stays stored, unused, until PaperTok next reads your
+        subscription, for example when you open PaperTok while signed in. Cloudflare keeps a 30-day
+        point-in-time history of that storage, so a deleted visit can remain in it for up
+        to 30 more days; PaperTok never reads or restores that history. PaperTok keeps
+        this visit separate from usage analytics.
+      </p>
 
       <h2>Analytics</h2>
       <p>

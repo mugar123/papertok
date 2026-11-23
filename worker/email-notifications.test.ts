@@ -17,6 +17,7 @@ import {
   checkEmailProviderHealth,
   getEmailScheduleHealth,
   handleEmailNotificationRequest,
+  handleEmailReactivationRequest,
   handleEmailUnsubscribe,
   purgeEmailSubscription,
   runEmailNotificationSchedule,
@@ -6202,6 +6203,284 @@ const refusedWith = (code: string, status: number) => (error: unknown) => {
   assert.deepEqual({ code: actual, status: actualStatus }, { code, status });
   return true;
 };
+
+for (const source of ['kv', 'object']) {
+  for (const pauseAtRead of [true, false]) {
+    test(`reactivation withdrawal invalidates a pending grant and a visit from an earlier grant (${source}, ${pauseAtRead ? 'before read' : 'before write'})`, async t => {
+      const identity = { uid: 'reader', email: 'reader@example.com', displayName: '' };
+      const stores = inMemorySubscriptionStores();
+      const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+      t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: identity.uid, email: identity.email, emailVerified: true }] }));
+      const settings = () => reactivationRequest('GET', '/notifications/reactivation', env);
+      const withdraw = () => reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: false });
+      const grant = (revision: number, target: WorkerEnv = env) => reactivationRequest('PUT', '/notifications/reactivation', target, { enabled: true, revision });
+      const visit = (revision: number, target: WorkerEnv = env) => reactivationRequest('POST', '/notifications/visit', target, { revision });
+      await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
+
+      assert.deepEqual(await settings(), { enabled: false, revision: 0 });
+      const delayedGrant = interceptedStores(stores, payload => payload.action === (pauseAtRead ? 'read' : 'reactivation-on'), async () => {
+        assert.deepEqual(await withdraw(), { enabled: false, revision: 1 });
+      });
+      await assert.rejects(() => grant(0, { ...env, EMAIL_SUBSCRIPTIONS: delayedGrant }), refusedWith('EMAIL_REACTIVATION_CHANGED', 409));
+      await assert.rejects(() => visit(0), refusedWith('EMAIL_REACTIVATION_CHANGED', 409));
+      assert.equal(stores.visitState(identity.uid).lastVisit, undefined);
+      assert.deepEqual(await settings(), { enabled: false, revision: 1 });
+      assert.deepEqual(await grant(1), { enabled: true, revision: 2 });
+
+      const delayedVisit = interceptedStores(stores, payload => payload.action === (pauseAtRead ? 'read' : 'visit'), async () => {
+        assert.deepEqual(await withdraw(), { enabled: false, revision: 3 });
+        assert.deepEqual(await grant(3), { enabled: true, revision: 4 });
+      });
+      await assert.rejects(() => visit(2, { ...env, EMAIL_SUBSCRIPTIONS: delayedVisit }), refusedWith('EMAIL_REACTIVATION_CHANGED', 409));
+      assert.equal(stores.visitState(identity.uid).lastVisit, undefined);
+      await visit(4);
+      assert.notEqual(stores.visitState(identity.uid).lastVisit, undefined);
+
+      assert.deepEqual(await withdraw(), { enabled: false, revision: 5 });
+      const replacedSubscription = interceptedStores(stores, payload => payload.action === 'read', async () => {
+        await saveSubscription(preferencesPut({ enabled: false }), env, identity);
+        await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
+      });
+      await assert.rejects(() => grant(5, { ...env, EMAIL_SUBSCRIPTIONS: replacedSubscription }), refusedWith('EMAIL_REACTIVATION_CHANGED', 409));
+    });
+  }
+
+  test(`reactivation is opt-in, account scoped, hourly and expires after 30 days (${source})`, async t => {
+    const uid = 'reader';
+    const stores = inMemorySubscriptionStores();
+    const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+    let account = { localId: uid, email: 'reader@example.com', emailVerified: false };
+    let clock = Date.UTC(2026, 10, 20, 10, 5);
+    t.mock.method(Date, 'now', () => clock);
+    t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [account] }));
+    const consent = (enabled: boolean, revision?: number) => reactivationRequest('PUT', '/notifications/reactivation', env, { enabled, revision });
+    const visit = (revision = 1) => reactivationRequest('POST', '/notifications/visit', env, { revision });
+    const state = () => stores.visitState(uid);
+
+    await assert.rejects(() => consent(true, 0), refusedWith('EMAIL_ADDRESS_NOT_VERIFIED', 403));
+    account.emailVerified = true;
+    await assert.rejects(() => consent(true, 0), refusedWith('EMAIL_REACTIVATION_REQUIRES_DIGEST', 409));
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, { uid, email: account.email, displayName: '' });
+    assert.deepEqual(await reactivationRequest('GET', '/notifications/reactivation', env), { enabled: false, revision: 0 });
+    await assert.rejects(() => visit(0), refusedWith('EMAIL_REACTIVATION_CHANGED', 409));
+    assert.equal(state().lastVisit, undefined);
+    assert.deepEqual(await consent(true, 0), { enabled: true, revision: 1 });
+    assert.equal(state().lastVisit, undefined);
+
+    account = { ...account, localId: 'different-reader' };
+    await assert.rejects(() => reactivationRequest('POST', '/notifications/visit', env, { revision: 1, uid }), refusedWith('EMAIL_INVALID_REQUEST', 400));
+    await assert.rejects(() => visit(), refusedWith('EMAIL_REACTIVATION_CHANGED', 409));
+    assert.equal(state().lastVisit, undefined);
+    account = { ...account, localId: uid };
+
+    assert.deepEqual(await visit(), { ok: true });
+    assert.deepEqual(state(), {
+      lastVisit: Date.UTC(2026, 10, 20, 10),
+      alarm: Date.UTC(2026, 11, 20, 10),
+      alarmWrites: 1,
+    });
+    clock = Date.UTC(2026, 10, 20, 10, 59);
+    await Promise.all([visit(), visit()]);
+    assert.equal(state().alarmWrites, 1);
+    clock = Date.UTC(2026, 10, 20, 11, 3);
+    await Promise.all([visit(), visit()]);
+    assert.equal(state().lastVisit, Date.UTC(2026, 10, 20, 11));
+    assert.equal(state().alarmWrites, 2);
+
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, sync: true, follows: [digestFollow('A2')] }), env, {
+      uid, email: account.email, displayName: '',
+    });
+    assert.deepEqual(await reactivationRequest('GET', '/notifications/reactivation', env), { enabled: true, revision: 1 });
+    assert.equal(state().lastVisit, Date.UTC(2026, 10, 20, 11));
+
+    clock = Date.UTC(2026, 11, 20, 10, 59);
+    await stores.runAlarm(uid);
+    assert.equal(state().lastVisit, Date.UTC(2026, 10, 20, 11));
+    clock = Date.UTC(2026, 11, 20, 11);
+    await stores.runAlarm(uid);
+    assert.equal(state().lastVisit, undefined);
+    assert.deepEqual(await reactivationRequest('GET', '/notifications/reactivation', env), { enabled: true, revision: 1 });
+
+    await visit();
+    assert.notEqual(state().lastVisit, undefined);
+    account.emailVerified = false;
+    assert.deepEqual(await reactivationRequest('GET', '/notifications/reactivation', env), { enabled: true, revision: 1 });
+    await consent(false);
+    assert.equal(state().lastVisit, undefined);
+    assert.equal(state().alarm, null);
+    account.emailVerified = true;
+    await assert.rejects(() => visit(), refusedWith('EMAIL_REACTIVATION_CHANGED', 409));
+    assert.equal(state().lastVisit, undefined);
+
+    assert.deepEqual(await consent(true, 2), { enabled: true, revision: 3 });
+    await visit(3);
+    if (source === 'kv') {
+      assert.deepEqual(await reactivationRequest('GET', '/notifications/reactivation', {
+        ...env, EMAIL_SUBSCRIPTION_SOURCE: 'object',
+      }), { enabled: true, revision: 3 });
+      assert.equal(state().lastVisit, Date.UTC(2026, 11, 20, 11));
+    }
+    const nextEmail = 'new-reader@example.com';
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, { uid, email: nextEmail, displayName: '' });
+    account.email = nextEmail;
+    assert.deepEqual(await reactivationRequest('GET', '/notifications/reactivation', env), { enabled: false, revision: 4 });
+    assert.equal(state().lastVisit, undefined);
+  });
+
+  test(`a visit older than 30 days is absent and deleted on the next access, even after its alarm failed (${source})`, async t => {
+    const uid = 'reader';
+    const identity = { uid, email: 'reader@example.com', displayName: '' };
+    const stores = inMemorySubscriptionStores();
+    const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+    let clock = Date.UTC(2026, 10, 20, 10, 5);
+    t.mock.method(Date, 'now', () => clock);
+    t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: uid, email: identity.email, emailVerified: true }] }));
+    const settings = () => reactivationRequest('GET', '/notifications/reactivation', env);
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
+    await reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: true, revision: 0 });
+    await reactivationRequest('POST', '/notifications/visit', env, { revision: 1 });
+    assert.equal(stores.visitState(uid).lastVisit, Date.UTC(2026, 10, 20, 10));
+
+    // Every retry of the alarm failed, so nothing is scheduled to remove the visit.
+    stores.dropAlarm(uid);
+    clock = Date.UTC(2026, 10, 25, 10);
+    assert.deepEqual(await settings(), { enabled: true, revision: 1 });
+    assert.deepEqual(stores.visitState(uid), { lastVisit: Date.UTC(2026, 10, 20, 10), alarm: Date.UTC(2026, 11, 20, 10), alarmWrites: 2 });
+
+    stores.dropAlarm(uid);
+    clock = Date.UTC(2026, 11, 21, 10);
+    assert.deepEqual(await settings(), { enabled: true, revision: 1 });
+    assert.deepEqual(stores.visitState(uid), { lastVisit: undefined, alarm: null, alarmWrites: 2 });
+  });
+
+  test(`a firing alarm before the visit expires schedules it again (${source})`, async t => {
+    const uid = 'reader';
+    const identity = { uid, email: 'reader@example.com', displayName: '' };
+    const stores = inMemorySubscriptionStores();
+    const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+    let clock = Date.UTC(2026, 10, 20, 10, 5);
+    t.mock.method(Date, 'now', () => clock);
+    t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: uid, email: identity.email, emailVerified: true }] }));
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
+    await reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: true, revision: 0 });
+    await reactivationRequest('POST', '/notifications/visit', env, { revision: 1 });
+
+    clock = Date.UTC(2026, 11, 20, 9, 59);
+    await stores.runAlarm(uid);
+    assert.deepEqual(stores.visitState(uid), { lastVisit: Date.UTC(2026, 10, 20, 10), alarm: Date.UTC(2026, 11, 20, 10), alarmWrites: 2 });
+    clock = Date.UTC(2026, 11, 20, 10);
+    await stores.runAlarm(uid);
+    assert.deepEqual(stores.visitState(uid), { lastVisit: undefined, alarm: null, alarmWrites: 2 });
+  });
+
+  for (const cancellation of ['settings', 'one-click', 'account deletion']) {
+    test(`${cancellation} clears the visit and wins against an in-flight visit (${source})`, async t => {
+      const uid = 'reader';
+      const identity = { uid, email: 'reader@example.com', displayName: '' };
+      const stores = inMemorySubscriptionStores();
+      const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+      t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: uid, email: identity.email, emailVerified: true }] }));
+      const settings = () => reactivationRequest('GET', '/notifications/reactivation', env);
+      await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
+      await reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: true, revision: 0 });
+      await reactivationRequest('POST', '/notifications/visit', env, { revision: 1 });
+      assert.notEqual(stores.visitState(uid).lastVisit, undefined);
+      const token = (await loadSubscriptionWithState(env, `notification:subscription:${uid}`))?.unsubscribeToken;
+
+      const intercepted = interceptedStores(stores, payload => payload.action === 'visit', async () => {
+        if (cancellation === 'settings') await saveSubscription(preferencesPut({ enabled: false }), env, identity);
+        else if (cancellation === 'account deletion') await purgeEmailSubscription(env, uid);
+        else {
+          const response = await handleEmailUnsubscribe(new Request(
+            `https://api.papertok.app/notifications/unsubscribe?token=${token}`,
+            { method: 'POST', ...ONE_CLICK_POST },
+          ), env);
+          assert.equal(response.status, 200);
+        }
+      });
+      await assert.rejects(() => reactivationRequest('POST', '/notifications/visit', { ...env, EMAIL_SUBSCRIPTIONS: intercepted }, { revision: 1 }), refusedWith('EMAIL_REACTIVATION_CHANGED', 409));
+      assert.equal(stores.visitState(uid).lastVisit, undefined);
+      assert.equal(stores.visitState(uid).alarm, null);
+      const cleared = await settings();
+      assert.ok('enabled' in cleared && cleared.enabled === false);
+      assert.ok(typeof cleared.revision === 'number' && cleared.revision > 1);
+      await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
+      assert.deepEqual(await settings(), cleared);
+    });
+  }
+}
+
+test('reactivation status reports stale KV as unavailable and recovers on retry', async t => {
+  const identity = { uid: 'reader', email: 'reader@example.com', displayName: '' };
+  const kv = createMemoryKv();
+  const stores = inMemorySubscriptionStores();
+  const env = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: identity.uid, email: identity.email, emailVerified: true }] }));
+  const settings = (target: WorkerEnv = env) => reactivationRequest('GET', '/notifications/reactivation', target);
+  const key = 'notification:subscription:reader';
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
+  await reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: true, revision: 0 });
+  await reactivationRequest('POST', '/notifications/visit', env, { revision: 1 });
+  const visitBefore = stores.visitState(identity.uid).lastVisit;
+  assert.notEqual(visitBefore, undefined);
+  const stale = kv.values.get(key);
+  assert.ok(stale);
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, identity);
+  const current = kv.values.get(key);
+  assert.ok(current);
+  kv.values.set(key, stale);
+  await assert.rejects(settings, refusedWith('EMAIL_UNAVAILABLE', 503));
+  const migrating = { ...env, EMAIL_SUBSCRIPTION_SOURCE: 'object' };
+  await assert.rejects(() => settings(migrating), refusedWith('EMAIL_UNAVAILABLE', 503));
+  assert.equal(stores.visitState(identity.uid).lastVisit, visitBefore);
+  kv.values.set(key, current);
+  assert.deepEqual(await settings(), { enabled: true, revision: 1 });
+  kv.values.set(key, stale);
+  assert.deepEqual(await reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: false }), { enabled: false, revision: 2 });
+  assert.equal(stores.visitState(identity.uid).lastVisit, undefined);
+  assert.deepEqual(await reactivationRequest('PUT', '/notifications/reactivation', { ...env, NOTIFICATION_STORE: undefined }, { enabled: false }), { enabled: false, revision: 3 });
+  kv.values.set(key, current);
+  assert.deepEqual(await settings(migrating), { enabled: false, revision: 3 });
+});
+
+for (const source of ['kv', 'object']) {
+  test(`a KV miss for a subscribed reader is an unavailable read, not an unsubscribe, and withdrawal still works (${source})`, async t => {
+    const identity = { uid: 'reader', email: 'reader@example.com', displayName: '' };
+    const kv = createMemoryKv();
+    const stores = inMemorySubscriptionStores();
+    // The reader subscribed and opted in while KV held the record (phase 1).
+    const phase1 = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+    const env = { ...phase1, EMAIL_SUBSCRIPTION_SOURCE: source };
+    t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: identity.uid, email: identity.email, emailVerified: true }] }));
+    const preferences = () => withIdentityCache(() => handleEmailNotificationRequest(preferencesRequest(), env, '/notifications/preferences'));
+    const key = 'notification:subscription:reader';
+    await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, identity);
+    await reactivationRequest('PUT', '/notifications/reactivation', phase1, { enabled: true, revision: 0 });
+    await reactivationRequest('POST', '/notifications/visit', phase1, { revision: 1 });
+    const record = kv.values.get(key);
+    assert.ok(record);
+
+    // KV briefly returns null for the record the object says may still exist.
+    kv.values.delete(key);
+    await assert.rejects(preferences, refusedWith('EMAIL_UNAVAILABLE', 503));
+    await assert.rejects(() => reactivationRequest('GET', '/notifications/reactivation', env), refusedWith('EMAIL_UNAVAILABLE', 503));
+    kv.values.set(key, record);
+    const read = await preferences();
+    assert.ok('preferences' in read && read.preferences.enabled === true);
+
+    kv.values.delete(key);
+    assert.deepEqual(await reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: false }), { enabled: false, revision: 2 });
+    assert.equal(stores.visitState(identity.uid).lastVisit, undefined);
+  });
+}
+
+function reactivationRequest(method: string, pathname: string, env: WorkerEnv, body?: unknown) {
+  return handleEmailReactivationRequest(new Request(`https://api.papertok.app${pathname}`, {
+    method,
+    headers: { authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  }), env, pathname);
+}
 
 test('unsubscribing and subscribing again does not give an account another test email in the same minute', async t => {
   // Unsubscribing deleted the delivery state that held `lastTestAt`, and the

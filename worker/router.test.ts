@@ -35,6 +35,23 @@ test('a disallowed preflight still returns 204 without granting CORS', async () 
   assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
 
+test('the digest visit route rejects unsupported methods, foreign origins and unauthenticated writes', async () => {
+  const path = '/notifications/visit';
+  const foreign = await worker.fetch(request(path, 'POST', 'https://other.example'), {});
+  assert.equal(foreign.status, 403);
+  assert.equal(foreign.headers.get('access-control-allow-origin'), null);
+
+  const wrongMethod = await worker.fetch(request(path), {});
+  assert.equal(wrongMethod.status, 405);
+  assert.deepEqual(await wrongMethod.json(), { code: 'EMAIL_METHOD_NOT_ALLOWED' });
+
+  const anonymous = await worker.fetch(request(path, 'POST'), {});
+  assert.equal(anonymous.status, 401);
+  assert.deepEqual(await anonymous.json(), { code: 'EMAIL_AUTH_REQUIRED' });
+  assert.equal(anonymous.headers.get('access-control-allow-origin'), ORIGIN);
+  assert.equal(anonymous.headers.get('cache-control'), 'no-store');
+});
+
 test('unknown paths preserve GET 404 and other-method 405 with allowed-origin CORS', async () => {
   for (const method of ['GET', 'POST', 'HEAD']) {
     const response = await worker.fetch(request('/missing', method), {});

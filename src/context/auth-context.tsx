@@ -2,7 +2,7 @@ import type { Dispatch, PropsWithChildren, SetStateAction } from 'react';
 import type { User } from 'firebase/auth';
 import type { DocumentReference, DocumentSnapshot } from 'firebase/firestore';
 
-export type AppUser = Pick<User, 'uid' | 'displayName' | 'email' | 'photoURL'> & {
+export type AppUser = Pick<User, 'uid' | 'displayName' | 'email' | 'emailVerified' | 'photoURL'> & {
   providerData: Array<Pick<User['providerData'][number], 'providerId'> & Partial<Pick<User['providerData'][number], 'email' | 'displayName'>>>;
   metadata?: Pick<User['metadata'], 'creationTime'>;
 };
