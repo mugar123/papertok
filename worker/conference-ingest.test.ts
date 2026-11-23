@@ -58,7 +58,7 @@ test('a complete first harvest publishes distinct forums and strips private auth
   const rows = [
     submission('first', venue, {
       arxiv_id: { value: '2601.12567' }, pdf: { value: 'javascript:alert(1)' },
-      authors: { value: ['A', 'B', 'C'] }, authorids: { value: ['a@example.test', '~Example_Author1', 'https://orcid.org/0000-0002-1825-0097'] },
+      authors: { value: ['A', 'B', 'C', 'private@example.test'] }, authorids: { value: ['a@example.test', '~Example_Author1', 'https://orcid.org/0000-0002-1825-0097'] },
     }),
     submission('second', venue, { arxiv_id: { value: '2601.12567' } }),
   ];

@@ -4315,7 +4315,9 @@ test('a work marked mine by DOI can be resolved from the paper store outside the
 
 test('an exhausted OpenAlex budget prevents an upstream citation request', async t => {
   const h = citationSchedule(t);
-  await reserveOpenAlexBudget(h.env, '', { units: 60, tier: 'exploration', kind: 'list' }, h.now());
+  // The part of a day of 100 outside the harvest's, which closes before the
+  // exploration tier's 60 while the harvest has spent nothing (ENG-225).
+  await reserveOpenAlexBudget(h.env, '', { units: 55, tier: 'exploration', kind: 'list' }, h.now());
   assert.equal((await h.run()).empty, 1);
   assert.deepEqual(h.filters, []);
   assert.deepEqual(h.emails, []);
@@ -4323,7 +4325,7 @@ test('an exhausted OpenAlex budget prevents an upstream citation request', async
 
 test('the citing-works call also requires an OpenAlex budget reservation', async t => {
   const h = citationSchedule(t);
-  await reserveOpenAlexBudget(h.env, '', { units: 59, tier: 'exploration', kind: 'list' }, h.now());
+  await reserveOpenAlexBudget(h.env, '', { units: 54, tier: 'exploration', kind: 'list' }, h.now());
   assert.equal((await h.run()).empty, 1);
   assert.deepEqual(h.filters, [`author.orcid:${CITATION_ORCID}`]);
   assert.deepEqual(h.emails, []);
@@ -6352,21 +6354,23 @@ test('a test email stops asking the ledger and OpenAlex once the tier has refuse
 test('test emails stop at the exploration tier and leave the feed its share of the day', async t => {
   const h = testEmailHarness(t);
   h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';
-  for (let account = 0; account < 6; account += 1) {
+  // Five searches of ten fit in the 55 of the day outside the harvest's part,
+  // which closes before the tier's 60 while the harvest has spent nothing.
+  for (let account = 0; account < 5; account += 1) {
     h.setAccount(`reader-${account}`);
     await h.subscribe([searchedAuthor]);
     await h.sendTest();
   }
-  h.setAccount('reader-6');
+  h.setAccount('reader-5');
   await h.subscribe([searchedAuthor]);
   await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_OPENALEX_BUDGET', 429));
-  assert.equal(h.calls.openAlex, 6);
+  assert.equal(h.calls.openAlex, 5);
   const harvest = await reserveOpenAlexBudget(h.env, '', { units: 30, tier: 'feed', kind: 'list' }, h.now());
   assert.equal(harvest.error, undefined);
   const day = await openAlexDay(h);
   assert.deepEqual(
     { used: day.used, exploration: day.tiers.exploration.used, feed: day.tiers.feed.used },
-    { used: 90, exploration: 60, feed: 30 },
+    { used: 80, exploration: 50, feed: 30 },
   );
 });
 

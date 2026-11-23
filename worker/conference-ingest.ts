@@ -134,15 +134,16 @@ function blockForums(db: D1Database, editionId: string, evidence: readonly { for
 }
 
 const orcidId = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/i;
-function publicAuthorId(id: string | undefined) {
+function publicAuthorId(id: string | null | undefined) {
   if (!id || id.includes('@')) return undefined;
   if (/^~[\p{L}\p{N}_.-]+$/u.test(id)) return id;
   const orcid = id.replace(/^https:\/\/orcid\.org\//i, '');
   return orcidId.test(orcid) ? orcid : undefined;
 }
 
-function httpsPdf(url: string | undefined) {
-  const parsed = url ? URL.parse(url) : null;
+function httpsPdf(url: string | null | undefined) {
+  if (!url) return undefined;
+  const parsed = URL.parse(url);
   return parsed?.protocol === 'https:' && !parsed.username && !parsed.password ? url : undefined;
 }
 
@@ -189,9 +190,11 @@ async function ingestPage(db: D1Database, state: EditionState, request: typeof f
     `).bind(state.edition_id, membership.forumId, membership.venueId, membership.venueText, membership.track,
       await conferenceSortKey(state.edition_id, id, membership.track), JSON.stringify(storedPaper({
         ...paper, id, license: license ?? undefined, pdfUrl: httpsPdf(paper.pdfUrl),
-        authors: paper.authors.map(author => ({
-          ...author, id: publicAuthorId(author.id), orcid: author.orcid && orcidId.test(author.orcid) ? author.orcid : undefined,
-        })),
+        authors: paper.authors
+          .filter(author => !(typeof author === 'string' ? author : author.name).includes('@'))
+          .map(author => typeof author === 'string' ? author : {
+            ...author, id: publicAuthorId(author.id), orcid: author.orcid && orcidId.test(author.orcid) ? author.orcid : undefined,
+          }),
         publicationStatus: 'published', publicationType: 'conference', peerReviewed: true,
       })), state.generation);
   }));
