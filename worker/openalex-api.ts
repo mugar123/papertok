@@ -112,10 +112,10 @@ const OPENALEX_RATE_LIMIT_HEADERS = [
 
 // What a miss resolved to, before the asking origin is put on it. Identical
 // misses in flight in this isolate share one of these (see `inFlight`), and a
-// shared `Response` would have one body for several readers. `budgetRefusal`
-// marks the ledger's answer to the reservation of the request that started the
-// miss, which is that request's alone.
-type RelayedAnswer = { status: number; body: string; headers: Headers; budgetRefusal?: boolean };
+// shared `Response` would have one body for several readers. A waiter checks
+// a stored answer against its own cache policy and makes its own reservation
+// if the first request's budget refused.
+type RelayedAnswer = { status: number; body: string; headers: Headers; source: 'upstream' | 'shared' | 'budget' };
 
 // A launch burst asks the same question from many tabs within the second it
 // takes OpenAlex to answer the first. Each of those used to miss the edge,
@@ -154,7 +154,26 @@ export async function fetchOpenAlexJsonWithFallback<T = unknown>(url: URL, env: 
 }
 
 /** The longest parameter value the relay forwards; a longer one is dropped. */
-export const OPENALEX_PARAM_MAX_LENGTH = 2_000;
+const OPENALEX_PARAM_MAX_LENGTH = 2_000;
+
+// A longer filter is dropped by the relay. A value too long even on its own cannot be requested.
+export function openAlexFilterBatches(key: string, values: string[], perFilter: number) {
+  const batches: string[][] = [];
+  let length = 0;
+  for (const value of values) {
+    const single = key.length + 1 + value.length;
+    if (single > OPENALEX_PARAM_MAX_LENGTH) continue;
+    const batch = batches.at(-1);
+    if (batch && batch.length < perFilter && length + 1 + value.length <= OPENALEX_PARAM_MAX_LENGTH) {
+      batch.push(value);
+      length += 1 + value.length;
+    } else {
+      batches.push([value]);
+      length = single;
+    }
+  }
+  return batches;
+}
 
 // Rebuilds the upstream URL from an entity allowlist and a parameter allowlist.
 // Nothing the caller sends reaches OpenAlex verbatim -- in particular an
@@ -347,7 +366,7 @@ export function openAlexCostFor(target: URL): OpenAlexBudget {
 type Asker = 'reader' | 'agent' | 'account';
 
 async function refused(response: Response): Promise<RelayedAnswer> {
-  return { status: response.status, body: await response.text(), headers: response.headers, budgetRefusal: true };
+  return { status: response.status, body: await response.text(), headers: response.headers, source: 'budget' };
 }
 
 // The caller's ledger subjects for the minute and the day of `now`, under a
@@ -391,17 +410,21 @@ async function refuseLookup(env: WorkerEnv, now: string, caller: { minute: strin
   return reading.accepted ? null : openAlexRefusal(env, '', reading, 'essential', reading.scope === 'user');
 }
 
+function acceptsList(harvest: HarvestAsk | null, status: number, body: string) {
+  return status !== 200 || harvest?.canCacheList?.(body) !== false;
+}
+
 // An edge miss: the shared store first, then -- and only then -- a reservation
 // and the call. Resolves without an origin so that everyone waiting on the
 // same miss can put their own on.
 async function relayMiss(request: Request, target: URL, cacheKey: Request, env: WorkerEnv, harvest: HarvestAsk | null, asker: Asker): Promise<RelayedAnswer> {
   const key = await sharedKey(cacheKey);
   const shared = await readShared(env, key);
-  if (shared) {
+  if (shared && acceptsList(harvest, shared.status, shared.body)) {
     const headers = relayHeaders();
     headers.set('cache-control', cacheControl(shared.status));
     await putAtEdge(cacheKey, new Response(shared.body, { status: shared.status, headers }));
-    return { ...shared, headers };
+    return { ...shared, headers, source: 'shared' };
   }
 
   // One instant for the reservation and the reading this answer brings, so
@@ -460,10 +483,10 @@ async function relayMiss(request: Request, target: URL, cacheKey: Request, env: 
   // A refusal is relayed with its own status and its own `retry-after`, because
   // flattening it into a 502 would leave the client guessing how long to wait --
   // and since February 2026 that wait can be most of a day.
-  if (!upstream.ok && upstream.status !== 404) {
+  if ((!upstream.ok && upstream.status !== 404) || !acceptsList(harvest, upstream.status, body)) {
     headers.set('cache-control', 'no-store');
     await observed;
-    return { status: upstream.status, body, headers };
+    return { status: upstream.status, body, headers, source: 'upstream' };
   }
 
   headers.set('cache-control', cacheControl(upstream.status));
@@ -471,7 +494,7 @@ async function relayMiss(request: Request, target: URL, cacheKey: Request, env: 
   // everywhere else. The edge copy only saves this location a store read.
   await Promise.all([writeShared(env, key, upstream.status, body), observed]);
   await putAtEdge(cacheKey, new Response(body, { status: upstream.status, headers }));
-  return { status: upstream.status, body, headers };
+  return { status: upstream.status, body, headers, source: 'upstream' };
 }
 
 export function handleOpenAlex(request: Request, env: WorkerEnv) {
@@ -501,7 +524,7 @@ export function handleAgentOpenAlex(request: Request, env: WorkerEnv) {
 
 // What a billed harvest miss spends: the new follows' share for a run a new
 // follow started, otherwise the nightly run's, and the part of it a lane names.
-export type HarvestAsk = Pick<OpenAlexBudget, 'part' | 'newFollow'>;
+export type HarvestAsk = Pick<OpenAlexBudget, 'part' | 'newFollow'> & { canCacheList?: (body: string) => boolean };
 
 /**
  * The relay as the paper harvest asks it in-process: the same validation,
@@ -511,6 +534,13 @@ export type HarvestAsk = Pick<OpenAlexBudget, 'part' | 'newFollow'>;
  */
 export function handleHarvestOpenAlex(request: Request, env: WorkerEnv, ask: HarvestAsk = {}) {
   return relayOpenAlex(request, env, ask, 'reader');
+}
+
+export class OpenAlexUnavailable extends Error {}
+
+export function shortOpenAlexWait(response: Response) {
+  const wait = Number(response.headers.get('retry-after'));
+  return response.status === 429 && wait > 0 && wait <= 60 ? wait : 0;
 }
 
 async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestAsk | null, asker: Asker) {
@@ -530,7 +560,9 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestA
     Object.fromEntries(target.searchParams),
   );
   const cached = await matchAtEdge(cacheKey);
-  if (cached) return serveCached(cached, origin, env);
+  if (cached && (cached.status !== 200 || harvest?.canCacheList?.(await cached.clone().text()) !== false)) {
+    return serveCached(cached, origin, env);
+  }
 
   // A request joins a miss in flight whatever its own tier: joining spends no
   // unit. It does not take that miss's budget refusal, because one URL can be
@@ -545,7 +577,9 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestA
   // none, never the same one again.
   for (let pending = inFlight.get(cacheKey.url); pending; pending = inFlight.get(cacheKey.url)) {
     const answer = await pending;
-    if (!answer.budgetRefusal) return forOrigin(answer, origin, env);
+    if (answer.source === 'budget') continue;
+    if (answer.source === 'shared' && !acceptsList(harvest, answer.status, answer.body)) continue;
+    return forOrigin(answer, origin, env);
   }
   const pending = relayMiss(request, target, cacheKey, env, harvest, asker).finally(() => inFlight.delete(cacheKey.url));
   inFlight.set(cacheKey.url, pending);

@@ -148,8 +148,9 @@ export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Obj
 // follows start have OPENALEX_NEW_FOLLOWS_DAILY_UNITS of it, a subject of
 // their own, and the nightly run the rest, so neither spends the other's: a
 // follow added after the run's enrichment is still harvested at once. The
-// nightly run's lanes spend named parts of its share, checked in the same
-// transaction (`HARVEST_OPENALEX_PARTS` in paper-sources.ts).
+// nightly run's lanes and author lookups charge that same nightly subject.
+// Their named parts (`HARVEST_OPENALEX_PARTS` in paper-sources.ts and
+// `AUTHOR_IMPACT_PART` in paper-quality.ts) are checked in the same transaction.
 export const OPENALEX_HARVEST_DAILY_UNITS = 4_000;
 export const OPENALEX_NEW_FOLLOWS_DAILY_UNITS = 300;
 // How much of the day's ceiling everything that is not the harvest may spend
@@ -754,6 +755,7 @@ export function openAlexRefusal(env: WorkerEnv, origin: string, reservation: Quo
     // keeping the names exposed here.
     'access-control-expose-headers': `retry-after, ${OPENALEX_BUDGET_TIER_HEADER}`,
     [OPENALEX_BUDGET_TIER_HEADER]: tier,
+    ...(tier === 'feed' && reservation.scope ? { 'x-papertok-harvest-scope': reservation.scope } : {}),
     'cache-control': 'no-store',
     // The day's refusal is not the true seconds until UTC midnight: a tier
     // closes every day and can reopen at the next budget reading, and a

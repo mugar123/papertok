@@ -473,8 +473,9 @@ const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?
 // followed lanes there are, and 400 followed searches spent the whole share
 // before a paper was enriched, so the nightly refresh of followed lanes has a
 // part of 700. Category and notable lanes run before it every night, so they
-// stop at 3,000 and leave it its 700; enrichment runs last and spends what is
-// left.
+// stop at 3,000, leaving 700 under the nightly cap. Enrichment has no part
+// cap. After enrichment, author lookups can spend up to 2,500 of the units
+// remaining under both the nightly share and the feed tier's ceiling.
 type HarvestPart = 'categories' | 'nightly' | 'new';
 const HARVEST_OPENALEX_PARTS: Record<HarvestPart, HarvestAsk> = {
   categories: { part: { subject: 'openalex:harvest:categories', limit: 3_000 } },

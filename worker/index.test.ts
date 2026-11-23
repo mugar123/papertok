@@ -1946,6 +1946,37 @@ test('an OpenAlex answer fetched in one location is served from the shared store
   assert.equal(entry.ttl, 24 * 60 * 60, 'kept for a day');
 });
 
+for (const source of ['edge', 'shared store via a concurrent reader']) {
+  test(`the harvest bypasses a rejected list from the ${source}`, async () => {
+    const store = fakeOpenAlexStore();
+    const env = openAlexEnv({ NOTIFICATION_STORE: store });
+    const request = () => new Request(OPENALEX_LIST_URL, { headers: BROWSER });
+    const empty = JSON.stringify({ results: [] });
+    const found = JSON.stringify({ results: [{ id: 'W1' }] });
+    const harvest = () => handleHarvestOpenAlex(request(), env, { canCacheList: body => body === found });
+    let upstream = empty;
+    const calls = await withCountedUpstream(async () => new Response(upstream), () =>
+      withIdentityAndCacheStore(async edge => {
+        const rejected = await harvest();
+        assert.equal(rejected.headers.get('cache-control'), 'no-store');
+        assert.equal(edge.size, 0);
+        assert.equal(store.entries.size, 0);
+        assert.equal(await (await reportApi.fetch(request(), env)).text(), empty);
+        upstream = found;
+        if (source === 'edge') {
+          assert.equal(await (await harvest()).text(), found);
+        } else {
+          edge.clear();
+          const [reader, batch] = await Promise.all([reportApi.fetch(request(), env), harvest()]);
+          assert.equal(await reader.text(), empty);
+          assert.equal(await batch.text(), found);
+        }
+        assert.equal(await (await harvest()).text(), found);
+      }));
+    assert.equal(calls.length, 3);
+  });
+}
+
 test('a trailing slash on an OpenAlex path shares the entry, reservation and call of the same upstream URL', async () => {
   const store = fakeOpenAlexStore();
   const ledger = recordingLedger();

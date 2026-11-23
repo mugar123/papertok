@@ -16,7 +16,7 @@ import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cit
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
 import { withCrossrefType } from '../src/services/feed-publication-rules.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
-import { OPENALEX_PARAM_MAX_LENGTH, handleHarvestOpenAlex } from './openalex-api.ts';
+import { OpenAlexUnavailable, handleHarvestOpenAlex, openAlexFilterBatches, shortOpenAlexWait } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
 import { fetchWithDeadline, reserveInternalCall } from './provider-runtime.ts';
 import { database, rewriteWorks } from './paper-store.ts';
@@ -78,31 +78,9 @@ interface Row { id: number; paper: string; enrich_misses: number; published: str
 
 const chunks = <T>(values: T[], size: number) => Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
 
-// Filters on `key`, each with at most `perFilter` of the values and no longer
-// than the relay forwards: it drops a longer filter, and the request would go
-// out unfiltered and find none of the papers. 50 DOIs of 50 characters are
-// already too long for one. A value too long for a filter of its own is not asked.
 function openAlexFilters(key: string, values: string[], perFilter: number) {
-  const filters: string[] = [];
-  let count = 0;
-  for (const value of values) {
-    const alone = `${key}:${value}`;
-    if (alone.length > OPENALEX_PARAM_MAX_LENGTH) continue;
-    const joined = `${filters.at(-1)}|${value}`;
-    if (count > 0 && count < perFilter && joined.length <= OPENALEX_PARAM_MAX_LENGTH) {
-      filters[filters.length - 1] = joined;
-      count += 1;
-    } else {
-      filters.push(alone);
-      count = 1;
-    }
-  }
-  return filters;
+  return openAlexFilterBatches(key, values, perFilter).map(batch => `${key}:${batch.join('|')}`);
 }
-
-// OpenAlex will not answer this run: its day (or the harvest's share of it) is
-// spent, or it is failing. The papers still waiting for it wait for the next run.
-class OpenAlexUnavailable extends Error {}
 
 async function openAlexChunk(env: EnrichEnv, filter: string) {
   const url = new URL('https://papertok.internal/openalex/works');
@@ -120,8 +98,8 @@ async function openAlexChunk(env: EnrichEnv, filter: string) {
     if (response.ok) return (await response.json<{ results?: OpenAlexWork[] }>()).results || [];
     // A short wait (OpenAlex's own rate limit) is waited out once; a spent day
     // or harvest share, which the relay refuses with five minutes, is not.
-    const wait = Number(response.headers.get('retry-after')) || 0;
-    if (response.status === 429 && attempt === 0 && wait > 0 && wait <= 60) {
+    const wait = shortOpenAlexWait(response);
+    if (attempt === 0 && wait) {
       await new Promise(resolve => setTimeout(resolve, wait * 1000));
       continue;
     }
