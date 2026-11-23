@@ -1,17 +1,21 @@
+import { getKnownCategoryLabel } from '../data/category-taxonomy.ts';
 import type { FollowEntity } from './following.ts';
 import { getLocalizedInstitutionName } from './institution-localization.ts';
 import { findLocalTopic, isQueryTopicId, resolvePaperTopic } from './topic-navigation.ts';
 
-export function getFollowDisplayName<T extends Partial<FollowEntity>>(follow: T, surface?: 'digest'): string | T['displayName'] {
+export function getFollowDisplayName(follow: Partial<FollowEntity>, surface?: 'digest'): string {
+  const displayName = typeof follow.displayName === 'string' ? follow.displayName : '';
   if (follow.type === 'institution') {
-    return getLocalizedInstitutionName({ display_name: follow.displayName, metadata: follow.metadata }) || follow.displayName;
+    return getLocalizedInstitutionName({ display_name: displayName, metadata: follow.metadata }) || displayName;
   }
-  if (follow.type !== 'topic') return follow.displayName;
-  if (follow.metadata?.labelEn) return follow.metadata.labelEn;
+  if (follow.type !== 'topic') return displayName;
+  const labelEn = follow.metadata?.labelEn;
+  const englishLabel = typeof labelEn === 'string' && labelEn.trim() ? labelEn : '';
 
-  // Keep the digest payload's free-text resolution. On screen, only a taxonomy
-  // entry can rename a follow, and a reader's keyword keeps its spelling.
-  if (surface !== 'digest' && isQueryTopicId(follow.canonicalId)) return follow.displayName;
-  const lookup = surface === 'digest' ? resolvePaperTopic : findLocalTopic;
-  return lookup(follow.canonicalId)?.label || lookup(follow.displayName)?.label || follow.displayName;
+  if (surface === 'digest') {
+    return englishLabel || resolvePaperTopic(follow.canonicalId)?.label || resolvePaperTopic(displayName)?.label || displayName;
+  }
+  if (isQueryTopicId(follow.canonicalId)) return displayName;
+  return getKnownCategoryLabel(follow.canonicalId ?? '') || englishLabel
+    || findLocalTopic(follow.canonicalId)?.label || findLocalTopic(displayName)?.label || displayName;
 }

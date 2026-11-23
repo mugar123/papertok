@@ -323,9 +323,9 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   taxonomy leaf and it has at least 100 known citations. Otherwise it shows
   "You follow [name]" if a follow matches, or no reason.
   On other cards a matching follow comes first. "Because you follow [name]"
-  credits a follow used to fetch the card in Following, a custom feed or For
-  You. For You can also credit the author whose follow boosted the card's
-  score. All other matches read "You follow [name]".
+  credits only a follow that fetched the card in Following or For You.
+  All other matches read "You follow [name]", including matches in custom
+  feeds and follows that only boosted the card's score.
   On a scored For You card, "Similar to papers you liked" (saved, liked or
   saved, engaged with) names the examples sent with its page. It needs a
   cosine of at least 0.65 to the closest example, and similarity must outweigh

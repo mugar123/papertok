@@ -123,7 +123,6 @@ export interface PaperRecommendationScore {
   missingAbstract: number;
   diversityBoost: number;
   authorBoost: number;
-  boostedAuthorKey?: string;
   // The follows the client's ranking boosts. A followed journal's papers come
   // from its lane in the corpus (`_followedEntityMatches`) and get no boost.
   followedEntityMatches: Record<Exclude<PaperFollowMatch['type'], 'journal'>, boolean>;
