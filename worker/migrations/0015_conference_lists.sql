@@ -8,6 +8,7 @@ CREATE TABLE conference_editions (
   source_count INTEGER,
   listed_count INTEGER NOT NULL DEFAULT 0,
   checked_at INTEGER,
+  search_completed_at INTEGER,
   next_check_at INTEGER NOT NULL DEFAULT 0,
   next_recheck_at INTEGER NOT NULL DEFAULT 0,
   stale_since INTEGER,
@@ -25,6 +26,7 @@ CREATE TABLE conference_papers (
   paper TEXT NOT NULL,
   seen_generation INTEGER NOT NULL,
   rechecked_at INTEGER NOT NULL DEFAULT 0,
+  missing_from_search INTEGER NOT NULL DEFAULT 0,
   visible INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (edition_id, forum_id)
 );

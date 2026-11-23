@@ -48,7 +48,7 @@ function fixture(context: TestContext, { credentials = false, otherEditions = fa
   } as unknown as Parameters<typeof runConferenceIngest>[1];
   const papers = () => db.prepare('SELECT forum_id, visible, paper FROM conference_papers ORDER BY forum_id').all();
   return {
-    db, sleeps, quota, papers, run: () => runConferenceIngest(env, step), advance: () => { now += day; },
+    db, sleeps, quota, papers, run: () => runConferenceIngest(env, step), advance: (ms = day) => { now += ms; },
     refresh: () => db.exec("UPDATE conference_editions SET next_check_at = 0 WHERE edition_id = 'neurips-2026'"),
   };
 }
@@ -95,7 +95,7 @@ for (const kind of ['short', 'missing count', 'negative count', 'count smaller t
   });
 }
 
-for (const kind of ['withdrawn', 'rejected', 'not found', 'empty', 'partial', 'unknown', 'unknown visibility', 'error']) {
+for (const kind of ['withdrawn', 'rejected', 'deleted', 'restricted', 'not found', 'empty', 'partial', 'unknown', 'unknown visibility', 'malformed readers', 'future deletion', 'error']) {
   test('forum recheck handles ' + kind + ' evidence', async context => {
     const state = fixture(context, { credentials: true });
     const forum = 'knownForum';
@@ -104,11 +104,15 @@ for (const kind of ['withdrawn', 'rejected', 'not found', 'empty', 'partial', 'u
     const rejected = submission(forum, venue + '/Rejected_Submission');
     const response = kind === 'withdrawn' ? Response.json({ notes: [withdrawn] })
       : kind === 'rejected' ? Response.json({ notes: [rejected] })
+      : kind === 'deleted' ? Response.json({ notes: [{ ...accepted, ddate: Date.now() }] })
+      : kind === 'restricted' ? Response.json({ notes: [{ ...accepted, readers: ['chairs'] }] })
       : kind === 'not found' ? new Response(null, { status: 404 })
       : kind === 'error' ? new Response(null, { status: 503 })
       : kind === 'partial' ? Response.json({ notes: [withdrawn], count: 2 })
       : kind === 'unknown' ? Response.json({ notes: [{ id: forum, forum, content: {} }] })
       : kind === 'unknown visibility' ? Response.json({ notes: [{ ...withdrawn, readers: 'chairs' }] })
+      : kind === 'malformed readers' ? Response.json({ notes: [{ ...withdrawn, readers: ['everyone', 7] }] })
+      : kind === 'future deletion' ? Response.json({ notes: [{ ...accepted, ddate: Date.now() + 2 * day }] })
       : Response.json({ notes: [] });
     let lookups = 0;
     context.mock.method(globalThis, 'fetch', async (input: string | URL) => {
@@ -116,6 +120,7 @@ for (const kind of ['withdrawn', 'rejected', 'not found', 'empty', 'partial', 'u
       if (url.pathname === '/login') return Response.json({ token: 'mock-session' });
       if (url.pathname === '/notes') {
         assert.equal(url.searchParams.get('id'), forum);
+        if (kind === 'deleted') assert.equal(url.searchParams.get('trash'), 'true');
         lookups++;
         return response.clone();
       }
@@ -127,7 +132,7 @@ for (const kind of ['withdrawn', 'rejected', 'not found', 'empty', 'partial', 'u
     state.refresh();
     await state.run();
     assert.equal(lookups, 1);
-    const hidden = kind === 'withdrawn' || kind === 'rejected';
+    const hidden = ['withdrawn', 'rejected', 'deleted', 'restricted'].includes(kind);
     assert.equal(state.papers()[0].visible, hidden ? 0 : 1, 'even after the stale discovery response republishes');
     assert.equal(state.db.prepare('SELECT COUNT(*) AS count FROM conference_forum_block').get()?.count, hidden ? 1 : 0);
     assert.ok(state.quota.calls.filter(key => key.includes('openreview-ingest')).length >= 10);
@@ -152,6 +157,96 @@ test('a changed venue in discovery hides the forum and later accepted search res
   state.refresh();
   await state.run();
   assert.equal(state.papers()[0].visible, 1);
+});
+
+test('a completed pass immediately prioritizes a forum missing from that pass', async context => {
+  const state = fixture(context, { credentials: true });
+  const first = submission('first');
+  const second = submission('second');
+  let refresh = false;
+  const lookups: string[] = [];
+  context.mock.method(globalThis, 'fetch', async (input: URL | string) => {
+    const url = new URL(input);
+    if (url.pathname === '/login') return Response.json({ token: 'mock-session' });
+    if (url.pathname === '/notes') {
+      lookups.push(url.searchParams.get('id') ?? '');
+      return Response.json({ notes: [] });
+    }
+    return refresh ? Response.json({ notes: [first], count: 1 }) : Response.json({ notes: [first, second], count: 2 });
+  });
+  await state.run();
+  refresh = true;
+  state.advance(60_000);
+  state.refresh();
+  await state.run();
+  assert.deepEqual(lookups, ['second']);
+  assert.deepEqual(state.papers().map(paper => paper.visible), [1, 1]);
+});
+
+test('the nightly ledger counts a recheck sign-in as the 150th request and refuses the lookup', async context => {
+  const state = fixture(context, { credentials: true });
+  let calls = 0;
+  context.mock.method(globalThis, 'fetch', async (input: URL | string) => {
+    calls++;
+    return new URL(input).pathname === '/login'
+      ? Response.json({ token: 'mock-session' }) : Response.json({ notes: [submission('first')], count: 1 });
+  });
+  await state.run();
+  state.advance();
+  const now = Date.now();
+  for (let call = 0; call < 149; call++) {
+    const quota = await reserveRequestQuota(state.quota.binding, {
+      periodKey: 'openreview-ingest:' + new Date(now).toISOString().slice(0, 10),
+      subject: 'conference-ingest', subjectLimit: 150, globalLimit: 150, expiresAt: now + day,
+    });
+    assert.equal(quota.accepted, true);
+  }
+  await state.run();
+  await state.run();
+  assert.equal(calls, 3);
+  assert.equal(state.papers()[0].visible, 1);
+});
+
+test('a recheck 429 keeps the forum and pauses future requests', async context => {
+  const state = fixture(context, { credentials: true });
+  let checks = 0;
+  context.mock.method(globalThis, 'fetch', async (input: URL | string) => {
+    const path = new URL(input).pathname;
+    if (path === '/login') return Response.json({ token: 'mock-session' });
+    if (path === '/notes') {
+      checks++;
+      return new Response(null, { status: 429, headers: { 'retry-after': '3600' } });
+    }
+    return Response.json({ notes: [submission('first')], count: 1 });
+  });
+  await state.run();
+  state.advance();
+  await state.run();
+  await state.run();
+  assert.equal(checks, 1);
+  assert.equal(state.papers()[0].visible, 1);
+  assert.equal(state.db.prepare("SELECT retry_after FROM conference_editions WHERE edition_id = 'neurips-2026'").get()?.retry_after, Date.now() + 3_600_000);
+});
+
+test('the documented manual block survives the next accepted harvest', async context => {
+  const state = fixture(context);
+  context.mock.method(globalThis, 'fetch', async () => Response.json({ notes: [submission('first')], count: 1 }));
+  await state.run();
+  state.db.exec(`
+    BEGIN;
+    INSERT INTO conference_forum_block (edition_id, forum_id, venue_id, blocked_at)
+    VALUES ('neurips-2026', 'first', 'manual', 1)
+    ON CONFLICT (edition_id, forum_id) DO NOTHING;
+    UPDATE conference_papers SET visible = 0 WHERE edition_id = 'neurips-2026' AND forum_id = 'first';
+    UPDATE conference_editions SET revision = revision + 1,
+      listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = 'neurips-2026' AND visible = 1)
+    WHERE edition_id = 'neurips-2026';
+    COMMIT;
+  `);
+  state.refresh();
+  await state.run();
+  assert.equal(state.papers()[0].visible, 0);
+  assert.equal(state.db.prepare("SELECT listed_count FROM conference_editions WHERE edition_id = 'neurips-2026'").get()?.listed_count, 0);
 });
 
 test('an explicit withdrawal cancels a forum that is staged in the first harvest', async context => {

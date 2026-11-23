@@ -4,7 +4,7 @@ import type { OpenReviewNote } from '../src/services/open-review-service.ts';
 import { mapOpenReviewNote } from '../src/services/open-review-service.ts';
 import { storedPaper } from './paper-store.ts';
 import { conferenceMembership, conferenceSortKey, conferenceSources, openReviewField } from './conference-membership.ts';
-import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount } from './open-review-api.ts';
+import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount, openReviewUnavailable } from './open-review-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { findConferenceEdition } from '../src/data/conferences.ts';
@@ -143,8 +143,12 @@ function publicAuthorId(id: string | null | undefined) {
 
 function httpsPdf(url: string | null | undefined) {
   if (!url) return undefined;
-  const parsed = URL.parse(url);
-  return parsed?.protocol === 'https:' && !parsed.username && !parsed.password ? url : undefined;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password ? url : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function ingestPage(db: D1Database, state: EditionState, request: typeof fetchWithDeadline, now: number) {
@@ -170,6 +174,12 @@ async function ingestPage(db: D1Database, state: EditionState, request: typeof f
 
   const evidence: { forum: string; venue: string }[] = [];
   const statements = await Promise.all(notes.map(async note => {
+    const unavailable = note && openReviewUnavailable(note, now);
+    if (unavailable) {
+      const forum = note.forum;
+      if (forum && note.id === forum && isOpenReviewSubmission(note)) evidence.push({ forum, venue: 'openreview:' + unavailable });
+      return null;
+    }
     const membership = conferenceMembership(state.edition_id, note);
     if (!membership) {
       const forum = note?.forum;
@@ -235,16 +245,22 @@ async function ingestPage(db: D1Database, state: EditionState, request: typeof f
         track = excluded.track, sort_key = excluded.sort_key, paper = excluded.paper,
         seen_generation = excluded.seen_generation, visible = excluded.visible
     `).bind(now, state.edition_id, state.generation)] : []),
+    db.prepare(`
+      UPDATE conference_papers SET missing_from_search = NOT EXISTS (
+        SELECT 1 FROM conference_paper_stage s
+        WHERE s.edition_id = conference_papers.edition_id AND s.forum_id = conference_papers.forum_id AND s.seen_generation = ?
+      ) WHERE edition_id = ? AND visible = 1
+    `).bind(state.generation, state.edition_id),
     db.prepare('DELETE FROM conference_paper_stage WHERE edition_id = ?').bind(state.edition_id),
     db.prepare(`
       UPDATE conference_editions SET generation = generation + 1, revision = revision + 1, term = 0, offset = 0,
         expected_count = 0, failures = CASE WHEN ? THEN failures + 1 ELSE 0 END, retry_after = 0,
         checked_at = CASE WHEN ? THEN checked_at ELSE ? END,
         stale_since = CASE WHEN ? THEN COALESCE(stale_since, ?) ELSE NULL END, next_check_at = ?,
-        source_count = ?, listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = ? AND visible = 1)
+        source_count = ?, search_completed_at = ?, listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = ? AND visible = 1)
       WHERE edition_id = ?
     `).bind(Number(incomplete), Number(incomplete), now, Number(incomplete), now,
-      incomplete ? nextUtcDay(now) : nextCheck(state, now, counts.staged), expected, state.edition_id, state.edition_id),
+      incomplete ? nextUtcDay(now) : nextCheck(state, now, counts.staged), expected, now, state.edition_id, state.edition_id),
   ]);
   console.info(JSON.stringify({ conferenceEdition: state.edition_id, ...counts, expected, incomplete }));
 }
@@ -253,13 +269,18 @@ async function recheckPublished(db: D1Database, env: WorkerEnv, request: typeof 
   if (!openReviewAccount(env)) return null;
   const row = await db.prepare(`
     SELECT p.edition_id, p.forum_id FROM conference_papers p JOIN conference_editions e USING (edition_id)
-    WHERE p.visible = 1 AND p.rechecked_at < ? AND e.next_recheck_at <= ?
-    ORDER BY (p.seen_generation < e.generation - 1) DESC, p.rechecked_at, p.edition_id, p.forum_id LIMIT 1
-  `).bind(nextUtcDay(now) - dayMs, now).first<PublishedForum>();
+    WHERE p.visible = 1 AND e.next_recheck_at <= ?
+      AND (p.rechecked_at < ? OR (p.missing_from_search = 1 AND p.rechecked_at < e.search_completed_at))
+    ORDER BY p.missing_from_search DESC, p.rechecked_at, p.edition_id, p.forum_id LIMIT 1
+  `).bind(now, nextUtcDay(now) - dayMs).first<PublishedForum>();
   if (!row) return null;
   try {
-    const note = await fetchOpenReviewNote(env, row.forum_id, 15_000, { request, retryUnauthorized: false, requireComplete: true });
-    const venue = venueEvidence(row.forum_id, note);
+    let unavailable: string | null = null;
+    const note = await fetchOpenReviewNote(env, row.forum_id, 15_000, {
+      request, retryUnauthorized: false, requireComplete: true,
+      onUnavailable: reason => { unavailable = 'openreview:' + reason; },
+    });
+    const venue = unavailable ?? venueEvidence(row.forum_id, note);
     const source = conferenceSources.get(row.edition_id);
     await db.batch([
       ...blockForums(db, row.edition_id, venue && source && venue !== source.venueId ? [{ forum: row.forum_id, venue }] : [], now),

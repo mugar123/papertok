@@ -114,7 +114,18 @@ export function isOpenReviewSubmission(note: OpenReviewNote) {
   ].some(prefix => domain.startsWith(prefix));
 }
 
-type ReadableNote = OpenReviewNote & { readers?: unknown };
+type ReadableNote = OpenReviewNote & { readers?: unknown; ddate?: unknown };
+type UnavailableNoteReason = 'deleted' | 'restricted';
+
+function validReaders(readers: unknown): readers is string[] {
+  return Array.isArray(readers) && readers.every(reader => typeof reader === 'string' && reader.trim().length > 0);
+}
+
+export function openReviewUnavailable(note: ReadableNote, now = Date.now()): UnavailableNoteReason | null {
+  if (typeof note.ddate === 'number' && Number.isSafeInteger(note.ddate) && note.ddate > 0 && note.ddate <= now) return 'deleted';
+  if (validReaders(note.readers) && !note.readers.includes('everyone')) return 'restricted';
+  return null;
+}
 
 const forEveryone = (readers: unknown) => !Array.isArray(readers) || readers.includes('everyone');
 
@@ -146,8 +157,8 @@ function publicNote(note: ReadableNote): OpenReviewNote | null {
  * `timeoutMs` covers the whole lookup, a sign-in included, not each request.
  */
 export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs = SOURCE_UPSTREAM_TIMEOUT_MS, {
-  request = fetchWithDeadline, retryUnauthorized = true, requireComplete = false,
-}: { request?: typeof fetchWithDeadline; retryUnauthorized?: boolean; requireComplete?: boolean } = {}) {
+  request = fetchWithDeadline, retryUnauthorized = true, requireComplete = false, onUnavailable,
+}: { request?: typeof fetchWithDeadline; retryUnauthorized?: boolean; requireComplete?: boolean; onUnavailable?: (reason: UnavailableNoteReason) => void } = {}) {
   const account = openReviewAccount(env);
   if (!account) {
     const error: UpstreamError = new Error('No OpenReview account is configured');
@@ -156,7 +167,7 @@ export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs 
   }
   const signal = AbortSignal.timeout(timeoutMs);
   const ask = (token: string) => request(
-    `${OPENREVIEW_API}/notes?id=${encodeURIComponent(id)}`,
+    `${OPENREVIEW_API}/notes?id=${encodeURIComponent(id)}${onUnavailable ? '&trash=true' : ''}`,
     { headers: { ...HEADERS, authorization: `Bearer ${token}` }, signal },
     timeoutMs,
   );
@@ -183,8 +194,14 @@ export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs 
     || (payload.count !== undefined && payload.count !== 1))) return null;
   const note = (payload?.notes || []).find(candidate => candidate?.id === id);
   if (!note) return null;
-  if (requireComplete && (!Array.isArray(note.readers) || !note.readers.includes('everyone'))) return null;
   const reply = (note.forum ?? id) !== id;
   const archived = String(note.domain || '').toLowerCase().startsWith('openreview.net/archive');
-  return !reply && isOpenReviewSubmission(note) && !archived ? publicNote(note) : null;
+  if (reply || !isOpenReviewSubmission(note) || archived) return null;
+  if (requireComplete) {
+    if (note.forum !== id) return null;
+    const unavailable = openReviewUnavailable(note);
+    if (unavailable) onUnavailable?.(unavailable);
+    if (unavailable || !validReaders(note.readers) || !note.readers.includes('everyone')) return null;
+  }
+  return publicNote(note);
 }
