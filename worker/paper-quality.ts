@@ -6,7 +6,8 @@ import { CORPUS_DAYS, daysFromNow } from './paper-store.ts';
 
 const AUTHOR_REFRESH_DAYS = 30;
 const AUTHOR_RETENTION_DAYS = 365;
-// After the 2026-11-23 harvest, 2,830 of 3,700 units remained. Other nights can leave fewer.
+// The 2026-11-23 feed tally left at least 2,830 units under the nightly cap.
+// Author lookups can use only what both the nightly share and the feed ceiling still allow.
 const AUTHOR_NIGHTLY_CALLS = 600;
 export const AUTHOR_IMPACT_PART = { subject: 'openalex:harvest:author-impact', limit: AUTHOR_NIGHTLY_CALLS };
 const AUTHORS_PER_CALL = 100;
@@ -91,7 +92,10 @@ async function fetchImpact(env: WorkerEnv, ids: string[], lookup: AuthorLookup) 
   const requiresAnswer = lookup === 'discovery' && ids.length >= MIN_AUTHORS_REQUIRING_ANSWER;
   const response = await handleHarvestOpenAlex(new Request(url), env, {
     part: AUTHOR_IMPACT_PART,
-    canCacheList: requiresAnswer ? body => Boolean(authorMetrics(body, requested)?.size) : undefined,
+    canCacheList: body => {
+      const metrics = authorMetrics(body, requested);
+      return metrics !== null && (!requiresAnswer || metrics.size > 0);
+    },
   }).catch((error: unknown) => {
     if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
       throw new OpenAlexUnavailable(`OpenAlex author list failed: ${error.name}`);

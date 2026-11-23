@@ -68,7 +68,7 @@ const OAI_STEP = { retries: { limit: 3, delay: '1 minute', backoff: 'exponential
 // next time.
 const OAI_MAX_WAIT_SECONDS = 300;
 const OAI_MAX_WAITS = 3;
-type AuthorStepResult = AuthorProgress | null | { seconds: number; firstAuthor: string } | Error;
+type AuthorStepResult = AuthorProgress | null | { seconds: number; firstAuthor: string } | { failed: string };
 const AUTHOR_MAX_WAITS = 3;
 const AUTHOR_STEP = { ...PAGE_STEP, timeout: '10 minutes' } as const;
 const LANE_STEP = { retries: { limit: 2, delay: '1 minute', backoff: 'exponential' }, timeout: '10 minutes' } as const;
@@ -314,10 +314,10 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
           if (isD1Error(error)) throw error;
           if (error instanceof AuthorRateLimit) return { seconds: error.seconds, firstAuthor: error.firstAuthor };
           // Fail the phase outside the step so its D1 retries cannot repeat a refused provider call.
-          return error instanceof Error ? error : new Error(String(error));
+          return { failed: error instanceof Error ? error.message : String(error) };
         }
       });
-      if (result instanceof Error) throw result;
+      if (result && typeof result === 'object' && 'failed' in result) throw new Error(result.failed);
       if (result && typeof result === 'object' && 'seconds' in result) {
         if (waits >= AUTHOR_MAX_WAITS || lastWaitedAuthor === result.firstAuthor) {
           console.warn(`Stopping author impact for this run: HTTP 429 for ${result.firstAuthor} after ${waits} waits`);

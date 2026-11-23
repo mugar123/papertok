@@ -29,11 +29,15 @@ function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0, ti
       if (fail(name)) throw new Error(`${name} failed past its retries`);
       if (skipLanes && /^(categories|notable): lanes \d+$/.test(name)) return null;
       const callback = rest.at(-1) as () => Promise<unknown>;
+      const runStep = async () => {
+        const output = await callback();
+        return output === undefined ? undefined : JSON.parse(JSON.stringify(output)) as unknown;
+      };
       const retries = rest.length > 1 ? (rest[0] as { retries?: { limit: number } }).retries?.limit ?? 0 : 0;
       for (let attempt = 0; ; attempt += 1) {
         if (!timeoutMs) {
           try {
-            return await callback();
+            return await runStep();
           } catch (error) {
             if (attempt >= retries) throw error;
             continue;
@@ -41,7 +45,7 @@ function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0, ti
         }
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timedOut = new Promise<'timed out'>(resolve => { timer = setTimeout(resolve, timeoutMs, 'timed out'); });
-        const result = await Promise.race([callback(), timedOut]).finally(() => clearTimeout(timer));
+        const result = await Promise.race([runStep(), timedOut]).finally(() => clearTimeout(timer));
         if (result !== 'timed out') return result;
         if (attempt >= retries) throw new Error(`${name} timed out past its retries`);
       }
@@ -125,26 +129,28 @@ test("a followed lanes' run embeds its own lanes' papers and leaves the rest to 
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM work_vectors').get() as { n: number }).n, 2);
 });
 
-test('the nightly run stores quality after enrichment even when author lookup fails, while the follow run skips it', async t => {
-  const { env, db } = corpus();
-  const asked = providers(t, url => url.pathname === '/authors' ? new Response(null, { status: 401 }) : undefined);
-  const stored = { ...paper('2610.30005', 'A voted preprint'), authors: [{ id: 'A8', name: 'An author' }], huggingFaceUpvotes: 4 };
-  await ingestPapers(env, [{ paper: stored, lanes: ['cs.CL'] }]);
-  const followed = workflowStep();
-  await runPaperHarvest(env, followRun(['author:A8']), followed.step);
-  assert.equal(db.prepare('SELECT count(*) AS n FROM work_quality').get()?.n, 0);
+for (const status of [401, 403]) {
+  test(`the nightly run stores quality after author lookup fails with HTTP ${status}, while the follow run skips it`, async t => {
+    const { env, db } = corpus();
+    const asked = providers(t, url => url.pathname === '/authors' ? new Response(null, { status }) : undefined);
+    const stored = { ...paper('2610.30005', 'A voted preprint'), authors: [{ id: 'A8', name: 'An author' }], huggingFaceUpvotes: 4 };
+    await ingestPapers(env, [{ paper: stored, lanes: ['cs.CL'] }]);
+    const followed = workflowStep();
+    await runPaperHarvest(env, followRun(['author:A8']), followed.step);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM work_quality').get()?.n, 0);
 
-  const nightly = workflowStep({ skipLanes: true, fail: name => name.startsWith('backfill ') || name.startsWith('evict ') });
-  const errors = t.mock.method(console, 'error', () => {});
-  await runPaperHarvest(env, dailyRun(), nightly.step);
-  assert.ok(nightly.steps.indexOf('author impact 0') > nightly.steps.indexOf('enrich 0'));
-  assert.ok(nightly.steps.indexOf('paper quality 0') < nightly.steps.indexOf('embed 0'));
-  assert.equal(asked.filter(url => url.pathname === '/authors').length, 1);
-  const failures = errors.mock.calls.filter(call => call.arguments[0] === 'Paper harvest phase failed: author impact');
-  assert.equal(failures.length, 1);
-  assert.match(String(failures[0].arguments[1]), /HTTP 401/);
-  assert.deepEqual(db.prepare('SELECT max_h_index, hf_upvotes FROM work_quality').all().map(Object.values), [[null, 4]]);
-});
+    const nightly = workflowStep({ skipLanes: true, fail: name => name === 'author impact 1' || name.startsWith('backfill ') || name.startsWith('evict ') });
+    const errors = t.mock.method(console, 'error', () => {});
+    await runPaperHarvest(env, dailyRun(), nightly.step);
+    assert.deepEqual(nightly.steps.filter(name => /^(enrich|prune paper quality|author impact|paper quality|embed) 0$/.test(name)),
+      ['enrich 0', 'prune paper quality 0', 'author impact 0', 'paper quality 0', 'embed 0']);
+    assert.equal(asked.filter(url => url.pathname === '/authors').length, 1);
+    const failures = errors.mock.calls.filter(call => call.arguments[0] === 'Paper harvest phase failed: author impact');
+    assert.equal(failures.length, 1);
+    assert.ok(String(failures[0].arguments[1]).includes(`HTTP ${status}`));
+    assert.deepEqual(db.prepare('SELECT max_h_index, hf_upvotes FROM work_quality').all().map(Object.values), [[null, 4]]);
+  });
+}
 
 for (const recovers of [false, true]) {
   test(recovers ? 'three short waits cover author discovery and refresh together' : 'a second 429 on the same author batch ends the phase', async t => {
@@ -166,9 +172,11 @@ for (const recovers of [false, true]) {
       if (id > 200) cached.run('A' + id);
     }
     const nightly = workflowStep({ skipLanes: true, fail: name => /^(enrich |embed |evict |backfill )/.test(name) });
+    const sleeps = t.mock.method(nightly.step, 'sleep');
     await runPaperHarvest(env, dailyRun(), nightly.step);
     assert.equal(asks, recovers ? 7 : 2);
-    assert.equal(nightly.sleeps.filter(duration => duration === 1000).length, recovers ? 3 : 1);
+    const authorWaits = sleeps.mock.calls.map(call => call.arguments).filter(([name]) => name.startsWith('author wait '));
+    assert.deepEqual(authorWaits.map(([, duration]) => duration), recovers ? [1000, 1000, 1000] : [1000]);
     assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact WHERE h_index = 7').get()?.n, recovers ? 300 : 0);
     assert.equal(warnings.mock.calls.filter(call => String(call.arguments[0]).includes('429')).length, 1);
   });

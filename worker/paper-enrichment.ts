@@ -16,7 +16,7 @@ import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cit
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
 import { withCrossrefType } from '../src/services/feed-publication-rules.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
-import { OpenAlexUnavailable, fetchHarvestOpenAlexList, openAlexFilterBatches } from './openalex-api.ts';
+import { OpenAlexUnavailable, handleHarvestOpenAlex, openAlexFilterBatches, shortOpenAlexWait } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
 import { fetchWithDeadline, reserveInternalCall } from './provider-runtime.ts';
 import { database, rewriteWorks } from './paper-store.ts';
@@ -78,6 +78,10 @@ interface Row { id: number; paper: string; enrich_misses: number; published: str
 
 const chunks = <T>(values: T[], size: number) => Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
 
+function openAlexFilters(key: string, values: string[], perFilter: number) {
+  return openAlexFilterBatches(key, values, perFilter).map(batch => `${key}:${batch.join('|')}`);
+}
+
 async function openAlexChunk(env: EnrichEnv, filter: string) {
   const url = new URL('https://papertok.internal/openalex/works');
   url.searchParams.set('filter', filter);
@@ -86,15 +90,21 @@ async function openAlexChunk(env: EnrichEnv, filter: string) {
   // a full page would leave the last papers' works, retractions included, out.
   url.searchParams.set('per_page', '100');
   url.searchParams.set('select', OPENALEX_ENRICHMENT_SELECT);
-  const response = await fetchHarvestOpenAlexList(url, env).catch((error: Error) => {
-    throw new OpenAlexUnavailable(`OpenAlex enrichment failed: ${error?.name || error}`);
-  });
-  if (!response.ok) throw new OpenAlexUnavailable(`OpenAlex enrichment answered ${response.status}`);
-  return (await response.json<{ results?: OpenAlexWork[] }>()).results || [];
-}
-
-function openAlexFilters(key: string, values: string[], perFilter: number) {
-  return openAlexFilterBatches(key, values, perFilter).map(batch => `${key}:${batch.join('|')}`);
+  for (let attempt = 0; ; attempt += 1) {
+    // A timeout or a refused connection is OpenAlex failing, like a 5xx.
+    const response = await handleHarvestOpenAlex(new Request(url), env).catch((error: Error) => {
+      throw new OpenAlexUnavailable(`OpenAlex enrichment failed: ${error?.name || error}`);
+    });
+    if (response.ok) return (await response.json<{ results?: OpenAlexWork[] }>()).results || [];
+    // A short wait (OpenAlex's own rate limit) is waited out once; a spent day
+    // or harvest share, which the relay refuses with five minutes, is not.
+    const wait = shortOpenAlexWait(response);
+    if (attempt === 0 && wait) {
+      await new Promise(resolve => setTimeout(resolve, wait * 1000));
+      continue;
+    }
+    throw new OpenAlexUnavailable(`OpenAlex enrichment answered ${response.status}`);
+  }
 }
 
 /** The filters OpenAlex is asked for these ids, as `getOpenAlexEnrichmentId` names them: one call each. */

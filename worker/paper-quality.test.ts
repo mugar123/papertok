@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { WorkerEnv } from './env.ts';
-import { OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_NEW_FOLLOWS_DAILY_UNITS, reserveOpenAlexBudget } from './provider-runtime.ts';
+import { OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_NEW_FOLLOWS_DAILY_UNITS, readOpenAlexBudget, reserveOpenAlexBudget } from './provider-runtime.ts';
 import { AUTHOR_IMPACT_PART, computePaperQuality, loadPaperAuthorImpact, prunePaperQuality } from './paper-quality.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
@@ -18,6 +18,17 @@ function corpus() {
       .run(id, JSON.stringify(paper), new Date(published).toISOString(), new Date(now + 90 * day).toISOString());
   }
   return { db, env, add };
+}
+
+function bindSharedStore(env: WorkerEnv) {
+  const entries = new Map<string, { value: string; metadata: unknown }>();
+  const store = {
+    entries,
+    getWithMetadata: async (key: string) => entries.get(key) ?? { value: null, metadata: null },
+    put: async (key: string, value: string, options: { metadata: unknown }) => { entries.set(key, { value, metadata: options.metadata }); },
+  };
+  Object.assign(env, { NOTIFICATION_STORE: store });
+  return store;
 }
 
 // Synthetic OpenAlex list responses. All calls pass through the harvest relay and its quota ledger.
@@ -120,6 +131,25 @@ test('a spent nightly share stops calls across pages and the next night resumes 
   assert.equal(db.prepare('SELECT max_h_index FROM work_quality WHERE work_id = 501').get()?.max_h_index, 5);
 });
 
+test("author discovery still has its nightly units after readers spend their share and minute", async t => {
+  const { env, db, add } = corpus();
+  Object.assign(env, { OPENALEX_GLOBAL_DAILY_LIMIT: '4', OPENALEX_GLOBAL_MINUTE_LIMIT: '2' });
+  const warnings = t.mock.method(console, 'warn', () => {});
+  const batches = openAlex(t, ids => Response.json({ results: ids.map(id => ({ id, summary_stats: { h_index: 7 } })) }));
+  const readers = await reserveOpenAlexBudget(env, '', { tier: 'essential', kind: 'list', units: 2 });
+  assert.ok(readers.reservations);
+  for (let id = 1; id <= 101; id++) add(id, { authors: [{ id: 'A' + id }] });
+  await run(env);
+  assert.deepEqual(batches.map(ids => ids.length), [100]);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact WHERE h_index = 7').get()?.n, 100);
+  const { report } = await readOpenAlexBudget(env);
+  assert.equal(report?.tiers.feed.used, 1);
+  assert.equal(report?.rest.used, 2);
+  assert.deepEqual(warnings.mock.calls.map(call => call.arguments[0]), [
+    'Stopping author impact for this run: OpenAlex author list returned HTTP 429 (daily feed ceiling reached)',
+  ]);
+});
+
 test('a fifth citation, aging out and corpus deletion remove evidence, and a refresh that drops an author keeps its h-index', async t => {
   const { env, db, add } = corpus();
   let refreshed = false;
@@ -147,15 +177,28 @@ test('a fifth citation, aging out and corpus deletion remove evidence, and a ref
   assert.equal(db.prepare('SELECT count(*) AS n FROM works').get()?.n, 4);
 });
 
-test('a malformed OpenAlex list leaves the batch retryable and still materializes HF votes', async t => {
-  const { env, db, add } = corpus();
-  openAlex(t, () => Response.json({ error: 'invalid response' }));
-  add(1, { authors: [{ id: 'A1' }], huggingFaceUpvotes: 10 });
-  assert.equal(await loadPaperAuthorImpact(env.PAPER_STORE, env, now, { after: null, pending: [] }), null);
-  await computePaperQuality(env.PAPER_STORE, now, null);
-  assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact').get()?.n, 0);
-  assert.equal(db.prepare('SELECT hf_upvotes FROM work_quality').get()?.hf_upvotes, 10);
-});
+for (const phase of ['discovery', 'refresh']) {
+  test(`a malformed OpenAlex list during ${phase} leaves the batch retryable and still materializes HF votes`, async t => {
+    const { env, db, add } = corpus();
+    const store = bindSharedStore(env);
+    let recovered = false;
+    const batches = openAlex(t, () => Response.json(recovered ? { results: [{ id: 'A1', summary_stats: { h_index: 8 } }] } : {}));
+    add(1, { authors: [{ id: 'A1' }], huggingFaceUpvotes: 10 });
+    if (phase === 'refresh') {
+      db.prepare("INSERT INTO openalex_author_impact (author_id, h_index, fetched_at) VALUES ('A1', 3, ?)")
+        .run(new Date(now - 31 * day).toISOString());
+    }
+    await run(env);
+    assert.equal(store.entries.size, 0);
+    assert.deepEqual(Object.values(db.prepare('SELECT max_h_index, hf_upvotes FROM work_quality').get()!), [phase === 'refresh' ? 3 : null, 10]);
+    recovered = true;
+    const nextNight = now + day - 60_000;
+    t.mock.timers.setTime(nextNight);
+    await run(env, nextNight);
+    assert.deepEqual(batches, [['A1'], ['A1']]);
+    assert.equal(db.prepare('SELECT max_h_index FROM work_quality').get()?.max_h_index, 8);
+  });
+}
 
 test('a provider timeout leaves authors due and an unexpected error propagates', async t => {
   const { env, db, add } = corpus();
@@ -190,25 +233,26 @@ for (const [size, answered, stored] of [[19, 0, 19], [20, 0, 0], [20, 1, 20]]) {
 
 test('a rejected discovery batch is logged and can recover the next night within the shared cache TTL', async t => {
   const { env, db, add } = corpus();
-  const entries = new Map<string, { value: string; metadata: unknown }>();
-  Object.assign(env, { NOTIFICATION_STORE: {
-    getWithMetadata: async (key: string) => entries.get(key) ?? { value: null, metadata: null },
-    put: async (key: string, value: string, options: { metadata: unknown }) => { entries.set(key, { value, metadata: options.metadata }); },
-  } });
+  const store = bindSharedStore(env);
+  const reads = t.mock.method(store, 'getWithMetadata');
   const warnings = t.mock.method(console, 'warn', () => {});
   let recovered = false;
   const batches = openAlex(t, ids => Response.json({ results: recovered ? ids.map(id => ({ id, summary_stats: { h_index: 8 } })) : [] }));
   for (let id = 101; id <= 120; id++) add(id, { authors: [{ id: 'A' + (221 - id) }] });
   await run(env);
   assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact').get()?.n, 0);
-  assert.equal(entries.size, 0);
+  assert.equal(store.entries.size, 0);
+  assert.equal((await readOpenAlexBudget(env)).report?.tiers.feed.used, 1);
+  const [key] = reads.mock.calls[0].arguments;
+  store.entries.set(key, { value: JSON.stringify({ results: [] }), metadata: { status: 200 } });
   const firstNight = warnings.mock.calls.map(call => String(call.arguments[0]));
   recovered = true;
   const nextNight = now + day - 60_000;
   t.mock.timers.setTime(nextNight);
   await run(env, nextNight);
   assert.equal(batches.length, 2);
-  assert.equal(entries.size, 1);
+  assert.equal(store.entries.size, 1);
+  assert.equal((await readOpenAlexBudget(env)).report?.tiers.feed.used, 1);
   assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact WHERE h_index = 8').get()?.n, 20);
   assert.equal(firstNight.length, 1);
   assert.match(firstNight[0], /20 requested authors.*A101/);
