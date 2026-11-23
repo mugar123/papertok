@@ -3303,3 +3303,56 @@ test("a night lists every never-harvested notable job, then each source's share 
   );
   assert.deepEqual(await nightWith(jobs.map(job => [job, '2026-10-27T03:00:00.000Z'])), [], 'none harvested in the last six days');
 });
+
+test('OpenReview harvest marks accepted venues and preserves the original submission text', async t => {
+  const main = 'ICLR.cc/2026/Conference';
+  const venues = [
+    ['ICLR 2026 Poster', main], ['Submitted to ICLR 2026', main], ['Withdrawn from ICLR 2026', main],
+    ['Rejected at ICLR 2026', main], ['ICLR 2026 Workshop', main], ['ICLR 2026', `${main}/Submission`],
+    ['ICLR 2026 Poster'], ['AAAI 2026 Oral', 'AAAI.cc/2026/Conference'], ['AAAI 2026', 'AAAI.cc/2026/Conference'],
+  ];
+  const { env } = relay(t, () => ({ notes: venues.map(([venue, venueId], i) => ({
+    id: `note-${i}`, domain: main, cdate: Date.UTC(2026, 1, 12),
+    content: { title: { value: `Manuscript ${i}` }, venue: { value: venue }, ...(venueId && { venueid: { value: venueId } }) },
+  })) }));
+  const { items } = await SOURCES.openreview.fetchPage(env, { lane: 'cs.LG', page: 1, since: '', waits: { seconds: 0 } });
+  assert.deepEqual(items.map(({ paper }) => paper.conference), venues.map(([venue]) => venue));
+  assert.deepEqual(items.map(({ paper }) => paper.acceptedConference), [
+    { id: 'S4306419637', label: 'ICLR', year: 2026, evidence: 'openreview' },
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    { id: 'S4210191458', label: 'AAAI', year: 2026, evidence: 'openreview' },
+  ]);
+});
+
+test('relisting a withdrawn OpenReview submission removes its previous venue evidence from the corpus', async t => {
+  let venue = 'ICLR 2026 Oral';
+  const { env } = relay(t, () => ({ notes: [{ id: 'revised-note', cdate: Date.UTC(2026, 2, 1),
+    content: { title: 'A synthetic venue correction', venue, venueid: 'ICLR.cc/2026/Conference' } }] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  const fileNotes = async (now: number) => {
+    const { items } = await SOURCES.openreview.fetchPage(env, { lane: 'cs.LG', page: 1, since: '', waits: { seconds: 0 } });
+    await ingestPapers(store, items, { now });
+    return db.prepare("SELECT paper ->> '$.acceptedConference.label' AS venue, paper ->> '$.corpusUpdatedAt' AS revision FROM works").get();
+  };
+  const first = Date.UTC(2026, 2, 15);
+  const startedEarlier = first - 1000;
+  assert.deepEqual({ ...await fileNotes(first) }, { venue: 'ICLR', revision: first });
+  venue = 'Withdrawn from ICLR 2026';
+  assert.deepEqual({ ...await fileNotes(startedEarlier) }, { venue: null, revision: first + 1 });
+});
+
+test('repeated arXiv listings cannot give a different edition to an OpenReview venue', async () => {
+  const { db, binding } = testD1();
+  const record = parseOaiPage(OAI_PAGE).papers[0];
+  const paper = arxivRecordPaper({ ...record, comments: 'Accepted at ICLR 2026' });
+  const venue = { id: 'S4306419637', label: 'ICLR', evidence: 'openreview' as const };
+  const file = async (record: Paper) => {
+    await ingestPapers({ PAPER_STORE: binding }, [{ paper: record, lanes: [] }], { keepUntil: '2026-12-01' });
+    return (JSON.parse(String(db.prepare('SELECT paper FROM works').get()?.paper)) as Paper).acceptedConference;
+  };
+  await file({ ...paper, sources: { primary: 'openreview', enrichedBy: [] }, openReviewVenueId: 'ICLR.cc/2025/Conference',
+    acceptedConference: { ...venue, year: 2025 } });
+  assert.deepEqual(await file(paper), venue);
+  assert.deepEqual(await file(paper), venue);
+});

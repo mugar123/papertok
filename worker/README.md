@@ -523,6 +523,78 @@ A second pass computes scores from the stored h-index, including values still wa
 
 Each contribution is its cap times `min(1, log1p(value) / log1p(100))`. The author contribution reaches 0.035 at h = 100, and votes reach 0.025 at 100 votes. Their sum stops at 0.05. The job removes rows whose signals disappear and leaves unchanged scores unwritten.
 
+### Conference evidence
+
+Corpus papers can carry `acceptedConference` with a catalogue ID, display label,
+optional event year and one of two text sources.
+
+- **OpenReview** (`openreview`) records a venue assignment. The venue text must
+  match a catalogue entry and the venue ID must identify the same conference’s
+  main meeting or the NeurIPS Datasets and Benchmarks track. Any year in the
+  venue text must agree with the ID.
+- **arXiv** (`arxiv-comment`) records the author’s claim of acceptance,
+  publication or presentation. A proceedings citation, camera-ready statement
+  or recognised presentation format can also identify the venue. The Worker
+  matches the whole destination, ignores URLs and discards the comment.
+
+OpenAlex attribution is deferred because one source ID can cover both main
+and companion proceedings. If the two texts name different conferences,
+OpenReview decides. For the same conference, either text can supply the event
+year. Conflicting years leave it absent. A fresh listing replaces its own
+evidence, so a withdrawal can clear a mark. When two corpus rows fold into one,
+the Worker combines their text evidence. The mark is independent of
+`conference` and `publicationStatus`.
+
+Findings proceedings have their own catalogue entries. Side-track qualifiers
+can occur anywhere in the comment. A second venue, another event’s acronym or a short
+track name in a separate clause leaves the paper unmarked. Poster, oral and
+spotlight qualify for NeurIPS, ICML and ICLR. CVPR, ICCV and ECCV also qualify
+for oral presentations.
+Strict acronyms require an eligible primary arXiv category or OpenReview lane.
+Regenerate the [catalogue](conference-catalogue.generated.ts) from the local
+terms and rules with `node scripts/generate-conference-catalogue.mjs /path/to/catalogo-final.json`.
+The [recognizer](accepted-conference.ts) applies the attribution and venue rules.
+
+On November 23, 2026, the recognizer marked 58,070 of 173,779 versioned arXiv
+comments in the local catalogue sample (33.42%) and 57 of 808 recent comments
+(7.05%). It marked 138 of 2,600 records on two recorded arXiv OAI pages.
+
+An older Worker checks only `payload.lanes`, so it ignores
+`arxivConferenceBackfill` and runs the full nightly harvest a second time,
+spending that night's provider budgets. Before triggering the reload, run
+`curl -s https://api.papertok.app/health` and confirm that `version.id`
+matches the version ID printed by the deploy. You can also find that ID with
+`npx wrangler deployments list`.
+
+Run the one-off 30-day reload outside the nightly
+harvest, for example between 12:00 and 13:00 UTC:
+
+```sh
+npx wrangler workflows trigger papertok-paper-harvest '{"arxivConferenceBackfill":true}' --id arxiv-conference-backfill-30d
+```
+
+The fixed ID prevents a second concurrent instance. The reload is idempotent.
+After a failure, restart the instance or trigger the workflow with a new ID.
+The reload reads arXiv OAI records updated in the 30 UTC dates ending on the
+run date. For existing works with an arXiv key and no mark, it writes only the
+mark and row stamp.
+Two recorded pages (2,600 records, 1,252 stored works) filled 43 marks. Replaying
+both pages wrote zero rows. Allow about 60 OAI pages and 10–11 minutes plus
+provider waits. Pages with writes used two D1 statements each, and pages with
+no writes used one. Remove this Workflow option and its reload path after the run.
+
+Library copies store the corpus row stamp in `corpusUpdatedAt`. When the app
+receives a newer row it adopts that row’s mark, including a withdrawal. Two
+copies with the same stamp and different marks leave the card unmarked. Until
+the device receives the correction, its library can show the earlier mark.
+
+Deploy the Worker first and the Firestore rules **before merging the app
+into main**, when Vercel publishes it. Every save of a corpus paper writes
+the revision field, including papers without a mark. Keep compatible rules
+after an app rollback. Firestore checks the merged document, so restoring
+rules that disallow the field would refuse subsequent saves of documents
+that already carry it.
+
 ### Study type and trial registration
 
 The paper store keeps optional study type and trial registration metadata in

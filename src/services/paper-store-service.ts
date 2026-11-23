@@ -114,7 +114,10 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
   const papers = answer?.papers;
   if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
   const more = typeof answer?.more === 'boolean' ? answer.more : undefined;
-  return { papers, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more };
+  // Even a pre-versioning corpus response owns its conference field. A later
+  // versioned snapshot can supersede it after either library copy is reloaded.
+  const snapshots = papers.map(paper => paper.corpusUpdatedAt === undefined ? { ...paper, corpusUpdatedAt: 0 } : paper);
+  return { papers: snapshots, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more };
 }
 
 /** The follows an exact answer says are still loading; a Worker that does not say any answers none. */
