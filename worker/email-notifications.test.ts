@@ -8672,7 +8672,7 @@ test('every unsubscribe-link index is written with an expiry: by the opt-in, by 
   const put = kv.put.bind(kv);
   kv.put = async (key: string, value: string, options?: { expirationTtl?: number }) => {
     if (key.startsWith('notification:unsubscribe:')) expiries.push(options?.expirationTtl);
-    await put(key, value);
+    await put(key, value, options);
   };
   const { phase1: phaseEnv } = twoPhases(kv);
   assert.equal((await optIn(phaseEnv, { consent: DIGEST_CONSENT_FROM_SIGNUP, interests: ['cs.LG'] })).outcome, 'created');
@@ -8973,4 +8973,28 @@ test('phase 1: an unsubscribe that lands while the schedule renews a record has 
   assert.equal(kv.values.has(SYNC_READER_KEY), false);
   assert.equal(kv.values.has(linkKey), false);
   assert.deepEqual(keysWithAddress(kv), []);
+});
+
+test('phase 1: the schedule index of a reader the welcome subscribed expires, is renewed while they stay subscribed, and is not once a cancellation kept it for its cleanup journal', async (t) => {
+  t.after(stubFetch(jsonResponse(503, {})));
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  assert.equal((await optIn(phase1)).outcome, 'created');
+  assert.equal(kv.values.get(SYNC_READER_KEY), JSON.stringify({ uid: SYNC_READER.uid }));
+  assert.equal(kv.ttls.get(SYNC_READER_KEY), KEY_TTL_SECONDS);
+
+  kv.expirations.set(SYNC_READER_KEY, daysAfterWindow(30));
+  await windowIn(kv, phase1, RENEWAL_WINDOW);
+  assert.notEqual(kv.expirations.get(SYNC_READER_KEY), daysAfterWindow(30));
+
+  // Every KV delete fails, so the switch-off keeps the index for its journal.
+  const remove = kv.delete.bind(kv);
+  kv.delete = async () => { throw new Error('KV DELETE failed: 503'); };
+  await switchDigestOff(phase1).catch(() => undefined);
+  assert.notDeepEqual(await journalOf(kv), []);
+  assert.equal(kv.values.has(SYNC_READER_KEY), true);
+  kv.expirations.set(SYNC_READER_KEY, daysAfterWindow(30));
+  await windowIn(kv, phase1, RENEWAL_WINDOW);
+  kv.delete = remove;
+  assert.equal(kv.expirations.get(SYNC_READER_KEY), daysAfterWindow(30));
 });
