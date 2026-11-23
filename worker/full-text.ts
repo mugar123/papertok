@@ -56,6 +56,7 @@ async function fetchText(url: string, accept: string, signal: AbortSignal, arxiv
 }
 
 export function isArxivRenderedPage(url: string, arxivId: string) {
+  if (!URL.canParse(url)) return false;
   const { origin, pathname } = new URL(url);
   return ['https://arxiv.org', 'https://ar5iv.labs.arxiv.org', 'https://ar5iv.org'].includes(origin)
     && pathname.replace(/v\d+$/, '') === `/html/${arxivId}`;

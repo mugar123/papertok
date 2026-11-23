@@ -14,8 +14,9 @@ test('keeps the original selected across more chunks and drops late results on a
     if (originalParser) Object.defineProperty(globalThis, 'DOMParser', originalParser);
     else Reflect.deleteProperty(globalThis, 'DOMParser');
   });
+  const abstract = 'Abstract source '.padEnd(5_995, 'a');
   const doc = parseArxivHtml(
-    '<article class="ltx_document"><div class="ltx_abstract"><p>Abstract source</p></div>'
+    `<article class="ltx_document"><div class="ltx_abstract"><p>${abstract}</p></div>`
       + '<p class="ltx_p">Body &amp; source <span class="ltx_font_typewriter">pip install example</span></p></article>',
     'https://arxiv.org/html/1706.03762',
   );
@@ -35,7 +36,7 @@ test('keeps the original selected across more chunks and drops late results on a
     assert.equal(new URL(url).pathname, '/ai/translate-paper');
     assert.deepEqual(JSON.parse(String(init.body)), {
       query: 'arxiv_id=1706.03762', language: 'es',
-      fingerprint: createHash('sha256').update(JSON.stringify([['Abstract source'], ['Body & source ']])).digest('hex'),
+      fingerprint: createHash('sha256').update(JSON.stringify([[abstract], ['Body & source ']])).digest('hex'),
     });
     const body = new ReadableStream<Uint8Array>({
       start(stream) {
@@ -52,13 +53,14 @@ test('keeps the original selected across more chunks and drops late results on a
   };
 
   function Reader({ uid }: { uid: string }) {
-    const { session, translate, toggleOriginal } = useTranslation(doc, 'arxiv_id=1706.03762', uid);
+    const { session, translate, toggleOriginal, cancel } = useTranslation(doc, 'arxiv_id=1706.03762', uid);
     const text = [...(session?.showing ? session.blocks.values() : [])]
       .flatMap(block => block.t === 'p' ? block.children : [])
       .flatMap(inline => inline.t === 'text' ? [inline.text] : []).join(' ');
     return createElement('div', null,
       createElement('button', { onClick: () => { void translate('es'); } }, 'Translate'),
       createElement('button', { onClick: toggleOriginal }, 'Toggle original'),
+      createElement('button', { onClick: cancel }, 'Cancel translation'),
       createElement('p', null, session ? `${session.completed} ${session.pending ? 'pending' : 'done'}` : 'No translation'),
       createElement('p', null, text || 'Original article'),
     );
@@ -93,6 +95,16 @@ test('keeps the original selected across more chunks and drops late results on a
   assert.ok(screen.getByText('No translation'));
   assert.equal(screen.queryByText('Resumen anterior'), null);
 
+  fireEvent.click(screen.getByRole('button', { name: 'Translate' }));
+  await waitFor(() => assert.equal(requests.length, 3));
+  push(2, { type: 'chunk', index: 0, segments: ['Borrador'] });
+  assert.ok(await screen.findByText('Borrador'));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel translation' }));
+  assert.equal(requests[2].signal?.aborted, true);
+  assert.ok(screen.getByText('Original article'));
+  push(2, { type: 'error', code: 'AI_TIMEOUT' });
+  await waitFor(() => assert.ok(cancelled.has(2)));
+
   let finishDigest: (value: ArrayBuffer) => void = () => {};
   const digest = new Promise<ArrayBuffer>(resolve => { finishDigest = resolve; });
   t.mock.method(crypto.subtle, 'digest', () => digest);
@@ -103,7 +115,7 @@ test('keeps the original selected across more chunks and drops late results on a
   finishDigest(new ArrayBuffer(32));
   await digest;
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
 });
 
 test('the full-paper action describes the Anthropic transfer and links to the privacy policy', async t => {
@@ -132,6 +144,8 @@ test('the full-paper action describes the Anthropic transfer and links to the pr
   const button = screen.getByRole('button', { name: 'Translate full paper' });
   const link = screen.getByRole('link', { name: 'Privacy policy' });
   assert.equal(link.getAttribute('href'), '/privacy.html');
+  assert.equal(link.getAttribute('target'), '_blank');
+  assert.equal(link.getAttribute('rel'), 'noopener noreferrer');
   assert.equal(link.parentElement?.id, button.getAttribute('aria-describedby'));
   assert.equal(link.parentElement?.textContent, 'Sends the article text to Anthropic. Privacy policy');
   view.rerender(createElement(ReaderTranslationControls, { ...props, paperAvailable: false }));

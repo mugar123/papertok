@@ -32,6 +32,7 @@ import {
 } from './anthropic-client.ts';
 import {
   fullPaperTranslationRevision,
+  PAPER_TRANSLATION_CALL_MS,
   PAPER_TRANSLATION_DEADLINE_MS,
   PAPER_TRANSLATION_HTML_BYTES,
   PAPER_TRANSLATION_REQUEST_BYTES,
@@ -239,7 +240,7 @@ async function verifiedPaperChunks(request: Request, env: WorkerEnv, query: stri
   const invalid = () => new AIExplanationError('AI_INVALID_PAPER', 400);
   const source = await beforeDeadline(readBoundedJson<FullTextAnswer>(response, 8 * 1024 * 1024, { tooLarge: invalid, invalid }), sourceSignal);
   if (source?.unavailable) throw new AIExplanationError('AI_UNAVAILABLE', 502);
-  if (!source?.document || !source.url || source.format !== 'latexml'
+  if (typeof source?.document !== 'string' || !source.document || typeof source.url !== 'string' || source.format !== 'latexml'
     || (source.source !== 'arxiv' && source.source !== 'ar5iv')
     || !isArxivRenderedPage(source.url, ids.arxivId)
     || new TextEncoder().encode(source.document).length > PAPER_TRANSLATION_HTML_BYTES) throw invalid();
@@ -268,7 +269,7 @@ function streamFullPaperTranslation(env: WorkerEnv, input: { language: Translati
       try {
         checkDeadline(streamSignal);
         const chunk = input.chunks[index];
-        const callSignal = AbortSignal.any([streamSignal, AbortSignal.timeout(25_000)]);
+        const callSignal = AbortSignal.any([streamSignal, AbortSignal.timeout(PAPER_TRANSLATION_CALL_MS)]);
         const params = buildAnthropicRequest({
           model: HAIKU_MODEL,
           effort: 'low',

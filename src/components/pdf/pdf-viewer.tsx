@@ -212,6 +212,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   } else if (hasTranslation) {
     translationView = 'Showing the original paper.';
   }
+  const partialRetryNotice = translatedPaper?.message && hasTranslation && !translatedPaper.pending
+    ? 'Translating again starts over and uses another daily translation.' : '';
   const progressMessage = translatedPaper?.pending
     ? `AI translation in progress. ${translatedPaper.completed} of ${paperTranslation.total} parts ready.`
     : translatedPaper?.message;
@@ -308,7 +310,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
               defaultLanguage={abstractTranslation.chooseLanguage()}
               pending={Boolean(translatedPaper?.pending || translatedAbstract.pending)}
               progress={translatedPaper?.pending ? { completed: translatedPaper.completed, total: paperTranslation.total } : undefined}
-              message={[progressMessage, translationView].filter(Boolean).join(' ')}
+              message={[progressMessage, translationView, partialRetryNotice].filter(Boolean).join(' ')}
               toggle={{
                 paper: showsText && !waitingForNote && translatedPaper?.blocks.size ? {
                   label: translatedPaper.showing ? 'Show original paper' : 'Show translated paper',

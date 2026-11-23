@@ -4,7 +4,9 @@ export const PAPER_TRANSLATION_MAX_CHUNKS = 16;
 export const PAPER_TRANSLATION_CHUNK_BYTES = 6_000;
 export const PAPER_TRANSLATION_REQUEST_BYTES = 1_024;
 export const PAPER_TRANSLATION_HTML_BYTES = 2 * 1024 * 1024;
-export const PAPER_TRANSLATION_DEADLINE_MS = 150_000;
+export const PAPER_TRANSLATION_CALL_MS = 25_000;
+// Budget for every serial call, with time for authentication and source verification.
+export const PAPER_TRANSLATION_DEADLINE_MS = PAPER_TRANSLATION_MAX_CHUNKS * PAPER_TRANSLATION_CALL_MS + 30_000;
 
 const encoder = new TextEncoder();
 

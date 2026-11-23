@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
+import { parseHTML } from 'linkedom/worker';
+import { parseArxivHtml } from './full-text.ts';
 import type { Block, FullText, Inline } from './full-text.ts';
 import { applyTranslatedPassages, planFullPaperTranslation } from './full-paper-translation.ts';
 
 const formula: Inline = { t: 'math', tex: 'x^2', mathml: '' };
 const code: Inline = { t: 'code', children: [{ t: 'text', text: 'x = 1' }] };
 const citation: Inline = { t: 'ref', target: 'B1', cites: true, children: [{ t: 'text', text: '[1]' }] };
-const paragraph: Block = { t: 'p', children: [{ t: 'text', text: 'The value is ' }, formula, code, citation] };
+const citationOpen: Inline = { t: 'text', text: '[' };
+const citationClose: Inline = { t: 'text', text: '].' };
+const paragraph: Block = { t: 'p', children: [{ t: 'text', text: 'The value is ' }, formula, code, citationOpen, citation, citationClose] };
 const doc: FullText = {
   source: 'arxiv', sourceUrl: 'https://arxiv.org/html/1706.03762',
   title: { t: 'heading', level: 1, children: [{ t: 'text', text: 'A model of sequences' }] },
@@ -21,11 +26,11 @@ const doc: FullText = {
   notes: [], references: [], conversionErrors: 0,
 };
 
-test('chunks by section and replaces only prose while reusing the original formula, code and citations', () => {
+test('packs consecutive sections and preserves formula, code and citation punctuation', () => {
   const plan = planFullPaperTranslation(doc);
   assert.ok(plan);
-  assert.deepEqual(plan.source, [['A model of sequences', 'An abstract.'], ['Introduction', 'The value is '], ['Results']]);
-  const translated = applyTranslatedPassages(plan.chunks[1], ['Introducción', 'El valor es'], 'es');
+  assert.deepEqual(plan.source, [['A model of sequences', 'An abstract.', 'Introduction', 'The value is ', 'Results']]);
+  const translated = applyTranslatedPassages(plan.chunks[0], ['Modelo', 'Resumen', 'Introducción', 'El valor es', 'Resultados'], 'es');
   const heading = translated.get(doc.body[0]);
   assert.deepEqual(heading, { t: 'heading', level: 2, id: 's1', children: [{ t: 'text', text: 'Introducción', language: 'es' }] });
   const passage = translated.get(paragraph);
@@ -33,7 +38,9 @@ test('chunks by section and replaces only prose while reusing the original formu
   assert.deepEqual(passage.children[0], { t: 'text', text: 'El valor es ', language: 'es' });
   assert.equal(passage.children[1], formula);
   assert.equal(passage.children[2], code);
-  assert.equal(passage.children[3], citation);
+  assert.equal(passage.children[3], citationOpen);
+  assert.equal(passage.children[4], citation);
+  assert.equal(passage.children[5], citationClose);
   assert.equal(translated.has(doc.body[2]), false);
   assert.equal(translated.has(doc.body[3]), false);
   assert.deepEqual(paragraph.children[0], { t: 'text', text: 'The value is ' });
@@ -44,8 +51,20 @@ test('a document outside the pilot or too large is refused whole', () => {
   assert.equal(planFullPaperTranslation({ ...doc, body: [] }), null);
   assert.equal(planFullPaperTranslation({ ...doc, conversionErrors: 1 }), null);
   assert.equal(planFullPaperTranslation({ ...doc, body: [{ t: 'p', children: [{ t: 'text', text: 'é'.repeat(3_000) }] }] }), null);
-  const headings = Array.from({ length: 17 }, (_, index): Block => ({
-    t: 'heading', level: 2, children: [{ t: 'text', text: `Section ${index}` }],
+  const paragraphs = Array.from({ length: 17 }, (): Block => ({
+    t: 'p', children: [{ t: 'text', text: 'A'.repeat(5_990) }],
   }));
-  assert.equal(planFullPaperTranslation({ ...doc, body: [...headings, paragraph] }), null);
+  assert.equal(planFullPaperTranslation({ ...doc, title: undefined, abstract: [], body: paragraphs.slice(0, 16) })?.chunks.length, 16);
+  assert.equal(planFullPaperTranslation({ ...doc, title: undefined, abstract: [], body: paragraphs }), null);
+});
+
+test('fits the captured arXiv heading hierarchy into one packed chunk', async () => {
+  const html = await readFile(new URL('./arxiv-attention-headings.fixture.html', import.meta.url), 'utf8');
+  const parsed = parseArxivHtml(html, 'https://arxiv.org/html/1706.03762', source => parseHTML(source).document);
+  assert.ok(parsed);
+  assert.equal(parsed.body.filter(block => block.t === 'heading').length, 28);
+  const plan = planFullPaperTranslation(parsed);
+  assert.ok(plan);
+  assert.equal(plan.chunks.length, 1);
+  assert.equal(plan.source[0].at(-1), 'The model combines attention with a feed-forward network.');
 });

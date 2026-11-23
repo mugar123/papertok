@@ -67,7 +67,7 @@ export function ReaderTranslationControls({
                   </select>
                 </label>
                 <Button ref={submit} variant="outline" size="sm" type="submit" aria-disabled={pending || Boolean(unavailable)} aria-describedby={showNotice ? noticeId : undefined}>Translate {choice === 'paper' ? 'full paper' : 'abstract'}</Button>
-                {showNotice && <p id={noticeId}>Sends the article text to Anthropic. <a href="/privacy.html">Privacy policy</a></p>}
+                {showNotice && <p id={noticeId}>Sends the article text to Anthropic. <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy policy</a></p>}
                 {choice === 'abstract' && abstractView && !pending && <Button variant="ghost" size="sm" type="button" onClick={abstractView.action}>{abstractView.label}</Button>}
               </form>
             )}
