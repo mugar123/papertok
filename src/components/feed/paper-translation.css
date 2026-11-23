@@ -24,11 +24,11 @@
   display: inline-grid;
   grid-auto-flow: column;
   align-content: center;
+  block-size: auto;
   min-inline-size: 24px;
-  min-block-size: 24px;
+  min-block-size: max(24px, var(--space-8));
   margin-inline-start: auto;
-  /* Keep the ghost button's padding inside the card's clipping edge. */
-  padding-inline: var(--space-5) 0;
+  padding-inline: var(--space-1);
 }
 
 .paper-translation-button > span {
@@ -38,9 +38,12 @@
 
 .paper-translation-button,
 .pc-abstract-tools:has(> .paper-translation-button) > .pc-abstract-toggle {
+  max-inline-size: 100%;
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   line-height: var(--lh-normal);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .paper-translation-picker {

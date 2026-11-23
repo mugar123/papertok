@@ -87,7 +87,7 @@ export function PaperTranslationPicker({ state, focusRequested, onFocus }: {
           {Object.entries(TRANSLATION_LANGUAGES).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
         </select>
       </label>
-      <Button type="submit" variant="ghost" size="sm" aria-label="Translate abstract and title" aria-disabled={state.current.pending}>
+      <Button type="submit" variant="ghost" size="sm" aria-disabled={state.current.pending}>
         Translate abstract
       </Button>
     </form>
