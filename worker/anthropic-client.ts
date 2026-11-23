@@ -45,10 +45,10 @@ export function createAnthropicClient(env: WorkerEnv) {
 }
 
 /**
- * One request body, as every route sends it.
+ * Request settings shared by the AI routes.
  *
- * `effort` is the only depth control: thinking is always on for Opus 5.5, and
- * `temperature` is rejected by these models. The server-side fallback re-runs a
+ * Opus 5.5 always thinks and `effort` controls the depth.
+ * These models reject `temperature`. The server-side fallback re-runs a
  * request the safety classifier declined on a substitute model inside the same
  * call; a model without a fallback runs the request alone.
  */

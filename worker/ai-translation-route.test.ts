@@ -37,7 +37,14 @@ function request(body: unknown = INPUT, { method = 'POST', origin = 'https://pap
 }
 
 function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
-  const calls: Array<{ model: string; max_tokens: number; output_config: { effort: string }; system: string; messages: Array<{ content: string }> }> = [];
+  const calls: Array<{
+    model: string;
+    max_tokens: number;
+    thinking?: { type: string };
+    output_config: { effort: string };
+    system: string;
+    messages: Array<{ content: string }>;
+  }> = [];
   const quotas: Array<{ action: string; subjectLimit: number; globalLimit: number; globalAmount?: number; partKey?: string; partLimit?: number }> = [];
   const days: string[] = [];
   const providerUrls: string[] = [];
@@ -237,7 +244,8 @@ test('translates the title and abstract in one private call with a separate quot
   assert.equal(calls.length, 1);
   assert.match(providerUrls[0], /^https:\/\/api\.anthropic\.com\/v1\/messages(?:\?|$)/);
   assert.equal(calls[0].model, 'claude-haiku-5-5');
-  assert.equal(calls[0].max_tokens, 4_000);
+  assert.equal(calls[0].max_tokens, 10_000);
+  assert.deepEqual(calls[0].thinking, { type: 'disabled' });
   assert.equal(calls[0].output_config.effort, 'low');
   assert.match(calls[0].system, /into Japanese/);
   assert.deepEqual(JSON.parse(calls[0].messages[0].content), { title: INPUT.title, abstract: INPUT.abstract });
