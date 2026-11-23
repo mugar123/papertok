@@ -456,9 +456,9 @@ export function hasUnlimitedAI(env: WorkerEnv, identity: Partial<VerifiedIdentit
  * second lookup to find out would have doubled the Identity Toolkit traffic in
  * front of every protected route.
  */
-export async function verifyFirebaseAccount(request: Request, env: WorkerEnv) {
+export async function verifyFirebaseAccount(request: Request, env: WorkerEnv, options?: { allowCache?: boolean }) {
   try {
-    const identity = await verifyFirebaseIdentity(request, env);
+    const identity = await verifyFirebaseIdentity(request, env, options);
     return { ...identity, unlimitedAI: hasUnlimitedAI(env, identity) };
   } catch (error) {
     if (error instanceof WorkerAuthError) {
@@ -587,6 +587,7 @@ export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = 
       ? 10
       : unlimited ? globalLimit : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
     globalLimit,
+    ...(translation && { part: { subject: `translate-attempt:${uid}`, limit: 20 } }),
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {

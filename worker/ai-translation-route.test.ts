@@ -5,9 +5,13 @@ import type { TestContext } from 'node:test';
 import worker from './index.ts';
 import type { WorkerEnv } from './env.ts';
 import type { TestGlobals, TestNamespace } from './test-types.ts';
+import type { LedgerTransaction } from './ledger-storage.ts';
+import { RequestQuotaLedger } from './request-quota-ledger.ts';
 
 const TRANSLATION_URL = 'https://api.papertok.app/ai/translate';
-const TOKEN = 'worker-test-token';
+const tokenFor = (uid: string) => `e30.${Buffer.from(JSON.stringify({ sub: uid, exp: Math.floor(Date.now() / 1_000) + 3_600 })).toString('base64url')}.fixture`;
+const TOKEN = tokenFor('reader-1');
+const OTHER_TOKEN = tokenFor('reader-2');
 const cachedIdentityUrl = `https://papertok.internal/auth/${createHash('sha256').update(TOKEN).digest('hex')}`;
 const INPUT = {
   arxivId: '2611.00829',
@@ -34,7 +38,7 @@ function request(body: unknown = INPUT, { method = 'POST', origin = 'https://pap
 
 function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
   const calls: Array<{ model: string; max_tokens: number; output_config: { effort: string }; system: string; messages: Array<{ content: string }> }> = [];
-  const quotas: Array<{ action: string; subjectLimit: number; globalLimit: number; globalAmount?: number }> = [];
+  const quotas: Array<{ action: string; subjectLimit: number; globalLimit: number; globalAmount?: number; partKey?: string; partLimit?: number }> = [];
   const days: string[] = [];
   const providerUrls: string[] = [];
   const namespace: TestNamespace = {
@@ -76,13 +80,33 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
   const provider = {
     reply: () => Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(ANSWER) }] }),
   };
+  const identity = { revoked: false, lookups: 0 };
   t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init: RequestInit) => {
+    if (new URL(String(input)).hostname === 'identitytoolkit.googleapis.com') {
+      identity.lookups++;
+      const { idToken } = JSON.parse(String(init.body)) as { idToken: string };
+      if (idToken === OTHER_TOKEN) return Response.json({ users: [{ localId: 'reader-2' }] });
+      if (idToken === TOKEN && !identity.revoked) return Response.json({ users: [{ localId: 'reader-1' }] });
+      return Response.json({ error: { message: 'INVALID_ID_TOKEN' } }, { status: 400 });
+    }
     providerUrls.push(String(input));
     calls.push(JSON.parse(String(init.body)));
     return provider.reply();
   });
-  return { env, calls, quotas, days, provider, providerUrls };
+  return { env, calls, quotas, days, provider, providerUrls, identity };
 }
+
+test('revoked credentials cannot spend even while the identity cache still has them', async t => {
+  const { env, calls, quotas, identity } = setUp(t);
+  assert.equal((await worker.fetch(request(), env)).status, 200);
+  identity.revoked = true;
+  const response = await worker.fetch(request(), env);
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { code: 'AI_AUTH_REQUIRED' });
+  assert.equal(identity.lookups, 2);
+  assert.equal(calls.length, 1);
+  assert.equal(quotas.length, 1);
+});
 
 test('translates the title and abstract in one private call with a separate quota', async t => {
   const { env, calls, quotas, days, providerUrls } = setUp(t);
@@ -183,6 +207,44 @@ test('refunds a provider outage to the reader while retaining the global attempt
   assert.equal(response.status, 502);
   assert.equal((await response.json<{ code: string }>()).code, 'AI_BUSY');
   assert.deepEqual(quotas.map(({ action, globalAmount }) => [action, globalAmount]), [['reserve', undefined], ['release', 0]]);
+  assert.equal(quotas[0].partLimit, 20);
+  assert.ok(quotas[0].partKey);
+  assert.equal(quotas[1].partKey, undefined);
+});
+
+test('one account can spend only its attempt allowance during a provider outage', async t => {
+  const { env, provider, calls } = setUp(t);
+  const values = new Map<string, unknown>();
+  const storage = {
+    transaction: <T>(fn: (txn: LedgerTransaction) => Promise<T>) => fn({
+      get: <V>(key: string) => values.get(key) as V | undefined,
+      put: (key, value) => values.set(key, value),
+      delete: key => values.delete(key),
+    }),
+    getAlarm: async () => null,
+    setAlarm: async () => undefined,
+    deleteAll: async () => values.clear(),
+  };
+  const ledger = new RequestQuotaLedger({ storage });
+  const namespace: TestNamespace = {
+    idFromName: day => day,
+    get: () => ({ fetch: (input: RequestInfo | URL, init?: RequestInit) => ledger.fetch(new Request(input, init)) }),
+  };
+  env.REQUEST_QUOTA_LEDGER = namespace as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+  provider.reply = () => Response.json({ error: { type: 'overloaded_error', message: 'busy' } }, { status: 529 });
+  for (let attempt = 0; attempt < 20; attempt++) {
+    assert.equal((await worker.fetch(request(), env)).status, 502);
+  }
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const response = await worker.fetch(request(), env);
+    assert.equal(response.status, 429);
+    const payload = await response.json<{ code: string; quota: { scope: string } }>();
+    assert.equal(payload.code, 'AI_QUOTA_EXHAUSTED');
+    assert.equal(payload.quota.scope, 'part');
+  }
+  assert.equal(calls.length, 20);
+  assert.equal((await worker.fetch(request(INPUT, { token: OTHER_TOKEN }), env)).status, 502);
+  assert.equal(calls.length, 21);
 });
 
 test('a refusal, truncated response or malformed answer cannot become a translation', async t => {
@@ -191,11 +253,19 @@ test('a refusal, truncated response or malformed answer cannot become a translat
     ['refusal', JSON.stringify(ANSWER), 'AI_EMPTY_RESPONSE'],
     ['max_tokens', JSON.stringify(ANSWER), 'AI_INVALID_RESPONSE'],
     ['end_turn', '{"title":"Missing abstract"}', 'AI_INVALID_RESPONSE'],
+    ['end_turn', JSON.stringify({ ...ANSWER, title: 'x'.repeat(1_501) }), 'AI_INVALID_RESPONSE'],
+    ['end_turn', JSON.stringify({ ...ANSWER, abstract: 'x'.repeat(9_001) }), 'AI_INVALID_RESPONSE'],
   ]) {
     provider.reply = () => Response.json({ stop_reason, content: [{ type: 'text', text }] });
     const response = await worker.fetch(request(), env);
     assert.equal(response.status, 502);
     assert.deepEqual(await response.json(), { code });
   }
-  assert.deepEqual(quotas.map(({ action }) => action), ['reserve', 'reserve', 'reserve']);
+  assert.deepEqual(quotas.map(({ action }) => action), [
+    'reserve', 'release', 'reserve', 'release', 'reserve', 'release', 'reserve', 'release', 'reserve', 'release',
+  ]);
+  for (const refund of quotas.filter(quota => quota.action === 'release')) {
+    assert.equal(refund.globalAmount, 0);
+    assert.equal(refund.partKey, undefined);
+  }
 });

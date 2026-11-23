@@ -13,7 +13,6 @@ import {
   anthropicProviderError,
   releaseAIQuota,
   reserveAIQuota,
-  shouldRefundAIQuota,
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import {
@@ -56,7 +55,7 @@ async function arxivMetadata(request: Request, env: WorkerEnv, id: string) {
 }
 
 export async function handlePaperTranslation(request: Request, env: WorkerEnv): Promise<PaperTranslation> {
-  const { uid } = await verifyFirebaseAccount(request, env);
+  const { uid } = await verifyFirebaseAccount(request, env, { allowCache: false });
   const payload = await readBoundedJson<Partial<Record<keyof PaperTranslationRequest, unknown>>>(
     request,
     MAX_REQUEST_BYTES,
@@ -124,11 +123,9 @@ export async function handlePaperTranslation(request: Request, env: WorkerEnv): 
     if (!result) throw new AIExplanationError('AI_INVALID_RESPONSE', 502);
     return { ...result, language };
   } catch (error) {
-    if (shouldRefundAIQuota(error)) {
-      // A failed response can still be billed. Return the reader's use while
-      // keeping the attempt in the global spending limit.
-      await releaseAIQuota(env, { ledgerRequest: { ...quota.ledgerRequest, globalAmount: 0 } });
-    }
+    // A failed response can still be billed. Return the reader's use while
+    // keeping the attempt in both spending limits.
+    await releaseAIQuota(env, { ledgerRequest: { ...quota.ledgerRequest, globalAmount: 0, part: undefined } });
     throw error;
   }
 }
