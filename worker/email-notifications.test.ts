@@ -8546,3 +8546,236 @@ for (const phase of DEPLOY_PHASES) {
     assert.equal((await objectOf(kv)).subscription, null);
   });
 }
+
+// The outside verifier's double fault (ENG-215, round 5): the welcome yes's
+// schedule index lands after the reader turned the email off, and their new
+// subscription in Settings fails to write its link index. The old index lets
+// the schedule find the new subscription, so the email must not go out with a
+// link that answers 400: it repairs the index first, or waits.
+const LINK_TOKEN = /notifications\/unsubscribe\?token=([A-Za-z0-9]+)/;
+for (const phase of DEPLOY_PHASES) {
+  test(`${phase}: after a late schedule index and a new subscription whose link failed to write, the schedule sends only with a working unsubscribe link`, async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: INTEREST_NOW - 3 * 24 * 60 * 60 * 1000 });
+    const kv = createMemoryKv();
+    const phaseEnv = twoPhases(kv)[phase];
+    const welcome = heldIndexPut(kv, 'schedule');
+    const yes = optIn(phaseEnv, { consent: DIGEST_CONSENT_FROM_SIGNUP, interests: ['cs.LG'] }).then(answer => answer, (error: unknown) => error);
+    await welcome.held;
+    t.mock.timers.tick(10_000);
+    assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes));
+    await switchDigestOff(phaseEnv);
+    // The welcome yes's schedule index lands after the Off.
+    await welcome.release();
+    welcome.restore();
+    assert.equal(kv.values.get(SYNC_READER_KEY), JSON.stringify({ uid: SYNC_READER.uid }));
+    // The reader subscribes again in Settings, and the new link index fails to write.
+    const brokenSave = failingIndexPut(kv, 'link');
+    await assert.rejects(saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG'] }), phaseEnv, SYNC_READER), /KV put failed/);
+    brokenSave.restore();
+    const token = (await objectOf(kv)).subscription!.unsubscribeToken!;
+    assert.equal(kv.values.has(`notification:unsubscribe:${token}`), false);
+    t.mock.timers.reset();
+    t.mock.timers.enable({ apis: ['Date'], now: INTEREST_NOW });
+    const env = {
+      ...emailEnvironment(kv),
+      ...interestCorpus([{ lane: 'cs.LG', id: 'lg-cited', published: '2026-08-07T00:00:00.000Z', citationCount: 9 }]),
+      EMAIL_SUBSCRIPTIONS: phaseEnv.EMAIL_SUBSCRIPTIONS,
+      EMAIL_SUBSCRIPTION_SOURCE: phaseEnv.EMAIL_SUBSCRIPTION_SOURCE,
+    };
+
+    await withDigestUpstream(url => { throw new Error(`Unexpected request: ${url}`); }, async (upstream) => {
+      // KV cannot write the link index at the first window either: nothing is sent.
+      const brokenSend = failingIndexPut(kv, 'link');
+      const postponed = await runEmailNotificationSchedule(env, INTEREST_NOW);
+      brokenSend.restore();
+      assert.deepEqual([postponed.sent, postponed.failed, postponed.failureCodes.EMAIL_UNSUBSCRIBE_LINK_UNAVAILABLE], [0, 1, 1]);
+      assert.equal(upstream.emailsTo[SYNC_READER.email], undefined);
+
+      // The window that retries a failure repairs the index and sends.
+      t.mock.timers.setTime(INTEREST_NOW + 40 * 60 * 1000);
+      const sent = await runEmailNotificationSchedule(env, INTEREST_NOW + 40 * 60 * 1000);
+      assert.deepEqual([sent.sent, sent.failed], [1, 0]);
+      const email = upstream.emailsTo[SYNC_READER.email];
+      assert.equal(email.text.match(LINK_TOKEN)?.[1], token);
+    });
+    assert.equal(kv.values.get(`notification:unsubscribe:${token}`), SYNC_READER.uid);
+    // The email's link unsubscribes the reader.
+    await unsubscribeWithLink(env, token);
+    assert.equal((await objectOf(kv)).subscription, null);
+    assert.equal(await loadSubscriptionWithState(env, SYNC_READER_KEY), null);
+  });
+}
+
+for (const change of ['a switch-off', 'a save that keeps the subscription'] as const) {
+  test(`a send cancelled by ${change} after its draft ${change === 'a switch-off' ? 'removes the link index it had to write' : 'keeps the link index the subscription still uses'}`, async (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: INTEREST_NOW });
+    const kv = createMemoryKv();
+    const { phase2: phaseEnv } = twoPhases(kv);
+    await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG'] }), phaseEnv, SYNC_READER);
+    const { unsubscribeToken } = (await objectOf(kv)).subscription!;
+    const linkKey = `notification:unsubscribe:${unsubscribeToken}`;
+    // Lost, so the last check has to write it.
+    await kv.delete(linkKey);
+    const env = {
+      ...emailEnvironment(kv),
+      ...interestCorpus([{ lane: 'cs.LG', id: 'lg-cited', published: '2026-08-07T00:00:00.000Z', citationCount: 9 }]),
+      EMAIL_SUBSCRIPTION_SOURCE: phaseEnv.EMAIL_SUBSCRIPTION_SOURCE,
+    };
+    // The change lands between the last check's link write and its object read.
+    const stores = interceptedStores(phaseEnv.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'read' && kv.values.has(linkKey), async () => {
+      if (change === 'a switch-off') await switchDigestOff(phaseEnv);
+      else await saveSubscription(preferencesPut({ enabled: true, maxPapers: 10, follows: [], previewItems: [], interests: ['cs.LG'] }), phaseEnv, SYNC_READER);
+    });
+
+    await withDigestUpstream(url => { throw new Error(`Unexpected request: ${url}`); }, async (upstream) => {
+      await runEmailNotificationSchedule({ ...env, EMAIL_SUBSCRIPTIONS: stores }, INTEREST_NOW);
+      assert.equal(upstream.emailsTo[SYNC_READER.email], undefined);
+    });
+
+    assert.ok(stores.intercepted);
+    if (change === 'a switch-off') {
+      assert.equal(kv.values.has(linkKey), false, 'the index written for a cancelled subscription stayed');
+    } else {
+      assert.equal((await objectOf(kv)).subscription!.unsubscribeToken, unsubscribeToken);
+      assert.equal(kv.values.get(linkKey), SYNC_READER.uid, 'the index of the subscription that is still on was removed');
+    }
+  });
+}
+
+test('every unsubscribe-link index is written with an expiry: by the opt-in, by a save and before each email', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: INTEREST_NOW - 3 * 24 * 60 * 60 * 1000 });
+  const kv = createMemoryKv();
+  const expiries: unknown[] = [];
+  const put = kv.put.bind(kv);
+  kv.put = async (key: string, value: string, options?: { expirationTtl?: number }) => {
+    if (key.startsWith('notification:unsubscribe:')) expiries.push(options?.expirationTtl);
+    await put(key, value);
+  };
+  const { phase1: phaseEnv } = twoPhases(kv);
+  assert.equal((await optIn(phaseEnv, { consent: DIGEST_CONSENT_FROM_SIGNUP, interests: ['cs.LG'] })).outcome, 'created');
+  await switchDigestOff(phaseEnv);
+  await saveSubscription(preferencesPut({ enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG'] }), phaseEnv, SYNC_READER);
+  t.mock.timers.setTime(INTEREST_NOW);
+  const env = {
+    ...emailEnvironment(kv),
+    ...interestCorpus([{ lane: 'cs.LG', id: 'lg-cited', published: '2026-08-07T00:00:00.000Z', citationCount: 9 }]),
+    EMAIL_SUBSCRIPTIONS: phaseEnv.EMAIL_SUBSCRIPTIONS,
+    EMAIL_SUBSCRIPTION_SOURCE: phaseEnv.EMAIL_SUBSCRIPTION_SOURCE,
+  };
+  await withDigestUpstream(url => { throw new Error(`Unexpected request: ${url}`); }, async () => {
+    assert.equal((await runEmailNotificationSchedule(env, INTEREST_NOW)).sent, 1);
+  });
+
+  // 120 days, as privacy.html says.
+  assert.deepEqual(expiries, [120 * 24 * 60 * 60, 120 * 24 * 60 * 60, 120 * 24 * 60 * 60]);
+});
+
+test('the purge after the sign-in account is deleted sets its object to delete everything it holds 30 days later, and a second one does not move that day', async (t) => {
+  const deletedAt = Date.parse('2026-11-25T10:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: deletedAt });
+  const kv = createMemoryKv();
+  const env = twoPhases(kv).phase1;
+  const stores = subscriptionsFor(kv) as ReturnType<typeof inMemorySubscriptionStores>;
+  assert.equal((await optIn(env)).outcome, 'created');
+
+  // The purge before the Auth delete, which can still be refused: the object stays.
+  await purgeEmailSubscription(env, SYNC_READER.uid);
+  assert.equal(stores.visitState(SYNC_READER.uid).alarm, null);
+  await purgeEmailSubscription(env, SYNC_READER.uid, new Set(), { accountDeleted: true });
+  const ends = deletedAt + 30 * 24 * 60 * 60 * 1000;
+  assert.equal(stores.visitState(SYNC_READER.uid).alarm, ends);
+  // Its retry, a minute later.
+  t.mock.timers.setTime(deletedAt + 60_000);
+  await purgeEmailSubscription(env, SYNC_READER.uid, new Set(), { accountDeleted: true });
+  assert.equal(stores.visitState(SYNC_READER.uid).alarm, ends);
+  const kept = await objectOf(kv) as { version: number; migratable: boolean; resident?: boolean };
+  assert.deepEqual([kept.migratable, kept.resident], [false, true]);
+  assert.ok(kept.version > 0);
+
+  // An alarm that fires early changes nothing and is set again.
+  t.mock.timers.setTime(ends - 60_000);
+  await stores.runAlarm(SYNC_READER.uid);
+  assert.deepEqual(await objectOf(kv), kept);
+  assert.equal(stores.visitState(SYNC_READER.uid).alarm, ends);
+
+  t.mock.timers.setTime(ends);
+  await stores.runAlarm(SYNC_READER.uid);
+  const ended = await objectOf(kv) as { version: number; subscription: unknown; migratable: boolean; cancelledAt: number; resident?: boolean };
+  assert.deepEqual([ended.version, ended.subscription, ended.migratable, ended.cancelledAt, ended.resident], [0, null, true, 0, undefined]);
+  assert.equal(stores.visitState(SYNC_READER.uid).alarm, null);
+  assert.equal(kv.values.size, 0);
+});
+
+test('a deleted account\'s object waits for its cleanup journal before it ends, a day at a time and for at most 30 more days', async (t) => {
+  const deletedAt = Date.parse('2026-11-25T10:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: deletedAt });
+  const kv = createMemoryKv();
+  const stores = subscriptionsFor(kv) as ReturnType<typeof inMemorySubscriptionStores>;
+  const ask = (payload: unknown) => callSubscriptionObject(kv, 'journal-reader', payload) as Promise<{ version: number; cleanup?: Array<{ at: number }> }>;
+  await ask({ action: 'write', expectedVersion: 0, subscription: { uid: 'journal-reader', unsubscribeToken: 'tok-1', stateId: 'state-1', enabled: true } });
+  // A cancellation whose KV deletions have not been confirmed.
+  const { cleanup } = await ask({ action: 'write', expectedVersion: 1, subscription: null });
+  assert.equal(cleanup?.length, 1);
+  await ask({ action: 'forget' });
+
+  const ends = deletedAt + 30 * 24 * 60 * 60 * 1000;
+  t.mock.timers.setTime(ends);
+  await stores.runAlarm('journal-reader');
+  assert.equal((await ask({ action: 'read' })).version, 2);
+  assert.equal(stores.visitState('journal-reader').alarm, ends + 24 * 60 * 60 * 1000);
+
+  await ask({ action: 'read', ack: cleanup!.map(entry => entry.at) });
+  t.mock.timers.setTime(ends + 24 * 60 * 60 * 1000);
+  await stores.runAlarm('journal-reader');
+  assert.deepEqual(await ask({ action: 'read' }), { version: 0, subscription: null, migratable: true, cancelledAt: 0, consentRevision: 0 });
+
+  // An entry still pending 30 days after the end date does not hold the object any longer.
+  await ask({ action: 'write', expectedVersion: 0, subscription: { uid: 'journal-reader', unsubscribeToken: 'tok-2', stateId: 'state-2', enabled: true } });
+  await ask({ action: 'write', expectedVersion: 1, subscription: null });
+  await ask({ action: 'forget' });
+  const later = ends + 24 * 60 * 60 * 1000 + 30 * 24 * 60 * 60 * 1000;
+  t.mock.timers.setTime(later + 29 * 24 * 60 * 60 * 1000);
+  await stores.runAlarm('journal-reader');
+  assert.equal((await ask({ action: 'read' })).version, 2);
+  t.mock.timers.setTime(later + 30 * 24 * 60 * 60 * 1000);
+  await stores.runAlarm('journal-reader');
+  assert.equal((await ask({ action: 'read' })).version, 0);
+});
+
+// The security verifier's P3 (ENG-215, round 5): the opt-in's cleanup deletes
+// keys it wrote a moment before, and KV refuses a second write to one key
+// within a second.
+for (const failures of [1, 2] as const) {
+  test(`an opt-in cancelled before the object confirmed it answers declined when removing its link index fails ${failures === 1 ? 'once' : 'twice'}, and still removes its schedule index`, async () => {
+    const kv = createMemoryKv();
+    const env = twoPhases(kv).phase1;
+    let failing = 0;
+    const remove = kv.delete.bind(kv);
+    kv.delete = async (key: string) => {
+      if (failing > 0 && key.startsWith('notification:unsubscribe:')) {
+        failing -= 1;
+        throw new Error('KV 429: too many writes to one key');
+      }
+      await remove(key);
+    };
+    // The Off lands as the opt-in writes its indexes, which then land after it.
+    const put = kv.put.bind(kv);
+    let raced = false;
+    kv.put = async (key: string, value: string) => {
+      if (!raced) {
+        raced = true;
+        await switchDigestOff(env);
+        failing = failures;
+      }
+      await put(key, value);
+    };
+
+    const answer = await optIn(env);
+
+    assert.ok(raced);
+    assert.equal(answer.outcome, 'declined');
+    assert.equal(kv.values.has(SYNC_READER_KEY), false, 'the schedule index stayed');
+    // Retried once after a second; a second failure leaves the index to expire.
+    assert.equal(linkIndexes(kv).length, failures === 1 ? 0 : 1);
+  });
+}

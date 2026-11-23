@@ -58,7 +58,8 @@ const CLEANUP_KEY = 'cleanup';
 const REACTIVATION_KEY = 'reactivation';
 /**
  * True once a welcome yes (`write` with `welcome: true`) has put a record in
- * this object, and never removed. In phase 1 such a reader stays here: when
+ * this object, and removed only with everything else when a deleted account's
+ * object ends (`forget`). In phase 1 such a reader stays here: when
  * they subscribe again after a cancellation, the record is written to the
  * object, never to KV. Their schedule key in KV therefore only ever holds the
  * index `{"uid"}`, so an index write that lands late, behind a later
@@ -83,11 +84,35 @@ const CONSENT_REVISION_KEY = 'consentRevision';
 const LAST_VISIT_KEY = 'lastVisitAt';
 const HOUR_MS = 60 * 60 * 1000;
 const VISIT_RETENTION_MS = 30 * 24 * HOUR_MS;
+/**
+ * When the object of a deleted account deletes what it holds (`forget`).
+ * Until then its marks keep a request that passed the identity check before
+ * the deletion from writing a subscription again, and let the schedule remove
+ * a KV index written late (`RESIDENT_KEY`). Thirty days is far beyond either.
+ */
+const FORGET_AT_KEY = 'forgetAt';
+const FORGET_AFTER_MS = 30 * 24 * HOUR_MS;
+/**
+ * A forget postponed by the cleanup journal is tried again a day later, for
+ * up to 30 more days: the schedule retries those KV deletions in every window,
+ * so one still failing then is not going to succeed, and the KV keys it lists
+ * expire on their own, except a schedule index that may then stay.
+ */
+const FORGET_RETRY_MS = 24 * HOUR_MS;
+const FORGET_WAIT_LIMIT_MS = 30 * 24 * HOUR_MS;
+/** Every key the object stores: a deleted account's object deletes them all. */
+const STORED_KEYS = [
+  VERSION_KEY, SUBSCRIPTION_KEY, CLOSED_KEY, CANCELLED_AT_KEY, TOKEN_KEY, CLEANUP_KEY, REACTIVATION_KEY,
+  RESIDENT_KEY, UNANNOUNCED_KEY, CONSENT_REVISION_KEY, LAST_VISIT_KEY, FORGET_AT_KEY,
+];
 
 async function clearReactivation(transaction: SubscriptionTransaction, nextRevision: number) {
   await transaction.delete(REACTIVATION_KEY);
   await transaction.delete(LAST_VISIT_KEY);
-  await transaction.deleteAlarm();
+  // The alarm also ends a deleted account's object, and stays set for that.
+  const forgetAt = await transaction.get<number>(FORGET_AT_KEY);
+  if (forgetAt === undefined) await transaction.deleteAlarm();
+  else await transaction.setAlarm(forgetAt);
   await transaction.put(CONSENT_REVISION_KEY, nextRevision);
 }
 
@@ -160,8 +185,32 @@ export class EmailSubscriptionStore {
     this.state = state;
   }
 
+  /**
+   * Expires the last visit, or ends the object of a deleted account: from its
+   * `forgetAt` on, every key the object holds is deleted, the version with
+   * them. While the cleanup journal still lists KV keys to delete, it waits a
+   * day at a time, for up to 30 more days: the schedule keeps the reader's KV
+   * index for those entries and tries them again in each window, and needs the
+   * object to do so.
+   */
   async alarm() {
-    await this.state.storage.transaction(async transaction => { await liveVisit(transaction); });
+    await this.state.storage.transaction(async (transaction) => {
+      const forgetAt = await transaction.get<number>(FORGET_AT_KEY);
+      if (forgetAt === undefined) {
+        await liveVisit(transaction);
+        return;
+      }
+      if (Date.now() < forgetAt) {
+        await transaction.setAlarm(forgetAt);
+        return;
+      }
+      if (Date.now() < forgetAt + FORGET_WAIT_LIMIT_MS && (await transaction.get<CleanupEntry[]>(CLEANUP_KEY))?.length) {
+        await transaction.setAlarm(Date.now() + FORGET_RETRY_MS);
+        return;
+      }
+      for (const key of STORED_KEYS) await transaction.delete(key);
+      await transaction.deleteAlarm();
+    });
   }
 
   async fetch(request: Request) {
@@ -173,10 +222,11 @@ export class EmailSubscriptionStore {
     const optOut = payload?.action === 'reactivation-off';
     const visit = payload?.action === 'visit';
     const announce = payload?.action === 'announce';
+    const forget = payload?.action === 'forget';
     const record = payload?.subscription;
     if (
       !payload
-      || (!write && !mark && !optIn && !optOut && !visit && !announce && payload.action !== 'read')
+      || (!write && !mark && !optIn && !optOut && !visit && !announce && !forget && payload.action !== 'read')
       || (announce && (typeof payload.token !== 'string' || !payload.token))
       || ((optIn || visit) && (!Number.isInteger(payload.expectedVersion)
         || !Number.isInteger(payload.expectedConsentRevision)
@@ -206,6 +256,14 @@ export class EmailSubscriptionStore {
       const reactivation = await transaction.get<ReactivationConsent>(REACTIVATION_KEY);
       const consentRevision = (await transaction.get<number>(CONSENT_REVISION_KEY)) ?? 0;
       const unannounced = await transaction.get<string>(UNANNOUNCED_KEY);
+      if (forget) {
+        // Account deletion, once it has closed the object. A retry keeps the
+        // first date, so repeating the purge never postpones the end.
+        const forgetAt = (await transaction.get<number>(FORGET_AT_KEY)) ?? Date.now() + FORGET_AFTER_MS;
+        await transaction.put(FORGET_AT_KEY, forgetAt);
+        await transaction.setAlarm(forgetAt);
+        return { status: 200, slot: { version, subscription, migratable, cancelledAt } };
+      }
       if (announce) {
         // Only for the subscription the object still holds: one cancelled or
         // replaced since has nothing to announce.

@@ -306,12 +306,14 @@ async function deleteAuthAccount(env: WorkerEnv, idToken: string | undefined, { 
   throw new AccountDeletionError('AUTH_DELETE_FAILED', 502);
 }
 
+// The sign-in account is gone by now, so this purge also sets the
+// subscription object to end 30 days later (accountDeleted).
 async function purgeAfterAuthDelete(env: WorkerEnv, uid: string, keys: Set<string>) {
   try {
-    await purgeEmailSubscription(env, uid, keys);
+    await purgeEmailSubscription(env, uid, keys, { accountDeleted: true });
   } catch {
     await new Promise(resolve => { setTimeout(resolve, KV_SAME_KEY_WRITE_INTERVAL_MS); });
-    await purgeEmailSubscription(env, uid, keys);
+    await purgeEmailSubscription(env, uid, keys, { accountDeleted: true });
   }
 }
 
