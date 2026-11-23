@@ -20,6 +20,7 @@ import {
   handleEmailNotificationRequest,
   handleEmailReactivationRequest,
   handleEmailUnsubscribe,
+  endEmailSubscription,
   purgeEmailSubscription,
   runEmailNotificationSchedule,
 } from './email-notifications.ts';
@@ -7683,16 +7684,16 @@ function heldIndexPut(kv: ReturnType<typeof createMemoryKv>, hung: HungIndex) {
   };
 }
 
-// The first put of one of the reader's indexes fails, as when KV is briefly
-// down; `attempted` lists the keys every put was made for.
-function failingIndexPut(kv: ReturnType<typeof createMemoryKv>, failing: HungIndex) {
+// The first puts (`times`) of one of the reader's indexes fail, as when KV is
+// briefly down; `attempted` lists the keys every put was made for.
+function failingIndexPut(kv: ReturnType<typeof createMemoryKv>, failing: HungIndex, times = 1) {
   const put = kv.put.bind(kv);
   const attempted: string[] = [];
-  let failed = false;
+  let left = times;
   kv.put = async (key: string, value: string) => {
     attempted.push(key);
-    if (!failed && (failing === 'link' ? key.startsWith('notification:unsubscribe:') : key === SYNC_READER_KEY)) {
-      failed = true;
+    if (left > 0 && (failing === 'link' ? key.startsWith('notification:unsubscribe:') : key === SYNC_READER_KEY)) {
+      left -= 1;
       throw new Error('KV put failed');
     }
     await put(key, value);
@@ -8585,7 +8586,7 @@ for (const phase of DEPLOY_PHASES) {
 
     await withDigestUpstream(url => { throw new Error(`Unexpected request: ${url}`); }, async (upstream) => {
       // KV cannot write the link index at the first window either: nothing is sent.
-      const brokenSend = failingIndexPut(kv, 'link');
+      const brokenSend = failingIndexPut(kv, 'link', 2);
       const postponed = await runEmailNotificationSchedule(env, INTEREST_NOW);
       brokenSend.restore();
       assert.deepEqual([postponed.sent, postponed.failed, postponed.failureCodes.EMAIL_UNSUBSCRIBE_LINK_UNAVAILABLE], [0, 1, 1]);
@@ -8670,7 +8671,7 @@ test('every unsubscribe-link index is written with an expiry: by the opt-in, by 
   assert.deepEqual(expiries, [120 * 24 * 60 * 60, 120 * 24 * 60 * 60, 120 * 24 * 60 * 60]);
 });
 
-test('the purge after the sign-in account is deleted sets its object to delete everything it holds 30 days later, and a second one does not move that day', async (t) => {
+test('once the sign-in account is deleted its object is set to delete everything it holds 30 days later, and neither a second call nor a purge moves that day', async (t) => {
   const deletedAt = Date.parse('2026-11-25T10:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: deletedAt });
   const kv = createMemoryKv();
@@ -8678,15 +8679,16 @@ test('the purge after the sign-in account is deleted sets its object to delete e
   const stores = subscriptionsFor(kv) as ReturnType<typeof inMemorySubscriptionStores>;
   assert.equal((await optIn(env)).outcome, 'created');
 
-  // The purge before the Auth delete, which can still be refused: the object stays.
+  // The purge alone, as before the Auth delete, which can still be refused: the object stays.
   await purgeEmailSubscription(env, SYNC_READER.uid);
   assert.equal(stores.visitState(SYNC_READER.uid).alarm, null);
-  await purgeEmailSubscription(env, SYNC_READER.uid, new Set(), { accountDeleted: true });
+  await endEmailSubscription(env, SYNC_READER.uid);
   const ends = deletedAt + 30 * 24 * 60 * 60 * 1000;
   assert.equal(stores.visitState(SYNC_READER.uid).alarm, ends);
-  // Its retry, a minute later.
+  // Again a minute later, and the purge after the Auth delete, which closes the object again.
   t.mock.timers.setTime(deletedAt + 60_000);
-  await purgeEmailSubscription(env, SYNC_READER.uid, new Set(), { accountDeleted: true });
+  await endEmailSubscription(env, SYNC_READER.uid);
+  await purgeEmailSubscription(env, SYNC_READER.uid);
   assert.equal(stores.visitState(SYNC_READER.uid).alarm, ends);
   const kept = await objectOf(kv) as { version: number; migratable: boolean; resident?: boolean };
   assert.deepEqual([kept.migratable, kept.resident], [false, true]);
@@ -8746,7 +8748,9 @@ test('a deleted account\'s object waits for its cleanup journal before it ends, 
 // keys it wrote a moment before, and KV refuses a second write to one key
 // within a second.
 for (const failures of [1, 2] as const) {
-  test(`an opt-in cancelled before the object confirmed it answers declined when removing its link index fails ${failures === 1 ? 'once' : 'twice'}, and still removes its schedule index`, async () => {
+  test(`an opt-in cancelled before the object confirmed it answers declined when removing its link index fails ${failures === 1 ? 'once' : 'twice'}, and still removes its schedule index`, async (t) => {
+    const warnings: string[] = [];
+    t.mock.method(console, 'warn', (...parts: unknown[]) => { warnings.push(parts.map(String).join(' ')); });
     const kv = createMemoryKv();
     const env = twoPhases(kv).phase1;
     let failing = 0;
@@ -8754,7 +8758,7 @@ for (const failures of [1, 2] as const) {
     kv.delete = async (key: string) => {
       if (failing > 0 && key.startsWith('notification:unsubscribe:')) {
         failing -= 1;
-        throw new Error('KV 429: too many writes to one key');
+        throw new Error(`KV DELETE failed: 429 Too Many Requests for ${key} of ${SYNC_READER.uid}`);
       }
       await remove(key);
     };
@@ -8777,5 +8781,65 @@ for (const failures of [1, 2] as const) {
     assert.equal(kv.values.has(SYNC_READER_KEY), false, 'the schedule index stayed');
     // Retried once after a second; a second failure leaves the index to expire.
     assert.equal(linkIndexes(kv).length, failures === 1 ? 0 : 1);
+    // The log says it failed and names neither the key, its token nor the account.
+    assert.deepEqual(warnings, failures === 1 ? [] : ['Could not remove an index the opt-in wrote Error']);
   });
+}
+
+// The outside verifier's P2 (ENG-215, round 5). "Send test" saves first, which
+// writes the link index, and KV refuses another write to that key within a second.
+function refusingLinkWritesWithinASecond(kv: KVNamespace) {
+  const put = kv.put.bind(kv) as (key: string, value: string, options?: unknown) => Promise<void>;
+  const last = new Map<string, number>();
+  const refusals = { count: 0, first: () => {} };
+  kv.put = (async (key: string, value: string, options?: unknown) => {
+    if (key.startsWith('notification:unsubscribe:')) {
+      if (performance.now() - (last.get(key) ?? -Infinity) < 1_000) {
+        refusals.count += 1;
+        refusals.first();
+        throw new Error('KV PUT failed: 429 Too Many Requests');
+      }
+      last.set(key, performance.now());
+    }
+    await put(key, value, options);
+  }) as typeof kv.put;
+  return refusals;
+}
+
+for (const source of ['kv', 'object']) {
+  test(`a test email sent right after the save that wrote its link index waits out the second in which KV refuses that key (${source})`, async (t) => {
+    const h = testEmailHarness(t);
+    h.env.EMAIL_SUBSCRIPTION_SOURCE = source;
+    const refusals = refusingLinkWritesWithinASecond(h.env.NOTIFICATION_STORE!);
+    await h.subscribe();
+
+    assert.equal((await h.sendTest()).ok, true);
+
+    assert.deepEqual([refusals.count, h.calls.resend], [1, 1]);
+  });
+
+  for (const decision of ['an Off', 'an Off and a new On'] as const) {
+    test(`${decision} saved while a test email waits for its link write cancels the email, and the link index written after it does not stay (${source})`, async (t) => {
+      const h = testEmailHarness(t);
+      h.env.EMAIL_SUBSCRIPTION_SOURCE = source;
+      const kv = h.env.NOTIFICATION_STORE!;
+      const links = async () => (await kv.list({ prefix: 'notification:unsubscribe:' })).keys.map(key => key.name);
+      const refusals = refusingLinkWritesWithinASecond(kv);
+      await h.subscribe();
+      const [first] = await links();
+      const refused = new Promise<void>((resolve) => { refusals.first = resolve; });
+
+      const sending = h.sendTest().then(() => null, (error: unknown) => error);
+      await refused;
+      await h.unsubscribe();
+      if (decision !== 'an Off') await h.subscribe();
+      const decided = await links();
+      assert.equal(decided.length, decision === 'an Off' ? 0 : 1);
+
+      assert.ok(refusedWith('EMAIL_SUBSCRIPTION_REQUIRED', 409)(await sending));
+      assert.equal(h.calls.resend, 0);
+      assert.ok(first && !decided.includes(first));
+      assert.deepEqual(await links(), decided);
+    });
+  }
 }
