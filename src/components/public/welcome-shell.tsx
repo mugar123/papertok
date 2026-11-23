@@ -188,7 +188,10 @@ export function WelcomeShell({
             aria-disabled={primary.busy || undefined}
             className="gw-primary"
           >
-            {primary.label}
+            {/* In its own span: the label changes (Continue, Saving…), and a
+                browser translating the page has replaced bare text with its
+                own nodes, so React's update would leave the old words up. */}
+            <span>{primary.label}</span>
             <ArrowRight size={16} aria-hidden="true" />
           </Button>
 
@@ -320,7 +323,9 @@ export function SubtopicsPicker({ selectedAreas, selectedTopics, onToggleTopic, 
             aria-controls={gridId}
             onClick={() => onToggleExpanded(key)}
           >
-            {expanded ? SUBTOPICS_COPY.showLess : SUBTOPICS_COPY.showMore(hidden)}
+            {/* In its own span, like the main button's label: on a translated
+                page bare text would keep its old words when this changes. */}
+            <span>{expanded ? SUBTOPICS_COPY.showLess : SUBTOPICS_COPY.showMore(hidden)}</span>
             <CaretDown size={14} weight="bold" aria-hidden="true" className={expanded ? 'is-flipped' : undefined} />
           </button>
         )}

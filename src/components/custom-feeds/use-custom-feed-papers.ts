@@ -48,7 +48,7 @@ const storedDismissed = (uid: string | null, feedId: string | undefined) => (uid
  * refresh that ends without it found none.
  */
 export function useCustomFeedPapers(feed: CustomFeed | null): {
-  papers: Paper[]; loading: boolean; error: unknown; hasMore: boolean;
+  papers: Paper[]; loading: boolean; error: unknown; takeFailureReport: (() => boolean) | undefined; hasMore: boolean;
   loadMore: () => boolean; refresh: () => void; isRefreshing: boolean; walksUnseen: boolean;
   emptyKind: 'more' | 'gathering' | 'nothing' | 'error' | null; loadingIngredients: FeedIngredient[];
   dismiss: (paper: Paper) => void; restore: (paper: Paper) => void;

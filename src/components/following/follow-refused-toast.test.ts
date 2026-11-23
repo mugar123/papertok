@@ -97,12 +97,14 @@ test('a refused press names the row, whichever field its surface filled', async 
     said({ type: 'concept', id: 'https://openalex.org/C1', name: 'Cosmology' }),
     said({ type: 'author', id: 'https://openalex.org/A2', displayName: 'Grace Hopper' }),
     said({ type: 'topic', id: 'T1', display_name: 'Econometrics' }),
+    said({ type: 'topic', canonicalId: 'physics', displayName: 'Física' }, true),
   ]), [
     'Could not follow Ada Lovelace. Try again.',
     'Could not unfollow University of Salamanca. Try again.',
     'Could not follow Cosmology. Try again.',
     'Could not follow Grace Hopper. Try again.',
     'Could not follow Econometrics. Try again.',
+    'Could not unfollow Physics. Try again.',
   ]);
   assert.equal(followName({ type: 'author', id: 'A3', displayName: 'Rosalind Franklin' }), 'Rosalind Franklin');
 });

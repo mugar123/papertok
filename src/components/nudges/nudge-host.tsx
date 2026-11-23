@@ -7,7 +7,7 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
-import { PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
+import { PRIVACY_NOTICE_SHOWN_FROM, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
 import { EMAIL_NOT_CONFIGURED_REASON } from '../../utils/email-health.ts';
 import { ANALYTICS_CONSENT, trackPmfSurvey } from '../../services/analytics-service.ts';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
@@ -228,6 +228,7 @@ export default function NudgeHost() {
       signedIn,
       version: PRIVACY_POLICY_VERSION,
       effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+      shownFrom: PRIVACY_NOTICE_SHOWN_FROM,
       account: accountNotice,
     }),
     () => 'settled' as const,

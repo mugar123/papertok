@@ -1,3 +1,4 @@
+import { sourceFeedFailure } from './source-feed-failure.ts';
 import type { PropsWithChildren } from 'react';
 import type { CollectionReference } from 'firebase/firestore';
 import type { FollowEntity, FollowInput } from '../utils/following.ts';
@@ -7,6 +8,7 @@ export interface FollowingContextValue {
   loading: boolean;
   /** Why the follow list could not be read; a refused follow or unfollow is thrown by `toggleFollow` instead. */
   error: unknown;
+  takeFailureReport: (() => boolean) | undefined;
   /** The follows are the server's own answer: not from cache, not failed, no follow write in flight. */
   confirmed: boolean;
   /** Starts reading the follow list again when it failed or has not arrived. */
@@ -51,7 +53,8 @@ export function FollowingProvider({ children }: PropsWithChildren) {
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const [followedEntities, setFollowedEntities] = useState<FollowEntity[]>([]);
   const [loading, setLoading] = useState(Boolean(user));
-  const [error, setError] = useState<unknown>(null);
+  const [failure, setFailure] = useState<ReturnType<typeof sourceFeedFailure> | null>(null);
+  const error = failure?.error ?? null;
   const [snapshotFromServer, setSnapshotFromServer] = useState(false);
   const [pendingFollowKeys, setPendingFollowKeys] = useState(new Set<string>());
   const [institutionLocalizationState, setInstitutionLocalizationState] = useState({
@@ -127,9 +130,11 @@ export function FollowingProvider({ children }: PropsWithChildren) {
      * and Firestore reconnects on its own, so the first real snapshot clears
      * the error and the screen heals with no user action.
      */
+    let timeoutFailure: ReturnType<typeof sourceFeedFailure> | null = null;
     const loadingTimeout = window.setTimeout(() => {
       setLoading(false);
-      setError(new FollowsUnavailableError());
+      timeoutFailure = sourceFeedFailure(new FollowsUnavailableError());
+      setFailure(timeoutFailure);
     }, FIRST_SNAPSHOT_GRACE_MS);
 
     // With metadata changes, so the server confirming the same documents the
@@ -143,14 +148,16 @@ export function FollowingProvider({ children }: PropsWithChildren) {
       setSnapshotFromServer(!snapshot.metadata.fromCache);
       if (action === 'list') setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
       // Whatever went wrong before, this is an answer worth acting on.
-      setError(null);
+      timeoutFailure = null;
+      setFailure(null);
       setLoading(false);
     }, (snapshotError) => {
       window.clearTimeout(loadingTimeout);
       followList.current = 'failed';
       setSnapshotFromServer(false);
       console.error('Error loading follows', snapshotError);
-      setError(snapshotError);
+      // A timeout and a later rejection can belong to the same listener attempt.
+      setFailure(timeoutFailure ? { ...timeoutFailure, error: snapshotError } : sourceFeedFailure(snapshotError));
       setFollowedEntities(migrateLegacyAuthors(followedAuthorsRef.current));
       setLoading(false);
     });
@@ -333,12 +340,13 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     followedByType,
     loading,
     error,
+    takeFailureReport: failure?.takeReport,
     confirmed: snapshotFromServer && !loading && !error && pendingFollowKeys.size === 0,
     retry,
     isFollowing,
     isFollowPending,
     toggleFollow,
-  }), [error, followedByType, isFollowPending, isFollowing, loading, localizedFollowedEntities, pendingFollowKeys.size, retry, snapshotFromServer, toggleFollow]);
+  }), [error, failure, followedByType, isFollowPending, isFollowing, loading, localizedFollowedEntities, pendingFollowKeys.size, retry, snapshotFromServer, toggleFollow]);
 
   return <FollowingContext.Provider value={value}>{children}</FollowingContext.Provider>;
 }

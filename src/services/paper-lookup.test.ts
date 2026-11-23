@@ -1,8 +1,12 @@
+import type { TestContext } from 'node:test';
+import type { Paper } from '../models/paper.ts';
+
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { arxivPaper } from './arxiv-records.ts';
 import { encodePaperKey, parsePaperKey } from '../utils/public-navigation.ts';
 import { openAlexClient } from './open-alex-client.ts';
-import { fetchOpenReviewPaper, loadPaperByIdentity } from './paper-lookup.ts';
+import { fetchOpenReviewPaper, loadArxivPaper, loadPaperByIdentity } from './paper-lookup.ts';
 
 // PAP-88: the public paper page opens a DOI as one OpenAlex work, which is
 // free and never refused by the Worker's budget. It used to ask for a works
@@ -97,4 +101,110 @@ test('a paper opened by OpenReview id is one request to the Worker: found, not f
     fetchOpenReviewPaper('5pShDP8LSm', through(() => jsonResponse({ code: 'UPSTREAM_FAILED', upstreamStatus: 403 }, 502))),
     (error: Error & { status?: number }) => error.status === 502,
   );
+});
+
+// ENG-217: a shared arXiv paper waited for arXiv's whole deadline before
+// OpenAlex was asked. Synthetic records, shaped like arXiv's and OpenAlex's;
+// each test uses its own id because the enrichment cache outlives a test.
+const arxivRecord = (arxivId: string) => arxivPaper({
+  arxivId,
+  title: 'Attention Is All You Need',
+  abstract: 'The dominant sequence transduction models are based on recurrent networks.',
+  authors: ['Ashish Vaswani'],
+  doi: '',
+  journalRef: '',
+  comment: '',
+  published: '2017-06-12T17:57:34Z',
+  allCategories: ['cs.CL', 'cs.LG'],
+  primaryCategory: 'cs.CL',
+});
+const arxivWork = (arxivId: string) => ({
+  id: 'https://openalex.org/W2963403868',
+  title: 'Attention Is All You Need',
+  publication_date: '2017-06-12',
+  cited_by_count: 1234,
+  authorships: [{ author: { id: 'https://openalex.org/A2', display_name: 'Ashish Vaswani' }, institutions: [] }],
+  abstract_inverted_index: { The: [0], dominant: [1], models: [2] },
+  primary_location: { landing_page_url: `https://arxiv.org/abs/${arxivId}`, source: null },
+  locations: [{ landing_page_url: `https://arxiv.org/abs/${arxivId}`, source: null }],
+  primary_topic: { id: 'https://openalex.org/T10181', display_name: 'Natural Language Processing Techniques', score: 0.99 },
+  topics: [{ id: 'https://openalex.org/T10181', display_name: 'Natural Language Processing Techniques', score: 0.99 }],
+  concepts: [],
+});
+
+const arxivAfter = (ms: number, answer: () => Paper[]) => () => new Promise<Paper[]>((resolve, reject) => {
+  setTimeout(() => { try { resolve(answer()); } catch (error) { reject(error); } }, ms);
+});
+
+// The requests OpenAlex receives through the shared client.
+function openAlexAnswering(t: TestContext, work: unknown) {
+  const realFetch = openAlexClient.fetchImpl;
+  const realBase = openAlexClient.apiBase;
+  t.after(() => {
+    openAlexClient.fetchImpl = realFetch;
+    openAlexClient.apiBase = realBase;
+  });
+  openAlexClient.apiBase = 'https://api.papertok.app';
+  openAlexClient.clearMemoryCache();
+  const asked: URL[] = [];
+  openAlexClient.fetchImpl = async input => {
+    asked.push(new URL(String(input)));
+    return Response.json({ results: work ? [work] : [] });
+  };
+  return asked;
+}
+
+const pageWaitMs = 150;
+
+test('a slow arXiv no longer holds a shared page: OpenAlex, asked beside it, supplies the paper', async t => {
+  const asked = openAlexAnswering(t, arxivWork('1706.03762'));
+  const started = Date.now();
+  const paper = await loadArxivPaper('1706.03762', { pageWaitMs, fetchArxiv: arxivAfter(2_000, () => [arxivRecord('1706.03762')]) });
+  assert.ok(Date.now() - started < 1_000, 'shown before arXiv answered');
+  assert.equal(asked.length, 1, 'one OpenAlex request');
+  assert.equal(paper?.title, 'Attention Is All You Need');
+  assert.equal(paper?.pdfUrl, 'https://arxiv.org/pdf/1706.03762');
+});
+
+test('an arXiv answer that arrives while the page still waits keeps its categories, enriched by the same OpenAlex request', async t => {
+  const asked = openAlexAnswering(t, arxivWork('1810.04805'));
+  const paper = await loadArxivPaper('1810.04805', { pageWaitMs, fetchArxiv: arxivAfter(60, () => [arxivRecord('1810.04805')]) });
+  assert.equal(asked.length, 1, 'one OpenAlex request');
+  assert.equal(paper?.primaryCategory, 'cs.CL');
+  assert.deepEqual(paper?.categories, ['cs.CL', 'cs.LG']);
+  assert.equal(paper?.citationCount, 1234, 'OpenAlex enrichment merged');
+});
+
+test('a healthy arXiv is enriched by one OpenAlex lookup, and the next view of the paper asks OpenAlex nothing', async t => {
+  const asked = openAlexAnswering(t, arxivWork('2005.14165'));
+  const first = await loadArxivPaper('2005.14165', { pageWaitMs, fetchArxiv: async () => [arxivRecord('2005.14165')] });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0].searchParams.get('filter') || '', /^locations\.landing_page_url:/);
+  assert.equal(asked[0].searchParams.get('per_page'), '1', 'the same request as the fallback');
+  assert.equal(first?.primaryCategory, 'cs.CL');
+  assert.equal(first?.citationCount, 1234);
+
+  asked.length = 0;
+  openAlexClient.clearMemoryCache();
+  const again = await loadArxivPaper('2005.14165', { pageWaitMs, fetchArxiv: async () => [arxivRecord('2005.14165')] });
+  assert.deepEqual(asked, [], 'enrichment read from this browser');
+  assert.equal(again?.citationCount, 1234);
+});
+
+test('a failed arXiv shows OpenAlex\'s paper from the one request already made', async t => {
+  const asked = openAlexAnswering(t, arxivWork('1512.03385'));
+  const paper = await loadArxivPaper('1512.03385', {
+    pageWaitMs,
+    fetchArxiv: async () => { throw Object.assign(new Error('Could not reach arXiv'), { status: 502 }); },
+  });
+  assert.equal(asked.length, 1);
+  assert.equal(paper?.title, 'Attention Is All You Need');
+  assert.equal(paper?.pdfUrl, 'https://arxiv.org/pdf/1512.03385');
+});
+
+test('when OpenAlex does not know the paper, a slow arXiv is waited for and nothing else is asked', async t => {
+  const asked = openAlexAnswering(t, null);
+  const paper = await loadArxivPaper('1409.0473', { pageWaitMs, fetchArxiv: arxivAfter(300, () => [arxivRecord('1409.0473')]) });
+  assert.equal(asked.length, 1);
+  assert.equal(paper?.primaryCategory, 'cs.CL');
 });

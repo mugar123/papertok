@@ -475,6 +475,11 @@
   color: var(--text-primary);
 }
 
+.navbar-icon-btn[aria-current="page"] {
+  border-bottom: 2px solid var(--brand-yellow);
+  color: var(--text-primary);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .navbar-icon-btn:hover {
     background: var(--bg-glass);
@@ -483,7 +488,8 @@
 }
 
 /* The inline search field already covers this on wide screens. */
-.navbar-icon-btn--search-compact {
+.navbar-icon-btn--search-compact,
+.navbar-conferences--compact {
   display: none;
 }
 
@@ -551,11 +557,13 @@
 }
 
 @media (max-width: 900px) {
-  .navbar-search {
+  .navbar-search,
+  .navbar-conferences {
     display: none;
   }
 
-  .navbar-icon-btn--search-compact {
+  .navbar-icon-btn--search-compact,
+  .navbar-conferences--compact {
     display: grid;
   }
 }

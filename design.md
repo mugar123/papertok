@@ -316,6 +316,30 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   publisher's page, whose head rows yield after the panel and scroll (Cards /
   Containers, "A card with no abstract"). On a tablet the column stops at a
   40rem reading measure.
+- **The kicker** reads field · reason · year · conference acceptance · citations.
+  It wraps as needed, with dots only between visible items. The reason
+  (`utils/feed-reason.ts`) uses `--text-secondary`. A notable
+  For You card reads "Highly cited in [field]" when its lane identifies a
+  taxonomy leaf and it has at least 100 known citations. Otherwise it shows
+  "You follow [name]" if a follow matches, or no reason.
+  On other cards a matching follow comes first. "Because you follow [name]"
+  credits a follow used to fetch the card in Following, a custom feed or For
+  You. For You can also credit the author whose follow boosted the card's
+  score. All other matches read "You follow [name]".
+  On a scored For You card, "Similar to papers you liked" (saved, liked or
+  saved, engaged with) names the examples sent with its page. It needs a
+  cosine of at least 0.65 to the closest example, and similarity must outweigh
+  each of the card's own signals. Area preference and affinity do not compete.
+  A remaining For You card reads "In your area" when the reader picked its
+  primary category or a leaf that includes its OpenAlex primary topic.
+  Otherwise, "Also in [category]" names the first picked category the card
+  was fetched for, then the first picked secondary category if needed. A pick
+  with the same label as the displayed field reads "In your area". Only picks
+  with a taxonomy label qualify.
+  The Worker's `acceptedConference` supplies the mark in `--text-secondary`.
+  It reads "Accepted at NeurIPS 2026", or "Accepted at NeurIPS" when the
+  conference year is unknown. About this paper repeats it under Status. A
+  preprint keeps its preprint status.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 
@@ -490,6 +514,8 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the search page's own field and scope instead, and the shortcut focuses it;
   below 768px that field takes the tabs' place, and the tabs move into a
   "Search" picker beside the mark: a drawer on a phone, a menu up to 768px.
+  The Conference calendar icon sits beside Search and opens `/conferences`.
+  It fills in on the calendar and its edition pages at `/conferences/:editionId`.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
   Sunken Paper when highlighted.
 - **A feed tab's menu** (`custom-feeds/feed-tab-menu.tsx`): Edit feed, Move

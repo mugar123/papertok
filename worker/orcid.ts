@@ -62,9 +62,11 @@ interface OrcidOptions { admin?: Admin; now?: () => number }
 interface LinkDocument { stateHash?: string; createdAt?: number }
 interface OrcidConnection { id: string; name: string | null; host: OrcidHost; connectedAt: string }
 
-function orcidHost(env: WorkerEnv) {
+export function configuredOrcidHost(env: WorkerEnv) {
   const environment = env.ORCID_ENVIRONMENT || 'production';
-  return Object.hasOwn(ORCID_REGISTRIES, environment) ? ORCID_REGISTRIES[environment] : null;
+  const host = Object.hasOwn(ORCID_REGISTRIES, environment) ? ORCID_REGISTRIES[environment] : null;
+  if (!host || !env.ORCID_CLIENT_ID || !env.ORCID_CLIENT_SECRET || !isServiceAccountConfigured(env)) return null;
+  return host;
 }
 
 function linkSegments(uid: string) {
@@ -141,8 +143,8 @@ async function exchangeCode(env: WorkerEnv, host: OrcidHost, code: string, redir
 export async function handleOrcidRequest(request: Request, env: WorkerEnv, origin: string, options: OrcidOptions = {}) {
   const pathname = new URL(request.url).pathname;
   if (request.method !== 'POST') throw new OrcidError('METHOD_NOT_ALLOWED', 405);
-  const host = orcidHost(env);
-  if (!host || !env.ORCID_CLIENT_ID || !env.ORCID_CLIENT_SECRET || !isServiceAccountConfigured(env)) {
+  const host = configuredOrcidHost(env);
+  if (!host) {
     throw new OrcidError('ORCID_NOT_CONFIGURED', 503);
   }
   // Every route writes, so no identity cache: a token revoked a moment ago must not connect.

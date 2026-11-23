@@ -35,7 +35,7 @@ const CACHES = { pages: recentPagesCache, runs: recentRunsCache };
  * interest groups: before that, no groups is not yet an answer.
  */
 export function useRecentFeedPapers(): {
-  papers: Paper[]; loading: boolean; error: unknown; hasMore: boolean;
+  papers: Paper[]; loading: boolean; error: unknown; takeFailureReport: (() => boolean) | undefined; hasMore: boolean;
   loadMore: () => boolean; refresh: () => void; isRefreshing: boolean; hasTopics: boolean;
 } {
   const { user } = useAuth();
@@ -86,7 +86,7 @@ export function useRecentFeedPapers(): {
   // one marked Not interested leaves at once, and comes back on Undo.
   const shown = useCallback((papers: Paper[]) => withoutNotInterested(papers, notInterestedIds), [notInterestedIds]);
 
-  const { papers, loading, error, hasMore, loadMore, refresh, isRefreshing } = useCorpusFeedPages({
+  const { papers, loading, error, takeFailureReport, hasMore, loadMore, refresh, isRefreshing } = useCorpusFeedPages({
     key,
     ready: profileReady,
     press,
@@ -108,5 +108,5 @@ export function useRecentFeedPapers(): {
     feedResumeMemory.persist(scrollKey);
   }, [key, profileReady, uid]);
 
-  return { papers, loading, error, hasMore, loadMore, refresh, isRefreshing, hasTopics };
+  return { papers, loading, error, takeFailureReport, hasMore, loadMore, refresh, isRefreshing, hasTopics };
 }

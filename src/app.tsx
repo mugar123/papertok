@@ -1,9 +1,9 @@
-import type { ComponentProps, MouseEvent } from 'react'
+import type { ComponentProps, MouseEvent, ReactNode } from 'react'
 import type { Paper } from './models/paper.ts'
 import type { ReaderMenu } from './components/feed/paper-menu.tsx'
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { waitForPendingWrites } from 'firebase/firestore'
 import { db } from './services/firebase.ts'
@@ -37,7 +37,7 @@ import NudgeHost from './components/nudges/nudge-host.tsx'
 import GuestWelcome from './components/public/guest-welcome.tsx'
 import AuthPrompt from './components/public/auth-prompt.tsx'
 import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
-import { getPublicPaperPath, isPublicRoutePath, keepsNavbarPath, legacyPaperRedirect } from './utils/public-navigation.ts'
+import { getPublicPaperPath, isPublicRoutePath, keepsNavbarPath, legacyPaperRedirect, readablePaperPath } from './utils/public-navigation.ts'
 import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
 // Loaded eagerly: they remove the one-time OAuth values (Zotero's verifier,
@@ -72,6 +72,7 @@ const ListsPage = lazyWithPreload(() => import('./components/lists/lists-page.ts
 const PDFViewer = lazyWithPreload(() => import('./components/pdf/pdf-viewer.tsx'))
 const SaveToListModal = lazyWithPreload(() => import('./components/lists/save-to-list-modal.tsx'))
 const SearchPage = lazyWithPreload(() => import('./components/search/search-page.tsx'))
+const ConferencePage = lazyWithPreload(() => import('./components/conferences/conference-page.tsx'))
 const EntityExplorer = lazyWithPreload(() => import('./components/explorer/entity-explorer.tsx'))
 const FollowingFeedPage = lazyWithPreload(() => import('./components/following/following-feed-page.tsx'))
 const RecentFeedPage = lazyWithPreload(() => import('./components/recent/recent-feed-page.tsx'))
@@ -93,6 +94,24 @@ const SearchCommand = lazyWithPreload(() => import('./components/search/search-c
 function LegacyPaperRedirect() {
   const redirect = legacyPaperRedirect(useLocation())
   return redirect ? <Navigate to={redirect.to} state={redirect.state} replace /> : <NotFoundPage />
+}
+
+// A paper written by hand as /paper/arxiv:1706.03762 (see readablePaperPath)
+// moves to its canonical address before the page renders, so the not-found state
+// never flashes and the readable address makes no request. The history keeps one
+// entry, with the query, fragment and state of the visit.
+function ReadablePaperRedirect({ children }: { children: ReactNode }) {
+  const { paperKey = '' } = useParams()
+  const location = useLocation()
+  const pathname = readablePaperPath(paperKey)
+  if (!pathname) return children
+  return (
+    <Navigate
+      replace
+      to={{ pathname, search: location.search, hash: location.hash }}
+      state={location.state}
+    />
+  )
 }
 
 function LoginRedirect() {
@@ -573,6 +592,8 @@ function AppContent() {
               </PageTransition>
             }
           />
+          <Route path="/conferences" element={<PageTransition><ConferencePage /></PageTransition>} />
+          <Route path="/conferences/:editionId" element={<PageTransition><ConferencePage /></PageTransition>} />
           <Route
             path="/explorer/:type/:id"
             element={
@@ -591,6 +612,7 @@ function AppContent() {
             element={
               <PageTransition>
                 <EntityExplorer
+                  translationEnabled={false}
                   publicMode={!user}
                   onAuthRequired={requestAuthentication}
                   onSaveToList={user ? openSaveModal : requestAuthentication}
@@ -602,14 +624,16 @@ function AppContent() {
           <Route
             path="/paper/:paperKey"
             element={
-              <PageTransition>
-                <PublicPaperPage
-                  isAuthenticated={Boolean(user)}
-                  onAuthRequired={requestAuthentication}
-                  onOpenPdf={openPdf}
-                  onSaveToList={user ? openSaveModal : requestAuthentication}
-                />
-              </PageTransition>
+              <ReadablePaperRedirect>
+                <PageTransition>
+                  <PublicPaperPage
+                    isAuthenticated={Boolean(user)}
+                    onAuthRequired={requestAuthentication}
+                    onOpenPdf={openPdf}
+                    onSaveToList={user ? openSaveModal : requestAuthentication}
+                  />
+                </PageTransition>
+              </ReadablePaperRedirect>
             }
           />
           <Route

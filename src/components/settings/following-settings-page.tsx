@@ -26,7 +26,7 @@ import { sameAccount } from '../ui/toast.ts';
 import { followsListPress, unfollowOnLeave } from './follows-list-press.ts';
 import { focusAfterUnfollow, focusLeftByQuestion } from './focus-after-unfollow.ts';
 import { journalLimitNote } from './journal-limit-note.ts';
-import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
+import { getFollowDisplayName } from '../../utils/follow-display-name.ts';
 import { Button } from '../ui/button.tsx';
 import {
   AlertDialog,
@@ -52,12 +52,6 @@ const FOLLOW_TABS = [
   { type: 'journal', label: { en: 'Journals' }, Icon: FileText },
 ];
 const FOLLOW_TAB_TYPES = FOLLOW_TABS.map(tab => tab.type);
-
-function getFollowDisplayName(entity: FollowEntity) {
-  return entity.type === 'institution'
-    ? getLocalizedInstitutionName(entity)
-    : entity.displayName;
-}
 
 function getRowKey(entity: FollowEntity) {
   return entity.followKey || `${entity.type}:${entity.canonicalId}`;
