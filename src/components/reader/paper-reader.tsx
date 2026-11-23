@@ -66,7 +66,6 @@ import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { NotesSidebar, PassageEditor } from '../pdf/viewer-notes.tsx';
 import { ReadingDock } from '../pdf/reading-dock.tsx';
-import { rewriteListen } from './rewrite-listen.ts';
 import { OutlineList, OutlineRail } from '../pdf/full-text-outline.tsx';
 import { PassageHandles } from '../pdf/passage-handles.tsx';
 import { overlapping, quoteOffsets } from '../pdf/passage-range.ts';
@@ -1098,7 +1097,6 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
    */
   const providerQuota = shownError === 'AI_QUOTA_EXHAUSTED' && error?.quota?.scope === 'provider';
   const isStreaming = shownStatus === 'streaming';
-  const spoken = useMemo(() => shownStatus === 'ready' ? rewriteListen(sections) : null, [shownStatus, sections]);
   const errorCopy = ERROR_COPY.en[(providerQuota ? 'AI_QUOTA_EXHAUSTED_PROVIDER' : shownError) as keyof typeof ERROR_COPY.en]
     || ERROR_COPY.en.AI_UNAVAILABLE;
   const stageLabel = copy.stages[stage as keyof ReaderCopy['stages']] || copy.writing;
@@ -1477,7 +1475,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
 
         <ReadingDock
           title={`${paper.title ?? 'Paper'} — In plain words`} paper={card?.paper}
-          scroll={scrollElement} spoken={spoken} canListen={Boolean(uid) && Boolean(spoken?.queue.length)}
+          scroll={scrollElement} spoken={null} canListen={false}
           notes={{ id: 'reader-notes', open: notesOpen, count: orderedAnnotations.length, onOpenChange: setNotesOpen }}
           originalUrl={originalUrl}
           menu={card ? { paper: card.paper, doc: null, fromCard: card.menu, onLeave: then => { afterClose.current = then; requestClose(); } } : undefined}
