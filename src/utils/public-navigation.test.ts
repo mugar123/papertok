@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
+import { encodeBase64Url } from './base64-url.ts';
 import {
   DEFAULT_SHARE_IMAGE,
   PUBLIC_ENTITY_TYPES,
   decodePaperKey,
   getAbsoluteShareUrl,
+  getPaperIdentity,
   getPublicEntityPath,
   getPublicEntityUrl,
   getPublicPaperPath,
@@ -210,6 +212,74 @@ test('an id nobody can open is still no key at all', () => {
   assert.equal(encodePaperKey('649def34f8be52c8b66281af98ae884c09aef38b'), null, 'a Semantic Scholar hash');
   assert.equal(getPublicPaperPath('openalex', 'not-a-work'), null);
   assert.equal(getPublicPaperPath('pmid', '12a'), null);
+});
+
+test('a huge paper key resolves to not-found instead of throwing', () => {
+  const hugeDoi = `10.1000/${'a'.repeat(150_000)}`;
+  const hugeKey = encodeBase64Url(`doi:${hugeDoi}`);
+
+  assert.equal(hugeKey.length, 200_016);
+  assert.equal(parsePaperKey(hugeKey), null);
+  assert.equal(decodePaperKey(hugeKey), null);
+  assert.equal(encodePaperKey('doi', hugeDoi), null);
+  assert.equal(getPublicPaperPath(hugeKey), null);
+  assert.equal(getPublicPaperPath('doi', hugeDoi), null);
+});
+
+test('enforces maximum identity lengths at the exact boundaries', () => {
+  const maxDoi = `10.1000/${'a'.repeat(2040)}`;
+  assert.equal(maxDoi.length, 2048);
+  const maxDoiKey = encodePaperKey('doi', maxDoi);
+  assert.ok(maxDoiKey);
+  assert.equal(decodePaperKey(maxDoiKey), `doi:${maxDoi}`);
+  assert.deepEqual(parsePaperKey(maxDoiKey), { type: 'doi', value: maxDoi });
+  assert.equal(getPublicPaperPath('doi', maxDoi), `/paper/${maxDoiKey}`);
+
+  const maxUtf8Doi = `10.1000/${'漢'.repeat(2040)}`;
+  assert.equal(maxUtf8Doi.length, 2048);
+  const maxUtf8DoiKey = encodePaperKey('doi', maxUtf8Doi);
+  assert.ok(maxUtf8DoiKey);
+  assert.equal(decodePaperKey(maxUtf8DoiKey), `doi:${maxUtf8Doi}`);
+
+  const overDoi = `10.1000/${'a'.repeat(2041)}`;
+  assert.equal(overDoi.length, 2049);
+  assert.equal(getPaperIdentity('doi', overDoi), '');
+  assert.equal(encodePaperKey('doi', overDoi), null);
+  assert.equal(parsePaperKey(encodeBase64Url(`doi:${overDoi}`)), null);
+  assert.equal(getPublicPaperPath('doi', overDoi), null);
+
+  const maxArxiv = `${'a'.repeat(56)}/0612345`;
+  assert.equal(maxArxiv.length, 64);
+  const maxArxivKey = encodePaperKey('arxiv', maxArxiv);
+  assert.ok(maxArxivKey);
+  assert.deepEqual(parsePaperKey(maxArxivKey), { type: 'arxiv', value: maxArxiv });
+
+  const overArxiv = `${'a'.repeat(57)}/0612345`;
+  assert.equal(overArxiv.length, 65);
+  assert.equal(getPaperIdentity('arxiv', overArxiv), '');
+  assert.equal(parsePaperKey(encodeBase64Url(`arxiv:${overArxiv}`)), null);
+
+  const overArxivVersion = `2401.12345v${'9'.repeat(54)}`;
+  assert.equal(overArxivVersion.length, 65);
+  assert.equal(getPaperIdentity('arxiv', overArxivVersion), '');
+
+  const maxOpenAlex = `W${'1'.repeat(20)}`;
+  const maxOpenAlexKey = encodePaperKey('openalex', maxOpenAlex);
+  assert.ok(maxOpenAlexKey);
+  assert.deepEqual(parsePaperKey(maxOpenAlexKey), { type: 'openalex', value: maxOpenAlex });
+
+  const overOpenAlex = `W${'1'.repeat(21)}`;
+  assert.equal(getPaperIdentity('openalex', overOpenAlex), '');
+  assert.equal(parsePaperKey(encodeBase64Url(`openalex:${overOpenAlex}`)), null);
+
+  const maxPmid = '9'.repeat(20);
+  const maxPmidKey = encodePaperKey('pmid', maxPmid);
+  assert.ok(maxPmidKey);
+  assert.deepEqual(parsePaperKey(maxPmidKey), { type: 'pmid', value: maxPmid });
+
+  const overPmid = '9'.repeat(21);
+  assert.equal(getPaperIdentity('pmid', overPmid), '');
+  assert.equal(parsePaperKey(encodeBase64Url(`pmid:${overPmid}`)), null);
 });
 
 /**
