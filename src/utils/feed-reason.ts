@@ -42,10 +42,7 @@ export function feedReason(
     if (leaf) return { kind: 'classic', text: `Highly cited in ${getCategoryLabel(leaf)}` };
   }
   if (followed) {
-    const fromRequest = followed.source === 'request' && (surface === 'feed' || surface === 'following' || surface === 'custom_feed');
-    const fromScore = followed.source === 'card' && surface === 'feed' && (score?.followBoost ?? 0) > 0
-      && (score?.authorBoost ?? 0) > 0 && score?.boostedAuthorKey === followed.authorKey;
-    const causal = !paper._notable && (fromRequest || fromScore);
+    const causal = !paper._notable && followed.source === 'request' && (surface === 'feed' || surface === 'following');
     const subject = followed.name || `this ${followed.type}`;
     return { kind: 'follow', followType: followed.type, text: `${causal ? 'Because you follow' : 'You follow'} ${subject}` };
   }

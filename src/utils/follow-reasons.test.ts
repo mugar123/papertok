@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { FollowEntity } from './following.ts';
+import { getFollowDisplayName } from './follow-display-name.ts';
 import { feedReason } from './feed-reason.ts';
 import { followedOnCard } from './follow-reasons.ts';
 
@@ -54,6 +56,20 @@ test('the reader\'s stored follow names the match before the name the corpus ech
   assert.equal(followLabel([match('topic', 'Old name')], null, all, () => undefined), 'Because you follow Old name');
 });
 
+test('a stored follow without a display name falls back to the corpus name, then the type', () => {
+  const stored = { type: 'topic', canonicalId: 'topic-1' } as FollowEntity;
+  assert.equal(followLabel([match('topic', 'Optics')], null, all, () => stored), 'Because you follow Optics');
+  assert.equal(followLabel([match('topic', 'topic-1')], null, all, () => stored), 'Because you follow this topic');
+});
+
+test('a non-string or blank English label leaves the stored name usable', () => {
+  for (const labelEn of [42, '   ']) {
+    const metadata: Record<string, unknown> = { labelEn };
+    const stored = { ...match('topic', 'Optics'), metadata };
+    assert.equal(followLabel([match('topic', 'Old name')], null, all, () => stored), 'Because you follow Optics');
+  }
+});
+
 test('a For You card names a legacy topic follow in English', () => {
   const stored = { type: 'topic' as const, canonicalId: 'physics', displayName: 'Física' };
   const echoed = { ...stored, displayName: 'Physics' };
@@ -67,17 +83,23 @@ test('a named corpus match resolves by topic id when there is no stored follow',
   assert.equal(followLabel([{ ...topic, displayName: 'physics' }], null, all), 'Because you follow this topic');
 });
 
-test('a stored English label takes precedence over the taxonomy and an unnamed match', () => {
+test('the canonical taxonomy label takes precedence over a stored English label', () => {
   const echoed = { type: 'topic' as const, canonicalId: 'physics', displayName: 'physics' };
   const stored = { ...echoed, displayName: 'Física', metadata: { labelEn: 'Physical sciences' } };
-  assert.equal(followLabel([echoed], null, all, () => stored), 'Because you follow Physical sciences');
+  assert.equal(followLabel([echoed], null, all, () => stored), 'Because you follow Physics');
 });
 
 test('keywords keep the text the reader typed, including capitalization', () => {
   for (const text of ['ondas de luz', 'pHySiCs']) {
-    const keyword = { type: 'topic' as const, canonicalId: 'query-1234abcd', displayName: text, metadata: { query: text } };
+    const keyword = { type: 'topic' as const, canonicalId: 'query-1234abcd', displayName: text, metadata: { query: text, labelEn: 'Waves' } };
     assert.equal(followLabel([keyword], null, all), `Because you follow ${text}`);
   }
+});
+
+test('the digest resolves keyword text and prefers a supplied English label', () => {
+  const keyword = { type: 'topic' as const, canonicalId: 'query-1234abcd', displayName: 'pHySiCs' };
+  assert.equal(getFollowDisplayName(keyword, 'digest'), 'Physics');
+  assert.equal(getFollowDisplayName({ ...keyword, metadata: { labelEn: 'Physical sciences' } }, 'digest'), 'Physical sciences');
 });
 
 test('a legacy topic outside the taxonomy keeps its name even if the id looks like words', () => {
