@@ -26,7 +26,6 @@ export type ConferenceEdition = {
   checkedOn?: string;
   dateText?: string;
   placeText?: string;
-  notes?: string;
   online?: boolean;
   source?: 'ccf' | 'databio';
 };

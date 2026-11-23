@@ -115,7 +115,6 @@ export default function ConferencePage() {
               <section className="conference-details">
                 <h2>Dates and location</h2>
                 <Dates edition={edition} />
-                {edition.notes && <p>{edition.notes}</p>}
                 <Button variant="outline" render={<a href={edition.url} />}>
                   Official website <ArrowUpRight aria-hidden="true" />
                 </Button>

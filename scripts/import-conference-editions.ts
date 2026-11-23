@@ -57,19 +57,20 @@ function convert(value: unknown, inputField: keyof typeof fields): ConferenceEdi
     series: series.replace(/ \? /g, ' – '), field: fields[inputField], url, source, sourceUrl, checkedOn, online: online === true,
     dateText: text(dateText) && !dateText.includes('?') ? dateText : undefined,
     placeText: (text(placeText) && !placeText.includes('?') ? placeText : [city, country].filter(text).filter(part => !part.includes('?')).join(', ')) || undefined,
-    notes: text(notes) && !notes.includes('?') ? notes : undefined,
     dates: typeof startsOn === 'string' ? [{ start: startsOn, end: typeof endsOn === 'string' ? endsOn : null }] : [],
   };
 }
 
 const dir = process.argv[2];
-if (!dir) throw new Error('Pass the directory containing the conference field JSON files.');
+if (!dir) throw new Error('Usage: node scripts/import-conference-editions.ts <data-directory> [--partial]');
+const allowPartial = process.argv.includes('--partial');
 const rows: ConferenceEdition[] = [];
 const launchIds = new Set(['neurips-2026', 'iclr-2026', 'iclr-2027', 'icml-2026', 'colm-2026']);
 for (const field of Object.keys(fields) as (keyof typeof fields)[]) {
   const filename = field + '.json';
   const path = join(dir, filename);
   if (!existsSync(path)) {
+    if (!allowPartial) throw new Error(filename + ' is missing. Pass --partial to write a snapshot from the available files.');
     console.log(field + ': missing');
     continue;
   }
@@ -79,7 +80,8 @@ for (const field of Object.keys(fields) as (keyof typeof fields)[]) {
   for (const [index, value] of input.entries()) {
     const row = convert(value, field);
     const sameId = row && rows.find(edition => edition.id === row.id);
-    const sameEdition = row && sameId && sameId.dates[0]?.start === row.dates[0]?.start;
+    const sameEdition = row && sameId && sameId.dates[0]?.start === row.dates[0]?.start
+      && (slugOf(sameId.series) === slugOf(row.series) || sameId.url === row.url);
     if (!row || sameEdition || launchIds.has(row.id)) {
       console.warn(filename + ' entry ' + (index + 1) + ': ' + (row ? 'duplicate edition' : 'invalid or unverified input'));
       continue;
@@ -95,6 +97,11 @@ for (const field of Object.keys(fields) as (keyof typeof fields)[]) {
   console.log(field + ': imported ' + imported + ' of ' + input.length);
 }
 if (!rows.length) throw new Error('No verified editions to import.');
+const nameCounts = new Map<string, number>();
+for (const row of rows) nameCounts.set(row.name, (nameCounts.get(row.name) ?? 0) + 1);
+const editions = rows.map(row => (nameCounts.get(row.name) ?? 0) > 1
+  ? { ...row, name: row.series + ' (' + row.name + ')' }
+  : row);
 writeFileSync(new URL('../src/data/conference-editions.ts', import.meta.url),
   "import type { ConferenceEdition } from './conferences.ts';\n\nexport const importedEditions: readonly ConferenceEdition[] = [\n"
-  + rows.map(row => '  ' + JSON.stringify(row) + ',\n').join('') + '];\n');
+  + editions.map(row => '  ' + JSON.stringify(row) + ',\n').join('') + '];\n');
