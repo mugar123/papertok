@@ -273,17 +273,18 @@ retries at 1, 2 and 4 minutes, all in the same invocation, and ran on the fifth
 attempt, after 8 minutes, in a fresh one, a 16-minute stall. The 84 batches,
 372 backfill steps and 500 eviction steps that followed shared the fresh
 invocation without reaching the default again. `wrangler.toml` sets the limit
-to 100,000. The longest run is estimated at **83,000 subrequests** for the measured
+to 100,000. The longest run is estimated at **86,455 subrequests** for the measured
 corpus. A [harvest test](paper-harvest.test.ts) checks that 150 enrichment batches
 with typical DOIs, including their embedding steps, fit within half the configured
 subrequest limit. The earlier estimate of 66,000 includes 150 enrichment batches, every
 notable lane on the same night, 400 followed lanes, full PubMed backfill and
 eviction. Allow up to 12,000 more for the harvest's 4,000 daily OpenAlex misses:
 two shared-cache calls and a ledger write when OpenAlex reports its balance
-(step 5). The 600 billed author lookups come out of that same allowance.
+(step 5). The 2,500 billed author lookups come out of that same allowance.
 For the measured 258,703 recent papers, quality reads 518 pages per pass. Allow six D1 calls
-per page across author discovery and scoring (3,108), plus a refresh selection
-and a write per billed author batch (up to 1,200). Pruning 693,790 author rows
+per page across author discovery and scoring (3,108). Each stored author batch adds
+a D1 write and each refresh step adds a D1 selection. Allow 5,000 calls for
+2,500 billed batches if all are refreshes. Pruning 693,790 author rows
 in batches of 2,000 would add 347 calls. Corpus size, cache hits and retries
 affect the actual total.
 Subrequests are not billed themselves; each provider's calls stay bounded by
@@ -296,12 +297,12 @@ steps per instance by default on Workers Paid, configurable up to 25,000.
 `wrangler workflows instances describe`. [Cloudflare Workflows limits](https://developers.cloudflare.com/workflows/reference/limits/)
 
 For those 258,703 papers, author discovery and scoring take 518 steps each.
-Each pass reads 517 pages of 500 papers and a final page of 203. Refresh reads up to 100 authors per step. With all 600 units
-available for refresh and no relay cache hits, allow up to 600 billed steps
+Each pass reads 517 pages of 500 papers and a final page of 203. Refresh reads up to 100 authors per step. With all 2,500 units
+available for refresh and no relay cache hits, allow up to 2,500 billed steps
 and one final empty or refused step. Cache hits can add steps without spending
 units. Each prune step deletes up to 2,000 expired rows from each table and
 repeats if either deletion fills its batch. With one prune step, the largest
-of those three runs would reach 3,949 steps (2,311 + 518 + 518 + 601 + 1).
+of those three runs would reach 5,849 steps (2,311 + 518 + 518 + 2,501 + 1).
 A short rate limit can add up to three author steps to retry a page.
 A run that exhausts its step limit during quality would lose the remaining
 embedding, backfill, eviction and leaf filing phases.
@@ -510,7 +511,9 @@ The 02:30 UTC harvest runs [paper-quality.ts](paper-quality.ts) after enrichment
 
 The job reads papers newer than the 90-day cutoff, including future publication dates, newest first with work ID breaking ties. Papers with at least five known citations lose any stored note. An unknown count (missing or stored as zero with `citationCountKnown: false`) remains eligible, so an uncounted arXiv paper can qualify through Hugging Face votes.
 
-For bylines of up to 30 authors, the job reads the first author and the last three in `works.paper.authors`. It looks up missing author IDs first in batches of up to 100, then refreshes eligible cached authors in order of oldest fetch. Each billed list spends one of the nightly share’s 3,700 units and one of the 600 allowed for author lookups. After the 2026-11-23 harvest finished at 04:27 UTC, `/health/openalex/budget` reported 870 feed units used across the nightly run and new follows. At least 2,830 units remained under the nightly cap. Author lookups can spend only what remains under both that cap and the feed tier’s 95% ceiling after enrichment.
+For bylines of up to 30 authors, the job reads the first author and the last three in `works.paper.authors`. It looks up missing author IDs first in batches of up to 100, then refreshes eligible cached authors in order of oldest fetch. Each billed list spends one of the nightly share’s 3,700 units and one of the 2,500 allowed for author lookups. After the 2026-11-23 harvest finished at 04:27 UTC, `/health/openalex/budget` reported 870 feed units used across the nightly run and new follows. At least 2,830 units remained under the nightly cap. Author lookups can spend only what remains under both that cap and the feed tier’s 95% ceiling after enrichment. Since #578 the ledger keeps the harvest’s share separate from the readers’ budget.
+
+The first load of the measured 90-day corpus takes about 6,900 lookups for 693,790 distinct authors at 100 per call. Allowing about 115 more lookups per day for new authors, the first load takes about three nights if all 2,500 units are available each night. After that, the job looks up only missing authors and those due for refresh.
 
 Author lookups wait up to 60 seconds for an OpenAlex 429, once per batch and at most three times across discovery and refresh each night. A further refusal, a provider outage or a malformed list ends the phase for the night and leaves the batch due. A credential rejection or an unexpected error fails the phase. Scoring still runs with the evidence already in D1.
 
@@ -1190,7 +1193,7 @@ The global search palette asks the author index first (`/authors?search=` with 1
 | Tier | Share | What spends it |
 | --- | --- | --- |
 | essential | 100% (see **The harvest's part of the day**) | One work by identifier with `per-page=1` (or `per_page=1`): a paper being opened, such as the public paper page's OpenAlex lookup of an arXiv paper, asked beside arXiv as both its fallback and its enrichment. |
-| feed | 95% | The paper harvest, whatever it asks: the topic, venue, notable and area lanes and working-paper series, followed entities, searches and projects, enrichment and author h-index lookups. It goes through `handleHarvestOpenAlex`, and its misses also count against its own 4,000 units a day (`OPENALEX_HARVEST_DAILY_UNITS`) in place of the minute's ceiling, as two ledger subjects: 300 for the runs new follows start (`OPENALEX_NEW_FOLLOWS_DAILY_UNITS`) and 3,700 for the nightly run. Category lanes, nightly followed lanes and author h-index lookups also have caps within the nightly share. Author lookups can spend up to 600 units left after enrichment. |
+| feed | 95% | The paper harvest, whatever it asks: the topic, venue, notable and area lanes and working-paper series, followed entities, searches and projects, enrichment and author h-index lookups. It goes through `handleHarvestOpenAlex`, and its misses also count against its own 4,000 units a day (`OPENALEX_HARVEST_DAILY_UNITS`) in place of the minute's ceiling, as two ledger subjects: 300 for the runs new follows start (`OPENALEX_NEW_FOLLOWS_DAILY_UNITS`) and 3,700 for the nightly run. Category lanes, nightly followed lanes and author h-index lookups also have caps within the nightly share. Author lookups can spend up to 2,500 units left after enrichment. |
 | enrichment | 80% | `works` lists filtered only by `doi`, `openalex`, `ids.openalex` or `locations.landing_page_url` (cards already shown, followed DOIs, saved papers a list holds with no field), and the share pages' billed lookups. |
 | exploration | 60% | Graph expansions (`select=id,ids`), every search, `/citation-graph`, autocomplete, profile pages and lookups, and any shape not listed above. Also every OpenAlex request for a scheduled or test email. |
 
