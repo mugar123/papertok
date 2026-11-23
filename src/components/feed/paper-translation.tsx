@@ -37,7 +37,7 @@ export function PaperTranslationButton({ state, onAuthRequired, onChooseLanguage
     <Button
       type="button"
       variant="ghost"
-      size={showing ? 'sm' : 'icon-sm'}
+      size="sm"
       className="paper-translation-button"
       translate="no"
       aria-label={showing ? undefined : 'Translate'}
@@ -56,7 +56,7 @@ export function PaperTranslationButton({ state, onAuthRequired, onChooseLanguage
         }
       }}
     >
-      {showing ? <span>Show original</span> : <Translate aria-hidden="true" />}
+      {showing ? <span>Show original</span> : <><Translate aria-hidden="true" /><span>Translate</span></>}
     </Button>
   );
 }

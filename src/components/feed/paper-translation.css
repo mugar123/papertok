@@ -12,8 +12,12 @@
 }
 
 .paper-translation-title {
-  font-weight: var(--fw-medium);
-  margin-block: var(--space-1);
+  font-family: var(--font-serif);
+  font-weight: var(--fw-bold);
+  font-size: 1.18em;
+  line-height: 1.28;
+  margin-block: var(--space-1) var(--space-2);
+  color: var(--text-primary);
 }
 
 .paper-translation-button {
@@ -44,6 +48,7 @@
 
 .pc-abstract-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-1) var(--space-3);

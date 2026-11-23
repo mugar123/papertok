@@ -85,7 +85,10 @@ test('reader can translate, see the original again and switch accounts without s
   rememberTranslationLanguage('reader-1', 'ja', localStorage);
   const view = render(createElement(Reader, { uid: 'reader-1' }));
   assert.equal(screen.queryByRole('combobox'), null);
-  fireEvent.click(screen.getByRole('button', { name: 'Translate' }));
+  const translateButton = screen.getByRole('button', { name: 'Translate' });
+  assert.equal(translateButton.textContent, 'Translate');
+  assert.ok(translateButton.querySelector('svg[aria-hidden="true"]'));
+  fireEvent.click(translateButton);
   await route.requested();
   assert.match(screen.getByRole('status').textContent ?? '', /Translating title and abstract/);
   const title = '恒星までの距離の推定';
