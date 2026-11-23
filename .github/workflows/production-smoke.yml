@@ -14,6 +14,8 @@ concurrency:
 
 jobs:
   smoke:
+    # Workflow dispatch can target a branch. Compare production with the default branch.
+    if: ${{ github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -32,20 +34,33 @@ jobs:
         shell: bash
         run: node scripts/production-smoke.ts | tee "$RUNNER_TEMP/production-smoke.txt"
 
-      - name: Update the monitoring issue
+      - name: Check deployed Firestore rules and indexes
+        id: firestore
         if: ${{ !cancelled() && (steps.probe.outcome == 'success' || steps.probe.outcome == 'failure') }}
+        shell: bash
+        env:
+          FIREBASE_RULES_READER_KEY: ${{ secrets.FIREBASE_RULES_READER_KEY }}
+        run: node scripts/firestore-rules-check.ts | tee "$RUNNER_TEMP/firestore-check.txt"
+
+      - name: Update the monitoring issue
+        if: ${{ !cancelled() && (steps.firestore.outcome == 'success' || steps.firestore.outcome == 'failure') }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          FIRESTORE_OUTCOME: ${{ steps.firestore.outcome }}
         run: |
           title='Production smoke check failing'
+          outcome=failure
+          if [[ "$PROBE_OUTCOME" == success && "$FIRESTORE_OUTCOME" == success ]]; then
+            outcome=success
+          fi
           issue=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" |
-            jq -r --arg title "$title" --arg outcome "$PROBE_OUTCOME" '
+            jq -r --arg title "$title" --arg outcome "$outcome" '
               [.[][] | select(.pull_request == null and .title == $title and (.state == "open" or $outcome == "failure"))]
               | max_by(.state) | .number // empty')
 
-          if [[ "$PROBE_OUTCOME" == success ]]; then
+          if [[ "$outcome" == success ]]; then
             if [[ -n "$issue" ]]; then
               gh issue close "$issue" --repo "$GITHUB_REPOSITORY"
             fi
@@ -56,8 +71,14 @@ jobs:
           {
             printf 'Production smoke failed. See the [workflow run](%s/%s/actions/runs/%s).\n\n' \
               "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
-            grep '^- FAIL ' "$RUNNER_TEMP/production-smoke.txt" ||
-              printf 'The probe exited before reporting any results.\n'
+            if [[ "$PROBE_OUTCOME" == failure ]]; then
+              grep '^- FAIL ' "$RUNNER_TEMP/production-smoke.txt" ||
+                printf '%s\n' '- FAIL Production probe exited before reporting results.'
+            fi
+            if [[ "$FIRESTORE_OUTCOME" == failure ]]; then
+              grep '^- FAIL ' "$RUNNER_TEMP/firestore-check.txt" ||
+                printf '%s\n' '- FAIL Firestore check exited before reporting results.'
+            fi
           } > "$body"
 
           if [[ -n "$issue" ]]; then
