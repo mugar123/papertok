@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { occurrenceBefore, overlapping, quoteOffsets } from './passage-range.ts';
+import { occurrenceBefore, overlapping, quoteOffsets, replacingHighlights } from './passage-range.ts';
+import { MAX_NOTE_LENGTH } from '../../services/user-highlight-service.ts';
 
 test('a quote is found across the line breaks and runs of spaces of the page text', () => {
   const text = 'The model\n   scored better than earlier  systems.';
@@ -40,4 +41,11 @@ test('a passage overlaps the highlights it shares words with, and only those', (
 test('the same words elsewhere in the paragraph are a different passage', () => {
   const text = 'the model fails, and the model succeeds';
   assert.deepEqual(overlapping(text, { quote: 'the model', occurrence: 1 }, [{ quote: 'the model', occurrence: 0 }]), []);
+});
+
+test('a highlight over others keeps their notes, and replaces none when the notes would not fit one', () => {
+  const old = [{ id: 'a', note: 'First thought.' }, { id: 'b', note: '' }];
+  assert.deepEqual(replacingHighlights('New thought.', old), { note: 'New thought.\n\nFirst thought.', replaced: old });
+  const long = [{ id: 'c', note: 'x'.repeat(MAX_NOTE_LENGTH - 5) }];
+  assert.deepEqual(replacingHighlights('New thought.', long), { note: 'New thought.', replaced: [] });
 });

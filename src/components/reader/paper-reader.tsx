@@ -68,7 +68,7 @@ import { NotesSidebar, PassageEditor } from '../pdf/viewer-notes.tsx';
 import { ReadingDock } from '../pdf/reading-dock.tsx';
 import { OutlineList, OutlineRail } from '../pdf/full-text-outline.tsx';
 import { PassageHandles } from '../pdf/passage-handles.tsx';
-import { overlapping, quoteOffsets } from '../pdf/passage-range.ts';
+import { overlapping, quoteOffsets, replacingHighlights } from '../pdf/passage-range.ts';
 import { useOutlineActive } from '../pdf/use-outline.ts';
 import { ListRowAuthors } from '../lists/list-row.tsx';
 import HighlightedScientificText from './highlighted-scientific-text.tsx';
@@ -953,11 +953,10 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
     // Without an occurrence on either side, a quote said twice in the paragraph could match
     // the wrong one, so only quotes the paragraph holds once take part.
     const once = (quote: string) => text !== null && quoteOffsets(text, quote, 1) === null;
-    const replaced = passage && text !== null && once(passage.quote)
+    const { note: words, replaced } = replacingHighlights(note, passage && text !== null && once(passage.quote)
       ? overlapping(text, passage, orderedAnnotations.filter(item => item.kind === 'user' && !item.endQuote
         && item.sectionId === passage.sectionId && item.paragraphIndex === passage.paragraphIndex && once(item.quote)))
-      : [];
-    const words = [note, ...replaced.map(item => item.note)].filter(Boolean).join('\n\n');
+      : []);
     const saved = words ? await annotations.saveNote(words, color) : await annotations.highlight(color);
     if (saved) {
       setFailedNote(null);

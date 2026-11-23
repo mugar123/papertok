@@ -6,7 +6,7 @@ import { FULL_TEXT_LEVEL, HIGHLIGHT_COLORS, MAX_QUOTE_LENGTH, highlightColor } f
 import { HIGHLIGHT_MIN_QUOTE_LENGTH } from '../../utils/text-highlights.ts';
 import type { PassageSelection } from './passage-range.ts';
 import type { HighlightColor } from '../../services/user-highlight-service.ts';
-import { blockPassage, blockText, overlapping, passageAt, passageRange, selectedPassage } from './passage-range.ts';
+import { blockPassage, blockText, overlapping, passageAt, passageRange, replacingHighlights, selectedPassage } from './passage-range.ts';
 import { newestFirst } from './passage-order.ts';
 import { lastKnownAIUses, refreshAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 
@@ -59,10 +59,9 @@ export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string
   const save = async (note: string, color?: HighlightColor) => {
     const passage = notes.pending;
     const block = passage && document.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
-    const replaced = block && passage
+    const { note: text, replaced } = replacingHighlights(note, block && passage
       ? overlapping(blockText(block), passage, passages.filter(item => item.kind === 'user' && item.sectionId === passage.sectionId))
-      : [];
-    const text = [note, ...replaced.map(item => item.note)].filter(Boolean).join('\n\n');
+      : []);
     const saved = text ? await notes.saveNote(text, color) : await notes.highlight(color);
     if (saved) {
       window.getSelection()?.removeAllRanges();

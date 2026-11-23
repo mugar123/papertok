@@ -1,3 +1,4 @@
+import { MAX_NOTE_LENGTH } from '../../services/user-highlight-service.ts';
 export interface PassageSelection { sectionId: string; quote: string; occurrence: number; anchor: DOMRect; context: string }
 
 function collapse(text: string) {
@@ -62,6 +63,16 @@ export function overlapping<T extends { quote: string; occurrence?: number }>(te
     const other = quoteOffsets(text, item.quote, item.occurrence);
     return other !== null && other[0] < span[1] && span[0] < other[1];
   });
+}
+
+/**
+ * What saving `note` over the reader's own `overlapped` highlights does: it replaces them and
+ * keeps their notes after its own. When the notes together would not fit one note, nothing
+ * is replaced, so no note is cut short.
+ */
+export function replacingHighlights<T extends { note?: string | null }>(note: string, overlapped: readonly T[]) {
+  const merged = [note, ...overlapped.map(item => item.note)].filter(Boolean).join('\n\n');
+  return merged.length <= MAX_NOTE_LENGTH ? { note: merged, replaced: overlapped } : { note, replaced: [] };
 }
 
 export const blockText = (block: Element) => joinText(textNodes(block)).text;
