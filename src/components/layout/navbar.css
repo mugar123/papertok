@@ -46,7 +46,7 @@
 
 .navbar-inner {
   height: 100%;
-  max-width: 1600px;
+  max-width: var(--page-width);
   margin: 0 auto;
   padding: 0 var(--space-5);
   display: flex;

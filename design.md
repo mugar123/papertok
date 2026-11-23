@@ -528,7 +528,7 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   open sends the reader to For you.
 - **`drawer.tsx`:** the bottom sheet a thumb dismisses (swipe, snap points). On
   a phone a menu becomes a drawer of 52px rows.
-- **`popover.tsx`**, **`sheet.tsx`**, **`tooltip.tsx`**, **`tabs.tsx`**
+- **`popover.tsx`**, **`tooltip.tsx`**, **`tabs.tsx`**
   (`line` with the yellow underline, `pill` on a sunken track), and the form
   controls (`switch`, `checkbox`, `radio-group`, `select`, `input`,
   `textarea`).

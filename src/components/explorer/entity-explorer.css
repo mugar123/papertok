@@ -1486,6 +1486,13 @@
   padding: var(--space-5);
 }
 
+/* On a wide screen the page keeps to the bar's width, with the same inset. */
+.explorer-hero,
+.explorer-toolbar,
+.explorer-content {
+  padding-inline: max(var(--space-5), (100% - var(--page-width)) / 2 + var(--space-5));
+}
+
 .explorer-list {
   flex: 1;
   overflow-y: auto;
@@ -1752,36 +1759,39 @@
   animation-delay: calc(min(var(--i, 0), 4) * 40ms);
 }
 
-/* ─── Filter drawer ───
-   A ui Sheet (Base UI Dialog pinned to the right edge). The primitive brings
-   the slide and the fade, the stacking order and the focus trap; these rules
-   only keep the drawer's own measure and chrome. Both are portaled under
-   <body>, which is why nothing here is rooted in `.entity-explorer`. */
-.ee-filter-backdrop {
-  position: fixed;
-  inset: 0;
-  /* No `backdrop-filter`: the veil's opacity is what fades in and out, and a
-     blur under an animated opacity is re-resolved every frame — the worst
-     case for a mobile GPU. The rgba veil alone reads as the backdrop; its
-     3px blur was invisible under it. */
-  background: rgba(17, 19, 24, 0.4);
+/* ─── Filters ───
+   A phone opens them in a sheet (ui Drawer); a desktop has them as a row of
+   lists under the search, applied as they are chosen. */
+.ee-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
 }
 
-.ee-filter-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  /* A flat 320px left only a 40px strip of backdrop to dismiss it on a
-     360px phone; the drawer now yields to the viewport instead. */
-  width: min(320px, 85vw);
-  background: var(--bg-card);
-  border-left: 1px solid var(--border-default);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: var(--shadow-xl);
+/* The search, then the filters (beside it once they fit next to a search kept
+   to a measure, its chips on a phone), then the list's tabs as the heading of
+   the list they count: close to it, further from the search. */
+.explorer-toolbar--list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3) var(--space-8);
 }
+.explorer-toolbar--list .ee-seg { grid-column: 1 / -1; justify-self: start; margin-top: var(--space-5); }
+.explorer-toolbar--list .ee-chips { padding: 0; }
+.explorer-toolbar.explorer-toolbar--list { padding-bottom: var(--space-2); }
+.explorer-toolbar-wrapper:has(.explorer-toolbar--list) + .explorer-content { padding-top: 0; }
+@media (min-width: 1100px) {
+  .explorer-toolbar--list:has(.ee-filter-bar) { grid-template-columns: minmax(0, 24rem) auto; justify-content: space-between; }
+  .explorer-toolbar--list .ee-filter-bar { justify-content: flex-end; }
+}
+
+.ee-filter-select { min-width: 8rem; }
+.ee-area-list { min-width: 16rem; }
+/* In the list the count follows its area's name; the trailing column is the check's. */
+.ee-area-list .ee-facet-count { margin-left: 0; padding-inline-start: 0; }
+.ee-filter-bar .ee-toggle-label { margin-left: var(--space-2); }
 
 .ee-filter-header {
   padding: var(--space-3) var(--space-3) 0 var(--space-5);
@@ -1937,6 +1947,7 @@
 
 .ee-facet-count {
   margin-left: auto;
+  padding-inline-start: var(--space-3);
   font: 500 0.75rem/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
