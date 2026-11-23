@@ -45,3 +45,21 @@ export async function startAppModules({ stubFirestore = false } = {}) {
     },
   };
 }
+
+async function loadAppModule<T>(path: string, options?: Parameters<typeof startAppModules>[0]) {
+  const app = await startAppModules(options);
+  try {
+    return { entry: await app.load<T>(path), firebase: app.firebase, close: app.close };
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
+}
+
+export function loadPaperTranslationService() {
+  return loadAppModule<typeof import('../../src/services/paper-translation-service.ts')>('/src/services/paper-translation-service.ts');
+}
+
+export function loadAuthProvider() {
+  return loadAppModule<typeof import('../../src/context/auth-context.tsx')>('/src/context/auth-context.tsx', { stubFirestore: true });
+}

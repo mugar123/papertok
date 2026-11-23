@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setImmediate } from 'node:timers/promises';
-import { startAppModules } from '../../tests/dom/app-modules.ts';
+import { loadPaperTranslationService } from '../../tests/dom/app-modules.ts';
 import type { PaperTranslationRequest } from '../utils/paper-translation-contract.ts';
-import type { requestPaperTranslation as RequestPaperTranslation } from './paper-translation-service.ts';
 
 const input: PaperTranslationRequest = {
   arxivId: '2611.00829',
@@ -13,9 +12,9 @@ const input: PaperTranslationRequest = {
 };
 
 test('translation settles while the ID token is still pending and never sends a late request', async t => {
-  const app = await startAppModules();
+  const app = await loadPaperTranslationService();
   t.after(() => app.close());
-  const { requestPaperTranslation } = await app.load<{ requestPaperTranslation: typeof RequestPaperTranslation }>('/src/services/paper-translation-service.ts');
+  const { requestPaperTranslation } = app.entry;
   const { auth } = await app.firebase();
   const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json({}, { status: 502 }));
   const realTimeout = AbortSignal.timeout;
