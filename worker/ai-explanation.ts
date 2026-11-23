@@ -572,18 +572,56 @@ export async function peekAIQuota(env: WorkerEnv, uid: string, { unlimited = fal
   };
 }
 
+const FULL_PAPER_DAILY_LIMITS = { subjectLimit: 5, globalLimit: 25 };
+const FULL_PAPER_CHECKS_PER_MINUTE = 2;
+
+function fullPaperDailyQuota(uid: string) {
+  return {
+    periodKey: `translate-paper:${todayKey()}`,
+    subject: `translate-paper:${uid}`,
+    ...FULL_PAPER_DAILY_LIMITS,
+  };
+}
+
+export async function preflightFullPaperTranslationQuota(env: WorkerEnv, uid: string) {
+  const minute = Math.floor(Date.now() / 60_000);
+  const rate = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `translate-paper-check:${minute}`,
+    subject: uid,
+    subjectLimit: FULL_PAPER_CHECKS_PER_MINUTE,
+    globalLimit: FULL_PAPER_CHECKS_PER_MINUTE,
+    globalAmount: 0,
+    expiresAt: (minute + 2) * 60_000,
+  });
+  if (rate.code) throw new AIExplanationError('AI_UNAVAILABLE', 503);
+  if (!rate.accepted) throw new AIExplanationError('AI_BUSY', 429);
+
+  const limits = fullPaperDailyQuota(uid);
+  const reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, limits);
+  if (reading.code || !reading.accepted) throw new AIExplanationError('AI_UNAVAILABLE', 503);
+  const scope = (reading.subjectUsage ?? 0) >= limits.subjectLimit ? 'user'
+    : (reading.globalUsage ?? 0) >= limits.globalLimit ? 'global' : null;
+  if (scope) {
+    throw new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', {
+      ...getDailyQuotaReset(),
+      scope,
+      ...(scope === 'user' ? { remainingUses: 0 } : {}),
+    });
+  }
+}
+
 export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = false, translation = false, fullPaperTranslation = false } = {}) {
-  const globalLimit = fullPaperTranslation ? 25 : translation
+  const globalLimit = translation
     ? 100
     : safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
-  const namespace = fullPaperTranslation ? 'translate-paper' : translation ? 'translate' : 'ai';
+  const namespace = translation ? 'translate' : 'ai';
   // The day is fixed once and travels with the reservation: recomputing it at
   // release time would refund against tomorrow's ledger for a request that
   // straddles UTC midnight.
-  const ledgerRequest = {
+  const ledgerRequest = fullPaperTranslation ? fullPaperDailyQuota(uid) : {
     periodKey: `${namespace}:${todayKey()}`,
     subject: `${namespace}:${uid}`,
-    subjectLimit: fullPaperTranslation ? 5 : translation
+    subjectLimit: translation
       ? 10
       : unlimited ? globalLimit : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
     globalLimit,

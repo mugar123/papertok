@@ -14,6 +14,7 @@ import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
 import { fullTextQuery, getFullText } from '../../services/full-text-service.ts';
 import FullTextArticle from './full-text-article.tsx';
+import { fetchFullPaperTranslationAvailability } from '../../services/full-paper-translation-service.ts';
 import { ReaderTranslationControls } from './reader-translation-controls.tsx';
 import { usePaperTranslation } from '../../hooks/use-paper-translation.ts';
 import { useFullPaperTranslation } from '../../hooks/use-full-paper-translation.ts';
@@ -181,7 +182,16 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const uid = user?.uid ?? '';
   const abstractTranslation = usePaperTranslation(paper, user?.uid, open);
   const query = fullTextQuery(paper)?.toString() ?? '';
-  const paperTranslation = useFullPaperTranslation(open ? fullText ?? undefined : undefined, query, uid);
+  const [paperTranslationAvailable, setPaperTranslationAvailable] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    void fetchFullPaperTranslationAvailability(controller.signal).then(available => {
+      if (!controller.signal.aborted) setPaperTranslationAvailable(available);
+    });
+    return () => controller.abort();
+  }, [open]);
+  const paperTranslation = useFullPaperTranslation(open && paperTranslationAvailable ? fullText ?? undefined : undefined, query, uid);
   const translatedPaper = paperTranslation.session;
   const translatedAbstract = abstractTranslation.current;
   const notes = useViewerNotes(paper, uid);
@@ -293,7 +303,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
               key={abstractTranslation.scope}
               signedIn={Boolean(uid)}
               abstractAvailable={abstractTranslation.eligible}
-              paperUnavailable={paperUnavailable}
+              paperAvailable={paperTranslationAvailable && !translatedPaper?.unavailable}
+              paperUnavailable={paperTranslationAvailable ? paperUnavailable : 'Full-paper translation is currently unavailable.'}
               defaultLanguage={abstractTranslation.chooseLanguage()}
               pending={Boolean(translatedPaper?.pending || translatedAbstract.pending)}
               progress={translatedPaper?.pending ? { completed: translatedPaper.completed, total: paperTranslation.total } : undefined}

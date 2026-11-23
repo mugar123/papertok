@@ -12,6 +12,7 @@ type Session = {
   pending: boolean;
   showing: boolean;
   message?: string;
+  unavailable?: boolean;
 };
 
 function failureMessage(code: string, scope: unknown) {
@@ -20,6 +21,8 @@ function failureMessage(code: string, scope: unknown) {
       return scope === 'user'
         ? 'You’ve used today’s five full-paper translations. Try again after midnight UTC.'
         : 'Full-paper translation has reached its daily limit. Try again after midnight UTC.';
+    case 'AI_BUSY':
+      return 'Full-paper translation is busy. Try again in a minute.';
     case 'AI_NOT_CONFIGURED':
       return 'Full-paper translation is currently unavailable.';
     case 'AI_INVALID_PAPER':
@@ -73,7 +76,7 @@ export function useFullPaperTranslation(doc: FullText | undefined, query: string
     active.current = null;
     const message = failure ? failureMessage(failure.code, failure.scope) : undefined;
     setSaved(previous => previous.scope === scope && previous.session?.pending
-      ? { scope, session: { ...previous.session, pending: false, message } }
+      ? { scope, session: { ...previous.session, pending: false, message, unavailable: failure?.code === 'AI_NOT_CONFIGURED' } }
       : previous);
   }
 

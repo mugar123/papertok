@@ -7,6 +7,7 @@ type Mode = 'abstract' | 'paper';
 type Props = {
   signedIn: boolean;
   abstractAvailable: boolean;
+  paperAvailable: boolean;
   paperUnavailable: string;
   defaultLanguage: TranslationLanguage | '';
   pending: boolean;
@@ -19,18 +20,19 @@ type Props = {
 };
 
 export function ReaderTranslationControls({
-  signedIn, abstractAvailable, paperUnavailable, defaultLanguage, pending, progress, message,
+  signedIn, abstractAvailable, paperAvailable, paperUnavailable, defaultLanguage, pending, progress, message,
   toggle, onTranslate, onCancel, children,
 }: Props) {
-  const [choice, setChoice] = useState<Mode>(abstractAvailable ? 'abstract' : 'paper');
+  const [selection, setChoice] = useState<Mode>(abstractAvailable ? 'abstract' : 'paper');
+  const choice = paperAvailable ? selection : 'abstract';
   const language = useRef<HTMLSelectElement>(null);
   const submit = useRef<HTMLButtonElement>(null);
   const disclosure = useRef<HTMLDetailsElement>(null);
   const summary = useRef<HTMLElement>(null);
-  const focusAfterCancel = useCallback((button: HTMLButtonElement | null) => {
-    if (!button) return;
+  const focusOnControlRemoval = useCallback((control: HTMLElement | null) => {
+    if (!control) return;
     return () => {
-      if (document.activeElement === button) summary.current?.focus();
+      if (control.contains(document.activeElement)) summary.current?.focus();
     };
   }, []);
   const unavailable = choice === 'paper' ? paperUnavailable : '';
@@ -44,8 +46,8 @@ export function ReaderTranslationControls({
         <div className="reader-translation-panel">
           {!signedIn
             ? (abstractAvailable || !paperUnavailable) && <p>Sign in to translate this paper.</p>
-            : (
-              <form onSubmit={event => {
+            : (abstractAvailable || paperAvailable) && (
+              <form ref={focusOnControlRemoval} onSubmit={event => {
                 event.preventDefault();
                 const code = language.current?.value;
                 if (!pending && !unavailable && isTranslationLanguage(code)) onTranslate(choice, code);
@@ -54,7 +56,7 @@ export function ReaderTranslationControls({
                   <span>Translate</span>
                   <select value={choice} disabled={pending} onChange={event => setChoice(event.target.value === 'paper' ? 'paper' : 'abstract')}>
                     {abstractAvailable && <option value="abstract">Title and abstract</option>}
-                    <option value="paper">Full paper</option>
+                    {paperAvailable && <option value="paper">Full paper</option>}
                   </select>
                 </label>
                 <label>
@@ -69,7 +71,8 @@ export function ReaderTranslationControls({
                 {choice === 'abstract' && abstractView && !pending && <Button variant="ghost" size="sm" type="button" onClick={abstractView.action}>{abstractView.label}</Button>}
               </form>
             )}
-          {(signedIn ? unavailable : paperUnavailable) && <p>{signedIn ? unavailable : paperUnavailable}</p>}
+          {!paperAvailable && !abstractAvailable && !message && <p>Full-paper translation is currently unavailable.</p>}
+          {paperAvailable && (signedIn ? unavailable : paperUnavailable) && <p>{signedIn ? unavailable : paperUnavailable}</p>}
           {choice === 'abstract' && children}
         </div>
       </details>
@@ -77,7 +80,7 @@ export function ReaderTranslationControls({
         {progress && pending && (
           <>
             <progress aria-label="Full-paper translation progress" value={progress.completed} max={progress.total} />
-            <Button ref={focusAfterCancel} variant="ghost" size="sm" type="button" onClick={() => {
+            <Button ref={focusOnControlRemoval} variant="ghost" size="sm" type="button" onClick={() => {
               onCancel();
               if (disclosure.current?.open) submit.current?.focus();
               else summary.current?.focus();

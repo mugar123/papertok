@@ -243,6 +243,12 @@ test('revoked credentials cannot spend even while the identity cache still has t
 
 test('translates the title and abstract in one private call with a separate quota', async t => {
   const { env, calls, quotas, days, providerUrls } = setUp(t);
+  const previousBase = process.env.ANTHROPIC_BASE_URL;
+  process.env.ANTHROPIC_BASE_URL = 'https://example.net';
+  t.after(() => {
+    if (previousBase === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = previousBase;
+  });
   const response = await worker.fetch(request(), env);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
@@ -346,25 +352,37 @@ test('refunds a provider outage to the reader while retaining the global attempt
   assert.equal(quotas[1].partKey, undefined);
 });
 
-test('one account can spend only its attempt allowance during a provider outage', async t => {
-  const { env, provider, calls } = setUp(t);
-  const values = new Map<string, unknown>();
-  const storage = {
-    transaction: <T>(fn: (txn: LedgerTransaction) => Promise<T>) => fn({
-      get: <V>(key: string) => values.get(key) as V | undefined,
-      put: (key, value) => values.set(key, value),
-      delete: key => values.delete(key),
-    }),
-    getAlarm: async () => null,
-    setAlarm: async () => undefined,
-    deleteAll: async () => values.clear(),
-  };
-  const ledger = new RequestQuotaLedger({ storage });
+function useTestQuotaLedger(env: WorkerEnv) {
+  const ledgers = new Map<unknown, RequestQuotaLedger>();
   const namespace: TestNamespace = {
     idFromName: day => day,
-    get: () => ({ fetch: (input: RequestInfo | URL, init?: RequestInit) => ledger.fetch(new Request(input, init)) }),
+    get: id => {
+      let ledger = ledgers.get(id);
+      if (!ledger) {
+        const values = new Map<string, unknown>();
+        const storage = {
+          transaction: <T>(fn: (txn: LedgerTransaction) => Promise<T>) => fn({
+            get: <V>(key: string) => values.get(key) as V | undefined,
+            put: (key, value) => values.set(key, value),
+            delete: key => values.delete(key),
+          }),
+          getAlarm: async () => null,
+          setAlarm: async () => undefined,
+          deleteAll: async () => values.clear(),
+        };
+        ledger = new RequestQuotaLedger({ storage });
+        ledgers.set(id, ledger);
+      }
+      const current = ledger;
+      return { fetch: (input: RequestInfo | URL, init?: RequestInit) => current.fetch(new Request(input, init)) };
+    },
   };
   env.REQUEST_QUOTA_LEDGER = namespace as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+}
+
+test('one account can spend only its attempt allowance during a provider outage', async t => {
+  const { env, provider, calls } = setUp(t);
+  useTestQuotaLedger(env);
   provider.reply = () => Response.json({ error: { type: 'overloaded_error', message: 'busy' } }, { status: 529 });
   for (let attempt = 0; attempt < 20; attempt++) {
     assert.equal((await worker.fetch(request(), env)).status, 502);
@@ -435,11 +453,13 @@ test('approved full text spends one atomic slot before sending any approved chun
   const { env, calls, quotas, provider, days, arxivRequests } = setUp(t);
   enableFullPaper(env);
   provider.reply = () => {
-    assert.equal(quotas.length, 1);
-    assert.deepEqual([quotas[0].subjectLimit, quotas[0].globalLimit], [5, 25]);
+    assert.deepEqual(quotas.map(({ action, subjectLimit, globalAmount }) => [action, subjectLimit, globalAmount]), [
+      ['reserve', 2, 0], ['peek', 5, undefined], ['reserve', 5, undefined],
+    ]);
+    assert.equal(quotas[2].globalLimit, 25);
     return translatedSegments(calls.length === 1 ? ['Estudiamos modelos de secuencias.'] : ['Resultados', 'La precisión aumentó.']);
   };
-  const response = await worker.fetch(fullRequest(), env);
+  const response = await worker.fetch(fullRequest({ ...FULL_INPUT, query: FULL_INPUT.query + '&doi=10.1000/test&fulltext_id=PMC123' }), env);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
   assert.deepEqual((await response.text()).trim().split('\n').map(line => JSON.parse(line)), [
@@ -447,7 +467,10 @@ test('approved full text spends one atomic slot before sending any approved chun
     { type: 'chunk', index: 1, segments: ['Resultados', 'La precisión aumentó.'] },
     { type: 'done', count: 2 },
   ]);
-  assert.match(days[0], /^translate-paper:\d{4}-\d{2}-\d{2}$/);
+  assert.match(days[1], /^translate-paper:\d{4}-\d{2}-\d{2}$/);
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  assert.equal(response.headers.get('permissions-policy'), 'camera=(), microphone=(), geolocation=()');
   assert.deepEqual(calls.map(call => call.messages), [
     [{ role: 'user', content: '["We study sequence models."]' }],
     [{ role: 'user', content: '["Results","Accuracy increased & held."]' }],
@@ -460,7 +483,7 @@ test('an off flag, altered text, revoked identity, and exhausted quotas spend no
   const { env, calls, quotas, ledger, identity, arxivRequests } = setUp(t);
   env.FULL_PAPER_TRANSLATION_ENABLED = 'false';
   const disabled = await worker.fetch(fullRequest(), env);
-  assert.equal(disabled.status, 503);
+  assert.equal(disabled.status, 404);
   assert.deepEqual(await disabled.json(), { code: 'AI_NOT_CONFIGURED' });
   assert.equal(identity.lookups, 0);
   assert.deepEqual(arxivRequests, []);
@@ -471,15 +494,21 @@ test('an off flag, altered text, revoked identity, and exhausted quotas spend no
   assert.equal((await worker.fetch(fullRequest({ ...FULL_INPUT, query: 'x'.repeat(1_025) }), env)).status, 413);
   identity.revoked = true;
   assert.equal((await worker.fetch(fullRequest(), env)).status, 401);
-  assert.equal(quotas.length, 0);
+  assert.deepEqual(quotas.map(({ action }) => action), ['reserve', 'peek']);
   identity.revoked = false;
+  ledger.reply = () => Response.json({ accepted: false, scope: 'user' });
+  assert.equal((await worker.fetch(fullRequest(), env)).status, 429);
   for (const scope of ['user', 'global']) {
-    ledger.reply = () => Response.json({ accepted: false, scope });
+    ledger.reply = action => Response.json({
+      accepted: true,
+      ...(action === 'peek' && (scope === 'user' ? { subjectUsage: 5 } : { globalUsage: 25 })),
+    });
     const response = await worker.fetch(fullRequest(), env);
     assert.equal(response.status, 429);
     assert.equal((await response.json<{ quota: { scope: string } }>()).quota.scope, scope);
   }
   assert.equal(calls.length, 0);
+  assert.deepEqual(arxivRequests, ['?arxiv_id=1706.03762']);
 });
 
 test('a bad later chunk leaves the first chunk and spends no retry or refund', async t => {
@@ -492,7 +521,7 @@ test('a bad later chunk leaves the first chunk and spends no retry or refund', a
     { type: 'error', code: 'AI_INVALID_RESPONSE' },
   ]);
   assert.equal(calls.length, 2);
-  assert.deepEqual(quotas.map(({ action }) => action), ['reserve']);
+  assert.deepEqual(quotas.map(({ action }) => action), ['reserve', 'peek', 'reserve']);
 });
 
 test('cancelling after one chunk prevents a later provider call', async t => {
@@ -516,7 +545,7 @@ test('ar5iv is eligible and source redirects must keep the arXiv id', async t =>
   const mismatched = await worker.fetch(fullRequest(), env);
   assert.equal(mismatched.status, 400);
   assert.deepEqual(await mismatched.json(), { code: 'AI_INVALID_PAPER' });
-  assert.equal(quotas.length, 0);
+  assert.deepEqual(quotas.map(({ action }) => action), ['reserve', 'peek']);
   assert.equal(calls.length, 0);
 
   source.url = 'https://ar5iv.org/html/1706.03762v2';
@@ -530,4 +559,40 @@ test('ar5iv is eligible and source redirects must keep the arXiv id', async t =>
   assert.deepEqual(JSON.parse(new TextDecoder().decode(chunk.value)),
     { type: 'chunk', index: 0, segments: ['Estudiamos modelos de secuencias.'] });
   assert.deepEqual(arxivRequests, Array(2).fill('?arxiv_id=1706.03762'));
+});
+
+test('full-paper capabilities do not call the provider and submission requires an allowed Origin', async t => {
+  const { env, providerUrls, identity, quotas } = setUp(t);
+  const capabilities = () => worker.fetch(new Request('https://api.papertok.app/health/ai?capabilities=1'), env);
+  assert.deepEqual(await (await capabilities()).json(), { capabilities: { fullPaperTranslation: false } });
+  enableFullPaper(env);
+  assert.deepEqual(await (await capabilities()).json(), { capabilities: { fullPaperTranslation: true } });
+  for (const origin of ['', 'https://example.net']) {
+    const request = fullRequest();
+    if (origin) request.headers.set('origin', origin);
+    else request.headers.delete('origin');
+    assert.equal((await worker.fetch(request, env)).status, 403);
+  }
+  assert.deepEqual(providerUrls, []);
+  assert.deepEqual(quotas, []);
+  assert.equal(identity.lookups, 0);
+});
+
+test('the real ledger limits cached source checks per account before any paid job', async t => {
+  const { env, arxivRequests, calls } = setUp(t);
+  enableFullPaper(env);
+  useTestQuotaLedger(env);
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const mismatched = { ...FULL_INPUT, fingerprint: 'a'.repeat(64) };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    assert.equal((await worker.fetch(fullRequest(mismatched), env)).status, 400);
+  }
+  const limited = await worker.fetch(fullRequest(mismatched), env);
+  assert.equal(limited.status, 429);
+  assert.deepEqual(await limited.json(), { code: 'AI_BUSY' });
+  assert.equal(arxivRequests.length, 2);
+  assert.equal((await worker.fetch(fullRequest(mismatched, OTHER_TOKEN), env)).status, 400);
+  assert.equal(arxivRequests.length, 3);
+  assert.equal(calls.length, 0);
 });

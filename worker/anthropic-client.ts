@@ -41,7 +41,7 @@ export function anthropicModel(env: WorkerEnv) {
  * reader's own retry button is the bounded one.
  */
 export function createAnthropicClient(env: WorkerEnv, options?: Pick<ClientOptions, 'logLevel' | 'openTelemetry'>) {
-  return new Anthropic({ ...options, apiKey: setting(env?.ANTHROPIC_API_KEY, 300), maxRetries: 0 });
+  return new Anthropic({ ...options, baseURL: 'https://api.anthropic.com', apiKey: setting(env?.ANTHROPIC_API_KEY, 300), maxRetries: 0 });
 }
 
 /**

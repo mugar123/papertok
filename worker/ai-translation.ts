@@ -18,6 +18,7 @@ import {
 import {
   AIExplanationError,
   anthropicProviderError,
+  preflightFullPaperTranslationQuota,
   releaseAIQuota,
   reserveAIQuota,
   verifyFirebaseAccount,
@@ -198,12 +199,13 @@ async function translatePaper(
   }
 }
 
+export function fullPaperTranslationAvailable(env: WorkerEnv) {
+  return env.FULL_PAPER_TRANSLATION_ENABLED === 'true' && env.ANTHROPIC_TRANSLATION_MODEL?.trim() === HAIKU_MODEL
+    && isAnthropicPrimary(env) && isAnthropicConfigured(env);
+}
+
 export async function handleFullPaperTranslation(request: Request, env: WorkerEnv) {
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(PAPER_TRANSLATION_DEADLINE_MS)]);
-  if (env.FULL_PAPER_TRANSLATION_ENABLED !== 'true' || env.ANTHROPIC_TRANSLATION_MODEL?.trim() !== HAIKU_MODEL
-    || !isAnthropicPrimary(env) || !isAnthropicConfigured(env)) {
-    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
-  }
   const input = await beforeDeadline((async () => {
     const { uid } = await verifyFirebaseAccount(request, env, { allowCache: false });
     checkDeadline(signal);
@@ -213,6 +215,8 @@ export async function handleFullPaperTranslation(request: Request, env: WorkerEn
     });
     const input = parseFullPaperTranslationRequest(payload);
     if (!input) throw new AIExplanationError('AI_INVALID_REQUEST', 400);
+    await preflightFullPaperTranslationQuota(env, uid);
+    checkDeadline(signal);
     const chunks = await verifiedPaperChunks(request, env, input.query, input.fingerprint, signal);
     checkDeadline(signal);
     await reserveAIQuota(env, uid, { fullPaperTranslation: true });
@@ -227,6 +231,7 @@ async function verifiedPaperChunks(request: Request, env: WorkerEnv, query: stri
   url.search = query;
   const ids = normalizeFullTextRequest(url.searchParams);
   if (!ids?.arxivId) throw new AIExplanationError('AI_INVALID_REQUEST', 400);
+  url.search = new URLSearchParams({ arxiv_id: ids.arxivId }).toString();
 
   const sourceSignal = AbortSignal.any([signal, AbortSignal.timeout(12_000)]);
   const response = await beforeDeadline(handleFullText(new Request(url, { headers: request.headers, signal: sourceSignal }), env), sourceSignal);

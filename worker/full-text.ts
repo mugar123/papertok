@@ -35,8 +35,19 @@ export function normalizeFullTextRequest(params: URLSearchParams): FullTextReque
   return request.arxivId || request.fullTextId || request.doi ? request : null;
 }
 
-async function fetchText(url: string, accept: string, signal: AbortSignal) {
-  const response = await fetch(url, { signal, headers: { accept, 'user-agent': USER_AGENT } });
+async function fetchText(url: string, accept: string, signal: AbortSignal, arxivId?: string) {
+  const headers = { accept, 'user-agent': USER_AGENT };
+  const options: RequestInit = { signal, headers, ...(arxivId && { redirect: 'manual' }) };
+  let response = await fetch(url, options);
+  for (let redirects = 0; arxivId && [301, 302, 303, 307, 308].includes(response.status); redirects++) {
+    const location = response.headers.get('location');
+    void response.body?.cancel().catch(() => undefined);
+    if (!location || redirects >= 3) throw new Error('Unexpected arXiv HTML redirect');
+    const next = new URL(location, url);
+    if (next.username || next.password || !isArxivRenderedPage(next.href, arxivId)) throw new Error('Unexpected arXiv HTML redirect');
+    url = next.href;
+    response = await fetch(url, options);
+  }
   if (response.status === 404 || response.status === 410) return null;
   if (!response.ok) throw new Error(`${response.status} from ${new URL(url).host}`);
   // Read inside the caller's deadline: `fetch` settles on the headers alone.
@@ -58,7 +69,7 @@ async function fromArxiv(arxivId: string, signal: AbortSignal): Promise<FullText
   let failure: unknown = null;
   for (const candidate of renderers) {
     // One renderer failing still leaves the other to ask.
-    const page = await fetchText(candidate.url, 'text/html', signal).catch((error: unknown) => {
+    const page = await fetchText(candidate.url, 'text/html', signal, arxivId).catch((error: unknown) => {
       failure = error;
       return null;
     });

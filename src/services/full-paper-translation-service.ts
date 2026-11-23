@@ -8,6 +8,19 @@ import {
 } from '../utils/full-paper-translation-contract.ts';
 import type { TranslationLanguage } from '../utils/paper-translation-contract.ts';
 
+export async function fetchFullPaperTranslationAvailability(signal: AbortSignal) {
+  try {
+    const url = workerSourceUrl('/health/ai', { capabilities: 1 });
+    if (!url) return false;
+    const response = await fetch(url, withEnforcedDeadline({ signal }, 5_000));
+    if (!response.ok) return false;
+    const health = await response.json() as { capabilities?: { fullPaperTranslation?: boolean } } | null;
+    return health?.capabilities?.fullPaperTranslation === true;
+  } catch {
+    return false;
+  }
+}
+
 type Failure = { code: string; scope?: unknown };
 
 export async function requestFullPaperTranslation(

@@ -13,7 +13,7 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
-import { handleFullPaperTranslation, handlePaperTranslation } from './ai-translation.ts';
+import { fullPaperTranslationAvailable, handleFullPaperTranslation, handlePaperTranslation } from './ai-translation.ts';
 import {
   EmailNotificationError,
   handleEmailNotificationRequest,
@@ -30,7 +30,7 @@ import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAcces
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
 import { ZOTERO_PATHS, ZoteroError, handleZoteroRequest } from './zotero.ts';
 import { ORCID_PATHS, OrcidError, handleOrcidRequest } from './orcid.ts';
-import { allowedOrigins, corsHeaders, json } from './http.ts';
+import { allowedOrigins, corsHeaders, json, RESPONSE_SECURITY_HEADERS } from './http.ts';
 import { handleOpenAlex } from './openalex-api.ts';
 import { handleCitationGraph } from './citation-graph.ts';
 import { handleOpenAccess } from './open-access.ts';
@@ -422,14 +422,18 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   }
   if (url.pathname === '/ai/annotate' || url.pathname === '/ai/translate' || url.pathname === '/ai/translate-paper') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
-    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     const fullPaper = url.pathname === '/ai/translate-paper';
+    if ((fullPaper || origin) && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    if (fullPaper && !fullPaperTranslationAvailable(env)) {
+      return json({ code: 'AI_NOT_CONFIGURED' }, 404, { ...corsHeaders(origin, env), 'cache-control': 'no-store' });
+    }
     const translate = fullPaper || url.pathname === '/ai/translate';
     try {
       if (fullPaper) {
         const body = await handleFullPaperTranslation(request, env);
         return new Response(body, { headers: {
           ...corsHeaders(origin, env),
+          ...RESPONSE_SECURITY_HEADERS,
           'content-type': 'application/x-ndjson; charset=utf-8',
           'cache-control': 'private, no-store',
         } });

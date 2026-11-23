@@ -112,16 +112,18 @@ test('the full-paper action describes the Anthropic transfer and links to the pr
     cleanup();
     await close();
   });
-  render(createElement(ReaderTranslationControls, {
+  const props = {
     signedIn: true,
     abstractAvailable: true,
+    paperAvailable: true,
     paperUnavailable: '',
-    defaultLanguage: 'es',
+    defaultLanguage: 'es' as const,
     pending: false,
     message: '',
     onTranslate: () => {},
     onCancel: () => {},
-  }));
+  };
+  const view = render(createElement(ReaderTranslationControls, props));
   const disclosure = screen.getByText('Translate', { selector: 'summary' }).closest('details');
   assert.ok(disclosure);
   disclosure.open = true;
@@ -132,4 +134,13 @@ test('the full-paper action describes the Anthropic transfer and links to the pr
   assert.equal(link.getAttribute('href'), '/privacy.html');
   assert.equal(link.parentElement?.id, button.getAttribute('aria-describedby'));
   assert.equal(link.parentElement?.textContent, 'Sends the article text to Anthropic. Privacy policy');
+  view.rerender(createElement(ReaderTranslationControls, { ...props, paperAvailable: false }));
+  assert.equal(screen.queryByRole('option', { name: 'Full paper' }), null);
+  assert.equal(screen.queryByRole('button', { name: 'Translate full paper' }), null);
+  assert.ok(screen.getByRole('button', { name: 'Translate abstract' }));
+
+  view.rerender(createElement(ReaderTranslationControls, { ...props, abstractAvailable: false }));
+  screen.getByRole('button', { name: 'Translate full paper' }).focus();
+  view.rerender(createElement(ReaderTranslationControls, { ...props, abstractAvailable: false, paperAvailable: false }));
+  assert.equal(document.activeElement, screen.getByText('Translate', { selector: 'summary' }));
 });
