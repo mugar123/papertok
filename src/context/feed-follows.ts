@@ -5,11 +5,10 @@ import { fetchCorpusPage } from '../services/paper-store-service.ts';
 /**
  * Papers of the reader's follows from the paper corpus: the Worker serves an
  * author, institution, OpenAlex topic, project or followed query from the
- * lane it harvests for it, and says which follows each paper matched. A
- * topic follow that is one of the app's categories is asked for as those
- * categories (followedCorpusRequest), and matched by the categories a paper
- * was found under. With `seen`, a Worker that skips seen papers sends the
- * follows' next unseen ones.
+ * lane it harvests for it, and says which follows each paper matched.
+ * A followed leaf or area matches a paper when `_fetchedFor` includes one
+ * of the leaves requested for that follow. With `seen`, a Worker that skips
+ * seen papers sends the follows' next unseen ones.
  */
 export async function fetchFollowedEntityCandidates({ request, categoryFollows }: ReturnType<typeof followedCorpusRequest>, options?: Parameters<typeof fetchCorpusPage>[1]) {
   const { papers } = await fetchCorpusPage(request, options);

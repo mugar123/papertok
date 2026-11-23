@@ -711,7 +711,11 @@ test("the app's follows' page for follows with no lane of their own reads no are
     arxivId: '2610.00021', title: 'A quantum error-correcting code', abstract: 'A code.', authors: ['Ana Pérez'], categories: ['quant-ph'],
     doi: null, journalRef: null, comments: null, published: new Date(Date.now() - 2 * DAY_MS).toISOString(), updated: '',
   });
-  await ingestPapers(env, [{ paper: quantum, lanes: [] }, { paper: physicsArticle, lanes: ['area:physics'] }]);
+  await ingestPapers(env, [
+    { paper: quantum, lanes: [] },
+    { paper: physicsArticle, lanes: ['area:physics'] },
+    { paper: stored, lanes: ['query:física'] },
+  ]);
   // The app's request, answered by this route as the router answers it.
   const fetchWorker = async (_url: string, init: RequestInit) => {
     try {
@@ -721,18 +725,22 @@ test("the app's follows' page for follows with no lane of their own reads no are
     }
   };
   const plan: FeedPlan = { groups: [], unassignedPositiveIds: [], positiveIds: [], dormantCategories: [], interestProgress: {}, coldAdded: [] };
-  const followsPage = (follows: FollowEntity[]) => fetchFollowedEntityCandidates(followedCorpusRequest(
+  const followsPage = (follow: FollowEntity, categoryIds: string[]) => fetchFollowedEntityCandidates(followedCorpusRequest(
     plan,
-    follows,
-    follow => (follow.canonicalId === 'quant-ph' ? ['quant-ph'] : []),
+    [follow],
+    () => categoryIds,
     { page: 0, order: 'recent', negativeIds: [], excludedIds: [], seen: new Set() },
   ), { fetchWorker, apiBase: 'https://worker.example' });
   // A reader whose only follow is one of the app's categories: the page is
   // that category's papers, not the area's journal articles, which match no follow.
-  const categoryOnly = await followsPage([{ type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Physics' }]);
+  const categoryOnly = await followsPage({ type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Physics' }, ['quant-ph']);
   assert.deepEqual(categoryOnly.map(item => item.id), ['2610.00021']);
+  const area = { type: 'topic', canonicalId: 'physics', displayName: 'Física' } satisfies FollowEntity;
+  const areaOnly = await followsPage(area, ['quant-ph']);
+  assert.deepEqual(areaOnly.map(item => item.id), ['2610.00021']);
+  assert.deepEqual(areaOnly[0]._followedEntityMatches, [area]);
   // A reader who follows only an institution known by its ROR id, which no lane serves.
-  assert.deepEqual(await followsPage([{ type: 'institution', canonicalId: '00f54p054', displayName: 'Stanford University' }]), []);
+  assert.deepEqual(await followsPage({ type: 'institution', canonicalId: '00f54p054', displayName: 'Stanford University' }, []), []);
 });
 
 test("a reader's next pages from the kept order read each stored id once, however far they scroll", async t => {
