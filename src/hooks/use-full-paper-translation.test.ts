@@ -4,9 +4,8 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { createElement } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { startAppModules } from '../../tests/dom/app-modules.ts';
+import { loadFullPaperTranslationHook } from '../../tests/dom/app-modules.ts';
 import { parseArxivHtml } from '../utils/full-text.ts';
-import type { useFullPaperTranslation } from './use-full-paper-translation.ts';
 
 test('keeps the original selected across more chunks and drops late results on account switch', async t => {
   const originalParser = Object.getOwnPropertyDescriptor(globalThis, 'DOMParser');
@@ -21,13 +20,12 @@ test('keeps the original selected across more chunks and drops late results on a
     'https://arxiv.org/html/1706.03762',
   );
   assert.ok(doc);
-  const app = await startAppModules();
+  const { entry: { useFullPaperTranslation: useTranslation }, firebase, close } = await loadFullPaperTranslationHook();
   t.after(async () => {
     cleanup();
-    await app.close();
+    await close();
   });
-  const { useFullPaperTranslation: useTranslation } = await app.load<{ useFullPaperTranslation: typeof useFullPaperTranslation }>('/src/hooks/use-full-paper-translation.ts');
-  const { auth } = await app.firebase();
+  const { auth } = await firebase();
   auth.currentUser = { uid: 'reader-one', getIdToken: async () => 'test-token' };
 
   const requests: Array<{ stream: ReadableStreamDefaultController<Uint8Array>; signal: AbortSignal | null | undefined }> = [];

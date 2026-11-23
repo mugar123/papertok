@@ -57,6 +57,10 @@ async function loadAppModule<T>(path: string, options?: Parameters<typeof startA
   }
 }
 
+export function loadFullPaperTranslationHook() {
+  return loadAppModule<typeof import('../../src/hooks/use-full-paper-translation.ts')>('/src/hooks/use-full-paper-translation.ts');
+}
+
 export function loadPaperTranslationService() {
   return loadAppModule<typeof import('../../src/services/paper-translation-service.ts')>('/src/services/paper-translation-service.ts');
 }
