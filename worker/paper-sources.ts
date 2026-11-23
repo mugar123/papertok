@@ -1139,7 +1139,7 @@ export function paperIdLookup(id: string): { arxivId: string } | { openAlexPath:
   if (/^pmid:\d{1,12}$/i.test(id)) return { openAlexPath: `/openalex/works/pmid:${id.slice(5)}` };
   if (/^(?:openalex:)?W\d+$/i.test(id)) return { openAlexPath: `/openalex/works/${id.replace(/^openalex:/i, '')}` };
   if (/^(?:doi:)?10\.\d{4,9}\/\S+$/i.test(id)) {
-    const path = doiPathId(id.replace(/^doi:/i, ''), { preserveEscapes: true });
+    const path = doiPathId(id.replace(/^doi:/i, ''));
     return path ? { openAlexPath: `/openalex/works/${path}` } : null;
   }
   return null;

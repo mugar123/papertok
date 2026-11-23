@@ -128,25 +128,12 @@ function normalizeDoi(value: unknown) {
 
 // The relay checks the encoded id against its 240-character limit. Keep the
 // punctuation it accepts and encode parentheses for SICI DOIs.
-export function doiPathId(doi: string, { preserveEscapes = false } = {}) {
-  let id = `doi:${encodeURIComponent(doi)
+export function doiPathId(doi: string) {
+  const id = `doi:${encodeURIComponent(doi)
     .replace(/[!'()*~]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
     .replace(/%(?:2C|2F|3A|7C)/g, escape => decodeURIComponent(escape))}`;
-  let decoded = doi;
-  if (preserveEscapes && doi.includes('%')) {
-    const escapedId = id.replace(/%25(?=[\da-f]{2})/gi, '%');
-    // Only reuse escapes from a DOI already spelled as a relay path.
-    if (new URL(`https://doi.org/doi:${doi}`).pathname === `/${escapedId}`) {
-      try {
-        decoded = decodeURIComponent(escapedId);
-        id = escapedId;
-      } catch {
-        // Keep the percent signs encoded when the relay cannot decode the escapes.
-      }
-    }
-  }
   // URL parsing resolves dot segments between literal path separators.
-  return id.length <= 240 && !decoded.includes('..') && !doi.split('/').includes('.') ? id : '';
+  return id.length <= 240 && !doi.includes('..') && !doi.split('/').includes('.') ? id : '';
 }
 
 function extractArxivId(value: unknown) {
