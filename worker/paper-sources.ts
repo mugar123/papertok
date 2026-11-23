@@ -20,7 +20,7 @@ import {
   mapBioRxivPaper,
   mapEuropePmcSearchResult,
 } from '../src/services/domain-source-records.ts';
-import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { OPENALEX_WORK_SEARCH_FIELDS, doiPathId, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { openAlexNotableFilterForLeaf, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
 import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
@@ -1126,6 +1126,26 @@ export async function fetchArxivPapers(env: WorkerEnv, arxivIds: string[]) {
 const LOOKUP_TIMEOUT_MS = 2_000;
 
 /**
+ * Where a paper id the app holds is looked up: arXiv for an arXiv id, OpenAlex
+ * for a PubMed id, a DOI or an OpenAlex id. Null for any other id (a
+ * `biorxiv:`, `inspire:` or `crossref:` one, say), which no lookup serves,
+ * and for a DOI the relay's path cannot carry (`doiPathId`): written into the
+ * path as sent, `10.1000/a/../../authors/A1` asked for another record, a `?`
+ * added query parameters, and a SICI DOI's parentheses were refused.
+ */
+export function paperIdLookup(id: string): { arxivId: string } | { openAlexPath: string } | null {
+  const arxivId = text(id).replace(/^arxiv:/i, '').replace(/v\d+$/, '');
+  if (/^(?:\d{4}\.\d{4,5}|[a-z-]+\/\d{7})$/.test(arxivId)) return { arxivId };
+  if (/^pmid:\d{1,12}$/i.test(id)) return { openAlexPath: `/openalex/works/pmid:${id.slice(5)}` };
+  if (/^(?:openalex:)?W\d+$/i.test(id)) return { openAlexPath: `/openalex/works/${id.replace(/^openalex:/i, '')}` };
+  if (/^(?:doi:)?10\.\d{4,9}\/\S+$/i.test(id)) {
+    const path = doiPathId(id.replace(/^doi:/i, ''));
+    return path ? { openAlexPath: `/openalex/works/${path}` } : null;
+  }
+  return null;
+}
+
+/**
  * Papers the app holds ids for but the corpus lacks (a reader's likes),
  * fetched and kept as liked papers whatever their date: one older than the
  * corpus window enters no lane (`recordLanes`).
@@ -1137,11 +1157,9 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   const arxivIds: string[] = [];
   const openAlexPaths: string[] = [];
   for (const id of paperIds) {
-    const arxivId = text(id).replace(/^arxiv:/i, '').replace(/v\d+$/, '');
-    if (/^(?:\d{4}\.\d{4,5}|[a-z-]+\/\d{7})$/.test(arxivId)) arxivIds.push(arxivId);
-    else if (/^pmid:\d{1,12}$/i.test(id)) openAlexPaths.push(`/openalex/works/pmid:${id.slice(5)}`);
-    else if (/^(?:openalex:)?W\d+$/i.test(id)) openAlexPaths.push(`/openalex/works/${id.replace(/^openalex:/i, '')}`);
-    else if (/^(?:doi:)?10\.\d{4,9}\/\S+$/i.test(id)) openAlexPaths.push(`/openalex/works/doi:${id.replace(/^doi:/i, '')}`);
+    const lookup = paperIdLookup(id);
+    if (lookup && 'arxivId' in lookup) arxivIds.push(lookup.arxivId);
+    else if (lookup) openAlexPaths.push(lookup.openAlexPath);
   }
   const lookups: Array<Promise<Harvested[]>> = openAlexPaths.map(async path => {
     const response = await askRoute(handleAccountOpenAlex, path, {}, env);
