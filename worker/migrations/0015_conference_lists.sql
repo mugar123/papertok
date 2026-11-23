@@ -5,6 +5,9 @@ CREATE TABLE conference_editions (
   generation INTEGER NOT NULL DEFAULT 1,
   revision INTEGER NOT NULL DEFAULT 0,
   expected_count INTEGER NOT NULL DEFAULT 0,
+  first_term_reported_count INTEGER NOT NULL DEFAULT 0,
+  first_term_eligible_count INTEGER NOT NULL DEFAULT 0,
+  term_eligible_count INTEGER NOT NULL DEFAULT 0,
   source_count INTEGER,
   listed_count INTEGER NOT NULL DEFAULT 0,
   checked_at INTEGER,
@@ -42,6 +45,7 @@ CREATE TABLE conference_paper_stage (
   sort_key TEXT NOT NULL,
   paper TEXT NOT NULL,
   seen_generation INTEGER NOT NULL,
+  terms_seen INTEGER NOT NULL,
   PRIMARY KEY (edition_id, forum_id)
 );
 

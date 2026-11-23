@@ -80,7 +80,7 @@ test('a complete first harvest publishes distinct forums and strips private auth
     { listed_count: 2, source_count: 2 });
 });
 
-for (const kind of ['short', 'missing count', 'negative count', 'count smaller than notes', 'filtered below count']) {
+for (const kind of ['short', 'missing count', 'negative count', 'count smaller than notes', 'duplicate forums below count']) {
   test('first harvest stays unpublished on ' + kind, async context => {
     const state = fixture(context);
     const accepted = submission('first');
@@ -88,7 +88,7 @@ for (const kind of ['short', 'missing count', 'negative count', 'count smaller t
       : kind === 'missing count' ? { notes: [accepted] }
       : kind === 'negative count' ? { notes: [accepted], count: -1 }
       : kind === 'count smaller than notes' ? { notes: [accepted], count: 0 }
-      : { notes: [accepted, submission('unrelated', 'Example.org/Conference')], count: 2 };
+      : { notes: [accepted, accepted], count: 2 };
     context.mock.method(globalThis, 'fetch', async () => Response.json(payload));
     await state.run();
     assert.deepEqual(state.papers(), []);
@@ -141,24 +141,39 @@ for (const kind of ['withdrawn', 'rejected', 'deleted', 'restricted', 'not found
   });
 }
 
-test('a changed venue in discovery hides the forum and later accepted search results cannot resurrect it', async context => {
-  const state = fixture(context);
-  let found = submission('forum');
-  context.mock.method(globalThis, 'fetch', async () => Response.json({ notes: [found], count: 1 }));
+test('changed venues in search preserve the edition until exact lookups confirm a change', async context => {
+  const state = fixture(context, { credentials: true });
+  const forums = ['first', 'second', 'third'];
+  let searchVenue = venue;
+  const lookups: string[] = [];
+  context.mock.method(globalThis, 'fetch', async (input: URL | string) => {
+    const url = new URL(input);
+    if (url.pathname === '/login') return Response.json({ token: 'mock-session' });
+    if (url.pathname === '/notes') {
+      lookups.push(url.searchParams.get('id') ?? '');
+      return Response.json({ notes: [], count: 0 });
+    }
+    return Response.json({ notes: forums.map(forum => submission(forum, searchVenue)), count: forums.length });
+  });
+  const edition = state.db.prepare("SELECT listed_count FROM conference_editions WHERE edition_id = 'neurips-2026'");
+  const blockCount = state.db.prepare('SELECT COUNT(*) AS count FROM conference_forum_block');
   await state.run();
-  assert.equal(state.papers()[0].visible, 1);
-  found = submission('forum', 'Other.cc/2026/Conference');
+  assert.deepEqual(state.papers().map(paper => paper.visible), [1, 1, 1]);
+  searchVenue = venue.toLowerCase();
+  state.advance(60_000);
   state.refresh();
   await state.run();
-  assert.equal(state.papers()[0].visible, 0);
-  found = submission('forum');
+  assert.deepEqual(lookups, forums);
+  assert.equal(state.db.prepare('SELECT COUNT(*) AS count FROM conference_papers WHERE missing_from_search = 1').get()?.count, 3);
+  assert.equal(blockCount.get()?.count, 0);
+  assert.equal(edition.get()?.listed_count, 3);
+
+  searchVenue = venue;
+  state.advance(8 * day);
   state.refresh();
   await state.run();
-  assert.equal(state.papers()[0].visible, 0);
-  state.db.prepare('DELETE FROM conference_forum_block WHERE edition_id = ? AND forum_id = ?').run('neurips-2026', 'forum');
-  state.refresh();
-  await state.run();
-  assert.equal(state.papers()[0].visible, 1);
+  assert.deepEqual(state.papers().map(paper => paper.visible), [1, 1, 1]);
+  assert.equal(blockCount.get()?.count, 0);
 });
 
 test('a completed pass immediately prioritizes a forum missing from that pass', async context => {
@@ -221,6 +236,54 @@ for (const [signal, fields] of Object.entries({
   });
 }
 
+test('a restricted search hit does not prevent a small edition from adding a new paper', async context => {
+  const state = fixture(context);
+  let notes = Array.from({ length: 40 }, (_, index) => submission(`paper-${index}`));
+  context.mock.method(globalThis, 'fetch', async () => Response.json({ notes, count: notes.length }));
+  await state.run();
+  assert.equal(state.papers().length, 40);
+
+  notes = [{ ...notes[0], readers: ['chairs'] }, ...notes.slice(1), submission('new')];
+  state.advance(60_000);
+  state.refresh();
+  await state.run();
+
+  assert.equal(state.papers().find(paper => paper.forum_id === 'new')?.visible, 1);
+  assert.equal(state.papers().find(paper => paper.forum_id === 'paper-0')?.visible, 1);
+  const edition = state.db.prepare("SELECT checked_at, source_count, listed_count FROM conference_editions WHERE edition_id = 'neurips-2026'");
+  assert.deepEqual({ ...edition.get() }, { checked_at: Date.now(), source_count: 41, listed_count: 41 });
+});
+
+test('the drop check counts eligible results across every page of a search', async context => {
+  const state = fixture(context);
+  const notes = Array.from({ length: 100 }, (_, index) => submission(`paper-${index}`));
+  context.mock.method(globalThis, 'fetch', async (input: URL | string) => {
+    const url = new URL(input);
+    if (url.searchParams.get('term') === 'a') return Response.json({ notes: notes.slice(0, 1), count: 1 });
+    const offset = url.searchParams.get('offset');
+    return Response.json({ notes: offset === '0' ? notes : notes.slice(0, 4), count: 104 });
+  });
+  await state.run();
+  assert.deepEqual(state.papers(), []);
+  const edition = state.db.prepare("SELECT checked_at, source_count FROM conference_editions WHERE edition_id = 'neurips-2026'");
+  assert.deepEqual({ ...edition.get() }, { checked_at: null, source_count: 104 });
+});
+
+test('a lower count on the next page cannot complete a search pass', async context => {
+  const state = fixture(context);
+  const notes = Array.from({ length: 101 }, (_, index) => submission(`paper-${index}`));
+  context.mock.method(globalThis, 'fetch', async (input: URL | string) => {
+    const url = new URL(input);
+    if (url.searchParams.get('term') === 'a') return Response.json({ notes: notes.slice(0, 1), count: 1 });
+    const firstPage = url.searchParams.get('offset') === '0';
+    return Response.json(firstPage ? { notes: notes.slice(0, 100), count: 200 } : { notes: notes.slice(100), count: 101 });
+  });
+  await state.run();
+  assert.deepEqual(state.papers(), []);
+  const edition = state.db.prepare("SELECT checked_at, source_count, failures FROM conference_editions WHERE edition_id = 'neurips-2026'");
+  assert.deepEqual({ ...edition.get() }, { checked_at: null, source_count: null, failures: 1 });
+});
+
 test('the nightly ledger counts a recheck sign-in as the 150th request and refuses the lookup', async context => {
   const state = fixture(context, { credentials: true });
   let calls = 0;
@@ -278,11 +341,21 @@ test('the documented manual block survives the next accepted harvest', async con
 
   const readme = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
   const section = readme.split('### Manually block a forum')[1]?.split('\n### ')[0] ?? '';
-  const [takedown, verify] = [...section.matchAll(/--command "([^"]+)"/g)].map(([, sql]) =>
-    sql.replaceAll('$edition_id', 'neurips-2026').replaceAll('$forum_id', 'first'));
+  const [takedown, verify] = [...section.matchAll(/--command "([^"]+)"/g)].map(([, sql]) => sql);
   assert.ok(takedown && verify);
-  state.db.exec(takedown);
-  assert.deepEqual({ ...state.db.prepare(verify).get() }, { edition_id: 'neurips-2026', forum_id: 'first', venue_id: 'manual' });
+  const forForum = (sql: string, editionId: string, forumId: string) =>
+    sql.replaceAll('$edition_id', editionId).replaceAll('$forum_id', forumId);
+
+  for (const [editionId, forumId] of [['neurips-2026', 'typo'], ['iclr-2026', 'first']]) {
+    state.db.exec(forForum(takedown, editionId, forumId));
+    assert.equal(state.db.prepare(forForum(verify, editionId, forumId)).get(), undefined);
+  }
+  assert.equal(edition.get()?.revision, before.revision);
+  assert.equal(state.db.prepare('SELECT COUNT(*) AS count FROM conference_forum_block').get()?.count, 0);
+
+  state.db.exec(forForum(takedown, 'neurips-2026', 'first'));
+  assert.deepEqual({ ...state.db.prepare(forForum(verify, 'neurips-2026', 'first')).get() },
+    { edition_id: 'neurips-2026', forum_id: 'first', venue_id: 'manual' });
   assert.deepEqual(state.papers().map(paper => paper.visible), [0, 1]);
   assert.equal(edition.get()?.revision, before.revision + 1);
   assert.equal(edition.get()?.listed_count, 1);
@@ -294,15 +367,18 @@ test('the documented manual block survives the next accepted harvest', async con
   assert.deepEqual({ ...edition.get() }, { revision: before.revision + 2, listed_count: 1, checked_at: Date.now(), stale_since: null });
 });
 
-test('an explicit withdrawal cancels a forum that is staged in the first harvest', async context => {
+test('a different venue in the first harvest leaves the forum unpublished and unblocked', async context => {
   const state = fixture(context);
-  context.mock.method(globalThis, 'fetch', async (input: URL) => {
-    const secondPass = new URL(input).searchParams.get('term') === 'a';
-    return Response.json({ notes: [submission('first', secondPass ? venue + '/Withdrawn_Submission' : venue)], count: 1 });
-  });
+  let found = submission('first', venue + '/Withdrawn_Submission');
+  context.mock.method(globalThis, 'fetch', async () => Response.json({ notes: [found], count: 1 }));
   await state.run();
   assert.deepEqual(state.papers(), []);
-  assert.equal(state.db.prepare('SELECT forum_id FROM conference_forum_block').get()?.forum_id, 'first');
+  assert.equal(state.db.prepare('SELECT COUNT(*) AS count FROM conference_forum_block').get()?.count, 0);
+
+  found = submission('first');
+  state.refresh();
+  await state.run();
+  assert.equal(state.papers()[0]?.visible, 1);
 });
 
 test('an empty refresh preserves the list, and 429 stops the whole run', async context => {
@@ -338,14 +414,17 @@ test('an ordinary failure defers one edition and later editions still publish', 
 test('the offset cap stops requests and repeated failure resets the unfinished pass', async context => {
   const state = fixture(context);
   state.db.exec(`
-    INSERT INTO conference_editions (edition_id, term, offset, failures, expected_count)
-    VALUES ('neurips-2026', 1, 10000, 2, 10001);
+    INSERT INTO conference_editions (edition_id, term, offset, failures, expected_count,
+      first_term_reported_count, first_term_eligible_count, term_eligible_count)
+    VALUES ('neurips-2026', 1, 10000, 2, 10001, 105, 98, 9700);
   `);
   let calls = 0;
   context.mock.method(globalThis, 'fetch', async () => { calls++; return Response.json({ notes: [], count: 0 }); });
   await state.run();
-  const row = state.db.prepare("SELECT term, offset, expected_count, next_check_at FROM conference_editions WHERE edition_id = 'neurips-2026'").get();
-  assert.deepEqual({ ...row }, { term: 0, offset: 0, expected_count: 0, next_check_at: Date.parse('2026-11-24T00:00:00Z') });
+  const row = state.db.prepare(`SELECT term, offset, expected_count, first_term_reported_count,
+    first_term_eligible_count, term_eligible_count, next_check_at FROM conference_editions WHERE edition_id = 'neurips-2026'`).get();
+  assert.deepEqual({ ...row }, { term: 0, offset: 0, expected_count: 0, first_term_reported_count: 0,
+    first_term_eligible_count: 0, term_eligible_count: 0, next_check_at: Date.parse('2026-11-24T00:00:00Z') });
   assert.equal(calls, 0);
 });
 

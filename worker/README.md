@@ -2033,18 +2033,19 @@ address. Test with `node --test worker/mcp-server.test.ts`.
 
 The nightly conference workflow uses anonymous OpenReview search and signed-in forum lookups, independently of corpus harvesting. Both share atomic quotas of 12 requests per minute and 150 per UTC day, including sign-ins. A D1 lease serializes overlapping work. A failed search defers its edition and lets other editions proceed. A 429 pauses conference requests and honors Retry-After for up to seven days. Search offsets are capped at 10,000.
 
-Each search page needs a count. Both search passes must reach their reported counts before publication. When the staged records fall more than 2% below the search count or the current visible count, the edition keeps its prior list. Search skips notes with an effective deletion date or a supplied readers list that does not establish public access. Forums missing from the latest completed search move to the front of the recheck queue, even when that search was too small to publish. Empty, partial, or failed lookups leave their papers listed. An explicit venue change can block a forum. Deletion or restricted access requires a complete exact lookup with an effective OpenReview deletion date or a valid, nonempty readers list without `everyone`. Publication excludes blocked forums even if an older search result still marks them accepted.
+Each search page needs a count. Both search passes must reach their reported counts before publication. A decrease in the reported count within a pass is a search failure. The 2% drop check compares the distinct papers ready to publish with the current visible count and the largest number of eligible results in either pass. Results that cannot be published and forums already blocked are excluded from the eligible count. Forums missing from the latest completed search move to the front of the recheck queue, even when that search was too small to publish. A complete lookup by forum ID can block a paper on an explicit venue change, an effective OpenReview deletion date, or a valid, nonempty readers list without `everyone`. Empty, partial or failed lookups leave papers listed. Publication excludes blocked forums even when a search still marks them accepted.
 
 ### Manually block a forum
 
-With production write approval, set the verified edition and OpenReview forum IDs once in a shell. Use only letters, digits, hyphens and underscores in the IDs. Run the first command to block and hide the forum, update the public count and bump the cache revision. The second command should return one row for the blocked forum.
+With production write approval, replace both placeholders with the verified edition and OpenReview forum IDs. Use only letters, digits, hyphens and underscores. The first command blocks an existing paper in that edition, hides it, updates the public count and bumps the cache revision. The second command confirms the block only if the paper exists and is hidden. If it returns no rows, verify both IDs before trying again.
 
 ```sh
-edition_id='neurips-2026'
+edition_id='REPLACE_WITH_EDITION_ID'
 forum_id='REPLACE_WITH_FORUM_ID'
 npx wrangler d1 execute PAPER_STORE --remote --command "
 INSERT INTO conference_forum_block (edition_id, forum_id, venue_id, blocked_at)
-VALUES ('$edition_id', '$forum_id', 'manual', CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+SELECT edition_id, forum_id, 'manual', CAST(strftime('%s', 'now') AS INTEGER) * 1000
+FROM conference_papers WHERE edition_id = '$edition_id' AND forum_id = '$forum_id'
 ON CONFLICT (edition_id, forum_id) DO NOTHING;
 
 UPDATE conference_papers SET visible = 0
@@ -2052,11 +2053,14 @@ WHERE edition_id = '$edition_id' AND forum_id = '$forum_id';
 
 UPDATE conference_editions SET revision = revision + 1,
   listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = '$edition_id' AND visible = 1)
-WHERE edition_id = '$edition_id';"
+WHERE edition_id = '$edition_id' AND EXISTS (
+  SELECT 1 FROM conference_papers WHERE edition_id = '$edition_id' AND forum_id = '$forum_id'
+);"
 
 npx wrangler d1 execute PAPER_STORE --remote --command "
-SELECT edition_id, forum_id, venue_id FROM conference_forum_block
-WHERE edition_id = '$edition_id' AND forum_id = '$forum_id';"
+SELECT b.edition_id, b.forum_id, b.venue_id FROM conference_forum_block b
+JOIN conference_papers p ON p.edition_id = b.edition_id AND p.forum_id = b.forum_id
+WHERE b.edition_id = '$edition_id' AND b.forum_id = '$forum_id' AND p.visible = 0;"
 ```
 
 To restore a corrected forum, confirm the exact accepted venue by ID and remove its edition and forum pair from `conference_forum_block`. A subsequent complete harvest can publish it.

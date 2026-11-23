@@ -17,7 +17,10 @@ const maxOffset = 10_000;
 const dayMs = 86_400_000;
 const pageStep = { retries: { limit: 0, delay: '1 second' }, timeout: '2 minutes' } as const;
 
-type EditionState = { edition_id: string; generation: number; term: number; offset: number; expected_count: number };
+type EditionState = {
+  edition_id: string; generation: number; term: number; offset: number; expected_count: number;
+  first_term_reported_count: number; first_term_eligible_count: number; term_eligible_count: number;
+};
 type PublishedForum = { edition_id: string; forum_id: string };
 type SearchPage = { notes: OpenReviewNote[]; count: number };
 
@@ -51,9 +54,12 @@ async function recordFailure(db: D1Database, editionId: string, now: number, ret
       generation = CASE WHEN ? AND failures >= 2 THEN generation + 1 ELSE generation END,
       term = CASE WHEN ? AND failures >= 2 THEN 0 ELSE term END,
       offset = CASE WHEN ? AND failures >= 2 THEN 0 ELSE offset END,
-      expected_count = CASE WHEN ? AND failures >= 2 THEN 0 ELSE expected_count END
+      expected_count = CASE WHEN ? AND failures >= 2 THEN 0 ELSE expected_count END,
+      first_term_reported_count = CASE WHEN ? AND failures >= 2 THEN 0 ELSE first_term_reported_count END,
+      first_term_eligible_count = CASE WHEN ? AND failures >= 2 THEN 0 ELSE first_term_eligible_count END,
+      term_eligible_count = CASE WHEN ? AND failures >= 2 THEN 0 ELSE term_eligible_count END
     WHERE edition_id = ?
-  `).bind(now, retryAfter, nextUtcDay(now), now + 60_000, resetPass, resetPass, resetPass, resetPass, editionId),
+  `).bind(now, retryAfter, nextUtcDay(now), now + 60_000, resetPass, resetPass, resetPass, resetPass, resetPass, resetPass, resetPass, editionId),
   ]);
 }
 
@@ -101,37 +107,6 @@ function venueEvidence(forumId: string, note: OpenReviewNote | null) {
   return openReviewField(note.content?.venueid)?.trim() || null;
 }
 
-function blockForums(db: D1Database, editionId: string, evidence: readonly { forum: string; venue: string }[], now: number) {
-  if (!evidence.length) return [];
-  return [
-    db.prepare(`
-      INSERT OR IGNORE INTO conference_forum_block (edition_id, forum_id, venue_id, blocked_at)
-      SELECT ?, json_extract(j.value, '$.forum'), json_extract(j.value, '$.venue'), ?
-      FROM json_each(?) j
-      WHERE EXISTS (
-        SELECT 1 FROM conference_papers p
-        WHERE p.edition_id = ? AND p.forum_id = json_extract(j.value, '$.forum') AND p.visible = 1
-      ) OR EXISTS (
-        SELECT 1 FROM conference_paper_stage s
-        WHERE s.edition_id = ? AND s.forum_id = json_extract(j.value, '$.forum')
-      )
-    `).bind(editionId, now, JSON.stringify(evidence), editionId, editionId),
-    db.prepare(`
-      UPDATE conference_papers SET visible = 0
-      WHERE edition_id = ? AND visible = 1 AND EXISTS (
-        SELECT 1 FROM conference_forum_block b
-        WHERE b.edition_id = conference_papers.edition_id AND b.forum_id = conference_papers.forum_id
-      )
-    `).bind(editionId),
-    db.prepare(`
-      UPDATE conference_editions SET
-        listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = ? AND visible = 1),
-        revision = revision + 1
-      WHERE edition_id = ? AND listed_count <> (SELECT COUNT(*) FROM conference_papers WHERE edition_id = ? AND visible = 1)
-    `).bind(editionId, editionId, editionId),
-  ];
-}
-
 const orcidId = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/i;
 function publicAuthorId(id: string | null | undefined) {
   if (!id || id.includes('@')) return undefined;
@@ -165,31 +140,27 @@ async function ingestPage(db: D1Database, state: EditionState, request: typeof f
     throw new Error('OpenReview returned an invalid page');
   }
   const { notes, count } = payload;
+  if (count < state.expected_count) throw new Error('OpenReview search count fell within the pass');
   const nextOffset = state.offset + notes.length;
   if (nextOffset > count) throw new Error('OpenReview search count disagrees with the page');
   const ended = nextOffset >= count;
   if (!ended && (notes.length < pageSize || nextOffset >= maxOffset)) throw new Error('OpenReview search was incomplete');
 
-  const evidence: { forum: string; venue: string }[] = [];
   const statements = await Promise.all(notes.map(async note => {
     if (!note || !isOpenReviewSearchNotePublic(note, now)) return null;
     const membership = conferenceMembership(state.edition_id, note);
-    if (!membership) {
-      const forum = note?.forum;
-      const venue = typeof forum === 'string' ? venueEvidence(forum, note) : null;
-      if (forum && venue && venue !== source.venueId) evidence.push({ forum, venue });
-      return null;
-    }
+    if (!membership) return null;
     if (!openReviewField(note.content?.title)?.trim()) return null;
     const paper = mapOpenReviewNote({ ...note, content: { ...note.content, abstract: undefined } });
     if (!paper) return null;
     const license = openReviewField('license' in note ? note.license : null);
     const id = 'openreview:' + membership.forumId;
     return db.prepare(`
-      INSERT INTO conference_paper_stage (edition_id, forum_id, venue_id, venue_text, track, sort_key, paper, seen_generation)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO conference_paper_stage (edition_id, forum_id, venue_id, venue_text, track, sort_key, paper, seen_generation, terms_seen)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (edition_id, forum_id) DO UPDATE SET venue_id = excluded.venue_id, venue_text = excluded.venue_text,
-        track = excluded.track, sort_key = excluded.sort_key, paper = excluded.paper, seen_generation = excluded.seen_generation
+        track = excluded.track, sort_key = excluded.sort_key, paper = excluded.paper, seen_generation = excluded.seen_generation,
+        terms_seen = conference_paper_stage.terms_seen | excluded.terms_seen
     `).bind(state.edition_id, membership.forumId, membership.venueId, membership.venueText, membership.track,
       await conferenceSortKey(state.edition_id, id, membership.track), JSON.stringify(storedPaper({
         ...paper, id, license: license ?? undefined, pdfUrl: httpsPdf(paper.pdfUrl),
@@ -199,33 +170,41 @@ async function ingestPage(db: D1Database, state: EditionState, request: typeof f
             ...author, id: publicAuthorId(author.id), orcid: author.orcid && orcidId.test(author.orcid) ? author.orcid : undefined,
           }),
         publicationStatus: 'published', publicationType: 'conference', peerReviewed: true,
-      })), state.generation);
+      })), state.generation, 1 << state.term);
   }));
 
-  const expected = Math.max(state.expected_count, count);
+  const toStage = statements.filter(row => row !== null);
+  const termEligible = state.term_eligible_count + toStage.length;
+  const reportedCount = Math.max(state.first_term_reported_count, count);
   const finished = ended && state.term === terms.length - 1;
   await db.batch([
     ...(state.term === 0 && state.offset === 0
       ? [db.prepare('DELETE FROM conference_paper_stage WHERE edition_id = ?').bind(state.edition_id)] : []),
-    ...statements.filter(row => row !== null),
-    ...blockForums(db, state.edition_id, evidence, now),
+    ...toStage,
     ...(finished ? [] : [db.prepare(`UPDATE conference_editions SET term = ?, offset = ?, expected_count = ?,
+      first_term_reported_count = ?, first_term_eligible_count = ?, term_eligible_count = ?,
       failures = 0, retry_after = 0 WHERE edition_id = ?`)
-      .bind(ended ? state.term + 1 : state.term, ended ? 0 : nextOffset, expected, state.edition_id)]),
+      .bind(ended ? state.term + 1 : state.term, ended ? 0 : nextOffset, ended ? 0 : count,
+        ended ? count : state.first_term_reported_count,
+        ended ? termEligible : state.first_term_eligible_count, ended ? 0 : termEligible, state.edition_id)]),
   ]);
   if (!finished) return;
 
   const counts = await db.prepare(`
     SELECT e.listed_count AS listed,
-      (SELECT COUNT(*) FROM conference_paper_stage s WHERE s.edition_id = e.edition_id AND s.seen_generation = e.generation
-        AND NOT EXISTS (SELECT 1 FROM conference_forum_block b WHERE b.edition_id = s.edition_id AND b.forum_id = s.forum_id)) AS staged,
-      (SELECT COUNT(*) FROM conference_forum_block b JOIN conference_paper_stage s USING (edition_id, forum_id)
-        WHERE b.edition_id = e.edition_id AND s.seen_generation = e.generation) AS blocked
-    FROM conference_editions e WHERE e.edition_id = ?
-  `).bind(state.edition_id).first<{ listed: number; staged: number; blocked: number }>();
+      COUNT(s.forum_id) FILTER (WHERE b.forum_id IS NULL) AS staged,
+      COUNT(b.forum_id) FILTER (WHERE s.terms_seen & 1) AS blocked_first,
+      COUNT(b.forum_id) FILTER (WHERE s.terms_seen & 2) AS blocked_second
+    FROM conference_editions e
+    LEFT JOIN conference_paper_stage s ON s.edition_id = e.edition_id AND s.seen_generation = e.generation
+    LEFT JOIN conference_forum_block b ON b.edition_id = s.edition_id AND b.forum_id = s.forum_id
+    WHERE e.edition_id = ? GROUP BY e.edition_id
+  `).bind(state.edition_id).first<{ listed: number; staged: number; blocked_first: number; blocked_second: number }>();
   if (!counts) throw new Error('Conference counts unavailable');
 
-  const incomplete = counts.staged < Math.max(counts.listed, expected - counts.blocked) * 0.98;
+  // A block reduces the expected count only for the searches that returned that forum.
+  const expected = Math.max(state.first_term_eligible_count - counts.blocked_first, termEligible - counts.blocked_second);
+  const incomplete = counts.staged < Math.max(counts.listed, expected) * 0.98;
   await db.batch([
     ...(!incomplete ? [db.prepare(`
       INSERT INTO conference_papers (edition_id, forum_id, venue_id, venue_text, track, sort_key, paper, seen_generation, visible, rechecked_at)
@@ -247,15 +226,16 @@ async function ingestPage(db: D1Database, state: EditionState, request: typeof f
     db.prepare('DELETE FROM conference_paper_stage WHERE edition_id = ?').bind(state.edition_id),
     db.prepare(`
       UPDATE conference_editions SET generation = generation + 1, revision = revision + 1, term = 0, offset = 0,
-        expected_count = 0, failures = CASE WHEN ? THEN failures + 1 ELSE 0 END, retry_after = 0,
+        expected_count = 0, first_term_reported_count = 0, first_term_eligible_count = 0, term_eligible_count = 0,
+        failures = CASE WHEN ? THEN failures + 1 ELSE 0 END, retry_after = 0,
         checked_at = CASE WHEN ? THEN checked_at ELSE ? END,
         stale_since = CASE WHEN ? THEN COALESCE(stale_since, ?) ELSE NULL END, next_check_at = ?,
         source_count = ?, search_completed_at = ?, listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = ? AND visible = 1)
       WHERE edition_id = ?
     `).bind(Number(incomplete), Number(incomplete), now, Number(incomplete), now,
-      incomplete ? nextUtcDay(now) : nextCheck(state, now, counts.staged), expected, now, state.edition_id, state.edition_id),
+      incomplete ? nextUtcDay(now) : nextCheck(state, now, counts.staged), reportedCount, now, state.edition_id, state.edition_id),
   ]);
-  console.info(JSON.stringify({ conferenceEdition: state.edition_id, ...counts, expected, incomplete }));
+  console.info(JSON.stringify({ conferenceEdition: state.edition_id, ...counts, reportedCount, expected, incomplete }));
 }
 
 async function recheckPublished(db: D1Database, env: WorkerEnv, request: typeof fetchWithDeadline, now: number): Promise<boolean | null> {
@@ -267,26 +247,37 @@ async function recheckPublished(db: D1Database, env: WorkerEnv, request: typeof 
     ORDER BY p.missing_from_search DESC, p.rechecked_at, p.edition_id, p.forum_id LIMIT 1
   `).bind(now, nextUtcDay(now) - dayMs).first<PublishedForum>();
   if (!row) return null;
+  const { edition_id: editionId, forum_id: forumId } = row;
   try {
     let unavailable: string | null = null;
-    const note = await fetchOpenReviewNote(env, row.forum_id, 15_000, {
+    const note = await fetchOpenReviewNote(env, forumId, 15_000, {
       request, retryUnauthorized: false, requireComplete: true,
       onUnavailable: reason => { unavailable = 'openreview:' + reason; },
     });
-    const venue = unavailable ?? venueEvidence(row.forum_id, note);
-    const source = conferenceSources.get(row.edition_id);
+    const venue = unavailable ?? venueEvidence(forumId, note);
+    const source = conferenceSources.get(editionId);
     await db.batch([
-      ...blockForums(db, row.edition_id, venue && source && venue !== source.venueId ? [{ forum: row.forum_id, venue }] : [], now),
-      db.prepare('UPDATE conference_papers SET rechecked_at = ? WHERE edition_id = ? AND forum_id = ?').bind(now, row.edition_id, row.forum_id),
+      ...(venue && source && venue !== source.venueId ? [
+        db.prepare('INSERT OR IGNORE INTO conference_forum_block (edition_id, forum_id, venue_id, blocked_at) VALUES (?, ?, ?, ?)')
+          .bind(editionId, forumId, venue, now),
+        db.prepare('UPDATE conference_papers SET visible = 0 WHERE edition_id = ? AND forum_id = ?').bind(editionId, forumId),
+        db.prepare(`
+          UPDATE conference_editions SET
+            listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = ? AND visible = 1),
+            revision = revision + 1
+          WHERE edition_id = ? AND listed_count <> (SELECT COUNT(*) FROM conference_papers WHERE edition_id = ? AND visible = 1)
+        `).bind(editionId, editionId, editionId),
+      ] : []),
+      db.prepare('UPDATE conference_papers SET rechecked_at = ? WHERE edition_id = ? AND forum_id = ?').bind(now, editionId, forumId),
     ]);
     return true;
   } catch (error) {
     if (error instanceof QuotaUnavailable) throw error;
     if (error instanceof ConferenceRateLimit) {
-      await recordFailure(db, row.edition_id, now, error.retryAt);
+      await recordFailure(db, editionId, now, error.retryAt);
       return false;
     }
-    await db.prepare('UPDATE conference_editions SET next_recheck_at = ? WHERE edition_id = ?').bind(nextUtcDay(now), row.edition_id).run();
+    await db.prepare('UPDATE conference_editions SET next_recheck_at = ? WHERE edition_id = ?').bind(nextUtcDay(now), editionId).run();
     return true;
   }
 }
@@ -309,7 +300,8 @@ async function runOne(db: D1Database, env: WorkerEnv, call: number) {
       if (rechecked !== null) return rechecked;
     }
     const state = await db.prepare(`
-      SELECT edition_id, generation, term, offset, expected_count FROM conference_editions
+      SELECT edition_id, generation, term, offset, expected_count, first_term_reported_count,
+        first_term_eligible_count, term_eligible_count FROM conference_editions
       WHERE next_check_at <= ?
       ORDER BY CASE WHEN offset > 0 OR term > 0 THEN 0 ELSE 1 END, next_check_at, edition_id LIMIT 1
     `).bind(now).first<EditionState>();
