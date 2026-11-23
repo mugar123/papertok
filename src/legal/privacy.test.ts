@@ -150,10 +150,8 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('the current notice leads with the welcome email change and keeps every change announced since 20 November', () => {
+test('the current notice summarizes the 20 November policy changes', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /welcome yes to the weekly email starts it at sign-up on your subjects, and keeps the wording you accepted/i);
-  assert.match(notice, /after unsubscribing, a change count without your address stays, also after account deletion/);
   assert.match(notice, /opt-in digest reminders.*last signed-in visit hour.*30 days.*opt-out, unsubscribe or account deletion/i);
   assert.match(notice, /Anthropic can rewrite\/explain outside the EU/i);
   assert.match(notice, /Verified-email saves count by account\/paper\/UTC week.*off in Privacy/i);
@@ -185,11 +183,9 @@ test('the in-app summary is short: at most three bullets, its lead change up fro
     const sentences = bullet.match(/[.!?](\s|$)/g)?.length ?? 0;
     assert.ok(sentences >= 1 && sentences <= 2, `one or two sentences: "${bullet}"`);
   }
-  // The dialog scrolls when it has to (privacy-notice.css), and the page has
-  // every detail. The limit was 520 until 2026-11-25, when the welcome email
-  // change joined a summary that could not lose a data flow it still announced.
+  // The dialog has to fit it on a phone's screen; the page has every detail.
   const characters = PRIVACY_POLICY_CHANGE.join(' ').length;
-  assert.ok(characters <= 720, characters + ' characters');
+  assert.ok(characters <= 520, characters + ' characters');
   const { lead } = PRIVACY_POLICY_CHANGE_EVIDENCE;
   const at = PRIVACY_POLICY_CHANGE[0].indexOf(lead);
   assert.ok(at >= 0 && at < 40, `"${lead}" is in the first bullet's lead clause`);
@@ -235,27 +231,30 @@ test('the page says a welcome yes starts the weekly email when the account is cr
 });
 
 // worker/email-subscription-store.ts: `version`, `cancelledAt` and the cleanup journal outlive the record.
-test('the page says a count of changes to the email subscription stays after unsubscribing and after account deletion, up top too', () => {
+test('the page says a count of changes to the email subscription stays after unsubscribing, and for 30 days, or at most 60, after account deletion, up top too', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   assert.match(html, /Unsubscribing deletes the subscription\. So that a yes you gave earlier, or a request still on its way, can never turn the email back on, the Durable Object of your account then keeps, under your account identifier and without your address or preferences, a count of the changes made to your email subscription and the number of the change that last ended it/);
   assert.match(html, /Until PaperTok confirms it has deleted the subscription's other email records, the object also keeps their identifiers/);
-  assert.match(html, /The count stays after you delete your account, and deleting an account that never had the email leaves one too/);
+  assert.match(html, /After you delete your account, the count stays for 30 days and is then deleted, with everything else the object holds; deleting an account that never had the email leaves one for those 30 days too/);
   const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
-  assert.match(summary, /A count of the changes made to your email subscription, without your address, also stays, and a deleted email subscription can remain in Cloudflare's storage history for up to 30 days \(see Email updates\)/);
+  assert.match(summary, /A count of the changes made to your email subscription, without your address, stays for 30 more days, or at most 60 if deleting your other email records keeps failing, and a deleted email subscription can remain in Cloudflare's storage history for up to 30 days \(see Email updates\)/);
   const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
-  assert.match(kept, /The count of the changes made to your email subscription, which holds neither your address nor your preferences, also stays, and an email subscription or reminder consent deleted from your account's Durable Object can remain in Cloudflare's 30-day storage history/);
+  assert.match(kept, /The count of the changes made to your email subscription, which holds neither your address nor your preferences, stays for 30 more days, or at most 60 if deleting your other email records keeps failing, and an email subscription or reminder consent deleted from your account's Durable Object can remain in Cloudflare's 30-day storage history/);
 });
 
 // worker/email-subscription-store.ts: `resident` outlives the record. worker/email-notifications.ts: an index
 // put can land after INDEX_WRITE_DEADLINE_MS, and after a later unsubscribe or account purge.
 // worker/account-deletion.ts does not reach RequestQuotaLedger, whose subjects expire on their own.
-test('the page says the mark of a welcome start stays, what a late index write can leave, and that the request counts outlive the account', () => {
+test('the page says how long the mark of a welcome start and a late index write stay, what stays in a browser that never signs in, and that the request counts outlive the account', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   assert.match(html, /If the email was started from the welcome screen, the object also keeps a mark that it was\./);
-  assert.match(html, /leaves one too\. The mark stays as well\./);
-  assert.match(html, /In the rare case that Cloudflare's storage answers late while the email is being started or its settings saved, an entry with your account identifier and the unsubscribe identifier, without your address, can be written to <strong>Cloudflare Workers KV<\/strong> after you have unsubscribed or deleted your account\. It starts no email\. The entry the schedule reads is removed at its next run\. The entry of the unsubscribe link stays until that link is used\./);
+  // Nothing on the page says that these stay without a limit.
+  assert.doesNotMatch(html, /The mark stays as well|stays until that link is used|The count stays after you delete your account|also stays, and (a deleted|an) email subscription/);
+  assert.match(html, /leaves one for those 30 days too\. If deleting the subscription's other email records is still failing then, the object waits for it, for at most 30 more days\. The mark is kept and deleted with the count\./);
+  assert.match(html, /In the rare case that Cloudflare's storage answers late while the email is being started, its settings saved or an email sent, an entry with your account identifier and the unsubscribe identifier, without your address, can be written to <strong>Cloudflare Workers KV<\/strong> after you have unsubscribed or deleted your account\. It starts no email\. If the email was started from the welcome screen, the entry the schedule reads is removed at its next run\. The entry of the unsubscribe link expires 120 days after it was written\./);
   const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
-  assert.match(kept, /The mark that the email was started from the welcome screen stays too\./);
+  assert.match(kept, /The mark that the email was started from the welcome screen is kept and deleted with the count\. An entry that links an unsubscribe identifier to your account identifier, which a late write can leave in Cloudflare Workers KV, expires 120 days after it was written\./);
+  assert.match(html, /In a browser that never signs in, these answers stay until you clear this site's data; a yes older than 24 hours stays with them but is not used\./);
   assert.match(kept, /The request counts Cloudflare keeps under hashed account identifiers, to limit test emails, requests to start the email and citation lookups, are not deleted with the account either: they expire on their own within three days, or at the end of their week for citation lookups \(see Email updates\)\./);
 });
 
@@ -268,7 +267,7 @@ test('the page says a deleted subscription can stay in Cloudflare\'s storage his
   // RequestQuotaLedger is a SQLite-backed Durable Object too (wrangler.toml).
   assert.match(html, /The same history covers the request counts Cloudflare keeps in Durable Objects under hashed identifiers/);
   // OPT_IN_ACCOUNT_HOURLY_LIMIT in worker/email-notifications.ts; the ledger keeps a subject for three days.
-  assert.match(html, /To limit test emails and requests to start the email from the welcome, Cloudflare counts them under a hashed account identifier that it keeps for up to three days/);
+  assert.match(html, /To limit test emails, and to allow at most ten requests an hour to start the email from the welcome, Cloudflare counts them under a hashed account identifier that it keeps for up to three days/);
 });
 
 // utils/guest-interests.ts: `emailDigestConsent` travels with a yes, and `WELCOME_DIGEST_YES_MAX_AGE_MS` bounds it.

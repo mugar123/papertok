@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 25 November 2026.</p>
+      <p class="lp-updated">Last updated 21 November 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -62,7 +62,7 @@
           <li>You can use PaperTok without an account. The feed, search and the public pages work signed out. Usage analytics uses a persistent browser identifier unless you turn it off.</li>
           <li>Usage analytics is on by default. It uses cookies and local storage to connect visits across days and links product activity to your account when you sign in. You can turn it off in Settings or, without an account, with the Privacy button at the top of the screen. Sessions are not recorded.</li>
           <li>Nothing is sold and nothing is shared for advertising. Only the providers that make the app work handle your data.</li>
-          <li>You can delete your account, and everything in it, from Settings → Account → Delete account. The feed order the server keeps for you is not deleted with it; it expires on its own, at most 2 hours after your last page. A count of the changes made to your email subscription, without your address, also stays, and a deleted email subscription can remain in Cloudflare's storage history for up to 30 days (see Email updates).</li>
+          <li>You can delete your account, and everything in it, from Settings → Account → Delete account. The feed order the server keeps for you is not deleted with it; it expires on its own, at most 2 hours after your last page. A count of the changes made to your email subscription, without your address, stays for 30 more days, or at most 60 if deleting your other email records keeps failing, and a deleted email subscription can remain in Cloudflare's storage history for up to 30 days (see Email updates).</li>
           <li>For anything else, write to <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.</li>
         </ul>
       </section>
@@ -348,9 +348,9 @@
         expires after 120 days. That record also keeps the last publication date a
         citation lookup covered and the week of the latest lookup, so a late email or a
         retry does not skip papers. <strong>Resend</strong> sends
-        the emails. To limit test emails and requests to start the email from the welcome,
-        Cloudflare counts them under a hashed account
-        identifier that it keeps for up to three days. To limit citation lookups, Cloudflare
+        the emails. To limit test emails, and to allow at most ten requests an hour to start
+        the email from the welcome, Cloudflare counts them under a hashed account identifier
+        that it keeps for up to three days. To limit citation lookups, Cloudflare
         counts one lookup per week under a hashed account identifier that expires at the
         end of that UTC week.
       </p>
@@ -378,14 +378,19 @@
         preferences, a count of the changes made to your email subscription and the number
         of the change that last ended it. If the email was started from the welcome screen,
         the object also keeps a mark that it was. Until PaperTok confirms it has deleted the
-        subscription's other email records, the object also keeps their identifiers. The
-        count stays after you delete your account, and deleting an account that never had
-        the email leaves one too. The mark stays as well. In the rare case that Cloudflare's storage
-        answers late while the email is being started or its settings saved, an entry with
+        subscription's other email records, the object also keeps their identifiers. After
+        you delete your account, the count stays for 30 days and is then deleted, with
+        everything else the object holds; deleting an account that never had the email
+        leaves one for those 30 days too. If deleting the subscription's other email records
+        is still failing then, the object waits for it, for at most 30 more days. The mark
+        is kept and deleted with the count. In the rare case that Cloudflare's storage
+        answers late while the email is being started, its settings saved or an email sent,
+        an entry with
         your account identifier and the unsubscribe identifier, without your address, can be
         written to <strong>Cloudflare Workers KV</strong> after you have unsubscribed or
-        deleted your account. It starts no email. The entry the schedule reads is removed
-        at its next run. The entry of the unsubscribe link stays until that link is used. Cloudflare keeps a 30-day point-in-time history of the
+        deleted your account. It starts no email. If the email was started from the welcome
+        screen, the entry the schedule reads is removed at its next run. The entry of the unsubscribe link expires 120 days after it was
+        written. Cloudflare keeps a 30-day point-in-time history of the
         Durable Object's storage. A subscription deleted from it, with its address, name,
         subjects and follows, and reminder consent with its address, can therefore remain
         in that history for up to 30 more days after you unsubscribe, withdraw the consent
@@ -620,11 +625,15 @@
         content reports you filed and those filed about your comments. The feed order the
         server keeps for you (see Scientific sources and AI features) is not deleted with
         the account: that cache cannot be searched by account, so the order expires on its
-        own, at most 2 hours after your last page. The count of the changes made to your email
-        subscription, which holds neither your address nor your preferences, also stays, and
+        own, at most 2 hours after your last page. The count of the changes made to your
+        email subscription, which holds neither your address nor your preferences, stays for
+        30 more days, or at most 60 if deleting your other email records keeps failing, and
         an email subscription or reminder consent deleted from your account's Durable Object
         can remain in Cloudflare's 30-day storage history (see Email updates). The mark that
-        the email was started from the welcome screen stays too. The request
+        the email was started from the welcome screen is kept and deleted with the count. An
+        entry that links an unsubscribe identifier to your account identifier, which a late
+        write can leave in Cloudflare Workers KV, expires 120 days after it was written. The
+        request
         counts Cloudflare keeps under hashed account identifiers, to limit test emails,
         requests to start the email and citation lookups, are not deleted with the account
         either: they expire on their own within three days, or at the end of their week for
@@ -686,8 +695,9 @@
         This browser saves your welcome interests, area priorities and feed mix, and your
         answer about the weekly email with the version of the welcome's wording you saw,
         until they are saved to a new account, an account with existing interests loads, or
-        you sign out or switch accounts. A yes to the weekly email is used only for
-        24 hours after you give it.
+        you sign out or switch accounts. A yes to the weekly email is used only for 24 hours
+        after you give it. In a browser that never signs in, these answers stay until you
+        clear this site's data; a yes older than 24 hours stays with them but is not used.
         It also keeps a copy of your signed-in interest preferences under your account
         identifier so they are ready when you return. Signing out clears that copy.
       </p>
