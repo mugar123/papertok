@@ -94,7 +94,7 @@ function Calendar() {
   const [params, setParams] = useSearchParams();
   const filters = readConferenceFilters(params);
   const today = localCalendarDate(new Date());
-  // Read once, so one render compares every deadline with the same instant.
+  // The clock is read once per mount, which keeps the render pure.
   const [now] = useState(() => Date.now());
   const editions = filterConferences(conferenceEditions, filters);
   const { upcoming, undated, past } = groupConferences(editions, today, filters.month);
@@ -165,7 +165,7 @@ function DeadlineList({ deadlines }: { deadlines: readonly ConferenceDeadline[] 
 }
 
 function Deadlines({ deadlines }: { deadlines: readonly ConferenceDeadline[] }) {
-  // Read once, so one render compares every deadline with the same instant.
+  // The clock is read once per mount, which keeps the render pure.
   const [now] = useState(() => Date.now());
   const open = deadlines.filter(deadline => deadlineCloses(deadline) > now);
   const passed = deadlines.filter(deadline => deadlineCloses(deadline) <= now);

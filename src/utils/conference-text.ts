@@ -95,7 +95,8 @@ const timeOfDay =/\b(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?\s*m\b|\b(\d{1,2})[:.](
 
 /**
  * The minutes after midnight that the one time in a text names, or null when it names
- * none or several. Midnight, 12 AM and 00:00 end the day, so a deadline is never early.
+ * none or several. Midnight, 12 AM and 00:00 end the day, so a deadline is never early;
+ * 12:30 AM and 00:30 are half an hour after that.
  */
 function minutesOfDay(text: string) {
   const times = [...text.matchAll(timeOfDay)];
@@ -111,7 +112,7 @@ function minutesOfDay(text: string) {
     return (hour + (half.toLowerCase() === 'p' ? 12 : 0)) * 60 + minute;
   }
   if (hour > 24 || (hour === 24 && minute > 0)) return null;
-  return hour === 0 && minute === 0 ? 24 * 60 : hour * 60 + minute;
+  return hour === 0 ? 24 * 60 + minute : hour * 60 + minute;
 }
 
 /** How far a zone's clock is ahead of UTC at an instant, in minutes. */
@@ -139,6 +140,8 @@ function zoneOf(text: string, wallClock: number) {
   const fixed = named(Object.keys(fixedZones));
   const summer = named(Object.keys(summerZones));
   const regional = regionalZones.filter(([pattern]) => pattern.test(rest)).map(([, zone]) => zone);
+  // "Mountain Standard Time" or "Pacific Time (Hawaii)" may be a place without summer time.
+  if (regional.length && /\bstandard\b|\(/i.test(rest)) return null;
   if (offsets.length + fixed.length + summer.length + regional.length + iana.length !== 1) return null;
   try {
     if (offsets.length) {
