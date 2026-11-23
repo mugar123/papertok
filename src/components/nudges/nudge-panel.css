@@ -5,10 +5,11 @@
 .nudge {
   position: fixed;
   z-index: 1200;
-  right: 20px;
-  bottom: calc(20px + var(--inset-bottom));
+  --nudge-gap: 20px;
+  right: var(--nudge-gap);
+  bottom: calc(var(--nudge-gap) + var(--inset-bottom));
   display: grid;
-  width: min(520px, calc(100vw - 40px));
+  width: min(520px, calc(100vw - 2 * var(--nudge-gap)));
   grid-template-columns: 40px minmax(0, 1fr) auto auto;
   gap: 12px;
   padding: 16px;
@@ -17,6 +18,20 @@
   background: var(--bg-elevated);
   box-shadow: var(--shadow-lg);
   align-items: center;
+}
+
+/* Set by NudgePanel when the control holding focus would be under the panel at
+   the bottom: it takes the top edge, under the navbar, instead. */
+.nudge[data-edge='top'] {
+  top: calc(var(--nav-total) + var(--nudge-gap));
+  bottom: auto;
+}
+
+/* Set by NudgePanel while the panel would cover the control holding focus
+   entirely at either edge, as with enlarged text on a small screen. It is also
+   inert, so nothing in it takes focus. It comes back when focus moves. */
+.nudge[data-hidden] {
+  visibility: hidden;
 }
 
 .nudge-icon {
@@ -71,11 +86,39 @@
 
 @media (max-width: 560px) {
   .nudge {
-    right: 12px;
-    bottom: calc(12px + var(--inset-bottom));
-    width: calc(100vw - 24px);
+    --nudge-gap: 12px;
     padding: 14px;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  /* The copy takes the full width and the action and dismiss share the row
+     under it, so a longer button label does not squeeze the copy at 320px or
+     at 200% text. Both stay in the order they are read and tabbed. */
+  .nudge-copy {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .nudge-actions {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  /* The label wraps rather than running under the dismiss button when text is
+     enlarged: the button grows taller, not wider than its column. */
+  .nudge-action {
+    height: auto;
+    min-height: 32px;
+    max-width: 100%;
+    padding-block: 6px;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .nudge-dismiss {
+    grid-column: 2;
+    grid-row: 2;
   }
 
   .nudge-icon {

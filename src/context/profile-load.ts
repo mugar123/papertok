@@ -1,5 +1,6 @@
 import type { SettledWithin } from '../utils/async-timing.ts';
 import { settleWithin } from '../utils/async-timing.ts';
+import { documentIsFromServer } from '../utils/cache-authority.ts';
 
 /**
  * What the server's read of the profile decides. The device's remembered
@@ -15,6 +16,16 @@ export function profileReadOutcome<T>(remote: SettledWithin<T>, hydratedFromCach
   if (remote.status === 'fulfilled') return { kind: 'apply', snapshot: remote.value };
   if (!hydratedFromCache) return { kind: 'failed', code: 'PROFILE_LOAD_FAILED' };
   return { kind: 'keep-cached' };
+}
+
+/**
+ * Whether the profile the account holds after the read settled as `outcome` is
+ * one the server itself sent. Only then is the absence of a field, such as the
+ * ORCID iD, known: a profile kept from this device's cache, or a read the
+ * cache answered, may predate a change made on another device.
+ */
+export function profileServerConfirmed(outcome: { kind: 'apply'; snapshot: { metadata?: { fromCache?: boolean } } } | { kind: 'failed' | 'keep-cached' }) {
+  return outcome.kind === 'apply' && documentIsFromServer(outcome.snapshot);
 }
 
 /**

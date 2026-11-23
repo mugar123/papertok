@@ -37,6 +37,8 @@ export interface AuthContextValue {
   readingPreferences: ReadingPreferences;
   emailDigestPending: boolean;
   profileLoadError: string | null;
+  /** The profile held is the server's answer, not only this device's cache, so a field it lacks (the ORCID iD) is known to be missing. */
+  profileConfirmed: boolean;
   signInProviders: string[];
   institution: ReturnType<typeof normalizeInstitution>;
   /** The ORCID iD an ORCID sign-in proved for this account, or null. */
@@ -102,7 +104,7 @@ import { isReadTimeout, patientRead } from '../utils/bounded-read.ts';
 import { documentIsAuthoritative } from '../utils/cache-authority.ts';
 import { saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
 import { adoptOnboardedProfile, closeAccountSession, openAccountSession } from './account-session.ts';
-import { confirmOnboardingWrite, profileReadOutcome } from './profile-load.ts';
+import { confirmOnboardingWrite, profileReadOutcome, profileServerConfirmed } from './profile-load.ts';
 import { writeOptimistically } from './optimistic-write.ts';
 import { clearRewriteCache } from '../services/paper-rewrite-service.ts';
 import { forgetTranslationLanguage } from '../utils/paper-translation.ts';
@@ -139,6 +141,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // on then and settles this flag.
   const [emailDigestPending, setEmailDigestPending] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
+  const [profileConfirmed, setProfileConfirmed] = useState(false);
   // Which doors this account has (F5). Kept in state rather than read from
   // `user.providerData` at render time because linking does not always
   // re-emit an auth state change, and a settings row that still says
@@ -203,6 +206,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       forgetAccountToasts(currentUser?.uid ?? null);
       setLoading(true);
       setProfileLoadError(null);
+      setProfileConfirmed(false);
       setUser(currentUser);
       setInterestSettings({});
       setFollowedAuthors([]);
@@ -292,6 +296,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
               if (!isCurrent()) return;
               setProfileLoadError(null);
               applyRemote(snapshot);
+              setProfileConfirmed(profileServerConfirmed({ kind: 'apply', snapshot }));
               setLoading(false);
             },
           }),
@@ -302,6 +307,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const outcome = profileReadOutcome(remote, hydratedFromCache);
         if (outcome.kind === 'apply') {
           applyRemote(outcome.snapshot);
+          setProfileConfirmed(profileServerConfirmed(outcome));
         } else if (outcome.kind === 'failed') {
           setProfileLoadError(outcome.code);
           if (remote.status === 'rejected' && !isReadTimeout(remote.reason)) {
@@ -571,6 +577,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     readingPreferences,
     emailDigestPending,
     profileLoadError,
+    profileConfirmed,
     signInProviders,
     institution,
     orcid,
@@ -593,7 +600,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     retryProfileLoad,
   }), [
     addedPreferences, completeOnboarding, completeInstitutionVerification, completeOrcidConnection, deselectedPreferences, disconnectOrcid, emailDigestPending, error, followedAuthors, institution, linkInstitution,
-    interestSettings, linkSignInMethod, loading, onboardingComplete, orcid, profileLoadError, readingPreferences,
+    interestSettings, linkSignInMethod, loading, onboardingComplete, orcid, profileConfirmed, profileLoadError, readingPreferences,
     reopenSignIn, retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, unlinkInstitution, updatePreferences,
     updateReadingPreferences, user, userPreferences,

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deleteConfirmedAccount } from './delete-confirmed-account.ts';
-import { readPrivacyNoticeAck, rememberPrivacyNotice } from '../../utils/nudges.ts';
+import { orcidNudgeAnswered, readPrivacyNoticeAck, rememberOrcidNudgeAnswer, rememberPrivacyNotice } from '../../utils/nudges.ts';
 import { pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown } from '../../utils/pmf-survey.ts';
 import { preferredTranslationLanguage, rememberTranslationLanguage } from '../../utils/paper-translation.ts';
 
@@ -79,6 +79,21 @@ test('this browser forgets which survey version the deleted account was shown, a
   });
   assert.equal(pmfSurveyDue('uid-a', '0.3.0', storage), true, 'nothing here says the deleted account was asked');
   assert.equal(pmfSurveyDue('uid-b', '0.3.0', storage), false, 'the account that holds the session now');
+});
+
+test('this browser forgets the ORCID notice answer of the deleted account only', async () => {
+  const storage = fakeStorage();
+  rememberOrcidNudgeAnswer('uid-a', storage);
+  rememberOrcidNudgeAnswer('uid-b', storage);
+  await deleteConfirmedAccount({
+    reauthenticate: () => Promise.resolve('uid-a'),
+    onSignedIn: () => {},
+    deleteAccount: () => Promise.resolve(),
+    onDeleted: () => {},
+    storage,
+  });
+  assert.equal(orcidNudgeAnswered('uid-a', storage), false);
+  assert.equal(orcidNudgeAnswered('uid-b', storage), true);
 });
 
 test('a deletion that fails forgets nothing: the account still exists and has read this version', async () => {

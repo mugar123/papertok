@@ -13,7 +13,7 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
-import { emailServiceState } from '../../utils/email-health.ts';
+import { emailProviderProblemText, emailServiceState } from '../../utils/email-health.ts';
 import { emailFollowsNotice } from './email-follows-notice.ts';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerDescription, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
@@ -176,13 +176,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
         {providerDown && (
           <div className="email-notification-provider-warning">
             <strong>{'Email updates unavailable'}</strong>
-            <span>{health.code === 'EMAIL_PROVIDER_AUTH_FAILED'
-              ? ('The email provider did not accept the saved credential.')
-              : health.code === 'EMAIL_SENDER_NOT_VERIFIED'
-                ? ('Resend has not verified the configured sender domain yet.')
-                : health.code === 'EMAIL_SENDER_STATUS_UNKNOWN'
-                  ? ('PaperTok cannot confirm the sender domain with the current Resend key.')
-                : ('The email provider is not available right now.')}</span>
+            <span>{emailProviderProblemText(health.code)}</span>
           </div>
         )}
         {digestTurnedOff && (
