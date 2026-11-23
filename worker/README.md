@@ -1384,7 +1384,7 @@ The existing `REQUEST_QUOTA_LEDGER` atomically reserves one unit in a separate U
 
 Success returns a private, no-store NDJSON stream. Each `{ type: "chunk", index, segments }` has the expected count of nonempty strings and zero-based index. After all chunks, `{ type: "done", count }` confirms completion. A failure after headers sends `{ type: "error", code }` and ends the stream. Preflight uses the existing AI error response. The app keeps validated results in reader memory across text and PDF views until cancelled, closed or the account changes. Disconnection stops further work once the Worker observes it. Neither source chunks sent for translation nor translations are persisted by this route. SDK request logging and OpenTelemetry tracing are disabled for this route. Error reports carry a fixed code.
 
-Deploy the Worker before the web. No new binding or migration is needed. Keep `FULL_PAPER_TRANSLATION_ENABLED` unset in the Worker on initial deployment. Set it to `true` only after the combined in-app privacy notice and policy paragraph are published. Remove the flag or set it to any other value to turn off the route.
+Deploy the Worker before the web. No new binding or migration is needed. Keep `FULL_PAPER_TRANSLATION_ENABLED` unset in the Worker on initial deployment. Pablo will set it to `true` from 30 November onward, after the separate privacy revision 11 and the combined in-app notice are published. Remove the flag or set it to any other value to turn off the route.
 
 ### Other rewrite and annotation providers
 

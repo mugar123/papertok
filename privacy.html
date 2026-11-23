@@ -551,29 +551,12 @@
         level you choose, never your identity or your email.
       </p>
       <p>
-        <strong>Title and abstract translation.</strong>
         When you request a translation, PaperTok sends the arXiv title, abstract and chosen
         language to Anthropic without your identity or email. PaperTok keeps the translation
-        in memory while you read the card or use the in-app reader. Your browser remembers the language you chose
+        in memory while you read the card. Your browser remembers the language you chose
         for your last successful translation on this account and device. PaperTok counts daily translation requests against
         a hashed account identifier for up to three days to enforce usage limits.
       </p>
-
-      <!-- Publish with the combined in-app privacy notice before enabling full-paper translation.
-      <p>
-        If you request a full-paper translation, PaperTok sends the article text needed for
-        the translation and your chosen language to Anthropic. PaperTok does not include your
-        account identifier or email. The article may itself name people. PaperTok keeps the
-        translation in memory while you read and does not store it on its servers. PaperTok
-        counts requests against a hashed account identifier in Cloudflare to enforce daily
-        limits. PaperTok schedules deletion within three days, though Cloudflare can run
-        the cleanup late. The <a href="#request-counter-retention">counter recovery policy</a>
-        below also applies. Anthropic may process the text in any region it serves and ordinarily
-        deletes API inputs and outputs within 30 days, subject to its agreement with
-        PaperTok and exceptions for policy enforcement and legal obligations.
-        <a href="https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data">Anthropic’s API retention policy</a>.
-      </p>
-      -->
 
       <h2>Who it is shared with</h2>
       <p>
@@ -607,7 +590,7 @@
         own, at most 2 hours after your last page.
       </p>
 
-      <p id="request-counter-retention">
+      <p>
         The request counters this policy describes, whether kept under a hashed account
         identifier, a protected identifier derived from an IP address or a hashed recipient
         identifier, are stored in Cloudflare Durable Objects. The times given for them are

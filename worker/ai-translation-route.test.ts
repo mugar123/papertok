@@ -457,9 +457,15 @@ test('approved full text spends one atomic slot before sending any approved chun
 });
 
 test('an off flag, altered text, revoked identity, and exhausted quotas spend nothing', async t => {
-  const { env, calls, quotas, ledger, identity } = setUp(t);
+  const { env, calls, quotas, ledger, identity, arxivRequests } = setUp(t);
   env.FULL_PAPER_TRANSLATION_ENABLED = 'false';
-  assert.equal((await worker.fetch(fullRequest(), env)).status, 503);
+  const disabled = await worker.fetch(fullRequest(), env);
+  assert.equal(disabled.status, 503);
+  assert.deepEqual(await disabled.json(), { code: 'AI_NOT_CONFIGURED' });
+  assert.equal(identity.lookups, 0);
+  assert.deepEqual(arxivRequests, []);
+  assert.deepEqual(quotas, []);
+  assert.deepEqual(calls, []);
   enableFullPaper(env);
   assert.equal((await worker.fetch(fullRequest({ ...FULL_INPUT, fingerprint: 'a'.repeat(64) }), env)).status, 400);
   assert.equal((await worker.fetch(fullRequest({ ...FULL_INPUT, query: 'x'.repeat(1_025) }), env)).status, 413);

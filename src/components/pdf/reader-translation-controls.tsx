@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useId, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../ui/button.tsx';
 import { isTranslationLanguage, TRANSLATION_LANGUAGES, type TranslationLanguage } from '../../utils/paper-translation-contract.ts';
 import './reader-translation-controls.css';
@@ -34,6 +34,8 @@ export function ReaderTranslationControls({
     };
   }, []);
   const unavailable = choice === 'paper' ? paperUnavailable : '';
+  const noticeId = useId();
+  const showNotice = choice === 'paper' && !unavailable;
   const abstractView = toggle?.abstract;
   return (
     <section className="reader-translation" translate="no" aria-label="Paper translation">
@@ -62,12 +64,12 @@ export function ReaderTranslationControls({
                     {Object.entries(TRANSLATION_LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
                   </select>
                 </label>
-                <Button ref={submit} variant="outline" size="sm" type="submit" aria-disabled={pending || Boolean(unavailable)}>Translate {choice === 'paper' ? 'full paper' : 'abstract'}</Button>
+                <Button ref={submit} variant="outline" size="sm" type="submit" aria-disabled={pending || Boolean(unavailable)} aria-describedby={showNotice ? noticeId : undefined}>Translate {choice === 'paper' ? 'full paper' : 'abstract'}</Button>
+                {showNotice && <p id={noticeId}>Sends the article text to Anthropic. <a href="/privacy.html">Privacy policy</a></p>}
                 {choice === 'abstract' && abstractView && !pending && <Button variant="ghost" size="sm" type="button" onClick={abstractView.action}>{abstractView.label}</Button>}
               </form>
             )}
           {(signedIn ? unavailable : paperUnavailable) && <p>{signedIn ? unavailable : paperUnavailable}</p>}
-          {signedIn && choice === 'paper' && !unavailable && <p>PaperTok sends the paper’s prose to Anthropic. Figures, tables, code and references stay in the original. Each request uses one daily translation.</p>}
           {choice === 'abstract' && children}
         </div>
       </details>

@@ -54,3 +54,7 @@
   display: block;
   margin-block: var(--space-2);
 }
+
+.reader-translation-panel a {
+  text-decoration: underline;
+}

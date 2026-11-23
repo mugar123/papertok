@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { createElement } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { loadFullPaperTranslationHook } from '../../tests/dom/app-modules.ts';
+import { loadFullPaperTranslationHook, loadReaderTranslationControls } from '../../tests/dom/app-modules.ts';
 import { parseArxivHtml } from '../utils/full-text.ts';
 
 test('keeps the original selected across more chunks and drops late results on account switch', async t => {
@@ -104,4 +104,32 @@ test('keeps the original selected across more chunks and drops late results on a
   await digest;
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(requests.length, 2);
+});
+
+test('the full-paper action describes the Anthropic transfer and links to the privacy policy', async t => {
+  const { entry: { ReaderTranslationControls }, close } = await loadReaderTranslationControls();
+  t.after(async () => {
+    cleanup();
+    await close();
+  });
+  render(createElement(ReaderTranslationControls, {
+    signedIn: true,
+    abstractAvailable: true,
+    paperUnavailable: '',
+    defaultLanguage: 'es',
+    pending: false,
+    message: '',
+    onTranslate: () => {},
+    onCancel: () => {},
+  }));
+  const disclosure = screen.getByText('Translate', { selector: 'summary' }).closest('details');
+  assert.ok(disclosure);
+  disclosure.open = true;
+  assert.equal(screen.queryByRole('link', { name: 'Privacy policy' }), null);
+  fireEvent.change(screen.getByRole('combobox', { name: 'Translate' }), { target: { value: 'paper' } });
+  const button = screen.getByRole('button', { name: 'Translate full paper' });
+  const link = screen.getByRole('link', { name: 'Privacy policy' });
+  assert.equal(link.getAttribute('href'), '/privacy.html');
+  assert.equal(link.parentElement?.id, button.getAttribute('aria-describedby'));
+  assert.equal(link.parentElement?.textContent, 'Sends the article text to Anthropic. Privacy policy');
 });

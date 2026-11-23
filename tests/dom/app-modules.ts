@@ -57,6 +57,10 @@ async function loadAppModule<T>(path: string, options?: Parameters<typeof startA
   }
 }
 
+export function loadReaderTranslationControls() {
+  return loadAppModule<typeof import('../../src/components/pdf/reader-translation-controls.tsx')>('/src/components/pdf/reader-translation-controls.tsx');
+}
+
 export function loadFullPaperTranslationHook() {
   return loadAppModule<typeof import('../../src/hooks/use-full-paper-translation.ts')>('/src/hooks/use-full-paper-translation.ts');
 }
