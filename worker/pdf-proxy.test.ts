@@ -97,7 +97,8 @@ test('cached PDFs count against the IP allowance without spending the upstream c
   for (let i = 0; i < 30; i++) assert.equal((await h.ask()).status, 200);
   assert.equal((await h.ask()).status, 429);
   assert.equal(h.upstream.length, 0);
-  assert.equal(h.objects.get('pdf:2026-10-24T12:00')!.values.get('global'), 0);
+  // Nothing is counted for the object as a whole, so nothing is stored for it.
+  assert.equal(h.objects.get('pdf:2026-10-24T12:00')!.values.has('global'), false);
   h.cache(false);
   assert.equal((await h.ask('192.0.2.2')).status, 200);
   assert.equal(h.upstream.length, 1);
@@ -146,7 +147,9 @@ test('equivalent IPv6 addresses and readers behind the same IP share an allowanc
   const h = harness(t);
   for (let i = 0; i < 30; i++) assert.equal((await h.ask('2001:db8::1')).status, 200);
   assert.equal((await h.ask('2001:0db8:0:0:0:0:0:1', NATIVE)).status, 429);
-  assert.equal((await h.ask('2001:db8::2', NATIVE)).status, 200);
+  // Another address of the same /64 is the same caller (ENG-225); another /64 is not.
+  assert.equal((await h.ask('2001:db8::2', NATIVE)).status, 429);
+  assert.equal((await h.ask('2001:db8:0:1::1', NATIVE)).status, 200);
 });
 
 test('missing identity, secret or ledger fails closed even for a cached PDF', async t => {

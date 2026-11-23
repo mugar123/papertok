@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 20 November 2026 (revision 9).</p>
+      <p class="lp-updated">Last updated 23 November 2026 (revision 10).</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -464,9 +464,17 @@
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
         the shared download allowance. It stores a protected identifier derived from
         the address and the current minute using a secret key, together with request
-        counts. It does not store the original IP address in these counters or attach
-        your account or the paper you requested. The identifier changes each minute
-        and is not sent to analytics. People sharing a public IP, such as a campus
+        counts. For an IPv6 address it uses the network prefix (the first 64 bits)
+        instead of the full address, and an IPv4 address written in IPv6 form counts as
+        that IPv4 address. Lookups that go through OpenAlex also keep a second
+        identifier, derived the same way from the address and the current day, so that one
+        address cannot use up the day's shared OpenAlex allowance: each address has 1,000
+        billed units and 3,000 lookups by identifier per UTC day. Only requests the server
+        cannot answer from a copy it already holds count against these allowances. It does not store the
+        original IP address in these counters or attach
+        your account or the paper you requested. The per-minute identifier changes each
+        minute and the daily one each day; neither is sent to analytics. People sharing a
+        public IP, such as a campus
         network, share each route’s allowance. The PDF reader allows 30 requests per UTC minute,
         and the MCP server 30 tool calls.
       </p>
@@ -490,8 +498,12 @@
         fails to run that cleanup, but expired counters do not affect later windows.
         The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule,
         and so do the MCP server's counters.
-        OpenAlex and shared-page lookup counters are stored with their daily
-        allowance and are scheduled for deletion after three days.
+        OpenAlex counters, both the per-minute and the daily identifiers, and shared-page
+        lookup counters are stored with the day's allowance, except the counters for lookups
+        by identifier: those sit in 16 separate stores a day that hold only the per-address
+        counts. Each store's deletion is scheduled for at most
+        three days after the first request it receives, and Cloudflare can run that deletion
+        late.
       </p>
       <p>
         Your feed comes from a shared catalogue that server keeps: once a day it collects new
@@ -568,6 +580,17 @@
         server keeps for you (see Scientific sources and AI features) is not deleted with
         the account: that cache cannot be searched by account, so the order expires on its
         own, at most 2 hours after your last page.
+      </p>
+
+      <p>
+        The request counters this policy describes, whether kept under a hashed account
+        identifier, a protected identifier derived from an IP address or a hashed recipient
+        identifier, are stored in Cloudflare Durable Objects. The times given for them are
+        when PaperTok deletes each counter from that storage. Cloudflare keeps a recovery
+        history of that storage that reaches back 30 days, and its documentation does not say
+        that deleting a counter removes it from that history, so a deleted counter may remain
+        there for up to 30 days more. PaperTok has no feature that reads that history; it
+        exists to restore the storage after a failure.
       </p>
 
       <h2>Your rights</h2>

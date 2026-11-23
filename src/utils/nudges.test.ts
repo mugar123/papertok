@@ -156,6 +156,31 @@ test('an older account without a qualifying record is owed the notice', () => {
   assert.equal(privacyNoticeOwed({ version, effectiveAt, acknowledged: 'garbage', signedIn: true }), true, 'an invalid record');
 });
 
+test('the notice waits for its start instant, and a wrong device clock moves it either way', () => {
+  const version = '2026-11-23.10';
+  const effectiveAt = '2026-11-23T23:59:59Z';
+  const shownFrom = '2026-11-30T00:00:00Z';
+  const start = Date.parse(shownFrom);
+  const HOUR = 3_600_000;
+  const account = { uid: 'reader-a', metadata: { creationTime: new Date(Date.parse(effectiveAt) - 30 * 24 * HOUR).toUTCString() } };
+  const owedAt = (now: number) => privacyNoticeOwed({ version, effectiveAt, shownFrom, now, acknowledged: null, accountCreated: account.metadata.creationTime, signedIn: true });
+  const statusAt = (now: number) => privacyNoticeStatus({ user: account, signedIn: true, version, effectiveAt, shownFrom, now, account: null });
+  assert.equal(owedAt(start - 1), false, 'a millisecond before the start');
+  assert.equal(statusAt(start - 1), 'settled', 'no account is asked before the start');
+  assert.equal(owedAt(start), true, 'at the start');
+  assert.equal(statusAt(start), 'ask-account', 'from the start the account is asked');
+  // The reader's clock decides: a clock set back by a week hides it, one set a week ahead shows it early.
+  assert.equal(owedAt(start - 7 * 24 * HOUR), false, 'a clock a week behind, when the true time is the start');
+  assert.equal(owedAt(Date.parse('2026-11-24T10:00:00Z') + 7 * 24 * HOUR), true, 'a clock a week ahead, on 24 November');
+  assert.equal(owedAt(Date.parse('2026-11-24T10:00:00Z')), false, 'the true time on 24 November');
+  assert.equal(privacyNoticeOwed({ version, effectiveAt, now: start - 1, acknowledged: null, accountCreated: account.metadata.creationTime, signedIn: true }), true, 'with no start instant given it is owed');
+  assert.equal(owedAt(start + 1000), owedAt(start + 40 * 24 * HOUR), 'once started it stays owed');
+  // Production passes no `now`: the reader's own clock decides.
+  const byClock = (shownFrom: string) => privacyNoticeOwed({ version, effectiveAt, shownFrom, acknowledged: null, accountCreated: account.metadata.creationTime, signedIn: true });
+  assert.equal(byClock('2999-01-01T00:00:00Z'), false, 'a start far ahead of the clock');
+  assert.equal(byClock('2000-01-01T00:00:00Z'), true, 'a start far behind the clock');
+});
+
 test('policy versions sort by day and then by numeric revision', () => {
   assert.equal(policyVersionCovers('2026-10-26', '2026-10-25.10'), true);
   assert.equal(policyVersionCovers('2026-10-25.10', '2026-10-25.2'), true);
