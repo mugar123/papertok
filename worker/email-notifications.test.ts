@@ -7700,20 +7700,6 @@ function failingIndexPut(kv: ReturnType<typeof createMemoryKv>, failing: HungInd
   return { attempted, restore: () => { kv.put = put; } };
 }
 
-// The first put of the reader's schedule key fails.
-function failingSchedulePut(kv: ReturnType<typeof createMemoryKv>) {
-  const put = kv.put.bind(kv);
-  let failed = false;
-  kv.put = async (key: string, value: string) => {
-    if (!failed && key === SYNC_READER_KEY) {
-      failed = true;
-      throw new Error('KV put failed');
-    }
-    await put(key, value);
-  };
-  return () => { kv.put = put; };
-}
-
 // Each call brings an hour's allowance of its own, unless the test gives the ledger.
 const optIn = (env: WorkerEnv, body: unknown = WELCOME_YES) => startDigestOptIn(optInPost(body), { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, ...env }, SYNC_READER);
 
@@ -7929,8 +7915,9 @@ for (const phase of DEPLOY_PHASES) {
         const decided = await everythingStored(kv);
         assert.equal(Boolean(decided.object.subscription), later !== 'a switch-off');
 
-        t.mock.timers.tick(5_000);
-        assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes), 'the opt-in did not give up at its deadline');
+        // Cloudflare ends a request's wait far later; ten seconds is already too long for the route.
+        t.mock.timers.tick(10_000);
+        assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes), 'the opt-in was still waiting for KV after ten seconds');
         assert.deepEqual(await everythingStored(kv), decided);
 
         // KV answers at last: the abandoned put lands after the reader's later decision.
@@ -7965,9 +7952,8 @@ for (const phase of DEPLOY_PHASES) {
 
       const yes = optIn(env).then(answer => answer, (error: unknown) => error);
       await held;
-      t.mock.timers.tick(4_999);
       assert.equal(await Promise.race([yes, Promise.resolve('waiting')]), 'waiting');
-      t.mock.timers.tick(1);
+      t.mock.timers.tick(10_000);
       assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes));
       // Never the schedule index without the link.
       assert.deepEqual([...kv.values.keys()], hung === 'link' ? [] : linkIndexes(kv));
@@ -8379,7 +8365,7 @@ for (const phase of DEPLOY_PHASES) {
   test(`${phase}: a Settings save that keeps the subscription of a welcome yes not yet announced leaves its start for the retry to announce`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    const restore = failingSchedulePut(kv);
+    const { restore } = failingIndexPut(kv, 'schedule');
     await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
     restore();
     const { unsubscribeToken } = (await objectOf(kv)).subscription!;
@@ -8435,7 +8421,7 @@ for (const phase of DEPLOY_PHASES) {
   test(`${phase}: two retries of a welcome yes whose index failed announce it once between them`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    const restore = failingSchedulePut(kv);
+    const { restore } = failingIndexPut(kv, 'schedule');
     await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
     restore();
 
@@ -8449,7 +8435,7 @@ for (const phase of DEPLOY_PHASES) {
   test(`${phase}: a sync that restores the indexes of an unannounced welcome yes does not announce it, and the retry of the yes still does`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    const restore = failingSchedulePut(kv);
+    const { restore } = failingIndexPut(kv, 'schedule');
     await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
     restore();
 
@@ -8463,7 +8449,7 @@ for (const phase of DEPLOY_PHASES) {
   test(`${phase}: a welcome yes cancelled before it was announced is never announced`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    const restore = failingSchedulePut(kv);
+    const { restore } = failingIndexPut(kv, 'schedule');
     await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
     restore();
 

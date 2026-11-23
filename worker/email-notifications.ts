@@ -1632,8 +1632,8 @@ async function readOptInState(env: WorkerEnv, uid: string) {
  * The Worker writes the two indexes, the link first and the schedule index
  * only once the link is there, so a put that fails never leaves a reader the
  * schedule reaches and whose unsubscribe link does not work. Nothing waits on
- * them but this request: the reader's object is never held while KV answers, so an
- * unsubscribe reaches it at once however slow KV is. The indexes are not the
+ * them but this request: the reader's object is never held while KV answers, so
+ * an unsubscribe never waits behind an index write. The indexes are not the
  * truth, only pointers the schedule and the unsubscribe link check against the
  * object. A put that lands late, after a failure, after this request gave up
  * or after a later decision, writes `{"uid"}` at a key that for this reader
@@ -3999,7 +3999,8 @@ async function processLoadedSubscription(
   const subscription = record && subscriptionWithState(record);
   // An index a save wrote just after an unsubscribe points at no subscription.
   // In phase 1 the key is the record itself, and a read that missed it may be
-  // a stale one, so only a cancellation deletes it.
+  // a stale one, so only a cancellation deletes it; the caller has removed the
+  // index of a reader the welcome opt-in subscribed, which is never a record.
   if (!subscription && !subscriptionInKv(env)) await deleteScheduleIndex(env, subscriptionUid(key.name));
   if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
