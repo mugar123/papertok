@@ -7,7 +7,7 @@ import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import type { ArxivRecord } from './paper-sources.ts';
 import type { Paper } from '../src/models/paper.ts';
-import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, ingestPaperIds, notableLaneJobs, paperIdLookup, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { mapAdsPaper, mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
@@ -2289,6 +2289,24 @@ test("a recent paper a reader liked, looked up by id, is filed under its lanes w
   const lanes = db.prepare('SELECT lane, arrived FROM work_lanes').all() as Array<{ lane: string; arrived: string | null }>;
   assert.ok(lanes.length > 0, 'filed under its lanes');
   assert.deepEqual(lanes.map(row => row.arrived), lanes.map(() => null));
+});
+
+// A DOI went into the relay's path as the reader sent it.
+test('a DOI a reader sends is looked up as that DOI only: no other record, no added parameters, and parentheses reach OpenAlex', async t => {
+  const { urls, env } = relay(t, () => splicingWork);
+  const store = { ...env, PAPER_STORE: testD1().binding } as WorkerEnv;
+  const lookedUp = async (id: string) => {
+    urls.length = 0;
+    await ingestPaperIds(store, [id], { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
+    return urls.map(url => `${url.pathname}${[...url.searchParams.keys()].filter(name => name !== 'mailto' && name !== 'api_key').map(name => `?${name}`).join('')}`);
+  };
+  assert.deepEqual(await lookedUp('10.1000/a/../../authors/A5023888391'), [], 'a path that leaves the work is not asked');
+  assert.deepEqual(await lookedUp('doi:10.1000/a/./b'), []);
+  assert.deepEqual(await lookedUp('10.1000/a?select=id&per-page=200'), ['/works/doi:10.1000/a%3Fselect%3Did%26per-page%3D200']);
+  assert.deepEqual(await lookedUp('10.1002/(SICI)1097-4571(199205)43:4<284::AID-ASI3>3.0.CO;2-0'),
+    ['/works/doi:10.1002/%28SICI%291097-4571%28199205%2943%3A4%3C284%3A%3AAID-ASI3%3E3.0.CO%3B2-0']);
+  assert.deepEqual(paperIdLookup('10.1000/a/../../authors/A5023888391'), null);
+  assert.deepEqual(paperIdLookup('doi:10.1093/genetics/iyag290'), { openAlexPath: '/openalex/works/doi:10.1093/genetics/iyag290' });
 });
 
 // PAP-88: readers' searches and profile lists stop at 60 % of the day's
