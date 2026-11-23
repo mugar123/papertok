@@ -453,7 +453,7 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
-      const { body, type } = await handleReadAloud(request, env);
+      const { body, type } = await handleReadAloud(request, env, context ? work => context.waitUntil(work) : undefined);
       return new Response(body, {
         headers: { ...corsHeaders(origin, env), 'content-type': type, 'cache-control': 'private, no-store' },
       });

@@ -1,24 +1,57 @@
 import type { WorkerEnv } from './env.ts';
+import type { LedgerTransaction } from './ledger-storage.ts';
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import reportApi from './index.ts';
 import { audioKey } from './read-aloud-tts.ts';
+import { RequestQuotaLedger } from './request-quota-ledger.ts';
 
 const ROUTE = 'https://papertok-report-api.example/tts/paragraph';
 const ORIGIN = 'https://papertok.app';
 const TEXT = 'The authors measure how well each probe separates injected prompts from benign ones.';
 
-/** Accepts every reservation, except those of a period named in `refused`, which are refused with its scope. */
+
+/** The ledger's own object over a map, with no alarm. */
+function ledgerObject() {
+  const values = new Map<string, unknown>();
+  return new RequestQuotaLedger({
+    storage: {
+      transaction: <T>(fn: (txn: LedgerTransaction) => Promise<T>) => fn({
+        get: <V>(key: string) => values.get(key) as V | undefined,
+        put: (key, value) => values.set(key, value),
+        delete: key => values.delete(key),
+      }),
+      getAlarm: async () => null,
+      setAlarm: async () => undefined,
+      deleteAll: async () => values.clear(),
+    },
+  });
+}
+
+/**
+ * Accepts every reservation of characters, except those of a period named in `refused`, which are
+ * refused with its scope, and records them in `calls`. A paragraph's turn (`tts:making:`) is
+ * answered by the ledger's own object, one per paragraph, and recorded in `turns`.
+ */
 function recordingLedger({ accepted = true, scope = '', refused = {} }: { accepted?: boolean; scope?: string; refused?: Record<string, string> } = {}) {
   const calls: Array<{ period: string; action: string; amount: number; subjectLimit: number; globalLimit: number }> = [];
+  const turns: Array<{ period: string; action: string }> = [];
+  const making = new Map<string, RequestQuotaLedger>();
   return {
     calls,
+    turns,
     idFromName: (period: string) => period,
     get: (period: string) => ({
-      fetch: async (_url: RequestInfo | URL, options?: RequestInit) => {
-        calls.push({ period, ...JSON.parse(options!.body as string) });
+      fetch: async (url: RequestInfo | URL, options?: RequestInit) => {
+        const call = { period, ...JSON.parse(options!.body as string) };
+        if (period.startsWith('tts:making:')) {
+          turns.push(call);
+          if (!making.has(period)) making.set(period, ledgerObject());
+          return making.get(period)!.fetch(new Request(url, options));
+        }
+        calls.push(call);
         const refusal = Object.entries(refused).find(([name]) => period.startsWith(name))?.[1];
         const answer = refusal ? { accepted: false, scope: refusal } : { accepted, ...(scope ? { scope } : {}) };
         return new Response(JSON.stringify({ remaining: 100, ...answer }));
@@ -82,7 +115,8 @@ async function signedIn<Result>(callback: () => Promise<Result>) {
   }
 }
 
-type Replies = { elevenlabs?: () => Response; cartesia?: () => Response };
+type Reply = () => Response | Promise<Response>;
+type Replies = { elevenlabs?: Reply; cartesia?: Reply };
 
 /** Answers each provider's request with its reply, and an unexpected call with a 500. */
 async function withProviders<Result>(replies: Replies, callback: () => Promise<Result>) {
@@ -91,7 +125,7 @@ async function withProviders<Result>(replies: Replies, callback: () => Promise<R
   globalThis.fetch = async (url, options) => {
     const provider = String(url).startsWith('https://api.elevenlabs.io/') ? 'elevenlabs' : 'cartesia';
     calls.push({ provider, url: String(url), headers: new Headers(options?.headers), body: JSON.parse(options!.body as string) });
-    return replies[provider]?.() ?? new Response('unexpected', { status: 500 });
+    return await replies[provider]?.() ?? new Response('unexpected', { status: 500 });
   };
   try {
     return { response: await callback(), calls };
@@ -106,62 +140,83 @@ const ALIGNMENT = { characters: ['T', 'h', 'e'], character_start_times_seconds: 
 const elevenLabsAudio = () => Response.json({ audio_base64: btoa(String.fromCharCode(...MP3)), alignment: ALIGNMENT, normalized_alignment: ALIGNMENT });
 const cartesiaAudio = () => new Response(CARTESIA_MP3, { headers: { 'content-type': 'audio/mpeg' } });
 const elevenLabsOutOfCharacters = () => Response.json({ detail: { status: 'quota_exceeded', message: 'This request exceeds your quota.' } }, { status: 401 });
+const cartesiaOutOfCredits = () => Response.json({ error_code: 'quota_exceeded' }, { status: 402 });
+/** A provider that takes a moment, so a second request arrives while the first is being answered. */
+const later = (reply: () => Response): Reply => () => new Promise(resolve => { setTimeout(() => resolve(reply()), 50); });
 
-test('a paragraph nobody has heard is read by ElevenLabs once, charged by its length and stored with its timings', async () => {
+test('a paragraph nobody has heard is read by Cartesia once, charged by its length and stored', async () => {
   const ledger = recordingLedger();
   const bucket = memoryBucket();
+  const outlives: Array<Promise<unknown>> = [];
   const { response, calls } = await withProviders(
-    { elevenlabs: elevenLabsAudio },
-    () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, bucket))),
+    { cartesia: cartesiaAudio },
+    () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, bucket), { waitUntil: work => { outlives.push(work); } })),
   );
+  // The making of the paragraph is handed to the runtime, so it ends even when its reader has left.
+  assert.equal(outlives.length, 1);
+  await outlives[0];
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'audio/mpeg');
   assert.equal(response.headers.get('access-control-allow-origin'), ORIGIN);
-  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), MP3);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, 'https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL/with-timestamps?output_format=mp3_44100_64');
-  assert.equal(calls[0].headers.get('xi-api-key'), 'elevenlabs-test-key');
-  assert.equal(calls[0].body.text, TEXT);
-  assert.deepEqual(ledger.calls.map(call => [call.action, call.amount, call.subjectLimit, call.globalLimit]), [['reserve', TEXT.length, 44_000, 88_000]]);
-  const key = await audioKey('elevenlabs', TEXT);
-  assert.deepEqual(bucket.objects.get(`${key}.mp3`), MP3);
-  assert.deepEqual(JSON.parse(new TextDecoder().decode(bucket.objects.get(`${key}.json`))), ALIGNMENT);
-});
-
-test('when ElevenLabs is out of characters, Cartesia reads the paragraph and its audio is stored', async () => {
-  const ledger = recordingLedger();
-  const bucket = memoryBucket();
-  const { response, calls } = await withProviders(
-    { elevenlabs: elevenLabsOutOfCharacters, cartesia: cartesiaAudio },
-    () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, bucket))),
-  );
-
-  assert.equal(response.status, 200);
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
-  assert.deepEqual(calls.map(call => call.provider), ['elevenlabs', 'cartesia']);
-  assert.equal(calls[1].url, 'https://api.cartesia.ai/tts/bytes');
-  assert.equal(calls[1].headers.get('authorization'), 'Bearer cartesia-test-key');
-  assert.equal(calls[1].body.transcript, TEXT);
-  const day = new Date().toISOString().slice(0, 10);
-  assert.deepEqual(ledger.calls.map(call => [call.period, call.action, call.globalLimit]), [
-    [`tts:elevenlabs:${day}`, 'reserve', 88_000],
-    [`tts:elevenlabs:${day}`, 'release', 88_000],
-    [`tts:cartesia:${day}`, 'reserve', 258_000],
-  ]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.cartesia.ai/tts/bytes');
+  assert.equal(calls[0].headers.get('authorization'), 'Bearer cartesia-test-key');
+  assert.equal(calls[0].body.transcript, TEXT);
+  assert.deepEqual(ledger.calls.map(call => [call.action, call.amount, call.subjectLimit, call.globalLimit]), [['reserve', TEXT.length, 44_000, 258_000]]);
+  assert.deepEqual(ledger.turns.map(turn => turn.action), ['reserve', 'release']);
   const key = await audioKey('cartesia', TEXT);
   assert.deepEqual(bucket.objects.get(`${key}.mp3`), CARTESIA_MP3);
   assert.equal(bucket.objects.has(`${key}.json`), false);
 });
 
-test('Cartesia also reads when ElevenLabs has no key, and is asked when ElevenLabs\' day of characters is spent', async () => {
-  const noKey = await withProviders(
-    { cartesia: cartesiaAudio },
-    () => signedIn(() => reportApi.fetch(paragraphRequest(), env(recordingLedger(), memoryBucket(), { ELEVENLABS_API_KEY: undefined }))),
+test('when Cartesia is out of credits, ElevenLabs reads the paragraph and its audio is stored with its timings', async () => {
+  const ledger = recordingLedger();
+  const bucket = memoryBucket();
+  const { response, calls } = await withProviders(
+    { cartesia: cartesiaOutOfCredits, elevenlabs: elevenLabsAudio },
+    () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, bucket))),
   );
-  assert.equal(noKey.response.status, 200);
-  assert.deepEqual(noKey.calls.map(call => call.provider), ['cartesia']);
 
+  assert.equal(response.status, 200);
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), MP3);
+  assert.deepEqual(calls.map(call => call.provider), ['cartesia', 'elevenlabs']);
+  assert.equal(calls[1].url, 'https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL/with-timestamps?output_format=mp3_44100_64');
+  assert.equal(calls[1].headers.get('xi-api-key'), 'elevenlabs-test-key');
+  assert.equal(calls[1].body.text, TEXT);
+  const day = new Date().toISOString().slice(0, 10);
+  assert.deepEqual(ledger.calls.map(call => [call.period, call.action, call.globalLimit]), [
+    [`tts:cartesia:${day}`, 'reserve', 258_000],
+    [`tts:cartesia:${day}`, 'release', 258_000],
+    [`tts:elevenlabs:${day}`, 'reserve', 88_000],
+  ]);
+  const key = await audioKey('elevenlabs', TEXT);
+  assert.deepEqual(bucket.objects.get(`${key}.mp3`), MP3);
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(bucket.objects.get(`${key}.json`))), ALIGNMENT);
+});
+
+test('each provider reads alone when the other has no key, and its failure is the one reported', async () => {
+  const alone = (key: string, replies: Replies) => withProviders(
+    replies,
+    () => signedIn(() => reportApi.fetch(paragraphRequest(), env(recordingLedger(), memoryBucket(), { [key]: undefined }))),
+  );
+  const noCartesia = await alone('CARTESIA_API_KEY', { elevenlabs: elevenLabsAudio });
+  assert.equal(noCartesia.response.status, 200);
+  assert.deepEqual(noCartesia.calls.map(call => call.provider), ['elevenlabs']);
+
+  const noElevenLabs = await alone('ELEVENLABS_API_KEY', { cartesia: cartesiaAudio });
+  assert.equal(noElevenLabs.response.status, 200);
+  assert.deepEqual(new Uint8Array(await noElevenLabs.response.arrayBuffer()), CARTESIA_MP3);
+  assert.deepEqual(noElevenLabs.calls.map(call => call.provider), ['cartesia']);
+
+  const down = await alone('ELEVENLABS_API_KEY', { cartesia: () => new Response('', { status: 500 }) });
+  assert.equal(down.response.status, 502);
+  assert.equal((await down.response.json<{ code: string }>()).code, 'AI_UNAVAILABLE');
+  assert.deepEqual(down.calls.map(call => call.provider), ['cartesia']);
+});
+
+test('ElevenLabs is asked when Cartesia\'s day of characters is spent', async () => {
   const ledger = recordingLedger({ accepted: false, scope: 'global' });
   const spent = await withProviders(
     { elevenlabs: elevenLabsAudio, cartesia: cartesiaAudio },
@@ -170,7 +225,7 @@ test('Cartesia also reads when ElevenLabs has no key, and is asked when ElevenLa
   assert.equal(spent.response.status, 429);
   assert.equal((await spent.response.json<{ quota: { scope: string } }>()).quota.scope, 'global');
   assert.equal(spent.calls.length, 0);
-  assert.deepEqual(ledger.calls.map(call => call.globalLimit), [88_000, 258_000]);
+  assert.deepEqual(ledger.calls.map(call => call.globalLimit), [258_000, 88_000]);
 });
 
 test('a paragraph stored by either provider is served without calling one or spending the allowance', async () => {
@@ -185,7 +240,7 @@ test('a paragraph stored by either provider is served without calling one or spe
     assert.equal(response.status, 200);
     assert.deepEqual(new Uint8Array(await response.arrayBuffer()), MP3);
     assert.equal(calls.length, 0);
-    assert.equal(ledger.calls.length, 0);
+    assert.equal(ledger.calls.length + ledger.turns.length, 0);
   }
 });
 
@@ -206,18 +261,23 @@ test('a reader past their daily allowance is refused before either provider is c
 
 test('when both providers fail, both give the characters back and the last refusal is reported', async () => {
   const cases: Array<[Replies, number, string]> = [
-    [{ elevenlabs: elevenLabsOutOfCharacters, cartesia: () => Response.json({ error_code: 'quota_exceeded' }, { status: 402 }) }, 429, 'AI_QUOTA_EXHAUSTED'],
-    [{ elevenlabs: () => Response.json({ detail: { status: 'invalid_api_key' } }, { status: 401 }), cartesia: () => new Response('', { status: 429 }) }, 429, 'AI_BUSY'],
-    [{ elevenlabs: () => Response.json({ detail: { status: 'too_many_concurrent_requests' } }, { status: 429 }), cartesia: () => new Response('', { status: 401 }) }, 503, 'AI_NOT_CONFIGURED'],
+    [{ cartesia: cartesiaOutOfCredits, elevenlabs: elevenLabsOutOfCharacters }, 429, 'AI_QUOTA_EXHAUSTED'],
+    [{ cartesia: () => new Response('', { status: 401 }), elevenlabs: () => Response.json({ detail: { status: 'too_many_concurrent_requests' } }, { status: 429 }) }, 429, 'AI_BUSY'],
+    [{ cartesia: () => new Response('', { status: 429 }), elevenlabs: () => Response.json({ detail: { status: 'invalid_api_key' } }, { status: 401 }) }, 503, 'AI_NOT_CONFIGURED'],
   ];
   for (const [replies, status, code] of cases) {
     const ledger = recordingLedger();
     const bucket = memoryBucket();
-    const { response, calls } = await withProviders(replies, () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, bucket))));
+    const outlives: Array<Promise<unknown>> = [];
+    const { response, calls } = await withProviders(replies, () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, bucket), { waitUntil: work => { outlives.push(work); } })));
+    // What the runtime is handed ends without an error of its own, with the turn given back.
+    await assert.doesNotReject(Promise.all(outlives));
+    assert.equal(outlives.length, 1);
     assert.equal(response.status, status);
     assert.equal((await response.json<{ code: string }>()).code, code);
-    assert.deepEqual(calls.map(call => call.provider), ['elevenlabs', 'cartesia']);
+    assert.deepEqual(calls.map(call => call.provider), ['cartesia', 'elevenlabs']);
     assert.deepEqual(ledger.calls.map(call => call.action), ['reserve', 'release', 'reserve', 'release']);
+    assert.deepEqual(ledger.turns.map(turn => turn.action), ['reserve', 'release']);
     assert.equal(bucket.objects.size, 0);
   }
 });
@@ -233,7 +293,7 @@ test('without a session, or with an empty or oversized paragraph, nothing is spe
     assert.equal(long.status, 413);
   });
   assert.equal(calls.length, 0);
-  assert.equal(ledger.calls.length, 0);
+  assert.equal(ledger.calls.length + ledger.turns.length, 0);
 });
 
 test('asked for stored audio only, a paragraph nobody has made is refused without spending anything', async () => {
@@ -248,7 +308,7 @@ test('asked for stored audio only, a paragraph nobody has made is refused withou
     assert.equal((await missing.json<{ code: string }>()).code, 'AI_AUDIO_NOT_STORED');
   });
   assert.equal(calls.length, 0);
-  assert.equal(ledger.calls.length, 0);
+  assert.equal(ledger.calls.length + ledger.turns.length, 0);
 });
 
 test('audio Cartesia stored before ElevenLabs was added keeps its name', async () => {
@@ -256,62 +316,89 @@ test('audio Cartesia stored before ElevenLabs was added keeps its name', async (
   assert.equal(`${await audioKey('cartesia', TEXT)}.mp3`, `tts/${old}.mp3`);
 });
 
-test('with ElevenLabs\' day spent, Cartesia\'s answer is the one reported, audio or failure', async () => {
-  const ledger = recordingLedger({ refused: { 'tts:elevenlabs:': 'global' } });
+test('with Cartesia\'s day spent, ElevenLabs\' answer is the one reported, audio or failure', async () => {
+  const ledger = recordingLedger({ refused: { 'tts:cartesia:': 'global' } });
   const read = await withProviders(
-    { cartesia: cartesiaAudio },
+    { elevenlabs: elevenLabsAudio },
     () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, memoryBucket()))),
   );
   assert.equal(read.response.status, 200);
-  assert.deepEqual(new Uint8Array(await read.response.arrayBuffer()), CARTESIA_MP3);
+  assert.deepEqual(new Uint8Array(await read.response.arrayBuffer()), MP3);
 
-  const down = recordingLedger({ refused: { 'tts:elevenlabs:': 'global' } });
+  const down = recordingLedger({ refused: { 'tts:cartesia:': 'global' } });
   const failed = await withProviders(
-    { cartesia: () => new Response('', { status: 500 }) },
+    { elevenlabs: () => new Response('', { status: 500 }) },
     () => signedIn(() => reportApi.fetch(paragraphRequest(), env(down, memoryBucket()))),
   );
   assert.equal(failed.response.status, 502);
   assert.equal((await failed.response.json<{ code: string }>()).code, 'AI_UNAVAILABLE');
-  assert.deepEqual(down.calls.filter(call => call.period.startsWith('tts:cartesia:')).map(call => call.action), ['reserve', 'release']);
+  assert.deepEqual(down.calls.filter(call => call.period.startsWith('tts:elevenlabs:')).map(call => call.action), ['reserve', 'release']);
 });
 
-test('a busy ElevenLabs is reported as busy when Cartesia\'s day is spent, so the viewer retries', async () => {
-  const ledger = recordingLedger({ refused: { 'tts:cartesia:': 'global' } });
+test('a busy Cartesia is reported as busy when ElevenLabs\' day is spent, so the viewer retries', async () => {
+  const ledger = recordingLedger({ refused: { 'tts:elevenlabs:': 'global' } });
   const { response, calls } = await withProviders(
-    { elevenlabs: () => Response.json({ detail: { status: 'too_many_concurrent_requests' } }, { status: 429 }) },
+    { cartesia: () => new Response('', { status: 429 }) },
     () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, memoryBucket()))),
   );
   assert.equal(response.status, 429);
   assert.equal((await response.json<{ code: string }>()).code, 'AI_BUSY');
-  assert.deepEqual(calls.map(call => call.provider), ['elevenlabs']);
+  assert.deepEqual(calls.map(call => call.provider), ['cartesia']);
 });
 
-test('asked for timings, a paragraph returns ElevenLabs\' stored timings with its audio, never for Cartesia\'s, without calling a provider', async () => {
+test('asked for timings, a paragraph returns ElevenLabs\' stored timings only when its audio is the one served, without calling a provider', async () => {
   const ledger = recordingLedger();
   const elevenLabsKey = await audioKey('elevenlabs', TEXT);
-  const bucket = memoryBucket({
-    [`${elevenLabsKey}.mp3`]: MP3,
-    [`${elevenLabsKey}.json`]: new TextEncoder().encode(JSON.stringify(ALIGNMENT)),
-  });
-  const { response, calls } = await withProviders(
+  const cartesiaKey = await audioKey('cartesia', TEXT);
+  const timings = new TextEncoder().encode(JSON.stringify(ALIGNMENT));
+  const timingsOf = (bucket: ReturnType<typeof memoryBucket>) => withProviders(
     {},
     () => signedIn(() => reportApi.fetch(paragraphRequest({ text: TEXT, timings: true }), env(ledger, bucket))),
   );
+
+  const { response, calls } = await timingsOf(memoryBucket({ [`${elevenLabsKey}.mp3`]: MP3, [`${elevenLabsKey}.json`]: timings }));
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'application/json');
   assert.deepEqual(await response.json(), ALIGNMENT);
 
-  // Cartesia's audio, with ElevenLabs timings whose own audio never got stored.
-  const cartesiaOnly = memoryBucket({
-    [`${await audioKey('cartesia', TEXT)}.mp3`]: CARTESIA_MP3,
-    [`${elevenLabsKey}.json`]: new TextEncoder().encode(JSON.stringify(ALIGNMENT)),
-  });
-  const missing = await withProviders(
-    {},
-    () => signedIn(() => reportApi.fetch(paragraphRequest({ text: TEXT, timings: true }), env(ledger, cartesiaOnly))),
+  // Cartesia's audio is served: alone, or ahead of ElevenLabs' audio of the same paragraph.
+  const cartesiaOnly = await timingsOf(memoryBucket({ [`${cartesiaKey}.mp3`]: CARTESIA_MP3, [`${elevenLabsKey}.json`]: timings }));
+  const both = await timingsOf(memoryBucket({ [`${cartesiaKey}.mp3`]: CARTESIA_MP3, [`${elevenLabsKey}.mp3`]: MP3, [`${elevenLabsKey}.json`]: timings }));
+  for (const missing of [cartesiaOnly, both]) {
+    assert.equal(missing.response.status, 404);
+    assert.equal((await missing.response.json<{ code?: string }>()).code, 'AI_TIMINGS_NOT_STORED');
+  }
+  assert.equal(calls.length + cartesiaOnly.calls.length + both.calls.length, 0);
+  assert.equal(ledger.calls.length + ledger.turns.length, 0);
+});
+
+test('two requests for the same new paragraph call the provider once, and both get its audio', async () => {
+  const ledger = recordingLedger();
+  const bucket = memoryBucket();
+  const worker = env(ledger, bucket);
+  const { response: responses, calls } = await withProviders(
+    { cartesia: later(cartesiaAudio) },
+    () => signedIn(() => Promise.all([reportApi.fetch(paragraphRequest(), worker), reportApi.fetch(paragraphRequest(), worker)])),
   );
-  assert.equal(missing.response.status, 404);
-  assert.equal((await missing.response.json<{ code?: string }>()).code, 'AI_TIMINGS_NOT_STORED');
-  assert.equal(calls.length + missing.calls.length, 0);
-  assert.equal(ledger.calls.length, 0);
+
+  for (const response of responses) {
+    assert.equal(response.status, 200);
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
+  }
+  assert.equal(calls.length, 1);
+  assert.deepEqual(ledger.calls.map(call => [call.action, call.amount]), [['reserve', TEXT.length]]);
+});
+
+test('when the request making a paragraph fails, a request waiting for it makes it', async () => {
+  const ledger = recordingLedger();
+  const worker = env(ledger, memoryBucket(), { ELEVENLABS_API_KEY: undefined });
+  const replies = [later(() => new Response('', { status: 500 })), cartesiaAudio];
+  const { response: responses, calls } = await withProviders(
+    { cartesia: () => replies.shift()!() },
+    () => signedIn(() => Promise.all([reportApi.fetch(paragraphRequest(), worker), reportApi.fetch(paragraphRequest(), worker)])),
+  );
+
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 502]);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(ledger.calls.map(call => call.action), ['reserve', 'release', 'reserve']);
 });

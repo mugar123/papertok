@@ -11,6 +11,15 @@ export const MAX_PARAGRAPH_CHARS = 3_000;
 const SYNTHESIS_TIMEOUT_MS = 20_000;
 const REQUEST_DEADLINE_MS = 34_000;
 const DEFAULT_USER_DAILY_CHARS = 44_000;
+/** How often a request waiting for another's audio of the same paragraph looks for it. */
+const MAKING_POLL_MS = 1_000;
+/**
+ * When a paragraph's turn is cleared if the request holding it never gave it
+ * back. The ledger clears a whole object at the earliest time it was given, so
+ * a turn taken within a minute of an earlier failed attempt can be cleared
+ * while it is held, and a second request may then pay for the same paragraph.
+ */
+const MAKING_HOLD_MS = 60_000;
 
 type Synthesis = { audio: ArrayBuffer; alignment: Record<string, unknown> | null };
 
@@ -110,7 +119,7 @@ const cartesia: Provider = {
 };
 
 /** In the order they are tried. */
-const PROVIDERS = [elevenLabs, cartesia];
+const PROVIDERS = [cartesia, elevenLabs];
 const VOICES = { elevenlabs: elevenLabs.voice, cartesia: cartesia.voice };
 
 /** Where a provider's audio of this text is stored, without the extension. */
@@ -121,17 +130,20 @@ export function audioKey(provider: Provider['name'], text: string) {
 /**
  * One paragraph of a paper's text as MP3. The text is the same for every
  * reader, so the audio is stored by a hash of the text and the voice that read
- * it, and synthesized at most once; ElevenLabs' audio is stored with the time
- * it speaks each character. ElevenLabs reads first, and Cartesia reads when
- * ElevenLabs cannot: its day's characters spent, out of credits, busy, down or
- * not configured. Each provider has its own day of characters and its own
- * allowance per reader; a reader past their ElevenLabs allowance gets no
- * Cartesia. `storedOnly` asks for stored audio and nothing else, so a reader
- * whose allowance or the providers' characters ran out still gets every
- * paragraph already made. `timings` asks for the stored ElevenLabs timings of
- * the paragraph instead, as JSON, and never synthesizes.
+ * it, and synthesized at most once: a request that finds another making the
+ * same paragraph waits for its audio instead of paying for a second copy, and
+ * the request making it finishes even if its reader has left (`keepAlive`).
+ * ElevenLabs' audio is stored with the time it speaks each character. Cartesia
+ * reads first, and ElevenLabs reads when Cartesia cannot: its day's characters
+ * spent, out of credits, busy, down or not configured. Each provider has its
+ * own day of characters and its own allowance per reader; a reader past their
+ * Cartesia allowance gets no ElevenLabs. `storedOnly` asks for stored audio
+ * and nothing else, so a reader whose allowance or the providers' characters
+ * ran out still gets every paragraph already made. `timings` asks for the
+ * stored timings of the audio the paragraph is served with instead, as JSON,
+ * and never synthesizes.
  */
-export async function handleReadAloud(request: Request, env: WorkerEnv) {
+export async function handleReadAloud(request: Request, env: WorkerEnv, keepAlive?: (work: Promise<unknown>) => void) {
   if (Number(request.headers.get('content-length') || 0) > MAX_REQUEST_BYTES) {
     throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   }
@@ -147,19 +159,51 @@ export async function handleReadAloud(request: Request, env: WorkerEnv) {
   if (!store) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
 
   const keys = await Promise.all(PROVIDERS.map(provider => audioKey(provider.name, text)));
-  // Only ElevenLabs stores timings, and its audio is the one served whenever it exists;
-  // timings whose audio failed to store would belong to another voice's clip.
+  // The audio served is the first stored in the providers' order, and timings
+  // belong to that clip alone: another voice speaks the same words at other times.
   if (payload?.timings === true) {
-    const [audio, timings] = await Promise.all([store.head(`${keys[0]}.mp3`), store.get(`${keys[0]}.json`)]);
-    if (!audio || !timings) throw new AIExplanationError('AI_TIMINGS_NOT_STORED', 404);
+    const served = (await Promise.all(keys.map(key => store.head(`${key}.mp3`)))).findIndex(Boolean);
+    const timings = served < 0 ? null : await store.get(`${keys[served]}.json`);
+    if (!timings) throw new AIExplanationError('AI_TIMINGS_NOT_STORED', 404);
     return { body: await timings.arrayBuffer(), type: 'application/json' };
   }
-  const stored = (await Promise.all(keys.map(key => store.get(`${key}.mp3`)))).find(Boolean);
-  if (stored) return { body: await stored.arrayBuffer(), type: 'audio/mpeg' };
+  const storedAudio = async () => {
+    const stored = (await Promise.all(keys.map(key => store.get(`${key}.mp3`)))).find(Boolean);
+    return stored ? { body: await stored.arrayBuffer(), type: 'audio/mpeg' } : null;
+  };
+  const stored = await storedAudio();
+  if (stored) return stored;
   if (payload?.storedOnly === true) throw new AIExplanationError('AI_AUDIO_NOT_STORED', 404);
 
-  const day = new Date().toISOString().slice(0, 10);
   const deadline = Date.now() + REQUEST_DEADLINE_MS;
+  // One request at a time makes a paragraph. The ledger object named after the
+  // paragraph holds a single use, taken here and given back when this request ends.
+  const making = { periodKey: `tts:making:${keys[0].slice('tts/'.length)}`, subject: 'tts:making', subjectLimit: 1, globalLimit: 1 };
+  for (;;) {
+    const turn = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, { ...making, expiresAt: Date.now() + MAKING_HOLD_MS });
+    if (turn.accepted) break;
+    if (turn.code) throw new AIExplanationError(turn.code === 'QUOTA_LEDGER_NOT_CONFIGURED' ? 'AI_NOT_CONFIGURED' : 'AI_UNAVAILABLE', 503);
+    // A request that waited takes the turn only with time left for a provider's call; the viewer asks again.
+    if (deadline - Date.now() < SYNTHESIS_TIMEOUT_MS + MAKING_POLL_MS) throw new AIExplanationError('AI_BUSY', 429);
+    await new Promise(resolve => { setTimeout(resolve, MAKING_POLL_MS); });
+    const made = await storedAudio();
+    if (made) return made;
+  }
+  const work = (async () => {
+    try {
+      // Stored between this request's look at the bucket and its turn.
+      return await storedAudio() ?? await synthesize(env, store, account.uid, text, keys, deadline);
+    } finally {
+      await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, making).catch(() => undefined);
+    }
+  })();
+  keepAlive?.(work.catch(() => undefined));
+  return work;
+}
+
+/** Asks each provider in order, within its day and the reader's allowance, and stores the first audio. */
+async function synthesize(env: WorkerEnv, store: NonNullable<WorkerEnv['TTS_AUDIO']>, uid: string, text: string, keys: string[], deadline: number) {
+  const day = new Date().toISOString().slice(0, 10);
   let refusal = new AIExplanationError('AI_NOT_CONFIGURED', 503);
   for (const [index, provider] of PROVIDERS.entries()) {
     const apiKey = provider.apiKey(env);
@@ -167,7 +211,7 @@ export async function handleReadAloud(request: Request, env: WorkerEnv) {
     if (!apiKey || left <= 0) continue;
     const ledgerRequest = {
       periodKey: `tts:${provider.name}:${day}`,
-      subject: `tts:${account.uid}`,
+      subject: `tts:${uid}`,
       subjectLimit: dailyLimit(env.TTS_DAILY_USER_CHARS, DEFAULT_USER_DAILY_CHARS),
       globalLimit: provider.dailyLimit(env),
       amount: text.length,

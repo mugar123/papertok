@@ -162,7 +162,7 @@ test('the in-app notice announces the version this page is dated', () => {
 
 test('the current notice announces read aloud, the 23 November changes and the 20 November Anthropic point', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /paragraph is sent to ElevenLabs, or to Cartesia/i);
+  assert.match(notice, /paragraph is sent to Cartesia, or to ElevenLabs/i);
   assert.match(notice, /OpenAlex lookups now count per IP address each day.*scheduled for deletion within three days/i);
   assert.match(notice, /Cloudflare's 30-day recovery history may keep any deleted request counter/i);
   assert.match(notice, /Anthropic may run rewrites\/explanations outside the EU/i);

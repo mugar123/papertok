@@ -141,8 +141,8 @@ export const PRIVACY_POLICY_VERSION = '2026-11-23.11';
  * dialog may open, not who is owed it: who is still decided by this instant.
  *
  * Version 2026-11-23.11 adds Voice in the reader (ENG-119): the paragraph text
- * sent to ElevenLabs, which keeps it in its request history, or to Cartesia
- * when ElevenLabs cannot answer; the audio PaperTok stores in R2 and plays to
+ * sent to Cartesia, or to ElevenLabs, which keeps it in its request history,
+ * when Cartesia cannot answer; the audio PaperTok stores in R2 and plays to
  * every listener of the same paragraph; and the usage event that records only
  * that a paper was read aloud. Asier authorized both providers and what they
  * receive on 2026-11-17, first as version 2026-11-17. It ships with the
@@ -177,7 +177,7 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs, or to Cartesia when ElevenLabs cannot answer, never your identity or your email; PaperTok stores the audio for anyone who listens to the same paragraph.",
+  "When you listen to a paper in the reader, the text of each paragraph is sent to Cartesia, or to ElevenLabs when Cartesia cannot answer, never your identity or your email; PaperTok stores the audio for anyone who listens to the same paragraph.",
   "OpenAlex lookups now count per IP address each day, under a protected day identifier scheduled for deletion within three days; Cloudflare's 30-day recovery history may keep any deleted request counter.",
   'Anthropic may run rewrites/explanations outside the EU.',
 ];
@@ -196,8 +196,8 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   // per-address count, Cloudflare's recovery history, and the Anthropic point.
   lead: 'When you listen to a paper',
   clauses: [
-    ['When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs', /When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs/],
-    ['or to Cartesia when ElevenLabs cannot answer', /When ElevenLabs cannot answer, the text goes to Cartesia/],
+    ['When you listen to a paper in the reader, the text of each paragraph is sent to Cartesia', /When you listen to a paper in the reader, the text of each paragraph is sent to Cartesia/],
+    ['or to ElevenLabs when Cartesia cannot answer', /When Cartesia cannot answer, the text goes instead to ElevenLabs/],
     ['never your identity or your email', /Both receive the text, never your identity or your email\./],
     ['PaperTok stores the audio for anyone who listens to the same paragraph', /PaperTok's server stores the audio[^.]*plays it to anyone who listens to the same paragraph/],
     ['count per IP address each day', /so that one address cannot use up the day's shared OpenAlex allowance: each address has 1,000 billed units and 3,000 lookups by identifier per UTC day/],

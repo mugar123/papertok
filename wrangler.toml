@@ -85,7 +85,7 @@ AI_DAILY_GLOBAL_LIMIT = "1000"
 # Paper rewrites stream from this model. Falls back to AI_MODEL when unset.
 AI_REWRITE_MODEL = "gemini-3.5-flash"
 # Characters /tts/paragraph may send to each voice provider per UTC day
-# (worker/read-aloud-tts.ts): ElevenLabs first, Cartesia when ElevenLabs
+# (worker/read-aloud-tts.ts): Cartesia first, ElevenLabs when Cartesia
 # cannot. Both bill by the character, and audio already in TTS_AUDIO costs
 # nothing. ElevenLabs' day is a 31st of a month of its Startup Grant
 # (33,000,000 characters over 12 months); Cartesia's is a 31st of 8,000,000
