@@ -79,6 +79,90 @@ test('an OAI page is not requested while the arXiv beat cannot answer, and is wa
   assert.equal(fetchMock.mock.callCount(), 0);
 });
 
+const reloadDate = Date.UTC(2026, 10, 23, 0, 0, 3);
+const icmlMark = { id: 'S4306419644', label: 'ICML', year: 2025, evidence: 'arxiv-comment' as const };
+const neuripsMark = { id: 'S4363606243', label: 'NeurIPS', evidence: 'arxiv-comment' as const };
+const acceptedAtIcml = 'Accepted at ICML 2025';
+
+function conferenceReload(t: import('node:test').TestContext, works: {
+  mark?: Paper['acceptedConference']; stamp?: number; comments: (string | null)[];
+}[]) {
+  t.mock.timers.enable({ apis: ['Date'], now: reloadDate });
+  const { db, binding } = testD1();
+  const records: string[] = [];
+  for (const [index, work] of works.entries()) {
+    const id = index + 1;
+    const paper = { title: `Stored title ${id}`, citationCount: 17, acceptedConference: work.mark, corpusUpdatedAt: work.stamp };
+    db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)').run(id, JSON.stringify(paper), '2026-10-01', '2027-01-01');
+    for (const comment of work.comments) {
+      const arxivId = `2601.${String(records.length + 1).padStart(5, '0')}`;
+      db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)').run('arxiv:' + arxivId, id);
+      records.push(`<record><metadata><arXivRaw><id>${arxivId}</id><title>Revised title</title>
+        <abstract>Revised text</abstract><categories>cs.LG</categories><version><date>2026-01-02</date></version>
+        ${comment === null ? '' : `<comments>${comment}</comments>`}</arXivRaw></metadata></record>`);
+    }
+  }
+  t.mock.method(globalThis, 'fetch', async () => new Response(`<OAI-PMH><ListRecords>${records.join('')}</ListRecords></OAI-PMH>`));
+  const env = { PAPER_STORE: binding } as Parameters<typeof harvestArxivPage>[0];
+  const run = () => harvestArxivPage(env, { set: 'cs', from: '2026-10-25', conferenceBackfillUntil: '2026-11-23' });
+  const rows = () => db.prepare('SELECT * FROM works ORDER BY id').all().map(row => ({
+    ...row, paper: JSON.parse(String(row.paper)) as Paper,
+  }));
+  return { db, binding, run, rows };
+}
+
+test('the reload re-derives only the mark and stamp once per stored work', async t => {
+  const openreview = { ...icmlMark, evidence: 'openreview' as const };
+  const { db, run, rows } = conferenceReload(t, [
+    { comments: [acceptedAtIcml] },
+    { mark: icmlMark, stamp: reloadDate + 10, comments: ['Accepted at NeurIPS'] },
+    { mark: icmlMark, stamp: reloadDate, comments: [null] },
+    { mark: openreview, stamp: 123, comments: ['Accepted at NeurIPS'] },
+    { mark: icmlMark, stamp: 123, comments: [acceptedAtIcml, 'Accepted at NeurIPS'] },
+    { comments: ['Accepted at NeurIPS', acceptedAtIcml] },
+    { mark: icmlMark, stamp: 123, comments: [acceptedAtIcml, null] },
+    { comments: [acceptedAtIcml, acceptedAtIcml] },
+    { mark: { evidence: 'arxiv-comment', year: 2025, label: 'ICML', id: icmlMark.id }, stamp: 123, comments: [acceptedAtIcml] },
+  ]);
+  const expected = rows();
+  for (const index of [0, 7]) Object.assign(expected[index].paper, { acceptedConference: icmlMark, corpusUpdatedAt: reloadDate });
+  Object.assign(expected[1].paper, { acceptedConference: neuripsMark, corpusUpdatedAt: reloadDate + 11 });
+  for (const index of [2, 4, 6]) {
+    delete expected[index].paper.acceptedConference;
+    expected[index].paper.corpusUpdatedAt = index === 2 ? reloadDate + 1 : reloadDate;
+  }
+  const page = { listed: 13, resumptionToken: '', retryAfterSeconds: 0 };
+  assert.deepEqual(await run(), { ...page, stored: 6, set: 2, changed: 1, cleared: 3 });
+  assert.deepEqual(rows(), expected);
+  const changes = () => db.prepare('SELECT total_changes() AS n').get()?.n;
+  const after = changes();
+  assert.deepEqual(await run(), { ...page, stored: 0, set: 0, changed: 0, cleared: 0 });
+  assert.equal(changes(), after);
+});
+
+test('a listing between the reload read and write keeps its mark and stamp', async t => {
+  const { db, binding, run, rows } = conferenceReload(t, [
+    { mark: neuripsMark, stamp: 101, comments: [acceptedAtIcml] },
+    { comments: [acceptedAtIcml] },
+  ]);
+  const openreview = { ...neuripsMark, evidence: 'openreview' as const };
+  const expected = rows();
+  expected[0].paper.corpusUpdatedAt = 102;
+  expected[1].paper.acceptedConference = openreview;
+  const prepare = binding.prepare.bind(binding);
+  t.mock.method(binding, 'prepare', (sql: string) => {
+    // SQLite reads synchronously. Queue a confirmation and a separate mark change
+    // after that read, before the reload resumes from its first await.
+    queueMicrotask(() => {
+      db.exec("UPDATE works SET paper = json_set(paper, '$.corpusUpdatedAt', 102) WHERE id = 1");
+      db.prepare("UPDATE works SET paper = json_set(paper, '$.acceptedConference', json(?)) WHERE id = 2").run(JSON.stringify(openreview));
+    });
+    return prepare(sql);
+  }, { times: 1 });
+  assert.deepEqual(await run(), { listed: 2, stored: 0, set: 0, changed: 0, cleared: 0, resumptionToken: '', retryAfterSeconds: 0 });
+  assert.deepEqual(rows(), expected);
+});
+
 test('an OAI page yields its live records with v1 as the publication date', () => {
   const { papers, resumptionToken } = parseOaiPage(OAI_PAGE);
   assert.equal(resumptionToken, 'verb%3DListRecords%26skip%3D1300');
