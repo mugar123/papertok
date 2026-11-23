@@ -756,6 +756,7 @@ this setting; see [Production Worker hostname](#production-worker-hostname).
 Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/zotero/connect`, `/zotero/complete`, `/zotero/status`, `/zotero/send`, `/zotero/disconnect`, `/orcid/connect`, `/orcid/complete`, `/orcid/disconnect`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/resources/full-text`, `/ai/rewrite`, `/ai/annotate`, `/ai/translate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/mcp` (see [MCP server](#mcp-server)), `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. Hugging Face and OpenReview's search are keyless discovery sources; OpenReview's lookup by id signs in (below). NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
 
 `/sources/openreview` has two forms, both answering `{ notes, count }` and cached 30 minutes.
+Cache misses share a ceiling of 60 requests per UTC minute. Interactive callers can use up to 12 misses per address per UTC minute across both forms. The in-process paper harvest uses the shared ceiling without an address allowance. Conference list harvesting uses its own request budget.
 `?q=` searches OpenReview's forum notes and drops imported records. `?id=` answers the one
 submission a forum id names (`GET /notes?id=` upstream), for the app's paper page and for an
 OpenReview link pasted into search: an empty list when OpenReview has no such note, when the id
@@ -776,14 +777,14 @@ a kept token is answered 401. One deadline covers the sign-in and the note toget
 two secrets `?id=` answers 503 `OPENREVIEW_NOT_CONFIGURED` and asks nobody. A sign-in OpenReview
 refuses (a wrong password, an account that asks for a second factor, any non-2xx, a body that is
 not JSON) is a plain 502 with no `upstreamStatus`, which the route reports as an error; a share
-page only logs it. It is not tried again for 60 seconds, or for as long as its `retry-after`
-asks when that is longer, so a failing account is not sent to OpenReview once per request.
+page only logs it. A refusal postpones the next attempt for at least 60 seconds. A longer
+`Retry-After` can extend that pause to five minutes.
 
 What the account is shown is cached and served to every reader, so the account must be one
 made for this Worker, with no role anywhere on OpenReview: an author, a reviewer or a chair is
 shown what is hidden from everyone else, such as the authors of a submission under double-blind
-review. As a second guard the Worker returns only a note whose `readers` include `everyone`,
-without the content fields whose own `readers` do not. Only `api2.openreview.net` is asked:
+review. As a second guard the Worker drops notes and fields whose supplied `readers` do not
+include `everyone`. Conference rechecks require an explicit public readers list. Only `api2.openreview.net` is asked:
 a forum from a venue still on OpenReview's older API (`api.openreview.net`) is not found. None of
 the signed-in path was observed live before the secrets were set.
 
@@ -2031,17 +2032,21 @@ address. Test with `node --test worker/mcp-server.test.ts`.
 
 `GET /conferences/status` returns the stored list count, the latest search count, and update timestamps for the five OpenReview editions. The search count is the largest count from the last pair of queries and can differ from the number the edition accepted. `GET /conferences/:editionId/papers?after=<cursor>` returns up to 15 public paper records in oral, spotlight, poster and unspecified order, with the next cursor when more records are available. The public routes use allowed-origin CORS and the existing caller quota secret. Separate per-address limits are 30 status and 60 paper requests per minute.
 
-The nightly conference workflow uses anonymous OpenReview search and signed-in forum lookups, independently of corpus harvesting. Both share atomic quotas of 12 requests per minute and 150 per UTC day, including sign-ins. A D1 lease serializes overlapping work. A failed search defers its edition and lets other editions proceed. A 429 pauses conference requests and honors Retry-After for up to seven days. Search offsets are capped at 10,000.
+The nightly conference workflow uses anonymous OpenReview search and signed-in forum lookups, independently of corpus harvesting. Both share atomic quotas of 12 requests per minute and 150 per UTC day, including sign-ins and control lookups. A D1 lease serializes overlapping work. A failed search defers its edition and lets other editions proceed. A 429 ends the current run, with a Retry-After pause of at most five minutes. Search offsets are capped at 10,000.
 
-Each search page needs a count. Both search passes must reach their reported counts before publication. A decrease in the reported count within a pass is a search failure. The 2% drop check compares the distinct papers ready to publish with the current visible count and the largest number of eligible results in either pass. Results that cannot be published and forums already blocked are excluded from the eligible count. Forums missing from the latest completed search move to the front of the recheck queue, even when that search was too small to publish. A complete lookup by forum ID can block a paper on an explicit venue change, an effective OpenReview deletion date, or a valid, nonempty readers list without `everyone`. Empty, partial or failed lookups leave papers listed. Publication excludes blocked forums even when a search still marks them accepted.
+Each search page needs a count. Both search passes must reach their reported counts before publication. A decrease in the reported count within a pass is a search failure. The 2% drop check compares the distinct papers ready to publish with the current visible count and the largest number of eligible results in either pass. Results that cannot be published and forums already blocked are excluded from the eligible count. Forums missing from the latest completed search move to the front of the recheck queue, even when that search was too small to publish. A complete lookup by forum ID can block a paper on an explicit venue change, an effective OpenReview deletion date, or a valid, nonempty readers list without `everyone`. For a forum missing from search, a 404 or a complete empty lookup counts as one absence per UTC day only if the same workflow run resolves a known public forum. After three such days the paper is hidden without a block. A later complete harvest can restore it when it returns to the public list. Partial or failed lookups do not count as evidence of absence. Publication excludes blocked forums even when a search still marks them accepted.
 
 ### Manually block a forum
 
-With production write approval, replace both placeholders with the verified edition and OpenReview forum IDs. Use only letters, digits, hyphens and underscores. The first command blocks an existing paper in that edition, hides it, updates the public count and bumps the cache revision. The second command confirms the block only if the paper exists and is hidden. If it returns no rows, verify both IDs before trying again.
+With production write approval, replace both placeholders with the verified edition and OpenReview forum IDs and run this block in Bash. The first command blocks an existing paper in that edition, hides it, updates the public count and bumps the cache revision. The second command confirms the block only if the paper is hidden and the edition's count matches its visible rows. If it returns no rows, verify both IDs before trying again.
 
-```sh
+```bash
 edition_id='REPLACE_WITH_EDITION_ID'
 forum_id='REPLACE_WITH_FORUM_ID'
+if [[ ! $edition_id =~ ^[a-z0-9]+(-[a-z0-9]+)*$ || ! $forum_id =~ ^[A-Za-z0-9_-]{1,64}$ || $forum_id == REPLACE_WITH_FORUM_ID ]]; then
+  printf '%s\n' 'Set a valid edition and OpenReview forum ID.' >&2
+  exit 1
+fi
 npx wrangler d1 execute PAPER_STORE --remote --command "
 INSERT INTO conference_forum_block (edition_id, forum_id, venue_id, blocked_at)
 SELECT edition_id, forum_id, 'manual', CAST(strftime('%s', 'now') AS INTEGER) * 1000
@@ -2058,12 +2063,28 @@ WHERE edition_id = '$edition_id' AND EXISTS (
 );"
 
 npx wrangler d1 execute PAPER_STORE --remote --command "
-SELECT b.edition_id, b.forum_id, b.venue_id FROM conference_forum_block b
+SELECT b.edition_id, b.forum_id, b.venue_id, p.visible, e.listed_count FROM conference_forum_block b
 JOIN conference_papers p ON p.edition_id = b.edition_id AND p.forum_id = b.forum_id
-WHERE b.edition_id = '$edition_id' AND b.forum_id = '$forum_id' AND p.visible = 0;"
+JOIN conference_editions e ON e.edition_id = b.edition_id
+WHERE b.edition_id = '$edition_id' AND b.forum_id = '$forum_id' AND p.visible = 0
+  AND e.listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = b.edition_id AND visible = 1);"
 ```
 
-To restore a corrected forum, confirm the exact accepted venue by ID and remove its edition and forum pair from `conference_forum_block`. A subsequent complete harvest can publish it.
+In PowerShell, assign `$edition_id` and `$forum_id`, validate them with `-cmatch` and the same regular expressions, and pass each SQL body using a double-quoted here-string (`@"` to `"@`). Keep the SQL single quotes around the variables. The closing `"@` goes on its own line at column one.
+
+### Erase or restore a blocked forum
+
+For an erasure request, block and confirm the paper first. With the same validated IDs, delete the published and staged copies. Keep the block so later harvests skip the forum.
+
+```bash
+npx wrangler d1 execute PAPER_STORE --remote --command "
+DELETE FROM conference_papers WHERE edition_id = '$edition_id' AND forum_id = '$forum_id' AND visible = 0
+  AND EXISTS (SELECT 1 FROM conference_forum_block WHERE edition_id = '$edition_id' AND forum_id = '$forum_id');
+DELETE FROM conference_paper_stage WHERE edition_id = '$edition_id' AND forum_id = '$forum_id'
+  AND EXISTS (SELECT 1 FROM conference_forum_block WHERE edition_id = '$edition_id' AND forum_id = '$forum_id');"
+```
+
+To restore a corrected forum, confirm the exact accepted venue by ID, delete its pair from `conference_forum_block`, and set `conference_editions.next_check_at = 0` for that edition. The next workflow run can search it immediately and a complete pass can publish it again.
 
 ### Release conference paper lists
 

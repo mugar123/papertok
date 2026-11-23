@@ -18,7 +18,21 @@ test('the public reader validates its request before requiring storage or quota'
     assert.equal(response.status, status);
     assert.deepEqual(await response.json(), { code });
     assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(response.headers.get('allow'), status === 405 ? 'GET' : null);
+    assert.equal(response.headers.get('retry-after'), null);
   }
+});
+
+test('an enabled conference endpoint with incomplete quota configuration sends a 503 without Retry-After', async context => {
+  const { binding, db } = testD1();
+  context.after(() => db.close());
+  const response = await handleConferenceRequest(new Request(origin + '/conferences/status'), {
+    PAPER_STORE: binding, CONFERENCE_PAPERS_ENABLED: '1',
+  }, '', {});
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('retry-after'), null);
 });
 
 test('a signed-out reader can page through only the requested edition', async context => {

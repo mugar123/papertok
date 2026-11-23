@@ -30,6 +30,9 @@ CREATE TABLE conference_papers (
   seen_generation INTEGER NOT NULL,
   rechecked_at INTEGER NOT NULL DEFAULT 0,
   missing_from_search INTEGER NOT NULL DEFAULT 0,
+  absent_days INTEGER NOT NULL DEFAULT 0,
+  last_absent_day INTEGER,
+  last_public_at INTEGER NOT NULL DEFAULT 0,
   visible INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (edition_id, forum_id)
 );

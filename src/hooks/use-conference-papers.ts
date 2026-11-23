@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Paper } from '../models/paper.ts';
+import { conferenceSources } from '../data/conference-paper-sources.ts';
 import { trustedWorkerUrl } from '../services/worker-api-client.ts';
 import { withEnforcedDeadline } from '../utils/request-deadline.ts';
 
@@ -18,7 +19,7 @@ async function getConferenceData<T>(path: string, signal: AbortSignal) {
 export function useConferenceStatus(id: string | undefined) {
   const [status, setStatus] = useState<EditionStatus | null>(null);
   useEffect(() => {
-    if (!id) return;
+    if (!id || !conferenceSources.has(id)) return;
     const controller = new AbortController();
     void getConferenceData<{ editions: EditionStatus[] }>('/conferences/status', controller.signal)
       .then(result => {

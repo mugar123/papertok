@@ -29,7 +29,7 @@ import { handleHarvestArxiv, nextOwnSeatSeconds, takeArxivSeat } from './arxiv-a
 import { handleAccountOpenAlex, handleHarvestOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provider-runtime.ts';
-import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
+import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReviewHarvest, handleOsti, handlePubmed } from './source-api.ts';
 import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, LATE_ARRIVAL_DAYS, NOTABLE_LANE_PREFIX, NOTABLE_YEARS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf, writeLaneRanks } from './paper-store.ts';
 import { KEYWORD_LANE_PREFIX, isKeywordLane, keywordFilter, keywordSearchText } from './keyword-lanes.ts';
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
@@ -593,7 +593,7 @@ const DOMAIN_ROUTES: Record<string, RouteHandler> = {
   osti: handleOsti,
   nasa: handleNasa,
   physics: handlePhysicsLiterature,
-  openreview: handleOpenReview,
+  openreview: handleOpenReviewHarvest,
   huggingface: handleHuggingFacePapers,
 };
 

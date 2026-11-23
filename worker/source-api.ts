@@ -12,7 +12,7 @@ interface HuggingFaceResources extends Record<string, unknown> {
 
 import { normalizeOpenReviewId } from '../src/utils/public-navigation.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
-import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount, openReviewSearchUrl } from './open-review-api.ts';
+import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount, openReviewSearchUrl, readOpenReviewJson } from './open-review-api.ts';
 import {
   cacheResponse,
   DEGRADED_CACHE_SECONDS,
@@ -269,7 +269,16 @@ function openReviewNoteDate(note: OpenReviewNote) {
   return Number(note?.pdate || note?.cdate || note?.tcdate) || 0;
 }
 
-export async function handleOpenReview(request: Request, env: WorkerEnv) {
+export function handleOpenReview(request: Request, env: WorkerEnv) {
+  return serveOpenReview(request, env, { namespace: 'openreview', limit: 12 });
+}
+
+// The in-process harvest shares the upstream ceiling but has no caller address.
+export function handleOpenReviewHarvest(request: Request, env: WorkerEnv) {
+  return serveOpenReview(request, env);
+}
+
+async function serveOpenReview(request: Request, env: WorkerEnv, callerMinute?: { namespace: string; limit: number }) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   // One paper by its forum id, for the paper page and a pasted OpenReview link.
@@ -288,7 +297,7 @@ export async function handleOpenReview(request: Request, env: WorkerEnv) {
     return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.openreview, async () => {
       const note = await fetchOpenReviewNote(env, id);
       return { notes: note ? [compactOpenReviewNote(note)] : [], count: note ? 1 : 0 };
-    }, { canonicalParams: { id } });
+    }, { canonicalParams: { id }, callerMinute });
   }
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
   if (!query) return json({ error: 'Missing OpenReview query' }, 400, corsHeaders(context.origin, env));
@@ -300,8 +309,16 @@ export async function handleOpenReview(request: Request, env: WorkerEnv) {
     // 2026-09-02, `cdate:asc`, `cdate:desc`, `tmdate:*` and no sort at all
     // returned the same sequence for three different queries. Recency is
     // therefore ours to produce, over the relevance pool `limit * 3` fetches.
-    const payload = await fetchJsonUpstream<{ notes?: OpenReviewNote[]; count?: unknown }>(url);
-    const notes = (payload?.notes || []).filter(isOpenReviewSubmission);
+    const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)' } }, SOURCE_UPSTREAM_TIMEOUT_MS);
+    if (!response.ok) {
+      const error: UpstreamError = new Error(`OpenReview search answered ${response.status}`);
+      error.status = response.status;
+      error.retryAfter = response.headers.get('retry-after') || '';
+      throw error;
+    }
+    const payload = await readOpenReviewJson<{ notes?: OpenReviewNote[]; count?: unknown }>(response, 4 * 1024 * 1024);
+    if (!Array.isArray(payload?.notes)) throw new Error('OpenReview search returned invalid notes');
+    const notes = payload.notes.filter(isOpenReviewSubmission);
     if (context.sort === 'recent') {
       notes.sort((a, b) => openReviewNoteDate(b) - openReviewNoteDate(a));
     }
@@ -309,7 +326,7 @@ export async function handleOpenReview(request: Request, env: WorkerEnv) {
       notes: notes.slice(0, context.limit).map(compactOpenReviewNote),
       count: Number(payload?.count) || 0,
     };
-  }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
+  }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }), callerMinute });
 }
 
 export async function handleHuggingFacePapers(request: Request, env: WorkerEnv) {

@@ -175,16 +175,16 @@ test('a refused sign-in fails without a relayed status and is not tried again fo
   );
 });
 
-test('a sign-in told to wait longer than a minute waits that long, and a page instead of JSON is a refusal too', async t => {
+test('a sign-in refusal waits at most five minutes, including an invalid JSON response', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-11T12:00:00Z') });
   const limited = account();
   await withOpenReview(
     () => new Response('{}', { status: 429, headers: { 'retry-after': '600' } }),
     async calls => {
       await assert.rejects(fetchOpenReviewNote(limited, '5pShDP8LSm'), { code: 'OPENREVIEW_SIGN_IN_FAILED' });
-      t.mock.timers.tick(599_000);
+      t.mock.timers.tick(299_000);
       await assert.rejects(fetchOpenReviewNote(limited, '5pShDP8LSm'), { code: 'OPENREVIEW_SIGN_IN_FAILED' });
-      assert.equal(calls.length, 1, 'not asked again before the ten minutes are over');
+      assert.equal(calls.length, 1, 'not asked again before the five minutes are over');
       t.mock.timers.tick(2_000);
       await assert.rejects(fetchOpenReviewNote(limited, '5pShDP8LSm'), { code: 'OPENREVIEW_SIGN_IN_FAILED' });
       assert.equal(calls.length, 2);
@@ -199,6 +199,14 @@ test('a sign-in told to wait longer than a minute waits that long, and a page in
       await assert.rejects(fetchOpenReviewNote(checked, '5pShDP8LSm'), { code: 'OPENREVIEW_SIGN_IN_FAILED' });
       assert.equal(calls.length, 1, 'remembered like any refusal');
     },
+  );
+});
+
+test('an oversized exact-note response is rejected before decoding', async () => {
+  const env = account();
+  await withOpenReview(
+    call => signedIn()(call) ?? new Response('x'.repeat(1024 * 1024 + 1)),
+    async () => { await assert.rejects(fetchOpenReviewNote(env, '5pShDP8LSm'), /exceeds its size limit/); },
   );
 });
 
