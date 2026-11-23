@@ -69,6 +69,8 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
   const globals = globalThis as TestGlobals;
   const caches = globals.caches;
   const arxiv = { beforeRead: async () => {} };
+  const arxivRequests: string[] = [];
+  const source = { url: 'https://arxiv.org/html/1706.03762', renderer: 'arxiv' };
   globals.caches = {
     default: {
       match: async key => {
@@ -78,6 +80,15 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
         if (url.pathname === '/cache/arxiv' && url.searchParams.get('id_list') === INPUT.arxivId) {
           await arxiv.beforeRead();
           return new Response(ARXIV_ATOM, { headers: { 'content-type': 'application/atom+xml' } });
+        }
+        if (url.pathname === '/cache/resources/full-text') {
+          arxivRequests.push(url.search);
+          return Response.json({
+            source: source.renderer, format: 'latexml', url: source.url,
+            document: '<html><body><article class="ltx_document"><div class="ltx_abstract"><p>We study sequence models.</p></div>'
+              + '<section id="s1"><h2 class="ltx_title">Results</h2><p class="ltx_p">Accuracy increased &amp; held.</p></section>'
+              + '</article></body></html>',
+          });
         }
         return null;
       },
@@ -104,7 +115,7 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
     calls.push(JSON.parse(String(init.body)));
     return provider.reply(init.signal);
   });
-  return { env, calls, quotas, days, provider, providerUrls, identity, arxiv, ledger };
+  return { env, calls, quotas, days, provider, providerUrls, identity, arxiv, ledger, source, arxivRequests };
 }
 
 function translationTimers(t: TestContext) {
@@ -391,4 +402,126 @@ test('a refusal, truncated response or malformed answer cannot become a translat
     assert.equal(refund.globalAmount, 0);
     assert.equal(refund.partKey, undefined);
   }
+});
+
+const FULL_INPUT = {
+  query: 'arxiv_id=1706.03762',
+  language: 'es',
+  fingerprint: createHash('sha256').update(JSON.stringify([
+    ['We study sequence models.'], ['Results', 'Accuracy increased & held.'],
+  ])).digest('hex'),
+};
+
+function enableFullPaper(env: WorkerEnv) {
+  env.FULL_PAPER_TRANSLATION_ENABLED = 'true';
+}
+
+function fullRequest(body: unknown = FULL_INPUT, token = TOKEN) {
+  return new Request('https://api.papertok.app/ai/translate-paper', {
+    method: 'POST',
+    headers: { origin: 'https://papertok.app', authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+}
+
+function translatedSegments(segments: string[]) {
+  return Response.json({
+    stop_reason: 'end_turn',
+    content: [{ type: 'text', text: JSON.stringify({ segments }) }],
+  });
+}
+
+test('approved full text spends one atomic slot before sending any approved chunk', async t => {
+  const { env, calls, quotas, provider, days, arxivRequests } = setUp(t);
+  enableFullPaper(env);
+  provider.reply = () => {
+    assert.equal(quotas.length, 1);
+    assert.deepEqual([quotas[0].subjectLimit, quotas[0].globalLimit], [5, 25]);
+    return translatedSegments(calls.length === 1 ? ['Estudiamos modelos de secuencias.'] : ['Resultados', 'La precisión aumentó.']);
+  };
+  const response = await worker.fetch(fullRequest(), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual((await response.text()).trim().split('\n').map(line => JSON.parse(line)), [
+    { type: 'chunk', index: 0, segments: ['Estudiamos modelos de secuencias.'] },
+    { type: 'chunk', index: 1, segments: ['Resultados', 'La precisión aumentó.'] },
+    { type: 'done', count: 2 },
+  ]);
+  assert.match(days[0], /^translate-paper:\d{4}-\d{2}-\d{2}$/);
+  assert.deepEqual(calls.map(call => call.messages), [
+    [{ role: 'user', content: '["We study sequence models."]' }],
+    [{ role: 'user', content: '["Results","Accuracy increased & held."]' }],
+  ]);
+  assert.equal(calls[0].max_tokens, 6_000);
+  assert.deepEqual(arxivRequests, ['?arxiv_id=1706.03762']);
+});
+
+test('an off flag, altered text, revoked identity, and exhausted quotas spend nothing', async t => {
+  const { env, calls, quotas, ledger, identity } = setUp(t);
+  env.FULL_PAPER_TRANSLATION_ENABLED = 'false';
+  assert.equal((await worker.fetch(fullRequest(), env)).status, 503);
+  enableFullPaper(env);
+  assert.equal((await worker.fetch(fullRequest({ ...FULL_INPUT, fingerprint: 'a'.repeat(64) }), env)).status, 400);
+  assert.equal((await worker.fetch(fullRequest({ ...FULL_INPUT, query: 'x'.repeat(1_025) }), env)).status, 413);
+  identity.revoked = true;
+  assert.equal((await worker.fetch(fullRequest(), env)).status, 401);
+  assert.equal(quotas.length, 0);
+  identity.revoked = false;
+  for (const scope of ['user', 'global']) {
+    ledger.reply = () => Response.json({ accepted: false, scope });
+    const response = await worker.fetch(fullRequest(), env);
+    assert.equal(response.status, 429);
+    assert.equal((await response.json<{ quota: { scope: string } }>()).quota.scope, scope);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('a bad later chunk leaves the first chunk and spends no retry or refund', async t => {
+  const { env, calls, quotas, provider } = setUp(t);
+  enableFullPaper(env);
+  provider.reply = () => translatedSegments(calls.length === 1 ? ['Estudiamos modelos de secuencias.'] : ['Missing a segment']);
+  const response = await worker.fetch(fullRequest(), env);
+  assert.deepEqual((await response.text()).trim().split('\n').map(line => JSON.parse(line)), [
+    { type: 'chunk', index: 0, segments: ['Estudiamos modelos de secuencias.'] },
+    { type: 'error', code: 'AI_INVALID_RESPONSE' },
+  ]);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(quotas.map(({ action }) => action), ['reserve']);
+});
+
+test('cancelling after one chunk prevents a later provider call', async t => {
+  const { env, calls, provider } = setUp(t);
+  enableFullPaper(env);
+  provider.reply = () => translatedSegments(['Estudiamos modelos de secuencias.']);
+  const response = await worker.fetch(fullRequest(), env);
+  assert.ok(response.body);
+  const reader = response.body.getReader();
+  assert.deepEqual(JSON.parse(new TextDecoder().decode((await reader.read()).value)),
+    { type: 'chunk', index: 0, segments: ['Estudiamos modelos de secuencias.'] });
+  await reader.cancel();
+  assert.equal(calls.length, 1);
+});
+
+test('ar5iv is eligible and source redirects must keep the arXiv id', async t => {
+  const { env, calls, quotas, source, arxivRequests, provider } = setUp(t);
+  enableFullPaper(env);
+  source.renderer = 'ar5iv';
+  source.url = 'https://ar5iv.org/html/1706.03763';
+  const mismatched = await worker.fetch(fullRequest(), env);
+  assert.equal(mismatched.status, 400);
+  assert.deepEqual(await mismatched.json(), { code: 'AI_INVALID_PAPER' });
+  assert.equal(quotas.length, 0);
+  assert.equal(calls.length, 0);
+
+  source.url = 'https://ar5iv.org/html/1706.03762v2';
+  provider.reply = () => translatedSegments(['Estudiamos modelos de secuencias.']);
+  const accepted = await worker.fetch(fullRequest(), env);
+  assert.equal(accepted.status, 200);
+  assert.ok(accepted.body);
+  const reader = accepted.body.getReader();
+  const chunk = await reader.read();
+  await reader.cancel();
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(chunk.value)),
+    { type: 'chunk', index: 0, segments: ['Estudiamos modelos de secuencias.'] });
+  assert.deepEqual(arxivRequests, Array(2).fill('?arxiv_id=1706.03762'));
 });

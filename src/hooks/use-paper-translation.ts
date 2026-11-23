@@ -18,6 +18,8 @@ function translationErrorMessage(code: string, scope: unknown) {
     case 'AI_QUOTA_EXHAUSTED':
       if (scope === 'part') return 'You’ve reached today’s translation attempt limit. Try again after midnight UTC.';
       return scope === 'user' ? 'You’ve used today’s translations. Try again after midnight UTC.' : 'Translation is paused until midnight UTC.';
+    case 'AI_AUTH_REQUIRED':
+      return 'Sign in again to translate this paper.';
     case 'AI_NOT_CONFIGURED':
       return 'Translation isn’t available right now.';
     case 'AI_INVALID_PAPER':
@@ -33,7 +35,7 @@ function translationErrorMessage(code: string, scope: unknown) {
   }
 }
 
-export function usePaperTranslation(paper: Paper, uid: string | undefined, enabled: boolean, onAuthRequired: () => void) {
+export function usePaperTranslation(paper: Paper, uid: string | undefined, enabled: boolean, onAuthRequired?: () => void) {
   const source = useMemo(() => enabled ? translationSource(paper) : null, [enabled, paper]);
   const scope = useMemo(() => JSON.stringify([uid, source]), [uid, source]);
   const [session, setSession] = useState<Session>({ scope });
@@ -84,9 +86,9 @@ export function usePaperTranslation(paper: Paper, uid: string | undefined, enabl
       setSession({
         ...current,
         pending: false,
-        error: result.code === 'AI_AUTH_REQUIRED' ? undefined : translationErrorMessage(result.code, result.scope),
+        error: result.code === 'AI_AUTH_REQUIRED' && onAuthRequired ? undefined : translationErrorMessage(result.code, result.scope),
       });
-      if (result.code === 'AI_AUTH_REQUIRED') onAuthRequired();
+      if (result.code === 'AI_AUTH_REQUIRED') onAuthRequired?.();
     }
   }
 

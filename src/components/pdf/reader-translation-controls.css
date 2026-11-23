@@ -1,0 +1,56 @@
+.reader-translation {
+  padding: 0 var(--space-4);
+  border-block-end: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  overflow: auto;
+  max-block-size: 45%;
+}
+
+.reader-translation summary {
+  cursor: pointer;
+  min-block-size: 32px;
+  inline-size: fit-content;
+  align-content: center;
+}
+
+.reader-translation-panel {
+  padding-block: var(--space-1) var(--space-3);
+}
+
+.reader-translation-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.reader-translation-panel label {
+  display: grid;
+  gap: var(--space-1);
+  max-inline-size: 100%;
+}
+
+.reader-translation-panel select {
+  min-block-size: 32px;
+  max-inline-size: 100%;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+.reader-translation-panel p,
+.reader-translation-status p {
+  margin-block: var(--space-2) 0;
+  color: var(--text-secondary);
+}
+
+.reader-translation-panel p:empty,
+.reader-translation-status p:empty {
+  margin: 0;
+}
+
+.reader-translation-status progress {
+  display: block;
+  margin-block: var(--space-2);
+}

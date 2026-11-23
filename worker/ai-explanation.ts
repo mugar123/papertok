@@ -572,18 +572,18 @@ export async function peekAIQuota(env: WorkerEnv, uid: string, { unlimited = fal
   };
 }
 
-export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = false, translation = false } = {}) {
-  const globalLimit = translation
+export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = false, translation = false, fullPaperTranslation = false } = {}) {
+  const globalLimit = fullPaperTranslation ? 25 : translation
     ? 100
     : safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
-  const namespace = translation ? 'translate' : 'ai';
+  const namespace = fullPaperTranslation ? 'translate-paper' : translation ? 'translate' : 'ai';
   // The day is fixed once and travels with the reservation: recomputing it at
   // release time would refund against tomorrow's ledger for a request that
   // straddles UTC midnight.
   const ledgerRequest = {
     periodKey: `${namespace}:${todayKey()}`,
     subject: `${namespace}:${uid}`,
-    subjectLimit: translation
+    subjectLimit: fullPaperTranslation ? 5 : translation
       ? 10
       : unlimited ? globalLimit : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
     globalLimit,

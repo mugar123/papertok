@@ -1,9 +1,11 @@
 // Nothing from the source is rendered as markup except MathML, rebuilt from an allowlist.
+import { PAPER_TRANSLATION_HTML_BYTES } from './full-paper-translation-contract.ts';
+import type { TranslationLanguage } from './paper-translation-contract.ts';
 import type { FullTextSource } from '../models/full-text.ts';
 import { safeCatalogUrl, safeExternalUrl } from './external-url.ts';
 
 export type Inline =
-  | { t: 'text'; text: string }
+  | { t: 'text'; text: string; language?: TranslationLanguage }
   | { t: 'em' | 'strong' | 'sup' | 'sub' | 'code'; children: Inline[] }
   | { t: 'link'; href: string; children: Inline[] }
   | { t: 'ref'; target: string; cites?: true; children: Inline[] }
@@ -49,8 +51,10 @@ export type Note = { id: string; label: string; content: Inline[] };
 export type FullText = {
   source: FullTextSource;
   sourceUrl: string;
+  oversizedForTranslation?: boolean;
   license?: string;
   lang?: string;
+  title?: Extract<Block, { t: 'heading' }>;
   abstract: Block[];
   body: Block[];
   references: Reference[];
@@ -71,7 +75,10 @@ const MATHML_ATTRIBUTES = new Set([
   'width', 'height', 'depth', 'voffset',
 ]);
 
-const mo = (text: string) => {
+const TEXT_NODE = 3;
+const ELEMENT_NODE = 1;
+
+const mo = (document: Document, text: string) => {
   const out = document.createElementNS(MATHML_NS, 'mo');
   out.textContent = text;
   return out;
@@ -80,15 +87,16 @@ const mo = (text: string) => {
 // Browsers dropped `mfenced` with MathML Core, so a JATS formula that uses it
 // lost its brackets. It becomes the row of operators it stands for.
 function unfence(source: Element): Element {
+  const document = source.ownerDocument;
   const out = document.createElementNS(MATHML_NS, 'mrow');
   const separators = (source.getAttribute('separators') ?? ',').replace(/\s/g, '');
   const parts = [...source.children].map(cleanMath).filter((part): part is Element => Boolean(part));
-  out.append(mo(source.getAttribute('open') ?? '('));
+  out.append(mo(document, source.getAttribute('open') ?? '('));
   parts.forEach((part, index) => {
-    if (index > 0 && separators) out.append(mo(separators[Math.min(index - 1, separators.length - 1)]));
+    if (index > 0 && separators) out.append(mo(document, separators[Math.min(index - 1, separators.length - 1)]));
     out.append(part);
   });
-  out.append(mo(source.getAttribute('close') ?? ')'));
+  out.append(mo(document, source.getAttribute('close') ?? ')'));
   return out;
 }
 
@@ -96,13 +104,13 @@ function cleanMath(source: Element): Element | null {
   const name = source.localName;
   if (!MATHML_ELEMENTS.has(name)) return null;
   if (name === 'mfenced') return unfence(source);
-  const out = document.createElementNS(MATHML_NS, name);
+  const out = source.ownerDocument.createElementNS(MATHML_NS, name);
   for (const attr of source.attributes) {
     if (MATHML_ATTRIBUTES.has(attr.localName)) out.setAttribute(attr.localName, attr.value);
   }
   for (const child of source.childNodes) {
-    if (child.nodeType === Node.TEXT_NODE) out.append(child.textContent ?? '');
-    else if (child.nodeType === Node.ELEMENT_NODE) {
+    if (child.nodeType === TEXT_NODE) out.append(child.textContent ?? '');
+    else if (child.nodeType === ELEMENT_NODE) {
       const clean = cleanMath(child as Element);
       if (clean) out.append(clean);
     }
@@ -134,12 +142,14 @@ type InlineRules = {
 function inlines(node: Node, rules: InlineRules): Inline[] {
   const out: Inline[] = [];
   for (const child of node.childNodes) {
-    if (child.nodeType === Node.TEXT_NODE) {
+    if (child.nodeType === TEXT_NODE) {
       const text = child.textContent ?? '';
-      if (text) out.push({ t: 'text', text });
+      const previous = out.at(-1);
+      if (previous?.t === 'text') previous.text += text;
+      else if (text) out.push({ t: 'text', text });
       continue;
     }
-    if (child.nodeType !== Node.ELEMENT_NODE) continue;
+    if (child.nodeType !== ELEMENT_NODE) continue;
     const el = child as Element;
     if (el.localName === 'math') {
       out.push({ t: 'math', mathml: mathml(el), tex: rules.tex(el) });
@@ -161,7 +171,7 @@ function inlines(node: Node, rules: InlineRules): Inline[] {
       out.push({ t: 'link', href, children: inlines(el, rules) });
       continue;
     }
-    const tag = INLINE_TAGS[el.localName];
+    const tag = hasClass(el, 'ltx_font_typewriter') ? 'code' : INLINE_TAGS[el.localName];
     if (tag) out.push({ t: tag, children: inlines(el, rules) });
     else out.push(...inlines(el, rules));
   }
@@ -279,8 +289,8 @@ function latexmlReference(item: Element, index: number): Reference {
   };
 }
 
-export function parseArxivHtml(html: string, url: string): FullText | null {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
+export function parseArxivHtml(html: string, url: string, parse = (source: string): Document => new DOMParser().parseFromString(source, 'text/html')): FullText | null {
+  const doc = parse(html.replace(/\r\n?/g, '\n'));
   const article = doc.querySelector('article.ltx_document');
   if (!article) return null;
   const notes: Note[] = [];
@@ -397,6 +407,7 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
   };
   walk(article);
 
+  const title = article.querySelector('.ltx_title_document');
   const abstract = [...article.querySelectorAll('.ltx_abstract p')].map(p => ({ t: 'p' as const, children: inlines(p, rules) }));
   // arXiv's page header names the licence; a link inside the paper is the authors' text.
   const license = [...doc.querySelectorAll('a[href*="creativecommons.org"], a[href*="arxiv.org/licenses"]')]
@@ -404,7 +415,9 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
   return withCitations({
     source: 'arxiv',
     sourceUrl: url,
+    ...(new TextEncoder().encode(html).length > PAPER_TRANSLATION_HTML_BYTES && { oversizedForTranslation: true }),
     license,
+    ...(title && { title: { t: 'heading', level: 1, children: inlines(title, rules) } }),
     lang: doc.documentElement.getAttribute('lang') || undefined,
     abstract,
     body,

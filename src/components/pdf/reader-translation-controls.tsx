@@ -1,0 +1,90 @@
+import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { Button } from '../ui/button.tsx';
+import { isTranslationLanguage, TRANSLATION_LANGUAGES, type TranslationLanguage } from '../../utils/paper-translation-contract.ts';
+import './reader-translation-controls.css';
+
+type Mode = 'abstract' | 'paper';
+type Props = {
+  signedIn: boolean;
+  abstractAvailable: boolean;
+  paperUnavailable: string;
+  defaultLanguage: TranslationLanguage | '';
+  pending: boolean;
+  progress?: { completed: number; total: number };
+  message: string;
+  toggle?: Partial<Record<Mode, { label: string; action: () => void }>>;
+  onTranslate: (mode: Mode, language: TranslationLanguage) => void;
+  onCancel: () => void;
+  children?: ReactNode;
+};
+
+export function ReaderTranslationControls({
+  signedIn, abstractAvailable, paperUnavailable, defaultLanguage, pending, progress, message,
+  toggle, onTranslate, onCancel, children,
+}: Props) {
+  const [choice, setChoice] = useState<Mode>(abstractAvailable ? 'abstract' : 'paper');
+  const language = useRef<HTMLSelectElement>(null);
+  const submit = useRef<HTMLButtonElement>(null);
+  const disclosure = useRef<HTMLDetailsElement>(null);
+  const summary = useRef<HTMLElement>(null);
+  const focusAfterCancel = useCallback((button: HTMLButtonElement | null) => {
+    if (!button) return;
+    return () => {
+      if (document.activeElement === button) summary.current?.focus();
+    };
+  }, []);
+  const unavailable = choice === 'paper' ? paperUnavailable : '';
+  const abstractView = toggle?.abstract;
+  return (
+    <section className="reader-translation" translate="no" aria-label="Paper translation">
+      <details ref={disclosure}>
+        <summary ref={summary}>Translate</summary>
+        <div className="reader-translation-panel">
+          {!signedIn
+            ? (abstractAvailable || !paperUnavailable) && <p>Sign in to translate this paper.</p>
+            : (
+              <form onSubmit={event => {
+                event.preventDefault();
+                const code = language.current?.value;
+                if (!pending && !unavailable && isTranslationLanguage(code)) onTranslate(choice, code);
+              }}>
+                <label>
+                  <span>Translate</span>
+                  <select value={choice} disabled={pending} onChange={event => setChoice(event.target.value === 'paper' ? 'paper' : 'abstract')}>
+                    {abstractAvailable && <option value="abstract">Title and abstract</option>}
+                    <option value="paper">Full paper</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Translation language</span>
+                  <select ref={language} defaultValue={defaultLanguage} required disabled={pending}>
+                    <option value="">Choose a language</option>
+                    {Object.entries(TRANSLATION_LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+                  </select>
+                </label>
+                <Button ref={submit} variant="outline" size="sm" type="submit" aria-disabled={pending || Boolean(unavailable)}>Translate {choice === 'paper' ? 'full paper' : 'abstract'}</Button>
+                {choice === 'abstract' && abstractView && !pending && <Button variant="ghost" size="sm" type="button" onClick={abstractView.action}>{abstractView.label}</Button>}
+              </form>
+            )}
+          {(signedIn ? unavailable : paperUnavailable) && <p>{signedIn ? unavailable : paperUnavailable}</p>}
+          {signedIn && choice === 'paper' && !unavailable && <p>PaperTok sends the paper’s prose to Anthropic. Figures, tables, code and references stay in the original. Each request uses one daily translation.</p>}
+          {choice === 'abstract' && children}
+        </div>
+      </details>
+      <div className="reader-translation-status">
+        {progress && pending && (
+          <>
+            <progress aria-label="Full-paper translation progress" value={progress.completed} max={progress.total} />
+            <Button ref={focusAfterCancel} variant="ghost" size="sm" type="button" onClick={() => {
+              onCancel();
+              if (disclosure.current?.open) submit.current?.focus();
+              else summary.current?.focus();
+            }}>Cancel translation</Button>
+          </>
+        )}
+        <p role="status">{message}</p>
+        {toggle?.paper && <Button variant="ghost" size="sm" type="button" onClick={toggle.paper.action}>{toggle.paper.label}</Button>}
+      </div>
+    </section>
+  );
+}

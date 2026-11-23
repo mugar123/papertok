@@ -12,9 +12,14 @@ import { Toggle } from '../ui/toggle.ts';
 import './pdf-viewer.css';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
-import { getFullText } from '../../services/full-text-service.ts';
-import type { FullText } from '../../utils/full-text.ts';
+import { fullTextQuery, getFullText } from '../../services/full-text-service.ts';
 import FullTextArticle from './full-text-article.tsx';
+import { ReaderTranslationControls } from './reader-translation-controls.tsx';
+import { usePaperTranslation } from '../../hooks/use-paper-translation.ts';
+import { useFullPaperTranslation } from '../../hooks/use-full-paper-translation.ts';
+import ScientificText from '../scientific-text.ts';
+import { PaperTranslationStatus, TranslatedPaperText } from '../feed/paper-translation.tsx';
+import { TRANSLATION_LANGUAGES } from '../../utils/paper-translation-contract.ts';
 import { OutlineList, OutlineRail } from './full-text-outline.tsx';
 import { useOutline } from './use-outline.ts';
 import { PaperDock } from './paper-info.tsx';
@@ -45,10 +50,11 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
-  const [fullText, setFullText] = useState<FullText | null | undefined>(undefined);
-  // The text could not be asked for, which is not the same as there being none.
-  const [textFailed, setTextFailed] = useState(false);
+  const [textResult, setTextResult] = useState<(Awaited<ReturnType<typeof getFullText>> & { paper: Paper; attempt: number }) | null>(null);
   const [textAttempt, setTextAttempt] = useState(0);
+  const currentText = textResult?.paper === paper && textResult.attempt === textAttempt ? textResult : undefined;
+  const fullText = currentText?.doc;
+  const textFailed = currentText?.failed ?? false;
   const [view, setView] = useState<'text' | 'pdf'>('text');
   const showsText = Boolean(fullText) && view === 'text';
   const [textScroll, setTextScroll] = useState<HTMLDivElement | null>(null);
@@ -74,14 +80,11 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
     const controller = new AbortController();
     void getFullText(paper, controller.signal).then(({ doc, failed }) => {
       if (controller.signal.aborted) return;
-      setFullText(doc);
-      setTextFailed(failed);
+      setTextResult({ paper, attempt: textAttempt, doc, failed });
     });
     return () => controller.abort();
   }, [paper, textAttempt]);
   const retryText = () => {
-    setFullText(undefined);
-    setTextFailed(false);
     setTextAttempt(attempt => attempt + 1);
   };
 
@@ -174,7 +177,34 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // A change of consent or account while open drops the session (viewer-outcome.ts):
   // `consent` and `uid` drop it at once, and `analyticsSessionContext` checks again at each send.
   const { trackEvent, consent } = useAnalyticsConsent();
-  const uid = useAuth().user?.uid ?? '';
+  const { user } = useAuth();
+  const uid = user?.uid ?? '';
+  const abstractTranslation = usePaperTranslation(paper, user?.uid, open);
+  const query = fullTextQuery(paper)?.toString() ?? '';
+  const paperTranslation = useFullPaperTranslation(open ? fullText ?? undefined : undefined, query, uid);
+  const translatedPaper = paperTranslation.session;
+  const translatedAbstract = abstractTranslation.current;
+  const notes = useViewerNotes(paper, uid);
+  const hasTranslation = Boolean(translatedPaper?.blocks.size);
+  const waitingForNote = hasTranslation && translatedPaper?.showing && Boolean(notes.pending);
+  const translatedBlocks = showsText && !waitingForNote && hasTranslation && translatedPaper?.showing ? translatedPaper : undefined;
+  const paperUnavailable = paperTranslation.total ? '' : textFailed
+    ? 'Full-paper translation is unavailable while the paper text can’t be loaded.'
+    : !fullText ? 'Full-paper translation needs the paper’s text in PaperTok.'
+      : 'This paper’s text is outside the translation pilot.';
+  let translationView = '';
+  if (translatedBlocks) {
+    translationView = `Showing ${translatedBlocks.pending || translatedBlocks.message ? 'a partial' : 'the'} AI translation in ${TRANSLATION_LANGUAGES[translatedBlocks.language]}.`;
+  } else if (hasTranslation && !showsText) {
+    translationView = 'Switch to the text view to read the AI translation.';
+  } else if (waitingForNote) {
+    translationView = 'Finish or close your note to see the AI translation.';
+  } else if (hasTranslation) {
+    translationView = 'Showing the original paper.';
+  }
+  const progressMessage = translatedPaper?.pending
+    ? `AI translation in progress. ${translatedPaper.completed} of ${paperTranslation.total} parts ready.`
+    : translatedPaper?.message;
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
     void trackEvent(name, params, stillValid);
   });
@@ -211,8 +241,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
     if (outcome) trackerRef.current?.settle(outcome);
   }, [outcome]);
 
-  const notesOn = Boolean(uid) && showsText;
-  const notes = useViewerNotes(paper, uid);
+  const notesOn = Boolean(uid) && showsText && !translatedBlocks;
   const touchPassage = useTouchSelection(notesOn && coarsePointer && !notes.pending ? textScroll : null);
   const [notesOpen, setNotesOpen] = useState(false);
   usePaintedPassages(notesOn ? textScroll : null, notes.passages, notes.pending);
@@ -259,6 +288,48 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             </AnimatePresence>
           </div>
 
+          {open && fullText !== undefined && (
+            <ReaderTranslationControls
+              key={abstractTranslation.scope}
+              signedIn={Boolean(uid)}
+              abstractAvailable={abstractTranslation.eligible}
+              paperUnavailable={paperUnavailable}
+              defaultLanguage={abstractTranslation.chooseLanguage()}
+              pending={Boolean(translatedPaper?.pending || translatedAbstract.pending)}
+              progress={translatedPaper?.pending ? { completed: translatedPaper.completed, total: paperTranslation.total } : undefined}
+              message={[progressMessage, translationView].filter(Boolean).join(' ')}
+              toggle={{
+                paper: showsText && !waitingForNote && translatedPaper?.blocks.size ? {
+                  label: translatedPaper.showing ? 'Show original paper' : 'Show translated paper',
+                  action: paperTranslation.toggleOriginal,
+                } : undefined,
+                abstract: translatedAbstract.translation ? {
+                  label: translatedAbstract.showing ? 'Show original abstract' : 'Show translated abstract',
+                  action: translatedAbstract.showing ? abstractTranslation.showOriginal : () => {
+                    if (translatedAbstract.translation) void abstractTranslation.translate(translatedAbstract.translation.language);
+                  },
+                } : undefined,
+              }}
+              onTranslate={(mode, language) => {
+                if (mode === 'abstract') {
+                  void abstractTranslation.translate(language);
+                } else {
+                  setView('text');
+                  setAbstractShown(true);
+                  void paperTranslation.translate(language);
+                }
+              }}
+              onCancel={paperTranslation.cancel}
+            >
+              <PaperTranslationStatus state={abstractTranslation} />
+              {translatedAbstract.translation && (translatedAbstract.showing
+                ? <TranslatedPaperText translation={translatedAbstract.translation} />
+                : <div className="paper-translation-text" lang={translatedAbstract.translation.sourceLanguage ?? fullText?.lang} dir="auto">
+                  <span className="paper-translation-title"><ScientificText>{paper.title}</ScientificText></span>
+                  <span className="paper-translation-abstract"><ScientificText>{paper.abstract ?? ''}</ScientificText></span>
+                </div>)}
+            </ReaderTranslationControls>
+          )}
           <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
@@ -277,7 +348,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                 event.preventDefault();
                 notes.pickBlock(block);
               } : undefined}>
-                <FullTextArticle doc={fullText} paper={paper} showAbstract={abstractShown} passageHint={notesOn ? 'viewer-passage-hint' : undefined} />
+                <FullTextArticle doc={fullText} paper={paper} showAbstract={abstractShown} translation={translatedBlocks} passageHint={notesOn ? 'viewer-passage-hint' : undefined} />
               </div>
             )}
             {fullText && showsText && <OutlineRail {...outline} />}

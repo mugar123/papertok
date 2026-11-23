@@ -13,7 +13,7 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
-import { handlePaperTranslation } from './ai-translation.ts';
+import { handleFullPaperTranslation, handlePaperTranslation } from './ai-translation.ts';
 import {
   EmailNotificationError,
   handleEmailNotificationRequest,
@@ -420,11 +420,20 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       });
     }
   }
-  if (url.pathname === '/ai/annotate' || url.pathname === '/ai/translate') {
+  if (url.pathname === '/ai/annotate' || url.pathname === '/ai/translate' || url.pathname === '/ai/translate-paper') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-    const translate = url.pathname === '/ai/translate';
+    const fullPaper = url.pathname === '/ai/translate-paper';
+    const translate = fullPaper || url.pathname === '/ai/translate';
     try {
+      if (fullPaper) {
+        const body = await handleFullPaperTranslation(request, env);
+        return new Response(body, { headers: {
+          ...corsHeaders(origin, env),
+          'content-type': 'application/x-ndjson; charset=utf-8',
+          'cache-control': 'private, no-store',
+        } });
+      }
       const payload = translate
         ? await handlePaperTranslation(request, env, context)
         : await handlePassageAnnotation(request, env);

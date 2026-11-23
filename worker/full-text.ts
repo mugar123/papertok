@@ -44,21 +44,27 @@ async function fetchText(url: string, accept: string, signal: AbortSignal) {
   return text === null ? null : { text, url: response.url || url };
 }
 
+export function isArxivRenderedPage(url: string, arxivId: string) {
+  const { origin, pathname } = new URL(url);
+  return ['https://arxiv.org', 'https://ar5iv.labs.arxiv.org', 'https://ar5iv.org'].includes(origin)
+    && pathname.replace(/v\d+$/, '') === `/html/${arxivId}`;
+}
+
 async function fromArxiv(arxivId: string, signal: AbortSignal): Promise<FullTextAnswer | null> {
   const renderers = [
     { source: 'arxiv' as const, url: `https://arxiv.org/html/${arxivId}` },
     { source: 'ar5iv' as const, url: `https://ar5iv.labs.arxiv.org/html/${arxivId}` },
   ];
   let failure: unknown = null;
-  for (const renderer of renderers) {
+  for (const candidate of renderers) {
     // One renderer failing still leaves the other to ask.
-    const page = await fetchText(renderer.url, 'text/html', signal).catch((error: unknown) => {
+    const page = await fetchText(candidate.url, 'text/html', signal).catch((error: unknown) => {
       failure = error;
       return null;
     });
     // arXiv answers 200 with a notice for a paper it has not converted.
     if (page?.text.includes('ltx_document')) {
-      return { source: renderer.source, format: 'latexml', url: page.url, document: page.text };
+      return { source: candidate.source, format: 'latexml', url: page.url, document: page.text };
     }
   }
   if (failure) throw failure;
