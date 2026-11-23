@@ -109,6 +109,7 @@ test('a concept reads its English article, found by identity and never by search
   const result = await getEntityWikiInfoByIdentity({ qid: 'Q11190' });
 
   assert.deepEqual(result, {
+    source: 'wikipedia',
     title: 'Medicine',
     extract: 'Medicine is the science of health.',
     thumbnail: 'https://upload.wikimedia.org/medicine.jpg',
@@ -135,7 +136,8 @@ test('a topic known only by its English article is resolved through Wikidata', a
 
   const result = await getEntityWikiInfoByIdentity({ enwikiTitle: 'Cancer stem cell' });
 
-  assert.equal(result?.title, 'Cancer stem cell');
+  assert.ok(result?.source === 'wikipedia');
+  assert.equal(result.title, 'Cancer stem cell');
   assert.equal(result?.language, 'en');
 });
 
@@ -175,7 +177,8 @@ test('the Explorer\'s loader resolves an OpenAlex concept by identity, not by th
     title: 'Tumor progression',
   });
 
-  assert.equal(result?.title, 'Tumor progression');
+  assert.ok(result?.source === 'wikipedia');
+  assert.equal(result.title, 'Tumor progression');
   assert.equal(result?.language, 'en');
   assert.equal(requested.some(url => url.includes('generator=search')), false);
 });
@@ -206,7 +209,8 @@ test('an author with no Wikidata id is found by the one item stating its ORCID',
     entity: { id: 'https://openalex.org/A5086198262', display_name: 'Yoshua Bengio', ids: { orcid: 'https://orcid.org/0000-0002-9322-3515' } },
   });
 
-  assert.equal(result?.title, 'Yoshua Bengio');
+  assert.ok(result?.source === 'wikipedia');
+  assert.equal(result.title, 'Yoshua Bengio');
   assert.equal(result?.thumbnail, 'https://upload.wikimedia.org/bengio.jpg');
 });
 
@@ -268,6 +272,7 @@ test('maps an English Wikipedia search result', () => {
   });
 
   assert.deepEqual(result, {
+    source: 'wikipedia',
     title: 'General relativity',
     extract: 'General relativity is a theory of gravitation developed by Albert Einstein.',
     thumbnail: 'https://upload.wikimedia.org/example.jpg',
@@ -333,7 +338,8 @@ test('keeps an exact Wikipedia result for a free-text topic', () => {
     strictTitleMatch: true,
   });
 
-  assert.equal(result?.title, 'Theory of computation');
+  assert.ok(result?.source === 'wikipedia');
+  assert.equal(result.title, 'Theory of computation');
 });
 
 test('uses a canonical title for a major plural topic', async (t) => {
@@ -372,6 +378,93 @@ test('uses a canonical title for a major plural topic', async (t) => {
   });
 
   assert.deepEqual(requestedSearches, ['Black holes', 'Black hole']);
-  assert.equal(result?.title, 'Black hole');
+  assert.ok(result?.source === 'wikipedia');
+  assert.equal(result.title, 'Black hole');
   assert.equal(result?.thumbnail, 'https://upload.wikimedia.org/black-hole.jpg');
+});
+
+const imageClaims = (images: Array<{ filename: string; rank?: string }>) => ({
+  claims: { P18: images.map(({ filename, rank = 'normal' }) => ({
+    rank,
+    mainsnak: { snaktype: 'value', datatype: 'commonsMedia', datavalue: { type: 'string', value: filename } },
+  })) },
+});
+const commonsImage = (thumbnail: string) => ({ query: { pages: { 123: { imageinfo: [{ thumburl: thumbnail }] } } } });
+const isCommonsFile = (filename: string) => (url: URL) => url.host === 'commons.wikimedia.org'
+  && url.searchParams.get('titles') === `File:${filename}`;
+
+test('an ORCID-linked Wikidata portrait is available without an English biography', async (t) => {
+  stubWikiFetch(t, [
+    { match: isWikidataOrcidSearch('0000-0002-2218-5929'), body: { query: { search: [{ title: 'Q900001' }] } } },
+    { match: isWikidata({ ids: 'Q900001' }), body: wikidataEntity('Q900001', {}) },
+    { match: isWikidata({ action: 'wbgetclaims', entity: 'Q900001', property: 'P18' }), body: imageClaims([{ filename: 'Researcher portrait.jpg' }]) },
+    { match: isCommonsFile('Researcher portrait.jpg'), body: commonsImage('https://upload.wikimedia.org/wikipedia/commons/portrait.jpg') },
+  ]);
+  assert.deepEqual(await loadEntityWikiInfo({ entity: { orcid: '0000-0002-2218-5929' } }), {
+    source: 'commons',
+    thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/portrait.jpg',
+    imageSourceUrl: 'https://commons.wikimedia.org/wiki/File:Researcher%20portrait.jpg',
+  });
+});
+
+test('a biography without a picture gets the preferred Wikidata image and keeps its text', async (t) => {
+  stubWikiFetch(t, [
+    { match: isWikidata({ ids: 'Q900002' }), body: wikidataEntity('Q900002', { enwiki: 'A researcher' }) },
+    { match: isWikipediaTitle('en', 'A researcher'), body: wikipediaPage({ title: 'A researcher', extract: 'A verified biography.', qid: 'Q900002' }) },
+    { match: isWikidata({ entity: 'Q900002', property: 'P18' }), body: imageClaims([
+      { filename: 'Wrong person.jpg', rank: 'deprecated' },
+      { filename: 'Earlier portrait.jpg' },
+      { filename: 'Current portrait.jpg', rank: 'preferred' },
+    ]) },
+    { match: isCommonsFile('Current portrait.jpg'), body: commonsImage('https://upload.wikimedia.org/wikipedia/commons/current.jpg') },
+  ]);
+  assert.deepEqual(await getEntityWikiInfoByIdentity({ qid: 'Q900002' }), {
+    source: 'wikipedia', title: 'A researcher', extract: 'A verified biography.', language: 'en',
+    url: 'https://en.wikipedia.org/wiki/A_researcher',
+    thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/current.jpg',
+    imageSourceUrl: 'https://commons.wikimedia.org/wiki/File:Current%20portrait.jpg',
+  });
+});
+
+test('an existing Wikipedia picture needs no Commons lookup', async (t) => {
+  const requested = stubWikiFetch(t, [
+    { match: isWikidata({ ids: 'Q900003' }), body: wikidataEntity('Q900003', { enwiki: 'Existing portrait' }) },
+    { match: isWikipediaTitle('en', 'Existing portrait'), body: wikipediaPage({ title: 'Existing portrait', extract: 'A biography.', qid: 'Q900003', thumbnail: 'https://upload.wikimedia.org/existing.jpg' }) },
+  ]);
+  assert.equal((await getEntityWikiInfoByIdentity({ qid: 'Q900003' }))?.thumbnail, 'https://upload.wikimedia.org/existing.jpg');
+  assert.equal(requested.length, 2);
+});
+
+test('a failed photo lookup preserves the biography and is retried on the next visit', async (t) => {
+  const photo = { match: isCommonsFile('Retry.jpg'), ok: false, body: commonsImage('https://upload.wikimedia.org/retry.jpg') };
+  stubWikiFetch(t, [
+    { match: isWikidata({ ids: 'Q900004' }), body: wikidataEntity('Q900004', { enwiki: 'Retry portrait' }) },
+    { match: isWikipediaTitle('en', 'Retry portrait'), body: wikipediaPage({ title: 'Retry portrait', extract: 'The biography remains available.', qid: 'Q900004' }) },
+    { match: isWikidata({ entity: 'Q900004', property: 'P18' }), body: imageClaims([{ filename: 'Retry.jpg' }]) },
+    photo,
+  ]);
+  const first = await getEntityWikiInfoByIdentity({ qid: 'Q900004' });
+  assert.ok(first?.source === 'wikipedia');
+  assert.equal(first.extract, 'The biography remains available.');
+  assert.equal(first.thumbnail, null);
+  photo.ok = true;
+  assert.equal((await getEntityWikiInfoByIdentity({ qid: 'Q900004' }))?.thumbnail, 'https://upload.wikimedia.org/retry.jpg');
+});
+
+test('deprecated image claims never produce a portrait', async (t) => {
+  const requested = stubWikiFetch(t, [
+    { match: isWikidata({ ids: 'Q900005' }), body: wikidataEntity('Q900005', {}) },
+    { match: isWikidata({ entity: 'Q900005', property: 'P18' }), body: imageClaims([{ filename: 'Rejected.jpg', rank: 'deprecated' }]) },
+  ]);
+  assert.equal(await getEntityWikiInfoByIdentity({ qid: 'Q900005' }), null);
+  assert.equal(requested.some(url => new URL(url).host === 'commons.wikimedia.org'), false);
+});
+
+test('Commons thumbnails cannot point to an unrelated host', async (t) => {
+  stubWikiFetch(t, [
+    { match: isWikidata({ ids: 'Q900006' }), body: wikidataEntity('Q900006', {}) },
+    { match: isWikidata({ entity: 'Q900006', property: 'P18' }), body: imageClaims([{ filename: 'Portrait.jpg' }]) },
+    { match: isCommonsFile('Portrait.jpg'), body: commonsImage('https://unrelated.example/portrait.jpg') },
+  ]);
+  assert.equal(await getEntityWikiInfoByIdentity({ qid: 'Q900006' }), null);
 });

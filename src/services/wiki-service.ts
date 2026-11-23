@@ -3,10 +3,12 @@ interface WikipediaPayload { query?: { pages?: Record<string, WikiPage> } }
 interface WikidataSearchPayload { query?: { search?: { title?: string }[]; searchinfo?: { totalhits?: number } } }
 interface WikidataPayload { entities?: Record<string, { id?: string; sitelinks?: Record<string, { title?: string }> }> }
 interface WikiIds { wikidata?: unknown; wikipedia?: unknown; orcid?: unknown }
-interface WikiEntity { id?: string; display_name?: string; ids?: WikiIds; _queryTopic?: boolean; _localTopic?: boolean }
+interface WikiEntity { id?: string; display_name?: string; ids?: WikiIds; orcid?: unknown; _queryTopic?: boolean; _localTopic?: boolean }
 interface WikiIdentity { qid?: string; enwikiTitle?: string; signal?: AbortSignal }
 interface WikiOptions { expectedTitle?: string; entity?: WikiEntity | null; title?: string; alternateTitle?: string; signal?: AbortSignal; strictTitleMatch?: boolean }
-export interface WikiInfo { title: string; extract: string; thumbnail: string | null; url: string; language: string }
+interface WikiArticle { source: 'wikipedia'; title: string; extract: string; thumbnail: string | null; url: string; language: string; imageSourceUrl?: string }
+interface WikiImage { source: 'commons'; thumbnail: string; imageSourceUrl: string }
+export type WikiInfo = WikiArticle | WikiImage;
 
 const entityWikiCache = new Map<string, WikiInfo>();
 
@@ -53,7 +55,7 @@ function getTopicWikiAlias(value: string|undefined) {
 export function mapWikipediaSearchResponse(data: WikipediaPayload | null, {
   expectedTitle = '',
   strictTitleMatch = false,
-}: WikiOptions = {}) {
+}: WikiOptions = {}): WikiArticle | null {
   const pages = Object.values(data?.query?.pages || {})
     .filter(page => page && !Object.hasOwn(page.pageprops || {}, 'disambiguation'))
     .sort((left, right) => (left.index ?? Number.MAX_SAFE_INTEGER) - (right.index ?? Number.MAX_SAFE_INTEGER));
@@ -66,6 +68,7 @@ export function mapWikipediaSearchResponse(data: WikipediaPayload | null, {
   if (!page) return null;
 
   return {
+    source: 'wikipedia',
     title: normalizeWikiTitle(page.title),
     extract: normalizeWikiTitle(page.extract),
     thumbnail: page.thumbnail?.source || null,
@@ -203,7 +206,7 @@ async function fetchWikidataIdByOrcid(orcid: string, signal: AbortSignal | undef
   return WIKIDATA_ID_PATTERN.test(qid) ? qid : '';
 }
 
-async function fetchWikipediaPageByTitle({ title, language, qid, signal }: { title: string; language: string; qid: string | undefined; signal?: AbortSignal }) {
+async function fetchWikipediaPageByTitle({ title, language, qid, signal }: { title: string; language: string; qid: string | undefined; signal?: AbortSignal }): Promise<WikiArticle | null> {
   const url = new URL(`https://${language}.wikipedia.org/w/api.php`);
   url.searchParams.set('action', 'query');
   url.searchParams.set('titles', title);
@@ -226,6 +229,7 @@ async function fetchWikipediaPageByTitle({ title, language, qid, signal }: { tit
   const extract = normalizeWikiTitle(page.extract);
   if (!extract) return null;
   return {
+    source: 'wikipedia',
     title: normalizeWikiTitle(page.title),
     extract,
     thumbnail: page.thumbnail?.source || null,
@@ -234,10 +238,53 @@ async function fetchWikipediaPageByTitle({ title, language, qid, signal }: { tit
   };
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+async function fetchWikidataImage(qid: string, signal?: AbortSignal): Promise<WikiImage | null> {
+  const deadline = AbortSignal.timeout(5_000);
+  const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  const claimsUrl = new URL('https://www.wikidata.org/w/api.php');
+  claimsUrl.search = new URLSearchParams({ action: 'wbgetclaims', entity: qid, property: 'P18', format: 'json', origin: '*' }).toString();
+  const response = await fetch(claimsUrl, { signal: requestSignal });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Wikidata image lookup failed (${response.status})`);
+  const data: unknown = await response.json();
+  if (!isRecord(data) || !isRecord(data.claims)) throw new Error('Invalid Wikidata image claims');
+  const statements = data.claims.P18;
+  if (statements === undefined) return null;
+  if (!Array.isArray(statements)) throw new Error('Invalid Wikidata image claims');
+  const images = statements.flatMap((statement: unknown) => {
+    if (!isRecord(statement) || (statement.rank !== 'preferred' && statement.rank !== 'normal')) return [];
+    const snak = statement.mainsnak;
+    if (!isRecord(snak) || snak.snaktype !== 'value' || snak.datatype !== 'commonsMedia' || !isRecord(snak.datavalue)) return [];
+    const filename = snak.datavalue.value;
+    return typeof filename === 'string' && filename.trim() ? [{ rank: statement.rank, filename }] : [];
+  });
+  const image = images.find(statement => statement.rank === 'preferred') ?? images[0];
+  if (!image) return null;
+  const { filename } = image;
+
+  const fileUrl = new URL('https://commons.wikimedia.org/w/api.php');
+  fileUrl.search = new URLSearchParams({ action: 'query', titles: `File:${filename}`, prop: 'imageinfo', iiprop: 'url', iiurlwidth: '480', format: 'json', origin: '*' }).toString();
+  const fileResponse = await fetch(fileUrl, { signal: requestSignal });
+  if (fileResponse.status === 404) return null;
+  if (!fileResponse.ok) throw new Error(`Commons image lookup failed (${fileResponse.status})`);
+  const file: unknown = await fileResponse.json();
+  if (!isRecord(file) || !isRecord(file.query) || !isRecord(file.query.pages)) throw new Error('Invalid Commons image metadata');
+  const page = Object.values(file.query.pages).find(candidate => isRecord(candidate) && !Object.hasOwn(candidate, 'missing'));
+  if (!isRecord(page) || !Array.isArray(page.imageinfo) || !isRecord(page.imageinfo[0])) return null;
+  const thumbnail = page.imageinfo[0].thumburl;
+  if (typeof thumbnail !== 'string') return null;
+  const imageUrl = new URL(thumbnail);
+  if (imageUrl.protocol !== 'https:' || imageUrl.hostname !== 'upload.wikimedia.org' || imageUrl.username || imageUrl.password) return null;
+  return { source: 'commons', thumbnail: imageUrl.href, imageSourceUrl: `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(filename)}` };
+}
+
 /**
- * The English Wikipedia article of an entity known by identity. Never a search.
+ * Wikimedia text and images for a verified identity. A Commons image does not
+ * imply that an English Wikipedia biography exists.
  */
-export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', signal }: WikiIdentity = {}) {
+export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', signal }: WikiIdentity = {}): Promise<WikiInfo | null> {
   const normalizedTitle = normalizeWikiTitle(enwikiTitle);
   if (!qid && !normalizedTitle) return null;
 
@@ -247,9 +294,18 @@ export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', 
   const item = await fetchWikidataSitelinks({ qid, enwikiTitle: normalizedTitle, signal });
   if (!item) return null;
   const title = item.titles.enwiki;
-  if (!title) return null;
-
-  const result = await fetchWikipediaPageByTitle({ title, language: 'en', qid: item.qid, signal });
+  const article = title ? await fetchWikipediaPageByTitle({ title, language: 'en', qid: item.qid, signal }) : null;
+  let result: WikiInfo | null = article;
+  if (!article?.thumbnail && item.qid) {
+    try {
+      const image = await fetchWikidataImage(item.qid, signal);
+      if (image) result = article ? { ...article, thumbnail: image.thumbnail, imageSourceUrl: image.imageSourceUrl } : image;
+    } catch (error) {
+      if (signal?.aborted || !article) throw error;
+      // Preserve the biography, but let a later visit retry the failed photo lookup.
+      return article;
+    }
+  }
   if (result) entityWikiCache.set(cacheKey, result);
   return result;
 }
@@ -276,7 +332,7 @@ export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', s
   }
   const identity = resolveEntityWikiIdentity(entity);
   if (identity) return getEntityWikiInfoByIdentity({ ...identity, signal });
-  const orcid = orcidFromOpenAlexIds(entity?.ids);
+  const orcid = orcidFromOpenAlexIds(entity?.ids) || orcidFromOpenAlexIds({ orcid: entity?.orcid });
   const qid = orcid ? await fetchWikidataIdByOrcid(orcid, signal) : '';
   return qid ? getEntityWikiInfoByIdentity({ qid, signal }) : null;
 }

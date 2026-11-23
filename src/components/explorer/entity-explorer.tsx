@@ -2406,8 +2406,13 @@ export default function EntityExplorer({
               </motion.div>
               <AnimatePresence>
                 {heroImage && (
-                  <motion.div
+                  <motion.a
                     key={heroImage}
+                    href={hasLoadedWikiImage ? visibleWikiInfo?.imageSourceUrl : undefined}
+                    aria-hidden={!hasLoadedWikiImage}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={visibleWikiInfo?.imageSourceUrl ? `Image source for ${entityDisplayName} on Wikimedia Commons` : undefined}
                     initial={{ opacity: 0, scale: 0.96 }}
                     animate={{ opacity: hasLoadedWikiImage ? 1 : 0, scale: hasLoadedWikiImage ? 1 : 0.96 }}
                     exit={{ opacity: 0, scale: 0.97 }}
@@ -2421,7 +2426,7 @@ export default function EntityExplorer({
                       onLoad={() => setLoadedWikiImageUrl(heroImage)}
                       onError={() => setLoadedWikiImageUrl('')}
                     />
-                  </motion.div>
+                  </motion.a>
                 )}
               </AnimatePresence>
             </div>

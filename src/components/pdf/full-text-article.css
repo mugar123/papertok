@@ -88,6 +88,16 @@ img.ft-author-photo { outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1p
 .ft-author-name a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 .ft-author-card button { position: relative; z-index: 1; }
 .ft-author-card .ft-author-more { z-index: 1; }
+.ft-author-image-source {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  justify-self: start;
+  font-size: var(--fs-sm);
+  color: var(--accent-primary);
+}
 @media (hover: hover) { .ft-author-card:has(.ft-author-name a:hover) .ft-author-name a { text-decoration: underline; text-underline-offset: 2px; } }
 .ft-author-place { overflow: hidden; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .ft-author-card .ft-author-stats { color: var(--text-tertiary); font-size: 0.8125rem; line-height: 1.35; font-variant-numeric: tabular-nums; }

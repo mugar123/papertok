@@ -50,11 +50,16 @@ function AuthorCard({ id, author, profile }: { id: string; author: PaperAuthor; 
       </div>
       {profile === null && <p className="ft-author-bio" role="status">Could not load this profile.</p>}
       {/* Cut at three lines; the rest is on the profile, which "Read more" opens. */}
-      {profile?.wiki && (
+      {profile?.wiki?.source === 'wikipedia' && (
         <div className="ft-author-about">
           <p className="ft-author-bio">{profile.wiki.extract}</p>
           {path && <a className="ft-author-more" href={path} target="_blank" rel="noopener noreferrer">Read more<span className="visually-hidden"> about {name}</span><NewTabHint /></a>}
         </div>
+      )}
+      {profile?.wiki?.imageSourceUrl && (
+        <a className="ft-author-image-source" href={profile.wiki.imageSourceUrl} target="_blank" rel="noopener noreferrer">
+          Photo on Wikimedia Commons<NewTabHint />
+        </a>
       )}
       {follow && (
         // The design system's primary button, full width; pressed while followed.
@@ -89,8 +94,9 @@ function loadProfile(id: string): Promise<Profile | null> {
 // profile requests; the rest still load on hover.
 const PRELOAD = 12;
 
-function AuthorName({ author, preload }: { author: PaperAuthor; preload: boolean }) {
+function AuthorName({ author, paper, preload }: { author: PaperAuthor; paper: Paper; preload: boolean }) {
   const id = openAlexAuthorId(author);
+  const path = authorExplorerPath(author, paper);
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
   const requested = useRef(false);
   const load = useCallback(() => {
@@ -106,10 +112,10 @@ function AuthorName({ author, preload }: { author: PaperAuthor; preload: boolean
     const handle = idle(load);
     return () => cancel(handle);
   }, [load, preload]);
-  if (!id) return <span className="ft-author">{author.name}</span>;
+  if (!id) return <a className="ft-author" href={path} target="_blank" rel="noopener noreferrer">{author.name}<NewTabHint /></a>;
   return (
     <PreviewCard onOpenChange={(open) => { if (open) load(); }}>
-      <PreviewCardTrigger className="ft-author" href={authorExplorerPath(author, null)} target="_blank" rel="noopener noreferrer" delay={400}>
+      <PreviewCardTrigger className="ft-author" href={path} target="_blank" rel="noopener noreferrer" delay={400}>
         {author.name}
       </PreviewCardTrigger>
       <PreviewCardContent className="ft-author-card">
@@ -132,7 +138,7 @@ export function PaperByline({ paper }: { paper: Paper }) {
             const place = author.affiliation?.trim();
             return (
               <span key={index} className="ft-author-item">
-                <AuthorName author={author} preload={index < PRELOAD} />
+                <AuthorName author={author} paper={paper} preload={index < PRELOAD} />
                 {numbered && place && <sup>{affiliations.indexOf(place) + 1}</sup>}
               </span>
             );

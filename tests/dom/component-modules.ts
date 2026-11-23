@@ -1,5 +1,6 @@
 import './dom-environment.ts';
 import type { ReactNode } from 'react';
+import type { Paper } from '../../src/models/paper.ts';
 import type { ReadAloudChapter, ReadAloudTimeline, SpokenPassage } from '../../src/components/pdf/read-aloud.ts';
 import { startAppModules } from './app-modules.ts';
 
@@ -12,6 +13,13 @@ import { startAppModules } from './app-modules.ts';
  * `render-feed.ts`).
  */
 type Component<Props> = (props: Props) => ReactNode;
+
+export async function loadPaperByline() {
+  const { modules: [byline], close } = await loadModules<[
+    { PaperByline: Component<{ paper: Paper }> },
+  ]>('/src/components/pdf/paper-byline.tsx');
+  return { ...byline, close };
+}
 
 async function loadModules<Modules extends unknown[]>(...paths: string[]) {
   const app = await startAppModules();
