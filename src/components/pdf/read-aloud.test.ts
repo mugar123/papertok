@@ -54,6 +54,14 @@ test('a formula right after a heading, or before any text, is announced after th
   ]);
 });
 
+test('a sentence longer than one request is read in full, cut between words', () => {
+  const sentence = Array.from({ length: 700 }, (_, index) => `w${index}`).join(' ') + '.';
+  const { queue } = fullTextListen(doc([p(text(sentence))]), { withAbstract: false });
+  assert.ok(queue.length > 1);
+  assert.ok(queue.every(item => item.utterances.every(line => line.length <= 2_500)));
+  assert.equal(queue.map(item => item.utterances.join(' ')).join(' '), sentence);
+});
+
 test('a hidden abstract is not read, and a paragraph longer than one request is split in parts', () => {
   const long = Array.from({ length: 60 }, (_, index) => `Sentence number ${index} says something about the method.`).join(' ');
   const { queue, chapters } = fullTextListen(doc([p(text(long))], [p(text('Hidden.'))]), { withAbstract: false });

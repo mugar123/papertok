@@ -42,16 +42,29 @@ function sentences(text: string) {
     .filter(Boolean);
 }
 
+/** A sentence too long for one request, cut between words. */
+function pieces(line: string) {
+  const out: string[] = [];
+  let rest = line;
+  while (rest.length > MAX_PART_CHARS) {
+    const space = rest.lastIndexOf(' ', MAX_PART_CHARS);
+    const cut = space > 0 ? space : MAX_PART_CHARS;
+    out.push(rest.slice(0, cut));
+    rest = rest.slice(cut).trimStart();
+  }
+  return [...out, rest];
+}
+
 /** Sentences grouped into parts that each fit one request. */
 function parts(lines: string[]) {
   const out: string[][] = [[]];
   let length = 0;
-  for (const line of lines) {
+  for (const line of lines.flatMap(pieces)) {
     if (length > 0 && length + line.length + 1 > MAX_PART_CHARS) {
       out.push([]);
       length = 0;
     }
-    out[out.length - 1].push(line.slice(0, MAX_PART_CHARS));
+    out[out.length - 1].push(line);
     length += line.length + 1;
   }
   return out.filter(group => group.length > 0);
