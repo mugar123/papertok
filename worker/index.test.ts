@@ -14,9 +14,9 @@ import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
-import { handleHarvestOpenAlex } from './openalex-api.ts';
+import { handleAccountOpenAlex, handleHarvestOpenAlex } from './openalex-api.ts';
 import { fetchArxivPapers } from './paper-sources.ts';
-import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_NEW_FOLLOWS_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget } from './provider-runtime.ts';
+import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_NEW_FOLLOWS_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_REST_PERCENT, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget, reserveOpenAlexBudget } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
@@ -1946,6 +1946,37 @@ test('an OpenAlex answer fetched in one location is served from the shared store
   assert.equal(entry.ttl, 24 * 60 * 60, 'kept for a day');
 });
 
+for (const source of ['edge', 'shared store via a concurrent reader']) {
+  test(`the harvest bypasses a rejected list from the ${source}`, async () => {
+    const store = fakeOpenAlexStore();
+    const env = openAlexEnv({ NOTIFICATION_STORE: store });
+    const request = () => new Request(OPENALEX_LIST_URL, { headers: BROWSER });
+    const empty = JSON.stringify({ results: [] });
+    const found = JSON.stringify({ results: [{ id: 'W1' }] });
+    const harvest = () => handleHarvestOpenAlex(request(), env, { canCacheList: body => body === found });
+    let upstream = empty;
+    const calls = await withCountedUpstream(async () => new Response(upstream), () =>
+      withIdentityAndCacheStore(async edge => {
+        const rejected = await harvest();
+        assert.equal(rejected.headers.get('cache-control'), 'no-store');
+        assert.equal(edge.size, 0);
+        assert.equal(store.entries.size, 0);
+        assert.equal(await (await reportApi.fetch(request(), env)).text(), empty);
+        upstream = found;
+        if (source === 'edge') {
+          assert.equal(await (await harvest()).text(), found);
+        } else {
+          edge.clear();
+          const [reader, batch] = await Promise.all([reportApi.fetch(request(), env), harvest()]);
+          assert.equal(await reader.text(), empty);
+          assert.equal(await batch.text(), found);
+        }
+        assert.equal(await (await harvest()).text(), found);
+      }));
+    assert.equal(calls.length, 3);
+  });
+}
+
 test('a trailing slash on an OpenAlex path shares the entry, reservation and call of the same upstream URL', async () => {
   const store = fakeOpenAlexStore();
   const ledger = recordingLedger();
@@ -2471,8 +2502,9 @@ test('an OpenAlex search reserves the ten list calls it is billed as', async () 
 // (help.openalex.org/access/example-costs/), and the relay reserved a list call
 // for it: every card opened and every author clicked took a unit of the day's
 // ceiling. The autocomplete endpoint is not on that list, and a `filter=doi:`
-// batch is a list, so both still reserve one.
-test('an OpenAlex entity by id or DOI reserves nothing and is still fetched', async () => {
+// batch is a list, so both still reserve one. A lookup takes one of its
+// caller's own allowance instead, in another ledger object (ENG-223).
+test('an OpenAlex entity by id or DOI reserves none of the budget and is still fetched', async () => {
   const reservedFor = async (path: string) => {
     const ledger = recordingLedger();
     let upstream = '';
@@ -2486,17 +2518,25 @@ test('an OpenAlex entity by id or DOI reserves nothing and is still fetched', as
         { headers: BROWSER },
       ), openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding }))),
     );
-    return { amounts: ledger.reservations.map(entry => entry.amount), status: response.status, upstream };
+    return {
+      amounts: ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:')).map(entry => entry.amount),
+      lookups: ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex-lookups:')).length,
+      status: response.status,
+      upstream,
+    };
   };
 
   const work = await reservedFor('works/W2741809807');
   assert.deepEqual(work.amounts, []);
+  assert.equal(work.lookups, 1);
   assert.equal(work.status, 200);
   assert.match(work.upstream, /^https:\/\/api\.openalex\.org\/works\/W2741809807\?/);
   assert.deepEqual((await reservedFor('works/doi:10.1000/xyz123')).amounts, []);
   assert.deepEqual((await reservedFor('authors/A5023888391')).amounts, []);
   assert.deepEqual((await reservedFor('autocomplete/topics?q=quantum')).amounts, [1]);
-  assert.deepEqual((await reservedFor('works?filter=doi:10.1000/a|10.1000/b')).amounts, [1]);
+  const batch = await reservedFor('works?filter=doi:10.1000/a|10.1000/b');
+  assert.deepEqual(batch.amounts, [1]);
+  assert.equal(batch.lookups, 0);
 });
 
 test('the per-minute OpenAlex ceiling refuses within the day and asks for a minute', async () => {
@@ -2509,8 +2549,9 @@ test('the per-minute OpenAlex ceiling refuses within the day and asks for a minu
   assert.equal(calls.length, 2, 'one ledger call per miss');
 });
 
-test('the daily OpenAlex ceiling refuses a request the per-minute one would allow', async () => {
-  const { responses, calls } = await secondOpenAlexMiss({ OPENALEX_GLOBAL_MINUTE_LIMIT: '100', OPENALEX_GLOBAL_DAILY_LIMIT: '1' });
+test("the day's OpenAlex ceiling refuses a request the per-minute one would allow, at the part of it outside the harvest's", async () => {
+  // A day of two, of which the part outside the harvest's is one (ENG-225).
+  const { responses, calls } = await secondOpenAlexMiss({ OPENALEX_GLOBAL_MINUTE_LIMIT: '100', OPENALEX_GLOBAL_DAILY_LIMIT: '2' });
 
   assert.equal(responses[0].status, 200);
   assert.equal(responses[1].status, 429);
@@ -4133,7 +4174,7 @@ test('each OpenAlex request shape reserves under its tier', async () => {
       async () => Response.json({ results: [] }),
       () => reportApi.fetch(new Request(relayPath(path), { headers: BROWSER }), openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding })),
     );
-    return ledger.reservations.map(entry => `${entry.tally} ${entry.amount}`);
+    return ledger.reservations.filter(entry => IS_OPENALEX(entry.periodKey)).map(entry => `${entry.tally} ${entry.amount}`);
   };
   const shapes: Array<[string, string[]]> = [
     // One paper being opened: the public page's fallback by arXiv landing page.
@@ -4155,7 +4196,7 @@ test('each OpenAlex request shape reserves under its tier', async () => {
     ['works?filter=institutions.ror:https://ror.org/05a28rw58&per-page=1&select=id', ['exploration.list 1']],
     ['works?search=ultracold%20gas', ['exploration.search 10']],
     ['autocomplete/authors?q=ada', ['exploration.list 1']],
-    // One entity by id is free and never asks the ledger.
+    // One entity by id is free and reserves none of the day.
     ['works/W2741809807', []],
   ];
   for (const [path, expected] of shapes) {
@@ -4465,9 +4506,8 @@ test("OpenAlex's own refusal reporting an empty key closes billed misses at once
   assert.equal(calls, 1);
 });
 
-// Before the readings, a work opened by id reached no Durable Object at all.
-// Filing its reading must not make the reader, or everyone waiting on the same
-// miss, wait for a ledger that is slow or stuck.
+// Filing an answer's reading must not make the reader, or everyone waiting on
+// the same miss, wait for a ledger that is slow or stuck.
 test('a reading the ledger does not take does not hold the answer it came with', { timeout: 5_000 }, async t => {
   const now = Date.parse('2026-10-22T15:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now });
@@ -4478,7 +4518,8 @@ test('a reading the ledger does not take does not hold the answer it came with',
       get: (name: unknown): Pick<DurableObjectStub, 'fetch'> => ({
         fetch: async (_url, init) => {
           const { action } = JSON.parse(String(init!.body));
-          actions.push(`${action} ${name}`);
+          // The lookups' object is one of the day's sixteen, by caller.
+          actions.push(`${action} ${String(name).replace(/^(openalex-lookups:day:[\d-]+):[a-f0-9]$/, '$1')}`);
           return action === 'observe' ? new Promise<Response>(() => {}) : Response.json({ accepted: true });
         },
       }),
@@ -4494,7 +4535,7 @@ test('a reading the ledger does not take does not hold the answer it came with',
   assert.deepEqual(responses.map(response => response.status), [200, 200, 200]);
   assert.deepEqual(
     actions.sort(),
-    ['observe openalex:day:2026-10-22', 'observe openalex:day:2026-10-22', 'reserve openalex:day:2026-10-22'],
+    ['observe openalex:day:2026-10-22', 'observe openalex:day:2026-10-22', 'reserve openalex-lookups:day:2026-10-22', 'reserve openalex:day:2026-10-22'],
     'one reading per upstream answer, the shared miss counted once',
   );
 });
@@ -4527,6 +4568,8 @@ test('/health/openalex/budget reports today\'s units by tier and kind with the c
   }));
   assert.equal(upstream.length, 3);
   const used = 12 + elsewhere;
+  // Everything but the harvest's one unit, against its own part of the day.
+  const rest = { percent: OPENALEX_REST_PERCENT, limit: Math.floor(cap * OPENALEX_REST_PERCENT / 100), used: used - 1 };
 
   const report = await withCountedUpstream(async () => { throw new Error('the report asks OpenAlex nothing'); }, async () => {
     await withIdentityAndCacheStore(async () => {
@@ -4542,7 +4585,7 @@ test('/health/openalex/budget reports today\'s units by tier and kind with the c
         ...(name === 'feed' ? { share: OPENALEX_HARVEST_DAILY_UNITS - OPENALEX_NEW_FOLLOWS_DAILY_UNITS } : {}),
         used: spent,
         refused,
-        open: used + 1 <= limitOf(name),
+        open: used + 1 <= limitOf(name) && (name === 'feed' || rest.used + 1 <= rest.limit),
       });
       assert.deepEqual(body, {
         provider: 'openalex',
@@ -4555,6 +4598,7 @@ test('/health/openalex/budget reports today\'s units by tier and kind with the c
         ceiling: cap,
         used,
         remaining: cap - used,
+        rest,
         tiers: {
           essential: tier('essential', 0, 0),
           feed: tier('feed', 1, 0),
@@ -4810,4 +4854,209 @@ test('full text answers with arXiv\'s HTML for a month, with nothing for an hour
   const outage = await fullText('arxiv_id=2601.00013', (async () => new Response('', { status: 503 })));
   assert.equal(outage.status, 200);
   assert.match(outage.headers.get('cache-control') || '', /s-maxage=120\b/);
+});
+
+// --- ENG-223, ENG-225: what one address may take of OpenAlex -----------------
+
+// The relay as a reader at `ip` asks it, each request against an empty edge.
+function relayFrom(env: WorkerEnv) {
+  return (ip: string, path: string) => withIdentityAndCacheStore(() => reportApi.fetch(
+    new Request(relayPath(path), { headers: { origin: BROWSER.origin, 'cf-connecting-ip': ip } }),
+    env,
+  ));
+}
+
+// ENG-223: a lookup by id costs no unit, so nothing counted it: an anonymous
+// script asking for random ids made a call on the key, a KV write and a
+// ledger write each time, without limit.
+test("one address's OpenAlex lookups by id stop at its allowance for the minute, while another address is still served", async t => {
+  const start = Date.parse('2026-11-22T10:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: start });
+  const store = fakeOpenAlexStore();
+  const ask = relayFrom(openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, NOTIFICATION_STORE: store }));
+  let asked = 0;
+  const lookup = (ip: string) => ask(ip, `works/W${asked += 1}`);
+
+  const upstream = await withCountedUpstream(async () => Response.json({ id: 'https://openalex.org/W1' }), async () => {
+    // A minute's allowance, then one more.
+    for (let miss = 0; miss < 300; miss += 1) assert.equal((await lookup('192.0.2.1')).status, 200, `lookup ${miss + 1}`);
+    const refused = await lookup('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.deepEqual(await refused.json(), { code: 'PROVIDER_RATE_LIMITED' });
+    assert.equal(refused.headers.get('retry-after'), '60');
+    // Named as the Worker's own refusal, so the browser fails this request
+    // only and does not close OpenAlex for the tab.
+    assert.equal(refused.headers.get('x-papertok-budget-tier'), 'essential');
+    assert.equal(refused.headers.get('access-control-allow-origin'), BROWSER.origin);
+    assert.match(refused.headers.get('access-control-expose-headers')!, /x-papertok-budget-tier/);
+    assert.equal((await lookup('192.0.2.2')).status, 200, 'another address has its own allowance');
+    // An answer already stored is served to a caller past its allowance.
+    assert.equal((await ask('192.0.2.1', 'works/W1')).status, 200);
+    // The next minute brings a new allowance.
+    t.mock.timers.setTime(start + 60_000);
+    assert.equal((await lookup('192.0.2.1')).status, 200);
+  });
+  assert.equal(upstream.length, 302, 'a refused lookup asks OpenAlex nothing');
+  assert.equal(store.entries.size, 302, 'and writes nothing to the shared store');
+});
+
+// ENG-225, ENG-223: a minute's allowance in every minute is the whole day.
+// With 300 units a minute and no share of the day, one address reserved all
+// the day has outside the harvest's part in 19 minutes.
+test("one address's billed OpenAlex misses stop at its share of the day, while another address is still served", async t => {
+  const start = Date.parse('2026-11-23T10:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: start });
+  const ask = relayFrom(openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_GLOBAL_DAILY_LIMIT: '10000' }));
+  let asked = 0;
+  const list = (ip: string) => ask(ip, `works?filter=doi:10.1000/${asked += 1}&per-page=1`);
+
+  const upstream = await withCountedUpstream(async () => Response.json({ results: [] }), async () => {
+    let served = 0;
+    for (let minute = 0; minute < 19; minute += 1) {
+      t.mock.timers.setTime(start + minute * 60_000);
+      for (let miss = 0; miss < 300; miss += 1) {
+        if ((await list('192.0.2.1')).status !== 200) break;
+        served += 1;
+      }
+    }
+    assert.equal(served, 1_000, 'a tenth of the day');
+    const refused = await list('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get('retry-after'), '300');
+    assert.equal(refused.headers.get('x-papertok-budget-tier'), 'essential');
+    assert.equal((await list('192.0.2.2')).status, 200, 'the day is still open to everyone else');
+    // Another address of the same IPv6 /64 is the same caller.
+    for (let miss = 0; miss < 4; miss += 1) {
+      t.mock.timers.setTime(start + (20 + miss) * 60_000);
+      for (let each = 0; each < 250; each += 1) assert.equal((await list(`2001:db8:1:2::${each + 1}`)).status, 200);
+    }
+    assert.equal((await list('2001:db8:1:2:ffff::1')).status, 429);
+  });
+  assert.equal(upstream.length, 2_001, 'a refused miss asks OpenAlex nothing');
+});
+
+test("one address's OpenAlex lookups by id stop at its allowance for the day, while another address is still served", async t => {
+  const start = Date.parse('2026-11-23T10:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: start });
+  const ask = relayFrom(openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }));
+  let asked = 0;
+  const lookup = (ip: string) => ask(ip, `works/W${asked += 1}`);
+
+  const upstream = await withCountedUpstream(async () => Response.json({ id: 'https://openalex.org/W1' }), async () => {
+    for (let minute = 0; minute < 10; minute += 1) {
+      t.mock.timers.setTime(start + minute * 60_000);
+      for (let miss = 0; miss < 300; miss += 1) assert.equal((await lookup('192.0.2.1')).status, 200);
+    }
+    t.mock.timers.setTime(start + 10 * 60_000);
+    const refused = await lookup('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get('retry-after'), '300');
+    assert.equal(refused.headers.get('x-papertok-budget-tier'), 'essential');
+    assert.equal((await lookup('192.0.2.2')).status, 200);
+    // The next UTC day brings a new allowance.
+    t.mock.timers.setTime(Date.parse('2026-11-24T00:00:01Z'));
+    assert.equal((await lookup('192.0.2.1')).status, 200);
+  });
+  assert.equal(upstream.length, 3_002);
+});
+
+test('an OpenAlex lookup by id with no caller address, no secret or no ledger is refused and asks OpenAlex nothing', async t => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const ledger = () => inMemoryQuotaLedger().binding;
+  const unreachable = {
+    idFromName: ((name: string): unknown => name) as TestNamespace['idFromName'],
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => { throw new Error('ledger unreachable'); } })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
+  const lookup = (headers: Record<string, string>, env: WorkerEnv) => withIdentityAndCacheStore(
+    () => reportApi.fetch(new Request(relayPath('works/W2741809807'), { headers }), env),
+  );
+  const upstream = await withCountedUpstream(async () => Response.json({ id: 'https://openalex.org/W1' }), async () => {
+    for (const response of [
+      await lookup({ origin: BROWSER.origin }, openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger() })),
+      await lookup(BROWSER, openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger(), PDF_RATE_LIMIT_SECRET: undefined })),
+      await lookup(BROWSER, openAlexEnv({ REQUEST_QUOTA_LEDGER: undefined })),
+      await lookup(BROWSER, openAlexEnv({ REQUEST_QUOTA_LEDGER: unreachable })),
+    ]) {
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { code: 'PROVIDER_QUOTA_NOT_CONFIGURED' });
+    }
+  });
+  assert.deepEqual(upstream, []);
+  // The unreachable ledger's error is not written to the log.
+  const logged = warn.mock.calls.map(call => call.arguments).filter(args => String(args[0]).includes('LOOKUP_LEDGER_UNAVAILABLE'));
+  assert.deepEqual(logged, [[JSON.stringify({ route: '/openalex', code: 'LOOKUP_LEDGER_UNAVAILABLE' })]]);
+  assert.equal(warn.mock.calls.some(call => call.arguments.some(argument => argument instanceof Error)), false);
+});
+
+// The paper store's lookups of liked papers and the author metrics' ask
+// in-process, behind a verified account and that route's own allowance.
+test("an account route's lookup by id carries no address and is not counted against one, while a billed request from it is refused", async () => {
+  const ledger = inMemoryQuotaLedger();
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
+  const ask = (path: string) => withIdentityAndCacheStore(() => handleAccountOpenAlex(new Request(relayPath(path)), env));
+  const upstream = await withCountedUpstream(async () => Response.json({ id: 'https://openalex.org/W1' }), async () => {
+    assert.equal((await ask('works/W2741809807')).status, 200);
+    assert.equal((await ask('works?filter=doi:10.1000/a&per-page=1')).status, 503);
+  });
+  assert.equal(upstream.length, 1);
+  assert.deepEqual(ledger.calls.filter(key => key.startsWith('openalex-lookups:')), []);
+});
+
+// One object for every address's lookups would let a flood of refused ones
+// slow or fail it for every reader, since a lookup stops without its ledger.
+test("the callers' lookups by id are counted in sixteen ledger objects a day, each caller always in its own", async () => {
+  const ledger = inMemoryQuotaLedger();
+  const ask = relayFrom(openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding }));
+  await withCountedUpstream(async () => Response.json({ id: 'https://openalex.org/W1' }), async () => {
+    for (let address = 1; address <= 60; address += 1) {
+      assert.equal((await ask(`192.0.2.${address}`, `works/W${address}`)).status, 200);
+      assert.equal((await ask(`192.0.2.${address}`, `works/W${1_000 + address}`)).status, 200);
+    }
+  });
+  const objects = ledger.calls.filter(key => key.startsWith('openalex-lookups:'));
+  assert.equal(objects.length, 120);
+  for (const key of objects) assert.match(key, /^openalex-lookups:day:\d{4}-\d{2}-\d{2}:[a-f0-9]$/);
+  assert.ok(new Set(objects).size > 8 && new Set(objects).size <= 16, `${new Set(objects).size} objects`);
+  for (let index = 0; index < objects.length; index += 2) assert.equal(objects[index], objects[index + 1], 'one caller, one object');
+});
+
+// ENG-225: the harvest's share was only a ceiling on the harvest. Readers
+// could take the day to 100 %, past the harvest's 95 %, before the 02:30 run
+// or while it ran, and the feed got no new papers that night.
+test("readers cannot spend the harvest's part of the day: past their own a reader's miss is refused, and the harvest still finds its whole share", async () => {
+  const ceiling = 10_000;
+  const ledger = inMemoryQuotaLedger();
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding, OPENALEX_GLOBAL_DAILY_LIMIT: String(ceiling) });
+  const ask = relayFrom(env);
+  const readersPart = Math.floor(ceiling * OPENALEX_REST_PERCENT / 100);
+
+  await withCountedUpstream(async () => Response.json({ results: [] }), async () => {
+    // Readers at many addresses, all but one unit of what is not the harvest's.
+    await reserveRequestQuota(ledger.binding, {
+      periodKey: `openalex:day:${new Date().toISOString().slice(0, 10)}`,
+      subject: 'elsewhere',
+      subjectLimit: ceiling,
+      globalLimit: ceiling,
+      amount: readersPart - 1,
+    });
+    // One paper being opened, the tier allowed the whole ceiling.
+    const opened = (doi: string) => ask('192.0.2.1', `works?filter=doi:${doi}&per-page=1`);
+    assert.equal((await opened('10.1000/a')).status, 200);
+    const refused = await opened('10.1000/b');
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get('retry-after'), '300');
+    assert.equal(refused.headers.get('x-papertok-budget-tier'), 'essential');
+
+    const { report } = await readOpenAlexBudget(env);
+    assert.deepEqual(report!.rest, { percent: OPENALEX_REST_PERCENT, limit: readersPart, used: readersPart });
+    assert.equal(report!.tiers.essential.open, false);
+    assert.equal(report!.tiers.feed.open, true);
+
+    // The nightly run's share and the new follows', to the last unit.
+    const nightly = OPENALEX_HARVEST_DAILY_UNITS - OPENALEX_NEW_FOLLOWS_DAILY_UNITS;
+    assert.equal((await reserveOpenAlexBudget(env, '', { units: nightly, tier: 'feed', kind: 'list' })).error, undefined);
+    assert.equal((await reserveOpenAlexBudget(env, '', { units: OPENALEX_NEW_FOLLOWS_DAILY_UNITS, tier: 'feed', kind: 'list', newFollow: true })).error, undefined);
+    // What the harvest spends frees nothing for readers.
+    assert.equal((await opened('10.1000/b')).status, 429);
+  });
 });

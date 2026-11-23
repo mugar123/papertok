@@ -8,13 +8,12 @@ interface EmailHealth { configured?: boolean; available?: boolean; provider?: st
 import { auth } from './firebase.ts';
 import { authenticatedWorkerFetch, trustedWorkerUrl } from './worker-api-client.ts';
 import { areaKeyForPaper } from '../utils/area-accent.ts';
-import { getLocalizedInstitutionName } from '../utils/institution-localization.ts';
+import { getFollowDisplayName } from '../utils/follow-display-name.ts';
 import {
   isOpaqueQueryTopicText,
   MAX_QUERY_TOPIC_CATEGORY_IDS,
   MAX_QUERY_TOPIC_LENGTH,
   MAX_QUERY_TOPIC_SOURCE_LENGTH,
-  resolvePaperTopic,
 } from '../utils/topic-navigation.ts';
 
 export class EmailNotificationServiceError extends Error {
@@ -32,24 +31,6 @@ function apiBase() {
   const value = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
   if (!value) throw new EmailNotificationServiceError('EMAIL_NOT_CONFIGURED');
   return value;
-}
-
-function localizedFollowName(follow: Partial<FollowEntity>) {
-  if (follow.type === 'institution') {
-    return getLocalizedInstitutionName({
-      display_name: follow.displayName,
-      metadata: follow.metadata,
-    }) || follow.displayName;
-  }
-
-  if (follow.type === 'topic') {
-    const localizedMetadataLabel = follow.metadata?.labelEn;
-    const localTopic = resolvePaperTopic(follow.canonicalId)
-      || resolvePaperTopic(follow.displayName);
-    return localizedMetadataLabel || localTopic?.label || follow.displayName;
-  }
-
-  return follow.displayName;
 }
 
 function cleanMetadataText(value: unknown, maxLength: number) {
@@ -76,7 +57,7 @@ export function serializeFollowForNotifications(follow: Partial<FollowEntity> = 
   return {
     type: follow.type,
     canonicalId: follow.canonicalId,
-    displayName: localizedFollowName(follow),
+    displayName: getFollowDisplayName(follow, 'digest'),
     externalIds: {
       ...(follow.externalIds?.ror ? { ror: follow.externalIds.ror } : {}),
       ...(follow.externalIds?.orcid ? { orcid: follow.externalIds.orcid } : {}),

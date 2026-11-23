@@ -1,10 +1,19 @@
-function encodeUtf8(value: string|undefined) {
+const UTF8_CHUNK_BYTES = 0x8000;
+
+function encodeUtf8(value: string | undefined) {
   const bytes = new TextEncoder().encode(value);
-  return String.fromCharCode(...bytes);
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += UTF8_CHUNK_BYTES) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + UTF8_CHUNK_BYTES));
+  }
+  return binary;
 }
 
 function decodeUtf8(value: string) {
-  const bytes = Uint8Array.from(value, character => character.charCodeAt(0));
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) {
+    bytes[index] = value.charCodeAt(index);
+  }
   return new TextDecoder().decode(bytes);
 }
 

@@ -21,12 +21,13 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // A request from outside the Worker (`handleArxiv`: a reader, a guest or a
 // script; `handleAgentArxiv`: an AI client) may take only every other seat,
 // 10 misses a minute app-wide, so cache-busting queries cannot hold every seat however many addresses send
-// them; the caller allowance below counts one address, and one IPv6 host can
-// send from a whole /64. The Worker's own callers take any seat: the
+// them; the caller allowance below counts one address, an IPv6 one as its
+// /64. The Worker's own callers take any seat: the
 // harvest's arXiv lanes and the liked-paper lookups (`handleHarvestArxiv`),
 // and share pages. A signed-in reader chooses the ids those lookups ask for
 // through POST /store/papers, so one account, within its per-minute feed
-// allowance, can still hold every seat. The email digest takes only the seats
+// allowance, can still hold every seat until its papers added for the day are
+// spent (300 lookups, paper-feed.ts). The email digest takes only the seats
 // requests from outside the Worker may not take.
 //
 // The guarantee towards arXiv (ENG-184): every call the Worker sends to

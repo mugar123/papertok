@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
+import { PRIVACY_NOTICE_SHOWN_FROM, PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -121,9 +121,19 @@ test('the page names the public pages a shared link opens as places for the Priv
 test('the page says figure lookups count against the caller address like the other public lookups', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // worker/source-api.ts gives /resources/figures a per-address allowance through worker/caller-quota.ts.
-  assert.match(html, /When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to\s+PaperTok's MCP server, or a public request looks up\s+papers, paper figures,\s+open-access links or a shared page, that server uses the IP address/);
+  assert.match(html, /When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to\s+PaperTok's MCP server, or a public request looks up\s+papers, paper figures,\s+open-access links or a shared page, or a translation needs a fresh arXiv lookup,\s+that server uses the IP address/);
   // reserveCallerMinute (worker/caller-quota.ts) schedules every per-minute caller counter, figures included, for deletion a minute after its window.
   assert.match(html, /The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule/);
+});
+
+test('the page describes translation data, quota retention, and how to remove the browser preference', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /When you request a translation, PaperTok sends the arXiv title, abstract and chosen language to Anthropic without your identity or email/);
+  assert.match(html, /PaperTok keeps the translation in memory while you read the card/);
+  assert.match(html, /Your browser remembers the language you chose for your last successful translation on this account and device/);
+  assert.match(html, /PaperTok counts daily translation requests against a hashed account identifier for up to three days to enforce usage limits/);
+  const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(storage, /language you chose for your last successful translation under your account identifier, in <code>papertok:paper-translation-language:\$\{uid\}<\/code>\. Signing out, deleting the account from Settings in this browser, or clearing the site's data removes that choice/);
 });
 
 test('the page describes who sees the once-per-account announcement until 0.4', () => {
@@ -150,16 +160,19 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('the current notice summarizes the 20 November policy changes', () => {
+test('the current notice announces the 23 November policy changes and the 20 November Anthropic point', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /opt-in digest reminders.*last signed-in visit hour.*30 days.*opt-out, unsubscribe or account deletion/i);
-  assert.match(notice, /Anthropic can rewrite\/explain outside the EU/i);
-  assert.match(notice, /Verified-email saves count by account\/paper\/UTC week.*off in Privacy/i);
-  assert.match(notice, /PostHog links surveys and likes\/saves\/reads before profile load to accounts/i);
-  assert.match(notice, /counts visits.*local day 7–13 mark/i);
-  assert.match(notice, /keep Essential\/Curiosity, mix and area levels/i);
-  assert.match(notice, /interest ideas and unsaved citations\/coauthors in My profile/i);
-  assert.match(notice, /ORCID on OpenAlex for weekly citations/i);
+  assert.match(notice, /OpenAlex lookups now count per IP address each day.*scheduled for deletion within three days/i);
+  assert.match(notice, /Cloudflare's 30-day recovery history may keep any deleted request counter for up to 30 days more/i);
+  assert.match(notice, /Anthropic may run rewrites\/explanations outside the EU/i);
+});
+
+test('the notice start is an ISO UTC instant that is not before the effective time', () => {
+  // An unparsable start would let the notice open at once (privacyNoticeOwed compares against NaN).
+  assert.match(PRIVACY_NOTICE_SHOWN_FROM, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+  const from = Date.parse(PRIVACY_NOTICE_SHOWN_FROM);
+  assert.ok(!Number.isNaN(from), 'it parses');
+  assert.ok(from >= Date.parse(PRIVACY_POLICY_EFFECTIVE_AT), 'the notice does not start before the text is live');
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

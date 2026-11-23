@@ -1,0 +1,68 @@
+name: Production smoke
+
+on:
+  schedule:
+    - cron: '23 15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-smoke
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Probe production
+        id: probe
+        shell: bash
+        run: node scripts/production-smoke.ts | tee "$RUNNER_TEMP/production-smoke.txt"
+
+      - name: Update the monitoring issue
+        if: ${{ !cancelled() && (steps.probe.outcome == 'success' || steps.probe.outcome == 'failure') }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+        run: |
+          title='Production smoke check failing'
+          issue=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" |
+            jq -r --arg title "$title" --arg outcome "$PROBE_OUTCOME" '
+              [.[][] | select(.pull_request == null and .title == $title and (.state == "open" or $outcome == "failure"))]
+              | max_by(.state) | .number // empty')
+
+          if [[ "$PROBE_OUTCOME" == success ]]; then
+            if [[ -n "$issue" ]]; then
+              gh issue close "$issue" --repo "$GITHUB_REPOSITORY"
+            fi
+            exit 0
+          fi
+
+          body="$RUNNER_TEMP/production-smoke-issue.md"
+          {
+            printf 'Production smoke failed. See the [workflow run](%s/%s/actions/runs/%s).\n\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            grep '^- FAIL ' "$RUNNER_TEMP/production-smoke.txt" ||
+              printf 'The probe exited before reporting any results.\n'
+          } > "$body"
+
+          if [[ -n "$issue" ]]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/$issue" \
+              -f state=open -F "body=@$body" --jq .html_url
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body"
+          fi

@@ -123,11 +123,20 @@ export interface PaperRecommendationScore {
   missingAbstract: number;
   diversityBoost: number;
   authorBoost: number;
+  boostedAuthorKey?: string;
   // The follows the client's ranking boosts. A followed journal's papers come
   // from its lane in the corpus (`_followedEntityMatches`) and get no boost.
   followedEntityMatches: Record<Exclude<PaperFollowMatch['type'], 'journal'>, boolean>;
   isExploration: boolean;
+  preferenceMatch?: { categoryId: string; primary: boolean };
   explanation: string;
+}
+
+export interface ConferenceMark {
+  id: string;
+  label: string;
+  year?: number;
+  evidence: 'arxiv-comment' | 'openreview';
 }
 
 /**
@@ -178,6 +187,9 @@ export interface Paper {
   // otherwise. The lane of a followed journal is filed by it (ENG-123).
   venueId?: string;
   conference?: string;
+  // Last update time of the corpus row, including updates to fields other than the conference mark.
+  corpusUpdatedAt?: number;
+  acceptedConference?: ConferenceMark;
   publisher?: string;
   // Providers retain their vocabulary (article, report, thesis, letter, etc.).
   publicationType?: string;
@@ -233,6 +245,8 @@ export interface Paper {
   _fetchedFor?: string[];
   // Request-scoped semantic relevance in [-1, 1], including explicit rejections.
   _semanticScore?: number;
+  // Captured with the response so a re-rank can still explain this score.
+  _semanticExampleKinds?: ReadonlyArray<'liked' | 'saved' | 'read'>;
   // Set by the corpus on a notable paper it adds to a page, which the feed
   // places (placeNotableCards): one of the most-cited papers of the reader's
   // categories.

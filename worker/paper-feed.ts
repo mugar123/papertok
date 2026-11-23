@@ -9,7 +9,7 @@ import {
   FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
   readPapersByIds, reserveFeedRequest,
 } from './paper-store.ts';
-import { followedLaneJob, ingestPaperIds } from './paper-sources.ts';
+import { followedLaneJob, ingestPaperIds, paperIdLookup } from './paper-sources.ts';
 import { isKeywordLane } from './keyword-lanes.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
@@ -75,6 +75,49 @@ const LANES_WRITTEN_PER_DAY = 4_000;
 const KEYWORD_LANE_WRITES = 3;
 const lanesWritten = (lane: string) => (isKeywordLane(lane) ? KEYWORD_LANE_WRITES : 1);
 
+// Papers the store lacks that an account's ids may have looked up and added
+// in a UTC day, and every account's together (ENG-224). Each request brings up
+// to LIKED_LOOKUP_MAX_PAPERS of them and an account has 60 requests a minute,
+// so without a day's allowance one account added 864,000 papers a day, each
+// kept for KEEP_LIKED_DAYS in a 10 GB database, and the recent ones entered
+// the lanes that rank other readers' feeds. It is counted by lookup, before
+// any provider is asked, so an id no provider knows spends it too: given back
+// when nothing was stored, a script of made-up ids would ask the providers
+// without limit. An id no lookup serves (`paperIdLookup`) spends nothing. A
+// liked paper a provider does not have, or answers too late, is asked for
+// again with the next first page and spends a unit each time.
+//
+// What the app sends (read from src/ on 2026-11-22, not from production
+// traffic): one id for each like, save or PDF opened of a paper the store
+// lacks (More like this), which only search results, Explorer pages and paper
+// pages can show, since the feed's own cards are stored; up to 10 once when a
+// profile with no learned interests loads; and up to 10 with each first page
+// of a reader with fewer than ENOUGH_STORED_POSITIVES embedded likes, which
+// ends once three of them are stored and embedded. A heavy day is about 60
+// (50 such likes and a seed), so an account has five times that. The app's day is 20 accounts at their allowance, or 100 heavy days:
+// at most 180,000 such papers kept at once.
+const PAPERS_ADDED_PER_READER = 300;
+const PAPERS_ADDED_PER_DAY = 6_000;
+
+/**
+ * Looks up and stores the papers of `absent` that a lookup serves and the
+ * reader's day and the app's still have room for, in order; the rest are not
+ * looked up, and a later request may bring them again. Papers the store holds never come here.
+ * Returns how many it stored. A ledger that is missing, answers with an error
+ * or cannot be reached adds nothing: the caller serves what the store has.
+ */
+async function addAbsentPapers(env: FeedEnv, uid: string, absent: string[], options: { keepUntil: string; deadlineMs?: number }) {
+  const served = absent.filter(id => paperIdLookup(id));
+  if (served.length === 0) return 0;
+  const allowed = await reserveLanes(env, {
+    periodKey: `store-new-papers:day:${new Date().toISOString().slice(0, 10)}`,
+    subject: `uid:${uid}`,
+    subjectLimit: PAPERS_ADDED_PER_READER,
+    globalLimit: PAPERS_ADDED_PER_DAY,
+  }, served);
+  return allowed.length ? ingestPaperIds(env, allowed, options) : 0;
+}
+
 /**
  * Liked papers the corpus cannot rank against yet, fetched and embedded: only
  * for a profile with fewer than ENOUGH_STORED_POSITIVES ranked likes, since a
@@ -94,7 +137,7 @@ async function addMissingPositives(env: FeedEnv, uid: string, positiveIds: strin
       : { results: [] };
     if (results.length >= ENOUGH_STORED_POSITIVES) return false;
     const absent = positiveIds.filter(id => !workByPaperId.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
-    const stored = absent.length ? await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS), deadlineMs: LIKED_LOOKUP_DEADLINE_MS }) : 0;
+    const stored = await addAbsentPapers(env, uid, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS), deadlineMs: LIKED_LOOKUP_DEADLINE_MS });
     const found = await findWorks(db, positiveIds.slice(0, LIKED_LOOKUP_MAX_PAPERS));
     return stored + await embedWorks(env, [...new Set(found.values())], uid) > 0;
   } catch (error) {
@@ -124,7 +167,8 @@ async function readFollowedLanes(env: FeedEnv, lanes: string[]): Promise<Followe
 
 /**
  * Reserves each lane's units (`unitsOf`, one unless told otherwise) for as
- * many of `lanes`, in order, as the allowance has left. All of them in one
+ * many of `lanes`, in order, as the allowance has left; `addAbsentPapers`
+ * reserves paper ids the same way, a unit each. All of them in one
  * reservation, or, when that is refused, the lanes that fit in what the
  * refusal says is left, in a second one: a lane that does not fit is passed
  * over, and a later one that does is taken. The app sends every follow with
@@ -294,9 +338,8 @@ export async function handleCorpusFeed(
     const started = Date.now();
     const found = await findWorks(database(env), ids);
     const absent = ids.filter(id => !found.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
-    if (absent.length) {
-      await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) }).catch(error => console.warn('Paper store could not add asked papers', error));
-    }
+    await addAbsentPapers(env, identity.uid, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) })
+      .catch(error => console.warn('Paper store could not add asked papers', error));
     const papers = await readPapersByIds(env, ids);
     timings?.since('ids', started);
     return { papers };

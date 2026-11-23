@@ -69,24 +69,22 @@ function ScientificText({ children }: PropsWithChildren) {
   // rebuilt every formula's DOM on every render of the card, and the feed
   // re-laid out a card whose words had not changed. Keeping the same element
   // tree across renders is what makes those renders a no-op for the DOM.
+  //
+  // Each formula sits in one span that stays put while its source gives way
+  // to KaTeX's markup. A browser translating the page (Chrome, Edge, Safari)
+  // swaps the prose's text nodes for its own <font> elements, and React,
+  // still holding the old nodes, throws when it removes one or inserts beside
+  // one (facebook/react#11538). Inside a span that stays, the swap never
+  // touches the prose. `translate="no"`: LaTeX and KaTeX's glyphs are not words.
   const renderedChunks = useMemo(() => parts.map((chunk, index) => {
     if (chunk.type === 'text') {
       return createElement(Fragment, { key: `text-${index}` }, displayProse(chunk.value));
     }
 
-    if (!katex) {
-      return createElement(Fragment, { key: `pending-${index}` }, chunk.raw);
-    }
-
-    const html = renderFormula(katex, chunk);
-    if (html === null) {
-      return createElement(Fragment, { key: `fallback-${index}` }, chunk.raw);
-    }
-
-    return createElement('span', {
-      key: `${chunk.raw}-${index}`,
-      dangerouslySetInnerHTML: { __html: html },
-    });
+    const html = katex ? renderFormula(katex, chunk) : null;
+    return createElement('span', { key: `math-${index}`, translate: 'no' }, html === null
+      ? chunk.raw
+      : createElement('span', { dangerouslySetInnerHTML: { __html: html } }));
   }), [parts, katex]);
 
   return createElement('span', { className: 'scientific-text' }, renderedChunks);

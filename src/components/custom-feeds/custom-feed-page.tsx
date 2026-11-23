@@ -48,7 +48,7 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
   const pageState = customFeedPageState(status, feeds, feedId);
   const feed = pageState.kind === 'feed' ? pageState.feed : null;
   const {
-    papers, loading, error, hasMore, loadMore, refresh, isRefreshing, walksUnseen, emptyKind, loadingIngredients, dismiss, restore,
+    papers, loading, error, takeFailureReport, hasMore, loadMore, refresh, isRefreshing, walksUnseen, emptyKind, loadingIngredients, dismiss, restore,
   } = useCustomFeedPapers(feed);
 
   const loadingNames = useMemo(() => loadingIngredients.map(ingredientLabel), [loadingIngredients]);
@@ -194,6 +194,7 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
     // Over cards too, as on Following: a failed refresh or next page is still
     // a failure the container has to know about.
     error,
+    takeFailureReport,
     hasMore,
     loadMore,
     refresh,
@@ -201,7 +202,7 @@ export default function CustomFeedPage({ onOpenPdf, onSaveToList }: Pick<Compone
     emptyState,
     surface: 'custom_feed',
     dismissal,
-  }), [papers, status, loading, emptyKind, error, hasMore, loadMore, refresh, isRefreshing, emptyState, dismissal]);
+  }), [papers, status, loading, emptyKind, error, takeFailureReport, hasMore, loadMore, refresh, isRefreshing, emptyState, dismissal]);
 
   if (pageState.kind === 'missing') return <Navigate to="/feed" replace />;
 

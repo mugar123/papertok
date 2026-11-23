@@ -1,3 +1,4 @@
+import type { Paper } from '../models/paper.ts';
 import { PaperBuilder } from './paper-builder.ts';
 import { arxivCommentSaysPublished, arxivDoiSaysPublished } from '../utils/publication-status.ts';
 
@@ -13,6 +14,11 @@ export const ARXIV_FEED_AREAS = Object.freeze([
 const ARXIV_PREFIXES = ['cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ', 'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph', 'hep-th', 'nlin', 'nucl-ex', 'nucl-th', 'quant-ph', 'math-ph'];
 export function isArxivCategory(category: string) {
   return ARXIV_PREFIXES.some(prefix => category === prefix || category.startsWith(`${prefix}.`));
+}
+
+// True when a paper's categories come from an arXiv record.
+export function givesArxivCategories(paper: Partial<Paper>): paper is Partial<Paper> & { primaryCategory: string } {
+  return paper.sources?.primary === 'arxiv' && Boolean(paper.primaryCategory);
 }
 
 // One arXiv record as a paper, whether it came from the Atom API or the

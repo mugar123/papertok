@@ -35,6 +35,7 @@ export interface PaperCardProps {
   titleAs?: 'h1' | 'h2';
   publicMode?: boolean;
   onAuthRequired?: (reason: string) => void;
+  translationEnabled?: boolean;
   /**
    * The surface this card's events report. Required: a host that left it out
    * used to report 'feed', which counted Search and Lists opens as For You.
@@ -45,7 +46,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useSyncExternalStore, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense, Fragment } from 'react';
+import { useSyncExternalStore, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -110,12 +111,15 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // in the cascade to win them.
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import AbstractSheet from './abstract-sheet.tsx';
+import { PaperTranslationButton, PaperTranslationPicker, PaperTranslationStatus, TranslatedPaperText } from './paper-translation.tsx';
+import { usePaperTranslation } from '../../hooks/use-paper-translation.ts';
 import { SourceAttribution } from '../ui/source-attribution.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
 import type { ReaderCard, ReaderMenu } from './paper-menu.tsx';
 import { paperActions, shareMethod } from './paper-actions.ts';
-import { followReasonLabels } from '../../utils/follow-reasons.ts';
+import { followedOnCard } from '../../utils/follow-reasons.ts';
+import { feedReason } from '../../utils/feed-reason.ts';
 import { AboutFollows } from './about-follows.tsx';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
@@ -137,7 +141,7 @@ import { rewriteUseHint } from './rewrite-use-hint.ts';
 import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
-import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
+import { acceptedConferenceText, accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 import type { StatusTagKey } from '../../utils/paper-status.ts';
 import { trialRegistrationUrl, type StudyType } from '../../models/paper-evidence.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
@@ -432,6 +436,7 @@ const PaperCard = memo(function PaperCard({
   titleAs = 'h2',
   publicMode = false,
   onAuthRequired,
+  translationEnabled = true,
   analyticsSurface,
   position,
   abstractLoading = false,
@@ -456,6 +461,7 @@ const PaperCard = memo(function PaperCard({
   // and scrolls inside the card (2026-10-17). Wider windows unfold in place.
   // There the title opens the same sheet, whether or not the abstract is clipped.
   const [showAbstractSheet, setShowAbstractSheet] = useState(false);
+  const [focusTranslationPicker, setFocusTranslationPicker] = useState(false);
   const closeAbstractSheet = useCallback(() => setShowAbstractSheet(false), []);
   const coarsePointer = useMemo(() => {
     try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
@@ -551,17 +557,22 @@ const PaperCard = memo(function PaperCard({
   // (hooks/use-stable-navigate.ts says what it cost).
   const navigate = useStableNavigate();
   
-  const hasFollowedAuthor = useMemo(() => {
-    if (!paper?.authors?.length || !followedByType.author?.length) return false;
-    return paper.authors.some(author => isFollowing({
+  const followedAuthor = useMemo(() => {
+    if (!paper?.authors?.length || !followedByType.author?.length) return null;
+    return paper.authors.find(item => isFollowing({
       type: 'author',
-      id: (author as PaperAuthor)?.id || (author as PaperAuthor)?.name || author as string,
-      name: (author as PaperAuthor)?.name || author as string,
-    }));
+      id: (item as PaperAuthor)?.id || (item as PaperAuthor)?.name || item as string,
+      name: (item as PaperAuthor)?.name || item as string,
+    })) ?? null;
   }, [followedByType.author, isFollowing, paper]);
-  const followReasons = useMemo(
-    () => followReasonLabels(paper?._followedEntityMatches, hasFollowedAuthor, isFollowing),
-    [paper?._followedEntityMatches, hasFollowedAuthor, isFollowing],
+  const followed = useMemo(
+    () => followedOnCard(
+      paper?._followedEntityMatches,
+      followedAuthor,
+      isFollowing,
+      match => followedByType[match.type]?.find(entity => entity.canonicalId === match.canonicalId),
+    ),
+    [paper?._followedEntityMatches, followedAuthor, isFollowing, followedByType],
   );
 
   const lastTap = useRef(0);
@@ -918,13 +929,13 @@ const PaperCard = memo(function PaperCard({
     return () => clearTimeout(land);
   }, [slotAway, prefersReducedMotion]);
 
-  const toggleExpanded = (e: SyntheticEvent, newState: boolean) => {
+  const toggleExpanded = (e: SyntheticEvent, newState: boolean, allowShort = false) => {
     e.stopPropagation();
     // A panel that hides nothing has nothing to open. Without this, tapping an
     // abstract that fits whole flipped `expanded` on, and the toggle — reserved
     // beneath it, invisible — came up saying "Show less" for a panel that had
     // never been anything but open (measured 2026-09-18, guest feed, desktop).
-    if (newState && abstractClipped !== true) return;
+    if (newState && abstractClipped !== true && !allowShort) return;
     if (newState) pinSheet();
     // Only opening travels. Closing is done reading, and the panel is simply
     // back at its first line (2026-10-17): no height travel, no scroll back.
@@ -1160,15 +1171,15 @@ const PaperCard = memo(function PaperCard({
 
   // The clipped abstract's door on a phone: the sheet, not the fold. Once the
   // panel is open (a fine pointer got it there) the toggle closes it as ever.
-  const readsInSheet = (coarsePointer || isPhone) && abstractClipped === true && !expanded;
+  const readsInSheet = (coarsePointer || isPhone) && !expanded;
   const titleOpensSheet = (coarsePointer || isPhone) && Boolean(abstractText);
-  const openAbstract = (e: SyntheticEvent) => {
-    if (readsInSheet) {
+  const openAbstract = (e: SyntheticEvent, allowShort = false) => {
+    if (readsInSheet && (abstractClipped === true || allowShort)) {
       e.stopPropagation();
       setShowAbstractSheet(true);
       return;
     }
-    toggleExpanded(e, !expanded);
+    toggleExpanded(e, !expanded, allowShort);
   };
 
   const handleAbstractTransitionEnd = (event: TransitionEvent) => {
@@ -1260,6 +1271,18 @@ const PaperCard = memo(function PaperCard({
   const requireAuthentication = useCallback((action: string) => {
     onAuthRequired?.(action);
   }, [onAuthRequired]);
+  const requestTranslationSignIn = () => {
+    closeAbstractSheet();
+    requireAuthentication('paper_translation');
+  };
+  const translation = usePaperTranslation(
+    paper,
+    user?.uid,
+    translationEnabled && Boolean(user || onAuthRequired),
+    requestTranslationSignIn,
+  );
+  const translatedText = translation.current.showing ? translation.current.translation : undefined;
+  const sourceLanguage = translation.current.translation?.sourceLanguage;
   // Describes «Leer en simple» to a guest: it needs an account. A
   // description, not part of the name, so the name stays what the button
   // shows (WCAG 2.5.3, see the button).
@@ -1285,6 +1308,13 @@ const PaperCard = memo(function PaperCard({
   };
 
   const { label: categoryLabel, topic: primaryTopic, sourceLabel: classificationSource } = useMemo(() => getPaperClassification(paper), [paper]);
+  // Re-ranking mutates the score in place. Keep the reason for this paper,
+  // follow and surface so an unrelated render cannot rewrap the kicker.
+  const reason = useMemo(
+    () => feedReason(paper, followed, analyticsSurface, categoryLabel),
+    [paper, followed, analyticsSurface, categoryLabel],
+  );
+  const acceptedAt = acceptedConferenceText(paper);
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
@@ -1383,7 +1413,7 @@ const PaperCard = memo(function PaperCard({
   // a control in the card: two quick presses on the map are not a like.
   const handleDoubleTap = useCallback((event: MouseEvent) => {
     if (event?.target instanceof Node && !cardRef.current?.contains(event.target)) return;
-    if (event?.target instanceof Element && event.target.closest('.related-sheet')) return;
+    if (event?.target instanceof Element && event.target.closest('.related-sheet, .paper-translation-button, .paper-translation-picker')) return;
     const now = Date.now();
     if (now - lastTap.current < 300) {
       if (!isLiked) {
@@ -1884,6 +1914,7 @@ const PaperCard = memo(function PaperCard({
       })()}
     </AnimatePresence>
             </div>
+            {acceptedAt && <p className="pc-about-accepted">{acceptedAt}</p>}
           </section>
           {topicItems.length > 0 && (
             <section className="pc-about-section">
@@ -2030,27 +2061,33 @@ const PaperCard = memo(function PaperCard({
           {/* Each item brings the dot in front of it. A paper can have no
               year (a PubMed record printed next year), and a dot after the
               field then stood beside an empty date. */}
-          {followReasons.map(({ type, label }, index) => (
-            <Fragment key={type}>
-              {(categoryLabel || index > 0) && <span className="pc-meta-dot">·</span>}
-              <span className="pc-followed-badge">
-                {type === 'author' && <UserCheck size={12} />} {label}
+          {reason && (
+            <>
+              {categoryLabel && <span className="pc-meta-dot">·</span>}
+              <span className="pc-feed-reason">
+                {reason.kind === 'follow' && reason.followType === 'author' && <UserCheck size={12} aria-hidden="true" />} {reason.text}
               </span>
-            </Fragment>
-          ))}
+            </>
+          )}
           {paper.year ? (
             <>
-              {(categoryLabel || followReasons.length > 0) && <span className="pc-meta-dot">·</span>}
+              {(categoryLabel || reason) && <span className="pc-meta-dot">·</span>}
               <span className="pc-date">{paper.year}</span>
             </>
           ) : null}
+          {acceptedAt && (
+            <>
+              {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot">·</span> : null}
+              <span className="pc-accepted">{acceptedAt}</span>
+            </>
+          )}
 
           {(paper.citationCountKnown || paper.citationCount! > 0) && (
             <>
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
                   enriquecimiento se pasa del techo montan tarde juntos. */}
-              {(categoryLabel || followReasons.length > 0 || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+              {(categoryLabel || reason || paper.year || acceptedAt) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"
@@ -2090,18 +2127,18 @@ const PaperCard = memo(function PaperCard({
         {/* On a phone the title opens the abstract sheet, which shows it
             whole; only when there is an abstract to show under it. */}
         {titleOpensSheet ? (
-          <TitleTag className="pc-title pc-title--opens" lang="en">
+          <TitleTag className="pc-title pc-title--opens" lang={sourceLanguage ?? 'en'}>
             <button
               type="button"
               className="pc-title-btn"
               aria-haspopup="dialog"
               onClick={(event) => { event.stopPropagation(); setShowAbstractSheet(true); }}
             >
-              <span className="pc-title-text"><ScientificText>{paper.title}</ScientificText></span>
+              <span className="pc-title-text" dir="auto"><ScientificText>{paper.title}</ScientificText></span>
             </button>
           </TitleTag>
         ) : (
-          <TitleTag className="pc-title" lang="en">
+          <TitleTag className="pc-title" lang={sourceLanguage ?? 'en'} dir="auto">
             <ScientificText>{paper.title}</ScientificText>
           </TitleTag>
         )}
@@ -2253,7 +2290,9 @@ const PaperCard = memo(function PaperCard({
                 lang="en"
                 {...abstractSwap}
               >
-                <ScientificText>{abstractText}</ScientificText>
+                {translatedText
+                  ? <TranslatedPaperText translation={translatedText} />
+                  : <span lang={sourceLanguage} dir="auto"><ScientificText>{abstractText}</ScientificText></span>}
                 {/* Inside the words it credits, so it is in the panel from
                     their first frame and leaves with them: mounted on the
                     clipped verdict instead, it would be a late line on the
@@ -2324,19 +2363,39 @@ const PaperCard = memo(function PaperCard({
             frames in pushed the abstract, the authors and the title 25 px up
             in one frame, in the middle of their arrival. */}
         {abstractText && (
-        <button
-          type="button"
-          className={`pc-abstract-toggle${abstractClipped === true || expanded ? '' : ' pc-abstract-toggle--reserved'}`}
-          aria-expanded={readsInSheet ? undefined : expanded}
-          aria-haspopup={readsInSheet ? 'dialog' : undefined}
-          aria-controls={readsInSheet ? undefined : abstractId}
-          onClick={openAbstract}
-        >
-          {expanded
-            ? ('Show less')
-            : ('Read full abstract')}
-        </button>
+          <div className="pc-abstract-tools">
+            <button
+              type="button"
+              className={`pc-abstract-toggle${abstractClipped === true || expanded || translation.eligible ? '' : ' pc-abstract-toggle--reserved'}`}
+              aria-expanded={readsInSheet ? undefined : expanded}
+              aria-haspopup={readsInSheet ? 'dialog' : undefined}
+              aria-controls={readsInSheet ? undefined : abstractId}
+              onClick={event => openAbstract(event, translation.eligible)}
+            >
+              {expanded ? <span key="less">Show less</span> : <span key="full">Read full abstract</span>}
+            </button>
+            <PaperTranslationButton
+              state={translation}
+              onAuthRequired={requestTranslationSignIn}
+              onChooseLanguage={() => {
+                if (readsInSheet) setShowAbstractSheet(true);
+                else {
+                  setFocusTranslationPicker(true);
+                  setExpanded(true);
+                }
+              }}
+            />
+          </div>
         )}
+        {expanded && (
+          <PaperTranslationPicker
+            key={translation.scope}
+            state={translation}
+            focusRequested={focusTranslationPicker}
+            onFocus={() => setFocusTranslationPicker(false)}
+          />
+        )}
+        <PaperTranslationStatus state={translation} announce={!showAbstractSheet} />
         </motion.div>
         )}
         </AnimatePresence>
@@ -2601,7 +2660,7 @@ const PaperCard = memo(function PaperCard({
           mounted here for as long as it is open and unmounted on `onClose`,
           which the sheet only calls once its exit has played. */}
       {showAbstractSheet && (
-        <AbstractSheet paper={paper} onClose={closeAbstractSheet} />
+        <AbstractSheet paper={paper} onClose={closeAbstractSheet} translation={translation} />
       )}
 
       {showRelated && !relatedInline && (
@@ -2674,6 +2733,7 @@ const PaperCard = memo(function PaperCard({
                 hideScrollHint
                 publicMode={publicMode}
                 onAuthRequired={onAuthRequired}
+                translationEnabled={translationEnabled}
                 analyticsSurface="connections"
               />
             </div>
