@@ -80,13 +80,11 @@ test('queued cards and later pages keep their request examples across an unlike 
   recordInteractionEvent(profile, { paperId: 'new', kind: 'save', category: 'cs.LG' });
   const later = feedPlanFor(first, 1, input(), {}, profile);
   const fresh = feedPlanFor(first, 0, input(), {}, profile);
-  const cardReason = (card: Awaited<typeof queued>, hasFeedPlan = true) => {
-    const score = scorePaperForRecommendation(card, { hasFeedPlan });
-    assert.equal(score.total, scorePaperForRecommendation(card).total);
-    return feedReason({ ...card, _debugScore: score }, null, 'feed')?.text;
+  const cardReason = (card: Awaited<typeof queued>) => {
+    const score = scorePaperForRecommendation(card);
+    return feedReason({ ...card, _debugScore: score }, null, 'feed', 'Research Paper')?.text;
   };
   const oldCard = await queued;
-  assert.equal(cardReason(oldCard, false), undefined);
   assert.equal(cardReason(await fetchPage(followedCorpusRequest(later, [], () => [], shared).request, ['old'])), 'Similar to papers you liked');
   assert.equal(cardReason(await fetchPage(mainCorpusRequest(fresh, shared), ['new'])), 'Similar to papers you saved');
   assert.equal(cardReason(oldCard), 'Similar to papers you liked');

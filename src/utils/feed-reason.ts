@@ -1,4 +1,5 @@
-import type { Paper, PaperFollowMatch, PaperRecommendationScore } from '../models/paper.ts';
+import type { Paper, PaperFollowMatch } from '../models/paper.ts';
+import type { CardFollow } from './follow-reasons.ts';
 
 import { getCategoryArea, getCategoryLabel, getKnownCategoryLabel } from '../data/category-taxonomy.ts';
 
@@ -22,43 +23,42 @@ const OWN_PARTS = [
   'graphBoost', 'personalBoost', 'followBoost', 'diversityBoost',
 ] as const;
 
-function examplesText(kinds: NonNullable<PaperRecommendationScore['exampleKinds']>) {
+function examplesText(kinds: NonNullable<Paper['_semanticExampleKinds']>) {
   // A long read is a long dwell on a card, and a like the capped liked set
   // dropped counts as one: "read" would claim more than the app knows.
   if (kinds.includes('read')) return 'engaged with';
   return kinds.length > 1 ? 'liked or saved' : kinds[0];
 }
 
-/** A follow takes precedence on every surface. Only For You scores the other reasons. */
 export function feedReason(
-  paper: Pick<Paper, '_debugScore' | '_notable' | '_fetchedFor' | '_semanticScore' | '_semanticExampleKinds' | 'citationCount'>,
-  followed: { type: PaperFollowMatch['type']; name: string } | null,
+  paper: Partial<Paper>,
+  followed: CardFollow | null,
   surface: string,
+  fieldLabel: string,
 ): FeedReason | null {
-  if (followed) {
-    const causal = surface === 'feed' || surface === 'following' || surface === 'custom_feed';
-    const subject = followed.name || `this ${followed.type}`;
-    return { kind: 'follow', followType: followed.type, text: `${causal ? 'Because you follow' : 'You follow'} ${subject}` };
-  }
-  if (surface !== 'feed') return null;
-  if (paper._notable) {
-    if (!paper.citationCount || paper.citationCount < HIGHLY_CITED_MIN) return null;
-    // On a notable card the Worker returns its notable lanes as taxonomy leaf IDs.
+  const score = paper._debugScore;
+  if (surface === 'feed' && paper._notable && (paper.citationCount ?? 0) >= HIGHLY_CITED_MIN) {
     const leaf = paper._fetchedFor?.find(id => getCategoryArea(id));
     if (leaf) return { kind: 'classic', text: `Highly cited in ${getCategoryLabel(leaf)}` };
   }
-  const score = paper._debugScore;
-  if (!score) return null;
+  if (followed) {
+    const fromRequest = followed.source === 'request' && (surface === 'feed' || surface === 'following' || surface === 'custom_feed');
+    const fromScore = followed.source === 'card' && surface === 'feed' && (score?.followBoost ?? 0) > 0
+      && (score?.authorBoost ?? 0) > 0 && score?.boostedAuthorKey === followed.authorKey;
+    const causal = !paper._notable && (fromRequest || fromScore);
+    const subject = followed.name || `this ${followed.type}`;
+    return { kind: 'follow', followType: followed.type, text: `${causal ? 'Because you follow' : 'You follow'} ${subject}` };
+  }
+  if (surface !== 'feed' || paper._notable || !score) return null;
   const similarity = score.corpusSimilarity ?? 0;
-  // Older snapshots have score kinds taken from the profile but no request evidence.
-  if (paper._semanticExampleKinds?.length && score.exampleKinds?.length && !score.graphBoost && (paper._semanticScore ?? 0) >= SIMILAR_MIN
+  if (paper._semanticExampleKinds?.length && !score.graphBoost && (paper._semanticScore ?? 0) >= SIMILAR_MIN
     && OWN_PARTS.every(part => (score[part] ?? 0) < similarity)) {
-    return { kind: 'similar', text: `Similar to papers you ${examplesText(score.exampleKinds)}` };
+    return { kind: 'similar', text: `Similar to papers you ${examplesText(paper._semanticExampleKinds)}` };
   }
   if ((score.preference ?? 0) > 0 && score.preferenceMatch) {
     const { categoryId, primary } = score.preferenceMatch;
     const label = getKnownCategoryLabel(categoryId);
-    if (label) return { kind: 'area', text: primary ? 'In your area' : `Also in ${label}` };
+    if (label) return { kind: 'area', text: primary || label === fieldLabel ? 'In your area' : `Also in ${label}` };
   }
   return null;
 }

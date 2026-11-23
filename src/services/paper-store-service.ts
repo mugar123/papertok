@@ -252,6 +252,8 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   if (exact) return answer;
   // The size limit may have removed examples from the plan. Keep only the
   // kinds actually sent with this page, alongside its semantic scores.
+  // The Worker's walkNamed fallback can return a kept rank scored against
+  // earlier examples. Only the Worker can identify which examples scored it.
   const kinds = exampleKindsById && [...new Set(body.positiveIds.flatMap(id => exampleKindsById.get(id) ?? []))];
   return answer.then(({ papers, skipsSeen }) => {
     if (kinds?.length) {

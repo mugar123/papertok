@@ -552,16 +552,13 @@ const PaperCard = memo(function PaperCard({
   // (hooks/use-stable-navigate.ts says what it cost).
   const navigate = useStableNavigate();
   
-  // The name of an author of the paper the reader follows, if any: the card's
-  // own check, which also holds outside the Following tab.
   const followedAuthor = useMemo(() => {
     if (!paper?.authors?.length || !followedByType.author?.length) return null;
-    const author = paper.authors.find(item => isFollowing({
+    return paper.authors.find(item => isFollowing({
       type: 'author',
       id: (item as PaperAuthor)?.id || (item as PaperAuthor)?.name || item as string,
       name: (item as PaperAuthor)?.name || item as string,
-    }));
-    return author ? ((author as PaperAuthor)?.name || author as string) : null;
+    })) ?? null;
   }, [followedByType.author, isFollowing, paper]);
   const followed = useMemo(
     () => followedOnCard(
@@ -1294,9 +1291,7 @@ const PaperCard = memo(function PaperCard({
   };
 
   const { label: categoryLabel, topic: primaryTopic, sourceLabel: classificationSource } = useMemo(() => getPaperClassification(paper), [paper]);
-  // Re-ranking mutates the score in place. Keep the reason for this paper,
-  // follow and surface so an unrelated render cannot rewrap the kicker.
-  const reason = useMemo(() => feedReason(paper, followed, analyticsSurface), [paper, followed, analyticsSurface]);
+  const reason = feedReason(paper, followed, analyticsSurface, categoryLabel);
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,

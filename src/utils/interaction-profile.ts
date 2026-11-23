@@ -1,5 +1,5 @@
 import type { BloomFilter } from 'bloomfilter';
-import type { Paper, PaperRecommendationScore } from '../models/paper.ts';
+import type { Paper } from '../models/paper.ts';
 export type CuratedSetName = 'liked' | 'saved' | 'read' | 'notInterested' | 'readLater';
 export interface DecayedAffinity { value: number; at: number; }
 export interface CategoryExposure { shown: number; engaged: number; }
@@ -778,7 +778,7 @@ export function curatedIds(profile: InteractionProfile | null | undefined, name:
 export function positiveExampleKinds(profile: InteractionProfile, positiveIds: string[]) {
   const liked = curatedSet(profile, 'liked')!.members;
   const saved = curatedSet(profile, 'saved')!.members;
-  const kindsById = new Map<string, NonNullable<PaperRecommendationScore['exampleKinds']>>();
+  const kindsById = new Map<string, NonNullable<Paper['_semanticExampleKinds']>>();
   for (const id of positiveIds) {
     const kinds: Array<'liked' | 'saved' | 'read'> = [];
     if (liked.has(id)) kinds.push('liked');

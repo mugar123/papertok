@@ -1,6 +1,7 @@
 import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/paper.ts';
 import type { FollowInput } from './following.ts';
 
+import { paperAuthorKey } from './follow-reasons.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { areaKeyForCategory, areaKeyForPaper, leavesForOpenAlexTopic } from './area-accent.ts';
 import { getAllLeafCategories, getKnownCategoryLabel } from '../data/category-taxonomy.ts';
@@ -20,8 +21,6 @@ export interface RecommendationContext {
   // nothing of a dormant paper; without the list none is.
   interestProgress?: Record<string, number>; coldAdded?: string[]; dormantCategories?: string[];
   temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
-  // Without a plan, scoring cannot attribute the card to examples.
-  hasFeedPlan?: boolean;
 }
 interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
 type StableScore = ReturnType<typeof computeStableScore>;
@@ -185,16 +184,16 @@ function normalizeSignal(value: unknown) {
   return normalized;
 }
 
-function signalMatches(follow: Signal, candidates: Array<Signal | string | null | undefined>) {
+function matchesSignal(follow: Signal) {
   const followId = normalizeSignal(follow.canonicalId || follow.id);
   const followName = normalizeSignal(follow.displayName || follow.name);
-  return candidates.some((candidate) => {
+  return (candidate: Signal | string | null | undefined) => {
     const candidateId = normalizeSignal((candidate as Signal)?.id || (candidate as Signal)?.openAlexId || (candidate as Signal)?.canonicalId || candidate);
     const candidateName = normalizeSignal(
       (candidate as Signal)?.display_name || (candidate as Signal)?.displayName || (candidate as Signal)?.name || (candidate as Signal)?.label || candidate,
     );
     return Boolean((followId && candidateId === followId) || (followName && candidateName === followName));
-  });
+  };
 }
 
 function followedTopicAliases(follow: FollowInput) {
@@ -235,15 +234,19 @@ export function getFollowedEntitySignals(paper: Partial<Paper>, followedEntities
   ];
   const matches = { author: false, topic: false, institution: false, project: false };
 
+  let matchedAuthor: PaperAuthor | string | undefined;
   followedEntities.forEach((follow) => {
-    if (follow.type === 'author') matches.author ||= signalMatches(follow, authors);
+    if (follow.type === 'author' && !matches.author) {
+      matchedAuthor = authors.find(matchesSignal(follow));
+      matches.author = matchedAuthor !== undefined;
+    }
     if (follow.type === 'topic') {
       matches.topic ||= followedTopicAliases(follow)
-        .some(topicAlias => signalMatches(topicAlias, topicCandidates))
-        || signalMatches(follow, paper._followedEntityMatches || []);
+        .some(topicAlias => topicCandidates.some(matchesSignal(topicAlias)))
+        || (paper._followedEntityMatches || []).some(matchesSignal(follow));
     }
-    if (follow.type === 'institution') matches.institution ||= signalMatches(follow, institutions);
-    if (follow.type === 'project') matches.project ||= signalMatches(follow, projects);
+    if (follow.type === 'institution') matches.institution ||= institutions.some(matchesSignal(follow));
+    if (follow.type === 'project') matches.project ||= projects.some(matchesSignal(follow));
   });
 
   const raw = {
@@ -254,6 +257,7 @@ export function getFollowedEntitySignals(paper: Partial<Paper>, followedEntities
   };
   return {
     matches,
+    matchedAuthor,
     raw,
     total: Math.min(weights.maxFollowBoost, Object.values(raw).reduce((sum, value) => sum + value, 0)),
   };
@@ -335,7 +339,7 @@ function isDormant(paper: Partial<Paper>, categories: string[], dormant: string[
 // recency. A diversified shuffle asks for the same paper once per remaining
 // pool slot, and only the diversity boost differs between those calls, so this
 // half is computed once per paper and reused (see beginScoringRun).
-function computeStableScore(paper: Partial<Paper>, context: RecommendationContext, exampleKinds: Paper['_semanticExampleKinds']) {
+function computeStableScore(paper: Partial<Paper>, context: RecommendationContext) {
   const weights = mergeRecommendationWeights(context.weights);
   const now = context.now || Date.now();
   const userPreferences = context.userPreferences || [];
@@ -403,11 +407,11 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   if (chosenDirectly.length > 0) preference = weights.selectedCategory * preferenceShare;
   else if (chosenAsRelated.length > 0) preference = weights.relatedSelectedCategory * preferenceShare;
 
-  const authorBoost = paper.authors?.some((author) => followedAuthors.includes(((author as PaperAuthor)?.name || author) as string))
-    ? weights.followedAuthor
-    : 0;
+  const followedAuthor = paper.authors?.find(author => followedAuthors.includes(((author as PaperAuthor)?.name || author) as string));
+  const authorBoost = followedAuthor !== undefined ? weights.followedAuthor : 0;
   const followedSignals = getFollowedEntitySignals(paper, followedEntities, weights);
   const followBoost = Math.max(authorBoost, followedSignals.total);
+  const boostedAuthor = followedAuthor && authorBoost >= followedSignals.total ? followedAuthor : followedSignals.matchedAuthor;
 
   const ageDays = daysSince(paper.published, now);
   const recency = Math.max(0, weights.maxRecency * Math.exp(-ageDays / weights.recencyHalfLifeDays))
@@ -487,12 +491,12 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     dormantCategories: context.dormantCategories,
     temporalPreference: context.temporalPreference,
     explicitNow: context.now,
-    exampleKinds,
     preferenceMatch: categoryId ? { categoryId, primary: chosenAsPrimary.includes(categoryId) } : undefined,
 
     stableParts,
     stableTotal: Object.values(stableParts).reduce((sum, value) => sum + value, 0),
     authorBoost: Math.max(authorBoost, followedSignals.raw.author),
+    boostedAuthorKey: boostedAuthor && followBoost > 0 ? paperAuthorKey(boostedAuthor) : undefined,
     followedEntityMatches: followedSignals.matches,
     isExploration,
 
@@ -542,8 +546,7 @@ function beginScoringRun() {
 
 function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
   const run = activeScoringRun;
-  const exampleKinds = context.hasFeedPlan ? paper._semanticExampleKinds : undefined;
-  if (!run) return computeStableScore(paper, context, exampleKinds);
+  if (!run) return computeStableScore(paper, context);
 
   const cached = run.get(paper);
   if (cached
@@ -560,12 +563,11 @@ function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
     && cached.coldAdded === context.coldAdded
     && cached.dormantCategories === context.dormantCategories
     && cached.temporalPreference === context.temporalPreference
-    && cached.explicitNow === context.now
-    && cached.exampleKinds === exampleKinds) {
+    && cached.explicitNow === context.now) {
     return cached;
   }
 
-  const stable = computeStableScore(paper, context, exampleKinds);
+  const stable = computeStableScore(paper, context);
   run.set(paper, stable);
   return stable;
 }
@@ -589,7 +591,7 @@ export function scorePaperForRecommendation(paper: Partial<Paper>, context: Reco
     followedEntityMatches: stable.followedEntityMatches,
     isExploration: stable.isExploration,
     ...(stable.preferenceMatch && { preferenceMatch: stable.preferenceMatch }),
-    ...(stable.exampleKinds?.length ? { exampleKinds: stable.exampleKinds } : {}),
+    ...(stable.boostedAuthorKey && { boostedAuthorKey: stable.boostedAuthorKey }),
   }, parts);
 
   stable.lastDiversityBoost = diversityBoost;

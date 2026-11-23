@@ -1,13 +1,21 @@
-import type { Paper, PaperFollowMatch } from '../models/paper.ts';
+import type { Paper, PaperAuthor, PaperFollowMatch } from '../models/paper.ts';
 
 type FollowType = PaperFollowMatch['type'];
+
+export function paperAuthorKey(author: PaperAuthor | string) {
+  return typeof author === 'string' ? author : author.id || author.name;
+}
+
+export type CardFollow =
+  | { type: FollowType; name: string; source: 'request' }
+  | { type: 'author'; name: string; source: 'card'; authorKey: string };
 
 // The order a card with several follows names one in.
 const TYPES: FollowType[] = ['author', 'topic', 'institution', 'project', 'journal'];
 
 /**
  * The follow a card names: the first type that matched, in a fixed order.
- * `followedAuthor` is the name of an author of the paper the reader follows,
+ * `followedAuthor` is an author of the paper the reader follows,
  * the card's own check, which also holds outside the Following tab. Legacy
  * string matches carry no type and are skipped. A match counts only while
  * `isFollowing` still holds it, so a card kept in a feed or its cache stops
@@ -18,19 +26,23 @@ const TYPES: FollowType[] = ['author', 'topic', 'institution', 'project', 'journ
  */
 export function followedOnCard(
   matches: Paper['_followedEntityMatches'],
-  followedAuthor: string | null,
+  followedAuthor: PaperAuthor | string | null,
   isFollowing: (match: PaperFollowMatch) => boolean,
   nameOf: (match: PaperFollowMatch) => string | undefined = () => undefined,
-): { type: FollowType; name: string } | null {
-  if (followedAuthor) return { type: 'author', name: followedAuthor };
+): CardFollow | null {
   const followed = (matches || []).filter((match): match is PaperFollowMatch => (
     Boolean(match) && typeof match === 'object' && TYPES.includes(match.type) && isFollowing(match)
   ));
   for (const type of TYPES) {
     const match = followed.find(candidate => candidate.type === type);
-    if (!match) continue;
-    const name = (nameOf(match) || match.displayName).trim();
-    return { type, name: name === match.canonicalId ? '' : name };
+    if (match) {
+      const name = (nameOf(match) || match.displayName).trim();
+      return { type, name: name === match.canonicalId ? '' : name, source: 'request' };
+    }
+    if (type === 'author' && followedAuthor) {
+      const name = typeof followedAuthor === 'string' ? followedAuthor : followedAuthor.name;
+      return { type, name, source: 'card', authorKey: paperAuthorKey(followedAuthor) };
+    }
   }
   return null;
 }

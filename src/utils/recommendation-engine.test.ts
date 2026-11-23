@@ -15,6 +15,7 @@ import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import { readFileSync } from 'node:fs';
 import { mapOpenAlexWork } from './open-alex-work.ts';
 import type { RecommendationContext } from './recommendation-engine.ts';
+import { feedReason } from './feed-reason.ts';
 import { dormantCategories } from './interest-memory.ts';
 import { getAllLeafCategories } from '../data/category-taxonomy.ts';
 import {
@@ -350,21 +351,16 @@ function lastCardOfRerank(category: string, memoryOnPass: (pass: 'first' | 'late
   }).at(-1)!._debugScore!;
 }
 
-test('the same shuffle drops example attribution when it scores a card without a plan', () => {
-  const paper: Partial<Paper> = { id: 'queued', _semanticScore: 0.9, _semanticExampleKinds: ['liked'] };
-  const observed = new Set<string | undefined>();
-  diversifiedWeightedShuffle([paper, { ...paper, id: 'next' }], {
-    scorePaper(card) {
-      observed.add(card.id);
-      const planned = scorePaperForRecommendation(card, { now: NOW, hasFeedPlan: true });
-      const unplanned = scorePaperForRecommendation(card, { now: NOW });
-      assert.deepEqual(planned.exampleKinds, ['liked']);
-      assert.equal(unplanned.exampleKinds, undefined);
-      assert.equal(unplanned.total, planned.total);
-      return applyRecommendationScore(card, { now: NOW });
-    },
+test('re-ranking queued cards keeps the examples that explain each one', () => {
+  const queued: Partial<Paper>[] = [
+    { id: 'first', _semanticScore: 0.9, _semanticExampleKinds: ['liked'] },
+    { id: 'second', _semanticScore: 0.85, _semanticExampleKinds: ['saved'] },
+  ];
+  const ranked = diversifiedWeightedShuffle(queued, {
+    scorePaper: card => applyRecommendationScore(card, { now: NOW }),
   });
-  assert.deepEqual([...observed].sort(), ['next', 'queued']);
+  const labels = Object.fromEntries(ranked.map(card => [card.id, feedReason(card, null, 'feed', 'Research Paper')?.text]));
+  assert.deepEqual(labels, { first: 'Similar to papers you liked', second: 'Similar to papers you saved' });
 });
 
 test('a re-rank scores with the progress it holds now, not the one an earlier call cached', () => {
