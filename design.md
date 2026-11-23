@@ -514,8 +514,6 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the search page's own field and scope instead, and the shortcut focuses it;
   below 768px that field takes the tabs' place, and the tabs move into a
   "Search" picker beside the mark: a drawer on a phone, a menu up to 768px.
-  The Conference calendar icon sits beside Search and opens `/conferences`.
-  It fills in on the calendar and its edition pages at `/conferences/:editionId`.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
   Sunken Paper when highlighted.
 - **A feed tab's menu** (`custom-feeds/feed-tab-menu.tsx`): Edit feed, Move

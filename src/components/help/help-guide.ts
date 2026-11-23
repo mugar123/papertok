@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ArrowSquareOut,
   BookmarkSimple,
-  CalendarBlank,
   ClockCounterClockwise,
   Compass,
   DotsThree,
@@ -248,8 +247,6 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'The plus after the tabs. Opens a form to name a feed and choose what goes in it.'),
       entry('search', 'Search', MagnifyingGlass,
         'Searches papers, authors, institutions, topics and projects. The keys / or Ctrl+K (⌘K on a Mac) open it from most screens.'),
-      entry('conferences', 'Conference calendar', CalendarBlank,
-        'The calendar next to Search opens /conferences. Filter by research field and open an edition for dates, locations, and sources. Calendar and edition links work without an account.'),
     ],
   },
   {
