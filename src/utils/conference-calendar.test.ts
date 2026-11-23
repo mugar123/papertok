@@ -35,7 +35,7 @@ test('the local calendar keeps a conference upcoming on its last day', () => {
 });
 
 test('groups undated and single-day events and uses the first remaining site', () => {
-  const fixture: ConferenceEdition = { id: 'fixture', name: 'Fixture', series: 'Fixture', field: 'cs', dates: [] };
+  const fixture: ConferenceEdition = { id: 'fixture', name: 'Fixture', series: 'Fixture', year: 2027, field: 'cs', dates: [] };
   const oneDay = { ...fixture, id: 'one-day', dates: [{ start: '2027-02-01', end: null }] };
   const multiSite = { ...fixture, id: 'multi-site', dates: [
     { start: '2027-01-29', end: '2027-01-31' },

@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ConferenceEdition } from '../src/data/conferences.ts';
+import type { ConferenceDeadline, ConferenceEdition, ConferenceFormat, ConferenceVenue } from '../src/data/conferences.ts';
 
 const fields = {
   'cs-ai': 'cs',
@@ -34,6 +34,42 @@ function slugOf(value: string) {
   return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
+/** The venue, undefined when the row has none, or null when the row's value is not usable. */
+function venueOf(value: unknown): ConferenceVenue | undefined | null {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'object') return null;
+  const { name, url } = value as Record<string, unknown>;
+  if (!text(name)) return null;
+  if (url === undefined || url === null) return { name: name.trim() };
+  return https(url) ? { name: name.trim(), url: withoutTracking(url) } : null;
+}
+
+/** The deadlines in date order, undefined when the row has none, or null when one is not usable. */
+function deadlinesOf(value: unknown): ConferenceDeadline[] | undefined | null {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) return null;
+  const deadlines: ConferenceDeadline[] = [];
+  for (const item of value as unknown[]) {
+    const { label, date } = (item ?? {}) as Record<string, unknown>;
+    if (!text(label) || !iso(date)) return null;
+    deadlines.push({ label: label.trim(), date });
+  }
+  return deadlines.length ? deadlines.sort((a, b) => a.date.localeCompare(b.date)) : undefined;
+}
+
+const onlineOnly = /^(?:fully\s+)?(?:online|virtual)(?:\s+(?:event|conference|meeting|only|via\s+.+))?$/i;
+const onlineTail = /(?:^|[\s,&·/(–-]+)(?:in[ -]person\s+)?(?:(?:and|or)\s+)?(?:fully\s+)?(?:hybrid|online|virtual(?:ly)?)\s*\)?$/i;
+const onlineWord = /\b(?:hybrid|online|virtual(?:ly)?)\b/i;
+const hybridNote = /\b(?:hybrid conference|partially hybrid|also offered virtually|online attendance is available|virtual option)\b/i;
+
+/** A sentence that denies an online side is not evidence of one. */
+function notesSayHybrid(notes: unknown) {
+  return text(notes) && notes.split(/[.;]/).some(sentence => hybridNote.test(sentence) && !/\b(?:no|not|without|neither)\b|n['’]t\b/i.test(sentence));
+}
+
+/** Editions whose own words say hybrid although their row says "online": false. */
+const verifiedHybrid: ReadonlySet<string> = new Set(['ecosta-2027']);
+
 const verifiedSites: Readonly<Record<string, string>> = {
   'aiche-2027': 'https://www.aiche.org/conferences/aiche-annual-meeting/2027',
   asce2027: 'https://www.asce.org/asce2027',
@@ -59,11 +95,13 @@ function withoutTracking(link: string) {
 export function convertConferenceEdition(value: unknown, inputField: keyof typeof fields): ConferenceEdition | null {
   if (!value || typeof value !== 'object') return null;
   const row = value as Record<string, unknown>;
-  const { series, acronym, edition, startsOn, endsOn, dateText, city, country, placeText, online, url, sourceUrl, sourceLicense, checkedOn, notes } = row;
+  const { series, acronym, edition, startsOn, endsOn, dateText, city, country, placeText: sourcePlace, online, url, sourceUrl, sourceLicense, checkedOn, notes } = row;
+  const venue = venueOf(row.venue);
+  const deadlines = deadlinesOf(row.deadlines);
   if (row.field !== inputField || !text(series) || !text(edition) || !/\b202[67]\b/.test(edition)
     || !https(url) || !https(sourceUrl) || !iso(checkedOn)
-    || ![acronym, dateText, city, country, placeText, notes].every(item => item === null || text(item))
-    || !(typeof online === 'boolean' || online === null)) return null;
+    || ![acronym, dateText, city, country, sourcePlace, notes].every(item => item === null || text(item))
+    || !(typeof online === 'boolean' || online === null) || venue === null || deadlines === null) return null;
   if ([url, sourceUrl].some(link => new URL(link).pathname === '/Xplore/guesthome.jsp')) return null;
   if (startsOn !== null && (!iso(startsOn) || startsOn < '2026-12-01' || startsOn > '2027-12-31')) return null;
   if (endsOn !== null && (!iso(endsOn) || !iso(startsOn) || endsOn < startsOn)) return null;
@@ -73,24 +111,27 @@ export function convertConferenceEdition(value: unknown, inputField: keyof typeo
   const year = edition.match(/\b202[67]\b/)?.[0];
   const base = (text(acronym) ? acronym : series).trim().replace(/ \? /g, ' – ');
   const urlHost = new URL(url).hostname;
-  const brandedYear = year && urlHost === 'www.siam.org' && base.endsWith(year.slice(2));
+  if (!year || !slugOf(base)) return null;
+  const brandedYear = urlHost === 'www.siam.org' && base.endsWith(year.slice(2));
   const hasEdition = base.endsWith(edition) || (year === edition && (base.includes(year) || brandedYear));
-  const name = hasEdition ? base : base + ' ' + edition;
-  const id = slugOf(name);
-  if (!slugOf(base)) return null;
-  const rawPlace = text(placeText) && !placeText.includes('?') ? placeText : [city, country].filter(text).filter(part => !part.includes('?')).join(', ');
-  const place = rawPlace.trim().replace(/^(?:in|at|on)\s+(?=\p{Lu})/u, '');
+  // A name such as ACC.27 already says its year. Its ID keeps the full year, as published links do.
+  const dottedYear = year === edition && base.endsWith('.' + year.slice(2));
+  const name = hasEdition || dottedYear ? base : base + ' ' + edition;
+  const id = slugOf(hasEdition ? base : base + ' ' + edition);
+  const rawPlace = text(sourcePlace) && !sourcePlace.includes('?') ? sourcePlace : [city, country].filter(text).filter(part => !part.includes('?')).join(', ');
+  const place = rawPlace.trim().replace(/^(?:(?:in|at|on)\s+)?(?:the\s+)?(?=\p{Lu})/u, '');
+  const placeText = onlineOnly.test(place) ? '' : place.replace(onlineTail, '');
   const officialUrl = verifiedSites[id] ?? (source === undefined && !/\.pdf$/i.test(new URL(url).pathname) ? withoutTracking(url) : undefined);
-  const hybrid = text(notes) ? notes.match(/\b(hybrid conference|partially hybrid|also offered virtually)\b/i)?.[0] : undefined;
-  const placeMentionsOnline = /\b(hybrid|online|virtual(?:ly)?)\b/i.test(place);
-  const format = hybrid?.toLowerCase() === 'partially hybrid' ? 'partly hybrid' : 'hybrid';
+  const meetsOnline = online === true || onlineWord.test(place);
+  const format: ConferenceFormat | undefined = (meetsOnline && placeText) || verifiedHybrid.has(id) || (online !== false && notesSayHybrid(notes)) ? 'hybrid'
+    : meetsOnline ? 'online' : online === false ? 'in-person' : undefined;
   return {
     id,
     name,
-    series: series.replace(/ \? /g, ' – '), field: fields[inputField], url: officialUrl, source,
-    sourceUrl: withoutTracking(sourceUrl), checkedOn, online: online === true || Boolean(hybrid) || placeMentionsOnline,
+    series: series.replace(/ \? /g, ' – '), acronym: text(acronym) ? acronym.trim().replace(/ \? /g, ' – ') : undefined, year: Number(year), field: fields[inputField], url: officialUrl, source,
+    sourceUrl: withoutTracking(sourceUrl), checkedOn, format, venue, deadlines,
     dateText: text(dateText) && !dateText.includes('?') ? dateText : undefined,
-    placeText: place && hybrid && !placeMentionsOnline ? place + ' · ' + format : place || undefined,
+    placeText: placeText || undefined,
     dates: typeof startsOn === 'string' ? [{ start: startsOn, end: typeof endsOn === 'string' ? endsOn : null }] : [],
   };
 }

@@ -23,8 +23,8 @@ const row = {
 
 test('normalizes a verified event without repeating the year or retaining tracking', () => {
   assert.deepEqual(convertConferenceEdition(row, 'engineering'), {
-    id: 'example2027', name: 'Example2027', series: 'Example Conference', field: 'engineering',
-    dates: [{ start: '2027-03-01', end: null }], placeText: 'Chicago and online', online: true,
+    id: 'example2027', name: 'Example2027', series: 'Example Conference', acronym: 'Example2027', year: 2027, field: 'engineering',
+    dates: [{ start: '2027-03-01', end: null }], placeText: 'Chicago', format: 'hybrid', venue: undefined, deadlines: undefined,
     url: 'https://example.org/2027?lang=en', sourceUrl: 'https://example.org/2027',
     checkedOn: '2026-11-23', source: undefined, dateText: undefined,
   });
@@ -47,4 +47,48 @@ test('keeps a PDF or dataset as a source without promoting it to an event websit
   assert.equal(converted?.url, undefined);
   assert.equal(converted?.sourceUrl, source);
   assert.equal(converted?.source, 'databio');
+});
+
+test('starts a place at its name, whatever article the organizer wrote before it', () => {
+  const placeOf = (placeText: string) => convertConferenceEdition({ ...row, placeText }, 'engineering')?.placeText;
+  assert.equal(placeOf('at the San Diego Convention Center in San Diego, CA'), 'San Diego Convention Center in San Diego, CA');
+  assert.equal(placeOf('the Ernest N. Morial Convention Center in New Orleans, Louisiana, and virtually'), 'Ernest N. Morial Convention Center in New Orleans, Louisiana');
+  assert.equal(placeOf('The Hague'), 'The Hague');
+  for (const place of ['Chicago / Online', 'Chicago – online', 'Chicago (hybrid)', 'Chicago, and virtually', 'Chicago (in person and online)', 'Chicago or online']) assert.equal(placeOf(place), 'Chicago', place);
+  assert.equal(placeOf('on campus'), 'on campus');
+});
+
+test('does not repeat a dotted year in the name and keeps the published ID', () => {
+  const converted = convertConferenceEdition({ ...row, field: 'medicine', acronym: 'ACC.27', series: 'ACC Annual Scientific Session' }, 'medicine');
+  assert.equal(converted?.name, 'ACC.27');
+  assert.equal(converted?.id, 'acc-27-2027');
+});
+
+test('records a format only when the source says it', () => {
+  const formatOf = (fields: object) => convertConferenceEdition({ ...row, placeText: 'Chicago', online: null, ...fields }, 'engineering')?.format;
+  assert.equal(formatOf({}), undefined);
+  assert.equal(formatOf({ online: false }), 'in-person');
+  assert.equal(formatOf({ online: true }), 'hybrid');
+  assert.equal(formatOf({ notes: 'Online attendance is available.' }), 'hybrid');
+  assert.equal(formatOf({ placeText: 'Vienna, Austria & Online' }), 'hybrid');
+  assert.equal(formatOf({ placeText: 'Boston, MA (hybrid)' }), 'hybrid');
+  assert.equal(formatOf({ notes: 'There is no virtual option in 2027.' }), undefined);
+  assert.equal(formatOf({ notes: "There isn't a virtual option." }), undefined);
+  assert.equal(formatOf({ online: false, notes: 'Partially hybrid.' }), 'in-person');
+  assert.equal(formatOf({ online: false, acronym: 'EcoSta', notes: 'Partially hybrid.' }), 'hybrid');
+  assert.equal(formatOf({ placeText: 'Chicago (in person and online)' }), 'hybrid');
+  for (const placeText of ['Fully Virtual', 'Virtual Event', 'Online via Zoom', 'Online']) assert.equal(formatOf({ placeText }), 'online', placeText);
+  assert.equal(convertConferenceEdition({ ...row, placeText: 'Fully Virtual' }, 'engineering')?.placeText, undefined);
+});
+
+test('keeps venue and deadlines in date order and rejects unusable ones', () => {
+  const venue = { name: 'Coex', url: 'https://example.org/venue' };
+  const deadlines = [{ label: 'Papers due', date: '2026-12-20' }, { label: 'Abstracts due', date: '2026-12-10' }];
+  const converted = convertConferenceEdition({ ...row, venue, deadlines }, 'engineering');
+  assert.deepEqual(converted?.venue, venue);
+  assert.deepEqual(converted?.deadlines, [deadlines[1], deadlines[0]]);
+  for (const invalid of [
+    { venue: 'Coex' }, { venue: { name: ' ' } }, { venue: { name: 'Coex', url: 'http://example.org' } },
+    { deadlines: 'soon' }, { deadlines: [null] }, { deadlines: [{ label: 'Papers due', date: 'December' }] },
+  ]) assert.equal(convertConferenceEdition({ ...row, ...invalid }, 'engineering'), null);
 });

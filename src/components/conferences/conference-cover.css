@@ -1,0 +1,67 @@
+.conference-cover {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  padding: var(--space-2);
+  overflow: hidden;
+  border-left: 3px solid var(--conference-ink);
+  background: color-mix(in srgb, var(--conference-ink) 8%, var(--bg-card));
+  color: var(--conference-ink);
+}
+
+.conference-cover-art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  color: color-mix(in srgb, var(--conference-ink) 26%, var(--bg-card));
+}
+
+.conference-cover-art path { vector-effect: non-scaling-stroke; }
+
+.conference-cover-year {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  color: var(--text-primary);
+}
+
+.conference-cover-acronym {
+  max-width: 100%;
+  font-family: var(--font-serif);
+  font-weight: var(--fw-medium);
+  font-size: 1.5rem;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+.conference-cover-acronym[data-size="medium"] { font-size: 1.125rem; }
+.conference-cover-acronym[data-size="long"] { font-size: 0.9375rem; line-height: 1.05; }
+
+.conference-cover-logo {
+  max-width: 100%;
+  max-height: 60%;
+  object-fit: contain;
+}
+
+.conference-cover--hero {
+  min-height: 9rem;
+  padding: var(--space-4) var(--space-5);
+}
+
+.conference-cover--hero .conference-cover-year {
+  top: var(--space-4);
+  left: var(--space-5);
+  font-size: var(--fs-sm);
+}
+
+.conference-cover--hero .conference-cover-acronym { font-size: clamp(2.5rem, 7vw, 4.5rem); }
+.conference-cover--hero .conference-cover-acronym[data-size="medium"] { font-size: clamp(2rem, 5vw, 3.25rem); }
+.conference-cover--hero .conference-cover-acronym[data-size="long"] { font-size: clamp(1.5rem, 4vw, 2.25rem); }
