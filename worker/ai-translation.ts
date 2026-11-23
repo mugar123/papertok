@@ -31,6 +31,25 @@ import { arxivIdOf } from './paper-store.ts';
 const HAIKU_MODEL = 'claude-haiku-5-5';
 const MAX_REQUEST_BYTES = 10_000;
 const TRANSLATION_BUDGET_MS = 20_000;
+const TRANSLATION_REQUEST_MS = 24_000;
+
+function checkDeadline(signal: AbortSignal) {
+  if (signal.aborted) throw new AIExplanationError('AI_TIMEOUT', 504);
+}
+
+async function beforeDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  let onAbort = () => {};
+  const timeout = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(new AIExplanationError('AI_TIMEOUT', 504));
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
+  try {
+    return await Promise.race([timeout, work]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
 
 function comparableText(text: string) {
   return text.trim().replace(/\s+/g, ' ');
@@ -54,8 +73,9 @@ async function arxivMetadata(request: Request, env: WorkerEnv, id: string) {
   }
 }
 
-export async function handlePaperTranslation(request: Request, env: WorkerEnv): Promise<PaperTranslation> {
+async function prepareTranslation(request: Request, env: WorkerEnv, signal: AbortSignal) {
   const { uid } = await verifyFirebaseAccount(request, env, { allowCache: false });
+  checkDeadline(signal);
   const payload = await readBoundedJson<Partial<Record<keyof PaperTranslationRequest, unknown>>>(
     request,
     MAX_REQUEST_BYTES,
@@ -76,13 +96,42 @@ export async function handlePaperTranslation(request: Request, env: WorkerEnv): 
   if (model !== HAIKU_MODEL || !isAnthropicPrimary(env) || !isAnthropicConfigured(env)) {
     throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   }
-  const signal = AbortSignal.timeout(TRANSLATION_BUDGET_MS);
+  checkDeadline(signal);
   const record = await arxivMetadata(request, env, id);
-  if (signal.aborted) throw new AIExplanationError('AI_TIMEOUT', 504);
   if (!record || record.title !== comparableText(source.title) || record.abstract !== comparableText(source.abstract)) {
     throw new AIExplanationError('AI_INVALID_PAPER', 400);
   }
+  return { uid, model, language, record };
+}
+
+export async function handlePaperTranslation(
+  request: Request,
+  env: WorkerEnv,
+  context?: Pick<ExecutionContext, 'waitUntil'>,
+): Promise<PaperTranslation> {
+  const deadline = AbortSignal.timeout(TRANSLATION_REQUEST_MS);
+  const input = await beforeDeadline(prepareTranslation(request, env, deadline), deadline);
+  const signal = AbortSignal.any([deadline, AbortSignal.timeout(TRANSLATION_BUDGET_MS)]);
+  checkDeadline(signal);
+  const work = translatePaper(input, env, signal);
+  try {
+    return await beforeDeadline(work, signal);
+  } catch (error) {
+    if (signal.aborted) context?.waitUntil(work.catch(() => undefined));
+    throw error;
+  }
+}
+
+async function translatePaper(
+  { uid, model, language, record }: Awaited<ReturnType<typeof prepareTranslation>>,
+  env: WorkerEnv,
+  signal: AbortSignal,
+): Promise<PaperTranslation> {
   const quota = await reserveAIQuota(env, uid, { translation: true });
+  if (signal.aborted) {
+    await releaseAIQuota(env, quota);
+    throw new AIExplanationError('AI_TIMEOUT', 504);
+  }
   try {
     const message = await createAnthropicClient(env).beta.messages.create(
       buildAnthropicRequest({
@@ -110,6 +159,7 @@ export async function handlePaperTranslation(request: Request, env: WorkerEnv): 
     ).catch((error: unknown) => {
       throw signal.aborted ? new AIExplanationError('AI_TIMEOUT', 504) : anthropicProviderError(error);
     });
+    checkDeadline(signal);
     const { text, refusal } = anthropicAnswer(message);
     if (refusal) throw new AIExplanationError('AI_EMPTY_RESPONSE', 502);
     if (message.stop_reason !== 'end_turn') throw new AIExplanationError('AI_INVALID_RESPONSE', 502);

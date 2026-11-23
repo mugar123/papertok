@@ -425,7 +425,9 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     const translate = url.pathname === '/ai/translate';
     try {
-      const payload = await (translate ? handlePaperTranslation : handlePassageAnnotation)(request, env);
+      const payload = translate
+        ? await handlePaperTranslation(request, env, context)
+        : await handlePassageAnnotation(request, env);
       return json(payload, 200, {
         ...corsHeaders(origin, env),
         'cache-control': 'private, no-store',

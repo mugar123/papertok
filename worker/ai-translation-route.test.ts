@@ -41,12 +41,14 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
   const quotas: Array<{ action: string; subjectLimit: number; globalLimit: number; globalAmount?: number; partKey?: string; partLimit?: number }> = [];
   const days: string[] = [];
   const providerUrls: string[] = [];
+  const ledger = { reply: (_action: string): Response | Promise<Response> => Response.json(ledgerReply) };
   const namespace: TestNamespace = {
     idFromName: day => { days.push(day); return 'ledger'; },
     get: () => ({
       fetch: async (_url: RequestInfo | URL, init: RequestInit) => {
-        quotas.push(JSON.parse(String(init.body)));
-        return Response.json(ledgerReply);
+        const quota = JSON.parse(String(init.body)) as typeof quotas[number];
+        quotas.push(quota);
+        return ledger.reply(quota.action);
       },
     }),
   };
@@ -59,6 +61,7 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
   };
   const globals = globalThis as TestGlobals;
   const caches = globals.caches;
+  const arxiv = { beforeRead: async () => {} };
   globals.caches = {
     default: {
       match: async key => {
@@ -66,6 +69,7 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
         if (key.url === cachedIdentityUrl) return Response.json({ uid: 'reader-1' });
         const url = new URL(key.url);
         if (url.pathname === '/cache/arxiv' && url.searchParams.get('id_list') === INPUT.arxivId) {
+          await arxiv.beforeRead();
           return new Response(ARXIV_ATOM, { headers: { 'content-type': 'application/atom+xml' } });
         }
         return null;
@@ -77,7 +81,7 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
     if (caches) globals.caches = caches;
     else delete globals.caches;
   });
-  const provider = {
+  const provider: { reply(signal?: AbortSignal | null): Response | Promise<Response> } = {
     reply: () => Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(ANSWER) }] }),
   };
   const identity = { revoked: false, lookups: 0 };
@@ -91,10 +95,121 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
     }
     providerUrls.push(String(input));
     calls.push(JSON.parse(String(init.body)));
-    return provider.reply();
+    return provider.reply(init.signal);
   });
-  return { env, calls, quotas, days, provider, providerUrls, identity };
+  return { env, calls, quotas, days, provider, providerUrls, identity, arxiv, ledger };
 }
+
+function translationTimers(t: TestContext) {
+  const timers = new Map<number, AbortController>();
+  const original = AbortSignal.timeout;
+  t.mock.method(AbortSignal, 'timeout', (ms: number) => {
+    if (ms !== 20_000 && ms !== 24_000) return original(ms);
+    const timer = new AbortController();
+    timers.set(ms, timer);
+    return timer.signal;
+  });
+  return timers;
+}
+
+function deferred<T>() {
+  let resolve = (_value: T) => {};
+  const promise = new Promise<T>(complete => { resolve = complete; });
+  return { promise, resolve };
+}
+
+test('finishes arXiv verification before the quota and provider timer starts', async t => {
+  const { env, calls, quotas, arxiv } = setUp(t);
+  const timers = translationTimers(t);
+  const reading = deferred<void>();
+  const metadata = deferred<void>();
+  arxiv.beforeRead = () => {
+    reading.resolve();
+    return metadata.promise;
+  };
+  const response = worker.fetch(request(), env);
+  await reading.promise;
+  assert.deepEqual([...timers.keys()], [24_000]);
+  assert.equal(quotas.length, 0);
+  metadata.resolve();
+  assert.equal((await response).status, 200);
+  assert.ok(timers.has(20_000));
+  assert.equal(calls.length, 1);
+});
+
+test('returns a timeout for a slow arXiv check without charging or calling Claude', async t => {
+  const { env, calls, quotas, arxiv } = setUp(t);
+  const timers = translationTimers(t);
+  const reading = deferred<void>();
+  const metadata = deferred<void>();
+  arxiv.beforeRead = () => {
+    reading.resolve();
+    return metadata.promise;
+  };
+  const response = worker.fetch(request(), env);
+  await reading.promise;
+  timers.get(24_000)?.abort();
+  const timedOut = await response;
+  assert.equal(timedOut.status, 504);
+  assert.deepEqual(await timedOut.json(), { code: 'AI_TIMEOUT' });
+  metadata.resolve();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(timers.has(20_000), false);
+  assert.equal(quotas.length, 0);
+  assert.equal(calls.length, 0);
+});
+
+test('returns before the browser deadline and refunds a late reservation without calling Claude', async t => {
+  const { env, calls, quotas, ledger } = setUp(t);
+  const timers = translationTimers(t);
+  const reserving = deferred<void>();
+  const reservation = deferred<Response>();
+  ledger.reply = action => {
+    if (action === 'release') return Response.json({ remaining: 10 });
+    reserving.resolve();
+    return reservation.promise;
+  };
+  const pending: Promise<unknown>[] = [];
+  const response = worker.fetch(request(), env, { waitUntil: work => { pending.push(work); } });
+  await reserving.promise;
+  assert.ok(timers.has(20_000));
+  timers.get(24_000)?.abort();
+  const timedOut = await response;
+  assert.equal(timedOut.status, 504);
+  assert.deepEqual(await timedOut.json(), { code: 'AI_TIMEOUT' });
+  assert.equal(pending.length, 1);
+  reservation.resolve(Response.json({ accepted: true, remaining: 9 }));
+  await Promise.all(pending);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(quotas.map(({ action, globalAmount, partLimit }) => [action, globalAmount, partLimit]), [
+    ['reserve', undefined, 20], ['release', undefined, 20],
+  ]);
+});
+
+test('aborts the Claude request on its own deadline and keeps both attempts', async t => {
+  const { env, calls, quotas, provider } = setUp(t);
+  const timers = translationTimers(t);
+  const sending = deferred<AbortSignal | null | undefined>();
+  provider.reply = signal => new Promise((_resolve, reject) => {
+    sending.resolve(signal);
+    signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+  const pending: Promise<unknown>[] = [];
+  const response = worker.fetch(request(), env, { waitUntil: work => { pending.push(work); } });
+  const signal = await sending.promise;
+  assert.ok(signal);
+  timers.get(20_000)?.abort();
+  const timedOut = await response;
+  assert.equal(timedOut.status, 504);
+  assert.deepEqual(await timedOut.json(), { code: 'AI_TIMEOUT' });
+  assert.equal(signal.aborted, true);
+  assert.equal(timers.get(24_000)?.signal.aborted, false);
+  await Promise.all(pending);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(quotas.map(({ action, globalAmount, partLimit }) => [action, globalAmount, partLimit]), [
+    ['reserve', undefined, 20], ['release', 0, undefined],
+  ]);
+});
 
 test('revoked credentials cannot spend even while the identity cache still has them', async t => {
   const { env, calls, quotas, identity } = setUp(t);
