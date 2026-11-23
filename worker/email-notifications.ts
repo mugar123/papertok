@@ -105,7 +105,7 @@ import { canonicalDoiOf } from '../src/utils/paper-canonical-key.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
 import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '../src/services/open-aire-records.ts';
-import { SUBSCRIPTION_PREFIX, UNSUBSCRIBE_PREFIX, type SubscriptionSlot, type SubscriptionStorePayload } from './email-subscription-store.ts';
+import type { SubscriptionSlot, SubscriptionStorePayload } from './email-subscription-store.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -116,7 +116,9 @@ import { fetchJsonWithTimeout, reserveOpenAlexBudget } from './provider-runtime.
 import { readLeafHighlights, readPapersByIds } from './paper-store.ts';
 import { takeArxivSeat } from './arxiv-api.ts';
 
+const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
+const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
 const RESEND_API = 'https://api.resend.com';
 const ARXIV_API = 'https://export.arxiv.org/api/query';
 // Ruta real desde el 18-09-2026: la app dejo de vivir en el fragmento. Los
@@ -143,6 +145,10 @@ const TEST_GLOBAL_DAILY_LIMIT = 20;
 // needs. Each request costs an identity lookup and reads of the reader's
 // object and KV, which this bounds per account.
 const OPT_IN_ACCOUNT_HOURLY_LIMIT = 10;
+// How long the opt-in waits for its two index puts before it answers a
+// retryable failure. A put that lands later writes a value the key may already
+// hold and cannot replace anything else (see startDigestOptIn).
+const INDEX_WRITE_DEADLINE_MS = 5_000;
 const SCHEDULE_STATUS_KEY = 'notification:schedule:last-run';
 const SCHEDULE_HISTORY_PREFIX = 'notification:schedule:history:';
 const SCHEDULE_CURSOR_KEY = 'notification:schedule:cursor';
@@ -1009,23 +1015,6 @@ async function callSubscriptionStore(env: WorkerEnv, uid: string, payload: Subsc
 }
 
 /**
- * Asks the reader's object to write KV indexes of the subscription it holds:
- * `schedule`, the key the schedule lists, and `link`, the unsubscribe link's.
- * The object writes them only while it still holds that subscription at
- * `version`, and takes no other request until they have landed
- * (email-subscription-store.ts), so a cancellation or a save that follows is
- * ordered after them. `accepted` is false when something reached the object
- * first: that request owns the indexes now, and nothing was written. A put
- * that fails throws `EMAIL_UNAVAILABLE`, once both puts have settled.
- * `announce` is the welcome opt-in's: once both indexes are written, the object
- * records that the start of a subscription a welcome yes created has been
- * announced, and answers `announced: true` to the one call that did it.
- */
-function writeObjectIndexes(env: WorkerEnv, uid: string, subscription: Subscription, version: number, indexes: Array<'schedule' | 'link'> = ['schedule', 'link'], announce = false) {
-  return callSubscriptionStore(env, uid, { action: 'index', expectedVersion: version, token: subscription.unsubscribeToken, indexes, ...(announce ? { announce: true } : {}) });
-}
-
-/**
  * Where the subscription is the record. The deploy has two phases
  * (worker/README.md#email-digest-subscription-deploy): while
  * `EMAIL_SUBSCRIPTION_SOURCE` is `kv` (phase 1, set in wrangler.toml), the KV
@@ -1112,7 +1101,12 @@ async function readPhase1Slot(env: WorkerEnv, uid: string) {
   // `token` is the unsubscribe token that save gave the subscription, so a
   // save computed from this miss keeps the links of its earlier emails.
   const behind = !slot.subscription && slot.migratable && slot.version > 0;
-  return { slot, inKv: !slot.subscription, objectVersion: slot.version, behind, token: behind ? slot.token : undefined };
+  // A reader the welcome opt-in subscribed (`resident`) is written to their
+  // object again when they subscribe after a cancellation, never to KV. Their
+  // schedule key then only ever holds the index, so an index write of the
+  // opt-in or of a sync that lands late puts the same value and cannot replace
+  // a record.
+  return { slot, inKv: !slot.subscription && !slot.resident, objectVersion: slot.version, behind, token: behind ? slot.token : undefined };
 }
 
 /**
@@ -1576,13 +1570,19 @@ function subscriptionRecord({ current, state, settings, identity, follows, previ
 
 /**
  * What an opt-in decides from, read the way every write reads the reader.
- * `current`: the reader's record, in KV (`inKv`, a phase 1 record written since
+ * `current`: the reader's record, in KV (a phase 1 record written since
  * the last cancellation) or in their object. `behind`: no record was read, yet
  * the object says one may exist where this read cannot show it (waitingForKv,
  * or a KV copy too old to move in). `objectVersion` is always the object's own
  * version, never a KV record's `version` or `revision`. `unannounced` is the
  * token of a subscription a welcome yes created in the object whose start no
- * request has been answered with yet.
+ * request has been answered with yet. `indexOnly`: the record is in the
+ * reader's object and their schedule key only ever holds the index (phase 2,
+ * or a reader the welcome opt-in subscribed in phase 1; see readPhase1Slot),
+ * so the opt-in may write that index. A reader phase 2 moved whom a rollback
+ * left in phase 1 is not one: phase 1 writes them to KV again after a
+ * cancellation, where an index put that landed late would replace the record,
+ * so their indexes are left to their app's sync, as before.
  */
 async function readOptInState(env: WorkerEnv, uid: string) {
   const phase1 = subscriptionInKv(env) ? await readPhase1Slot(env, uid) : null;
@@ -1592,7 +1592,7 @@ async function readOptInState(env: WorkerEnv, uid: string) {
     current,
     behind: !current && (waitingForKv(slot) || (slot.migratable && Boolean(slot.unmoved))),
     objectVersion: phase1 ? phase1.objectVersion : slot.version,
-    inKv: Boolean(current) && Boolean(phase1?.inKv),
+    indexOnly: Boolean(current) && !phase1?.inKv && (!phase1 || Boolean(slot.resident)),
     unannounced: slot.unannounced,
   };
 }
@@ -1613,11 +1613,11 @@ async function readOptInState(env: WorkerEnv, uid: string) {
  *
  * `created` is answered at most once per account, and the reader's object
  * decides it, never a KV read. The write marks the subscription as unannounced
- * in its own transaction. The request whose index call writes both indexes
- * announces it there and answers `created`: the first attempt when all goes
- * well, or the retry that completes a creation whose index write failed. Every
- * other request answers `on`. An answer lost after the object announced it is
- * not repeated.
+ * in its own transaction. The request that has written both indexes asks the
+ * object to announce it (`announce`), and the one the object says yes to
+ * answers `created`: the first attempt when all goes well, or the retry that
+ * completes a creation whose index write failed. Every other request answers
+ * `on`. An answer lost after the object announced it is not repeated.
  *
  * `consent` names the welcome wording the yes was given under and is kept only
  * as the record's `welcomeConsent`. Each wording's promise is checked here too:
@@ -1625,14 +1625,16 @@ async function readOptInState(env: WorkerEnv, uid: string) {
  * The record goes into the object in phase 1 as well, like a reader phase 2
  * moved, so KV holds only its two indexes and never a copy with the address.
  *
- * The route itself never writes to KV. The two indexes are written by the
- * reader's object (writeObjectIndexes), only while it still holds this
- * subscription at the version the route saw, and no other request reaches the
- * object until they have landed. So a cancellation, an account deletion or a
- * new subscribe that comes after the route's write also comes after its
- * indexes, and removes or replaces them as for any subscriber; one that comes
- * between the write and the indexes makes the object refuse them, and nothing
- * is left in KV.
+ * The Worker writes the two indexes, and nothing waits on them but this
+ * request: the reader's object is never held while KV answers, so an
+ * unsubscribe reaches it at once however slow KV is. The indexes are not the
+ * truth, only pointers the schedule and the unsubscribe link check against the
+ * object. A put that lands late, after a failure, after this request gave up
+ * or after a later decision, writes `{"uid"}` at a key that for this reader
+ * never holds anything else (readPhase1Slot), or a link index that cancels
+ * nothing once the object holds another token. After its puts the route asks
+ * the object what it holds, and removes what it wrote for a subscription that
+ * was cancelled meanwhile.
  *
  * One account may send ten of these an hour, counted in the quota ledger under
  * the hashed uid after the body is validated. No ORCID or Firestore read and
@@ -1664,27 +1666,50 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
   if (!quota.accepted) throw new EmailNotificationError('EMAIL_OPT_IN_RATE_LIMIT', 429);
 
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  // Writes both indexes of a subscription the object holds, then asks the
+  // object what it holds now. `created` when the object announces the start,
+  // `on` when the subscription is there and was announced before, and
+  // `changed` when it was cancelled or replaced while the indexes were
+  // written: what this request wrote for it is then removed.
+  const complete = async (subscription: Subscription, announce: boolean) => {
+    const linkKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const indexed = await Promise.race([
+      Promise.all([store.put(key, JSON.stringify({ uid })), store.put(linkKey, uid)]).then(() => true, () => false),
+      new Promise<false>((resolve) => { deadline = setTimeout(() => resolve(false), INDEX_WRITE_DEADLINE_MS); }),
+    ]);
+    clearTimeout(deadline);
+    // A put that failed, or one still unanswered at the deadline. Retryable:
+    // the record is in the object, and the retry writes both indexes again.
+    if (!indexed) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+    const { slot } = await callSubscriptionStore(env, uid, announce ? { action: 'announce', token: subscription.unsubscribeToken } : { action: 'read' });
+    if (slot.subscription?.unsubscribeToken === subscription.unsubscribeToken) return slot.announced ? 'created' as const : 'on' as const;
+    await store.delete(linkKey);
+    // The schedule key goes only when the reader has no subscription: one
+    // they made since owns it. deleteScheduleIndex leaves a record alone and
+    // puts the index back if they subscribe while it runs.
+    if (!slot.subscription) await deleteScheduleIndex(env, uid);
+    return 'changed' as const;
+  };
   // The answer for a reader the opt-in may not write for; null at version 0,
   // and `changed` when the reader's object moved on under this read.
-  const settled = async ({ current, behind, objectVersion, inKv, unannounced }: Awaited<ReturnType<typeof readOptInState>>) => {
+  const settled = async ({ current, behind, objectVersion, indexOnly, unannounced }: Awaited<ReturnType<typeof readOptInState>>) => {
     if (current?.enabled) {
-      let outcome = 'on';
-      if (!inKv && current.unsubscribeToken) {
-        if (unannounced === current.unsubscribeToken) {
-          // A welcome yes created this subscription and no request was answered
-          // with its start: its index write failed, or its Worker stopped. This
-          // one writes both indexes, and the object says whether it is the one
-          // that announces the start.
-          const indexed = await writeObjectIndexes(env, uid, current, objectVersion, ['schedule', 'link'], true);
-          if (!indexed.accepted) return 'changed' as const;
-          if (indexed.slot.announced) outcome = 'created';
-        } else {
-          // An index lost since gets written again: this request may be its
-          // only retry. A read that misses a key that exists only costs a put
-          // of the same value. A KV record (phase 1) is its own schedule key,
-          // and the reader's app restores its link.
-          const [index, owner] = await Promise.all([store.get(key), store.get(`${UNSUBSCRIBE_PREFIX}${current.unsubscribeToken}`)]);
-          if ((!index || owner !== uid) && !(await writeObjectIndexes(env, uid, current, objectVersion)).accepted) return 'changed' as const;
+      let outcome: 'on' | 'created' = 'on';
+      if (indexOnly && current.unsubscribeToken) {
+        // A welcome yes created this subscription and no request was answered
+        // with its start (its index write failed, or its Worker stopped): this
+        // one completes it. Otherwise an index lost since is written again,
+        // since this request may be its only retry; a read that misses a key
+        // that exists only costs a put of the same value. A KV record (phase
+        // 1) is its own schedule key, and the reader's app restores its link.
+        const starting = unannounced === current.unsubscribeToken;
+        const missing = starting || await Promise.all([store.get(key), store.get(`${UNSUBSCRIBE_PREFIX}${current.unsubscribeToken}`)])
+          .then(([index, owner]) => !index || owner !== uid);
+        if (missing) {
+          const completed = await complete(current, starting);
+          if (completed === 'changed') return 'changed' as const;
+          outcome = completed;
         }
       }
       const state = await store.get<DeliveryState>(deliveryStateKey(key, current), 'json');
@@ -1709,9 +1734,8 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
     };
     const written = await callSubscriptionStore(env, uid, { action: 'write', expectedVersion: 0, subscription: record, welcome: true });
     if (!written.accepted) continue;
-    const indexed = await writeObjectIndexes(env, uid, record, written.slot.version, ['schedule', 'link'], true);
-    // Another request of the same reader may have announced it in between.
-    if (indexed.accepted) return { outcome: indexed.slot.announced ? 'created' : 'on', preferences: publicSubscription(record, email) };
+    const completed = await complete(record, true);
+    if (completed !== 'changed') return { outcome: completed, preferences: publicSubscription(record, email) };
   }
   throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
 }
@@ -1801,20 +1825,10 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   // Otherwise a key that still holds a record, left by a move or a save whose
   // index write failed, becomes the index too, so KV keeps no copy of it.
   const [indexed, owner] = changed ? [null, null] : await Promise.all([inKv ? null : store.get<Subscription>(key, 'json'), store.get(unsubscribeKey)]);
-  const missing: Array<'schedule' | 'link'> = [
-    ...(inKv || (indexed && !indexed.unsubscribeToken) ? [] : ['schedule' as const]),
-    ...(owner === identity.uid ? [] : ['link' as const]),
-  ];
-  if (inKv) {
-    // The link's key belongs to this subscription alone, so no other write is put at it.
-    if (missing.length) await store.put(unsubscribeKey, identity.uid);
-  } else if (missing.length) {
-    // The record is in the reader's object, which writes its indexes itself:
-    // a put from here could land after a later unsubscribe and re-subscribe,
-    // over the record a phase 1 save keeps at the schedule key. Refused, the
-    // request that reached the object since this one owns the indexes.
-    await writeObjectIndexes(env, identity.uid, subscription, subscription.version ?? 0, missing);
-  }
+  await Promise.all([
+    inKv || (indexed && !indexed.unsubscribeToken) ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
+    owner === identity.uid ? null : store.put(unsubscribeKey, identity.uid),
+  ]);
   if (changed && read.selectionChanged) {
     await updateDeliveryState(env, key, subscription, () => ({ heldDigest: null }));
   }
@@ -3935,6 +3949,12 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
   if (phase1?.slot.cleanup?.length && !record) {
     await acknowledgeCleanup(env, subscriptionUid(key.name), await deleteJournaledKeys(env, subscriptionUid(key.name), phase1.slot));
   }
+  // A reader the welcome opt-in subscribed has only an index at the schedule
+  // key, never a record (readPhase1Slot). One left for a closed, empty object,
+  // by an index write that landed after an unsubscribe or an account deletion,
+  // points at nothing, so phase 1 removes it too (deleteScheduleIndex keeps a
+  // record, and puts the index back if they subscribe meanwhile).
+  if (phase1 && !record && phase1.slot.resident && !phase1.slot.migratable) await deleteScheduleIndex(env, subscriptionUid(key.name));
   const outcome = await processLoadedSubscription(env, key, now, openAlexRequests, record);
   // A listed key whose KV read returned nothing counts too, when the object
   // holds a reopened reader (see readPhase1Slot): a cached miss must not make

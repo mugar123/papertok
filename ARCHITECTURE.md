@@ -114,8 +114,9 @@ flowchart TD
   [email subscription store](worker/email-subscription-store.ts) holds
   digest reminder consent and the last signed-in visit hour, which is used
   for 30 days and then deleted by its alarm or the object's next access. See the [digest reminder contract](worker/README.md#digest-reminder-consent-and-visits).
-  For a subscription the welcome opt-in creates, the store also writes its two
-  KV indexes itself, so later cancellations and saves are ordered after them.
+  It is also the record of a subscription the welcome opt-in starts, in both
+  deploy phases; KV holds only that subscription's two indexes
+  ([contract](worker/README.md#account-and-integration-routes)).
   KV holds notification state,
   institution-service verdicts and rewrite cache records. Exact bindings and
   selected providers live in [wrangler.toml](wrangler.toml).
