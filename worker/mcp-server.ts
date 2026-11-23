@@ -5,8 +5,9 @@ import type { UpstreamError } from './provider-runtime.ts';
 
 import { isPlaceholderAuthorName, restsOnArxivDoi } from '../src/services/paper-builder.ts';
 import { mergeRankedPapers } from '../src/services/paper-search-merge.ts';
-import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, getArxivIdFromWork, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
-import { getPaperIdentity } from '../src/utils/public-navigation.ts';
+import { usableOpenAlexConcepts } from '../src/utils/open-alex-concepts.ts';
+import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, doiPathId, formatOpenAlexWorkAsPaper, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { getPaperIdentity, normalizeArxivId, normalizeDoi } from '../src/utils/public-navigation.ts';
 import { OPENALEX_VENUE_SOURCE_TYPES } from '../src/utils/publication-status.ts';
 import { handleAgentArxiv } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
@@ -78,7 +79,7 @@ const TOOLS = [
   {
     name: 'search_papers',
     title: 'Search papers',
-    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI, arXiv id, or an identical title with a shared first-author name. A paper has its openalex:W… id when OpenAlex found it, else its arXiv id, and arXiv categories when arXiv found it, else OpenAlex concept names, or topic names for a work without concepts. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with abstracts cut at ${MAX_SEARCH_ABSTRACT} characters (get_paper returns the whole abstract), author lists at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; a paper's "omitted" counts the entries each cut list left out, and the characters for the abstract. Papers of very large collaborations can return fewer papers than the limit; the result's "omitted.papers" counts those left out. A source that is unavailable or over its budget is listed in "unavailable". arXiv is asked only when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two); otherwise it is listed there as PROVIDER_RATE_LIMITED with retryAfterSeconds, while arXiv itself may be idle.`,
+    description: `Searches OpenAlex and arXiv and merges records of the same paper by DOI, arXiv id, or an identical title with a shared first-author name. A paper has its openalex:W… id when OpenAlex found it, else its arXiv id, and arXiv categories when arXiv found it, else OpenAlex concept names, or topic names for a work without concepts. taxonomySources identifies the provider of categories, concepts and topics when present. Returns at most ${MAX_RESULTS} papers in PaperTok's paper format, with abstracts cut at ${MAX_SEARCH_ABSTRACT} characters (get_paper returns the whole abstract), author lists at ${MAX_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; a paper's "omitted" counts the entries each cut list left out, and the characters for the abstract. Papers of very large collaborations can return fewer papers than the limit; the result's "omitted.papers" counts those left out. A source that is unavailable or over its budget is listed in "unavailable". arXiv is asked only when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two); otherwise it is listed there as PROVIDER_RATE_LIMITED with retryAfterSeconds, while arXiv itself may be idle.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -95,7 +96,7 @@ const TOOLS = [
   {
     name: 'get_paper',
     title: 'Get a paper',
-    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two). If pacing refuses the lookup or the arXiv relay fails, the tool asks OpenAlex. If the relay returns an unreadable feed or an Atom error entry, the tool returns UPSTREAM_UNAVAILABLE without a fallback. Other identifiers are looked up on OpenAlex. When OpenAlex does not return the paper either, the error is arXiv's, and a refusal by the pacing is PROVIDER_RATE_LIMITED with retryAfterSeconds. An OpenAlex answer has an openalex:W… id and concept names in categories, and arXiv's the arXiv id and arXiv categories, so a search result can come back with another id or other categories. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
+    description: `Looks one paper up by DOI, arXiv id, OpenAlex work id or PubMed id (pmid:123) and returns it in PaperTok's paper format (abstract and metadata, not full text). An arXiv id is looked up on arXiv when PaperTok's arXiv pacing has a free slot for AI clients (about one try in two). If pacing refuses the lookup or the arXiv relay fails, the tool asks OpenAlex. If the relay returns an unreadable feed or an Atom error entry, the tool returns UPSTREAM_UNAVAILABLE without a fallback. Other identifiers are looked up on OpenAlex. When OpenAlex does not return the paper either, the error is arXiv's, and a refusal by the pacing is PROVIDER_RATE_LIMITED with retryAfterSeconds. An OpenAlex answer has an openalex:W… id. Categories are arXiv categories when available, otherwise OpenAlex concept names or topic names. Cached OpenAlex subjects require an OpenAlex work id in the detail response. Cached arXiv categories require its arXiv id. A DOI alone cannot recover either taxonomy. taxonomySources identifies the provider of categories, concepts and topics when present. A successful OpenAlex fallback includes a top-level fallback with from, to and the arXiv error code. Authors are cut at ${MAX_PAPER_AUTHORS} names, institutions at ${MAX_INSTITUTIONS}, concepts and category names at ${MAX_SUBJECTS}, and topics at ${MAX_TOPICS}; "omitted" counts the entries each cut list left out.`,
     inputSchema: { type: 'object', properties: { id: PAPER_ID_SCHEMA }, required: ['id'], additionalProperties: false },
     annotations: READ_ONLY,
   },
@@ -323,6 +324,10 @@ function withoutDefaults(paper: Partial<Paper>) {
 // is bounded, and a list the source never gave stays absent: unknown, not empty.
 function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstract = MAX_SEARCH_ABSTRACT } = {}) {
   const relayed: ReturnType<typeof withoutDefaults> & { omitted?: Partial<Record<CutList, number>> } = withoutDefaults(paper);
+  if (!relayed.concepts && relayed.topics) {
+    const subjects = usableOpenAlexConcepts(relayed.topics);
+    if (subjects.length) relayed.concepts = subjects;
+  }
   // Compared whole, before the cuts below.
   const categories = JSON.stringify(relayed.categories || []);
   if (JSON.stringify(relayed.allCategories || []) === categories) delete relayed.allCategories;
@@ -353,7 +358,117 @@ function publicPaper(paper: Partial<Paper>, { maxAuthors = MAX_AUTHORS, maxAbstr
   delete relayed._fetchedFor;
   delete relayed.provider;
   delete relayed.sourceType;
-  return relayed;
+  const taxonomySources = {
+    ...(relayed.categories && { categories: relayed.primaryCategory ? 'arxiv' : 'openalex' }),
+    ...(relayed.concepts && { concepts: 'openalex' }),
+    ...(relayed.topics && { topics: 'openalex' }),
+  };
+  return { ...relayed, ...(Object.keys(taxonomySources).length > 0 && { taxonomySources }) };
+}
+
+type TaxonomySource = 'openalex' | 'arxiv';
+type SearchTaxonomy = Pick<Partial<Paper>, 'categories' | 'primaryCategory' | 'concepts' | 'topics' | 'primaryTopic'>;
+
+function taxonomyKey(source: TaxonomySource, recordId: string | undefined, caller: Request) {
+  if (!recordId) return undefined;
+  const identity = getPaperIdentity(source, recordId);
+  const id = source === 'arxiv' ? identity.replace(/v\d+$/, '') : identity;
+  return id ? new URL(`/mcp/taxonomy/v3/${encodeURIComponent(id)}`, caller.url).href : undefined;
+}
+
+async function rememberTaxonomy(record: Partial<Paper>, caller: Request) {
+  const source = record.sources?.primary;
+  if (source !== 'openalex' && source !== 'arxiv') return;
+  const key = taxonomyKey(source, source === 'arxiv' ? record.arxivId : record.id, caller);
+  if (!key) return;
+  const taxonomy: SearchTaxonomy = source === 'arxiv'
+    ? { primaryCategory: record.primaryCategory, categories: record.categories }
+    : { concepts: record.concepts, topics: record.topics, primaryTopic: record.primaryTopic };
+  if (!taxonomy.primaryCategory && !taxonomy.concepts?.length && !taxonomy.topics?.length && !taxonomy.primaryTopic) return;
+  try {
+    await caches.default.put(key, Response.json(taxonomy, { headers: { 'cache-control': 'public, max-age=600' } }));
+  } catch {
+    // A failed edge write leaves the provider lookup usable.
+  }
+}
+
+async function cachedTaxonomy(source: TaxonomySource, id: string | undefined, caller: Request) {
+  const key = taxonomyKey(source, id, caller);
+  if (!key) return undefined;
+  try {
+    const hit = await caches.default.match(key);
+    return await hit?.json<SearchTaxonomy>();
+  } catch {
+    return undefined;
+  }
+}
+
+async function detailPaper(paper: Paper, explicitArxivId: string | undefined, caller: Request) {
+  const [arxiv, openalex] = await Promise.all([
+    cachedTaxonomy('arxiv', explicitArxivId, caller),
+    cachedTaxonomy('openalex', paper.id, caller),
+  ]);
+  const concepts = paper.concepts?.length ? paper.concepts : openalex?.concepts;
+  const topics = paper.topics?.length ? paper.topics : openalex?.topics;
+  const openAlexNames = subjectNames(concepts, topics);
+  const categories = arxiv?.categories ?? openAlexNames;
+  const detail = publicPaper({
+    ...paper, concepts, topics, categories, allCategories: categories,
+    keywords: openAlexNames,
+    primaryTopic: paper.primaryTopic ?? openalex?.primaryTopic,
+    primaryCategory: paper.primaryCategory || arxiv?.primaryCategory,
+  }, PAPER_BOUNDS);
+  // Review status above depends on the sources of the publication evidence.
+  // A taxonomy contribution adds no evidence of peer review.
+  if (arxiv) detail.sources = { ...paper.sources, enrichedBy: ['arxiv'] };
+  return { paper: detail };
+}
+
+// A publisher DOI or another site's URL can contain an arXiv-looking substring.
+function arxivIdOnWork(work: OpenAlexWork) {
+  const direct = normalizeArxivId(work.ids?.arxiv);
+  if (direct) return direct.replace(/v\d+$/, '');
+  for (const location of [work.primary_location, ...(work.locations || [])]) {
+    for (const url of [location?.landing_page_url, location?.pdf_url, location?.id]) {
+      if (typeof url !== 'string' || !/^https?:\/\/(?:export\.)?arxiv\.org\/(?:abs|pdf)\//i.test(url)) continue;
+      const id = normalizeArxivId(url.split(/[?#]/, 1)[0]);
+      if (id) return id.replace(/v\d+$/, '');
+    }
+  }
+  return undefined;
+}
+
+// An arXiv DOI identifies the preprint for display and fallback matching.
+function arxivIdInDoi(work: OpenAlexWork) {
+  const prefix = '10.48550/arxiv.';
+  for (const value of [work.doi, work.ids?.doi]) {
+    const doi = normalizeDoi(value);
+    if (!doi.startsWith(prefix)) continue;
+    const suffix = doi.slice(prefix.length);
+    if (suffix && normalizeArxivId(suffix) === suffix) return suffix.replace(/v\d+$/, '');
+  }
+  return undefined;
+}
+
+// Search and detail receive the same provider taxonomy. Keep the subject ID
+// even when its display name is missing; a name alone cannot identify a topic.
+function openAlexIdentityAndTaxonomy(work: OpenAlexWork, explicitArxivId: string | undefined) {
+  const id = getPaperIdentity('openalex', work.id || '');
+  if (!id) throw new ToolFailure({ code: 'UPSTREAM_UNAVAILABLE' });
+  const validTopic = (topic: OpenAlexWork['primary_topic']) =>
+    typeof topic?.id === 'string' && /^(?:https:\/\/openalex\.org\/)?T\d+$/i.test(topic.id);
+  const topics = Array.isArray(work.topics) ? work.topics.filter(validTopic) : [];
+  const concepts = Array.isArray(work.concepts) ? work.concepts.filter(concept =>
+    typeof concept?.id === 'string' && /^(?:https:\/\/openalex\.org\/)?C\d+$/i.test(concept.id)) : [];
+  const usable = usableOpenAlexConcepts(concepts);
+  const categories = subjectNames(usable, topics);
+  return { id, arxivId: explicitArxivId ?? arxivIdInDoi(work), topics, primaryTopic: validTopic(work.primary_topic) ? work.primary_topic : undefined,
+    concepts: usable, categories, keywords: categories, allCategories: categories };
+}
+
+function subjectNames(concepts: Paper['concepts'], topics: Paper['topics']) {
+  const subjects = concepts?.length ? concepts : usableOpenAlexConcepts(topics);
+  return subjects.flatMap(subject => typeof subject.display_name === 'string' && subject.display_name ? [subject.display_name] : []);
 }
 
 // Both sources are asked for a full page whatever `limit` says, and the merged
@@ -371,7 +486,10 @@ async function searchOpenAlex(query: string, since: string, caller: Request, env
   }, caller, env);
   const { results } = await response.json<{ results?: OpenAlexWork[] }>();
   if (!Array.isArray(results)) throw new ToolFailure({ code: 'UPSTREAM_UNAVAILABLE' });
-  return results.map(work => mapOpenAlexWork(work));
+  return results.map(work => {
+    const paper = mapOpenAlexWork(work);
+    return paper && { ...paper, ...openAlexIdentityAndTaxonomy(work, arxivIdOnWork(work)) };
+  });
 }
 
 // The phrase query the app's search sends (`buildSearchQuery` in
@@ -419,15 +537,24 @@ async function searchPapers({ query, sources, since, limit }: ReturnType<typeof 
     });
   }
   const foundBy = (source: string) => settled.flatMap((outcome, index) => (sources[index] === source && outcome.status === 'fulfilled' ? outcome.value : []));
-  const ranked = mergeRankedPapers(query, foundBy('openalex'), foundBy('arxiv'), { limit }).map(paper => publicPaper(paper));
-  const papers: typeof ranked = [];
+  const preprints = foundBy('arxiv');
+  const works = foundBy('openalex');
+  const ranked = mergeRankedPapers(query, works, preprints, { limit });
+  const papers: ReturnType<typeof publicPaper>[] = [];
   let bytes = 0;
-  for (const paper of ranked) {
+  for (const record of ranked) {
+    const paper = publicPaper(record);
     const size = new TextEncoder().encode(JSON.stringify(paper)).length + 1;
     if (papers.length > 0 && bytes + size > SEARCH_BUDGET_BYTES) break;
     papers.push(paper);
     bytes += size;
   }
+  await Promise.all(ranked.slice(0, papers.length).map(async paper => {
+    const work = works.find(record => record?.id === paper.id);
+    const preprint = preprints.find(record => record && record.id === paper.arxivId);
+    if (work) await rememberTaxonomy(work, caller);
+    if (preprint) await rememberTaxonomy(preprint, caller);
+  }));
   const left = ranked.length - papers.length;
   return { query, papers, unavailable, ...(left > 0 ? { omitted: { papers: left } } : {}) };
 }
@@ -448,10 +575,14 @@ function getPaperArguments(args: Arguments) {
 // and that source's host as its `publisher`. A repository (arXiv, SSRN) or a
 // platform holds a copy and is no venue, so the paper keeps neither field and
 // the client cannot cite the repository as the journal.
-function openAlexPaper(work: OpenAlexWork) {
+function openAlexPaper(work: OpenAlexWork, caller: Request) {
   const { journal, publisher, ...paper } = formatOpenAlexWorkAsPaper(work);
   const venue = OPENALEX_VENUE_SOURCE_TYPES.has(String(work.primary_location?.source?.type || ''));
-  return { paper: publicPaper({ ...paper, ...(venue ? { journal, publisher } : {}), id: `openalex:${paper.id}` }, PAPER_BOUNDS) };
+  const explicitArxivId = arxivIdOnWork(work);
+  return detailPaper({
+    ...paper, ...(venue ? { journal, publisher } : {}),
+    ...openAlexIdentityAndTaxonomy(work, explicitArxivId),
+  }, explicitArxivId, caller);
 }
 
 // arXiv refuses an agent whenever the beat's current seat is taken, by a
@@ -478,7 +609,7 @@ async function getArxivPaper(arxivId: string, caller: Request, env: WorkerEnv) {
     }, caller, env)
       .then(response => response.json<{ results?: OpenAlexWork[] }>())
       // The paper's `arxivId` is read off the work, so it has to be this one.
-      .then(({ results = [] }) => results.find(found => getArxivIdFromWork(found).toLowerCase() === arxivId))
+      .then(({ results = [] }) => results.find(found => (arxivIdOnWork(found) ?? arxivIdInDoi(found)) === arxivId))
       .catch((failure: unknown) => {
         recordFailure('get_paper', sourceFailure('openalex', failure));
         return undefined;
@@ -486,7 +617,7 @@ async function getArxivPaper(arxivId: string, caller: Request, env: WorkerEnv) {
     if (!work?.id) throw error;
     // The tool answers, so its failure would leave no line of its own.
     recordFailure('get_paper', { source: 'arxiv', ...error.details });
-    return openAlexPaper(work);
+    return { ...await openAlexPaper(work, caller), fallback: { from: 'arxiv', to: 'openalex', code: error.details.code } };
   }
   if (!papers[0]) throw new ToolFailure({ code: 'NOT_FOUND' });
   return { paper: publicPaper(papers[0], PAPER_BOUNDS) };
@@ -510,7 +641,7 @@ async function getPaper(identity: ReturnType<typeof getPaperArguments>, caller: 
   if (answer.results && String(work.doi || '').replace(/^https?:\/\/doi\.org\//i, '').toLowerCase() !== identity.value.toLowerCase()) {
     throw new ToolFailure({ code: 'NOT_FOUND' });
   }
-  return openAlexPaper(work);
+  return openAlexPaper(work, caller);
 }
 
 function openAccessArguments(args: Arguments) {

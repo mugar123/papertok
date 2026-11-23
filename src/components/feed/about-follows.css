@@ -1,0 +1,40 @@
+/* Journal and institutions in "About this paper": ruled rows like Topics and
+   Funding, the name on the left and the Follow control (ui/follow-toggle.css)
+   on the right. */
+.pc-follow-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pc-follow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 52px;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pc-follow-name {
+  min-width: 0;
+  color: var(--text-primary);
+  font: var(--fw-medium) var(--fs-sm)/1.3 var(--font-body);
+  overflow-wrap: anywhere;
+}
+
+.pc-follow-more {
+  align-self: flex-start;
+}
+
+.pc-follow-refusal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--fs-sm)/1.4 var(--font-body);
+}

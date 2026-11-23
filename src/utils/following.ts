@@ -112,6 +112,60 @@ function isSameProjectNameSpelling(oneName: string, otherName: string) {
   return full.startsWith(`${head}: `);
 }
 
+const CATEGORY_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
+
+/**
+ * The provider ids `follow_change` may carry (ENG-192): an OpenAlex author or
+ * ORCID iD, an OpenAlex institution or ROR id, an OpenAlex topic or concept or
+ * one of the app's areas or categories. A project's id can be address-bar text, and a
+ * legacy or nameless follow's id is the person's name, so neither is sent.
+ */
+const VERIFIED_FOLLOW_ID: Partial<Record<FollowEntity['type'], (id: string) => boolean>> = {
+  author: id => /^A\d+$/.test(id) || /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(id),
+  institution: id => /^I\d+$/.test(id) || /^0[a-hj-km-np-tv-z0-9]{6}\d{2}$/.test(id),
+  topic: id => /^[TC]\d+$/.test(id) || CATEGORY_IDS.has(id) || getAreaLeaves(id) !== null,
+};
+
+/** Whether `id` is a provider id the type's follow is known by (not a name or address-bar text). */
+export const isVerifiedFollowId = (type: FollowEntity['type'], id: string) => Boolean(VERIFIED_FOLLOW_ID[type]?.(id));
+
+/**
+ * The ids an institution is identified by, by namespace: its OpenAlex id and
+ * the ROR id it carries beside it. A follow without one (a legacy follow
+ * stored by name) has none.
+ *
+ * Only institutions: their ids are one to one with the institution, and two
+ * with one name are two institutions. OpenAlex splits one author across
+ * several ids, so authors keep matching by id, then by name.
+ */
+function followIdsByNamespace(entity: Pick<FollowEntity, 'type' | 'canonicalId' | 'externalIds'>) {
+  const ids = new Map<'openalex' | 'external', string>();
+  if (entity.type !== 'institution') return ids;
+  for (const id of [entity.canonicalId, entity.externalIds?.ror].map(normalizeFollowId)) {
+    if (isVerifiedFollowId('institution', id)) ids.set(/^I\d+$/.test(id) ? 'openalex' : 'external', id);
+  }
+  return ids;
+}
+
+/**
+ * Whether ids settle that two institutions are one: true when
+ * they share an id, false when they share a namespace and every id in it
+ * differs (two institutions with one name), null when the ids say nothing
+ * because the two carry ids of different namespaces only (an OpenAlex id
+ * against a ROR id), or one carries none, or the entity is not an institution.
+ */
+function sameByIds(one: Parameters<typeof followIdsByNamespace>[0], other: Parameters<typeof followIdsByNamespace>[0]) {
+  const otherIds = followIdsByNamespace(other);
+  let shared = false;
+  for (const [namespace, id] of followIdsByNamespace(one)) {
+    const otherId = otherIds.get(namespace);
+    if (otherId === undefined) continue;
+    if (otherId === id) return true;
+    shared = true;
+  }
+  return shared ? false : null;
+}
+
 export function followsEntity(followedEntities: FollowEntity[], entity: FollowInput) {
   const normalized = createFollowEntity(entity);
   if (!normalized) return false;
@@ -121,6 +175,11 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
   return (followedEntities || []).some((follow) => {
     if (follow.type !== normalized.type) return false;
     if (normalizeFollowId(follow.canonicalId) === id) return true;
+    // Ids in one namespace tell two institutions apart even when they share a name.
+    // With no namespace in common, the name decides, as it does for a follow
+    // stored by name: an OpenAlex id and a ROR id do not say they differ.
+    const byIds = sameByIds(normalized, follow);
+    if (byIds !== null) return byIds;
     // No journal was ever stored by name, and two sources can share one.
     if (!name || normalized.type === 'journal') return false;
     const followName = normalizeFollowText(follow.displayName);
@@ -214,20 +273,6 @@ export function planFollowToggle(followedEntities: FollowEntity[], entity: Follo
   return { existing, next: [...followedEntities, entity] };
 }
 
-const CATEGORY_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
-
-/**
- * The provider ids `follow_change` may carry (ENG-192): an OpenAlex author or
- * ORCID iD, an OpenAlex institution or ROR id, an OpenAlex topic or concept or
- * one of the app's areas or categories. A project's id can be address-bar text, and a
- * legacy or nameless follow's id is the person's name, so neither is sent.
- */
-const VERIFIED_FOLLOW_ID: Partial<Record<FollowEntity['type'], (id: string) => boolean>> = {
-  author: id => /^A\d+$/.test(id) || /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(id),
-  institution: id => /^I\d+$/.test(id) || /^0[a-hj-km-np-tv-z0-9]{6}\d{2}$/.test(id),
-  topic: id => /^[TC]\d+$/.test(id) || CATEGORY_IDS.has(id) || getAreaLeaves(id) !== null,
-};
-
 /**
  * The `follow_change` event of a press that followed or unfollowed `entity`.
  * Which journals a reader follows stays out of analytics, detailed analytics
@@ -239,7 +284,7 @@ export function followChangeEvent(entity: FollowEntity, wasFollowing: boolean) {
     entity_type: entity.type,
     action: wasFollowing ? 'remove' : 'add',
     surface: 'other',
-    entity_id: VERIFIED_FOLLOW_ID[entity.type]?.(entity.canonicalId) ? entity.canonicalId : undefined,
+    entity_id: isVerifiedFollowId(entity.type, entity.canonicalId) ? entity.canonicalId : undefined,
   };
 }
 

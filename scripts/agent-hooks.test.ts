@@ -19,11 +19,14 @@ function bash(command: string) {
 }
 
 // A throwaway checkout with this repository's dependencies and a one-rule config.
-function checkout(t: { after(fn: () => void): void }, files: Record<string, string>) {
+function checkout(t: { after(fn: () => void): void }, files: Record<string, string>, missingWrangler = false) {
   const dir = mkdtempSync(join(tmpdir(), 'agent-hooks-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   execFileSync('git', ['init', '-q'], { cwd: dir });
-  symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'));
+  if (!missingWrangler) {
+    symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'));
+    writeFileSync(join(dir, 'worker-configuration.d.ts'), '');
+  }
   writeFileSync(join(dir, '.gitignore'), 'node_modules\n');
   writeFileSync(join(dir, 'eslint.config.mjs'), "export default [{ rules: { 'no-debugger': 'error' } }]\n");
   execFileSync('git', ['add', '.'], { cwd: dir });
@@ -49,6 +52,14 @@ test('a stop with a lint error in a changed file is sent back with the findings'
   const { status, stderr } = runHook({ hook_event_name: 'Stop', cwd: dir });
   assert.equal(status, 2);
   assert.match(stderr, /changed\.js[\s\S]*no-debugger/);
+});
+
+test('a stop reports a failure to generate Worker types', (t) => {
+  const dir = checkout(t, { 'changed.js': 'export const answer = 42\n' }, true);
+  const { status, stderr } = runHook({ hook_event_name: 'Stop', cwd: dir });
+  assert.equal(status, 2);
+  assert.match(stderr, /Wrangler could not generate Worker types/);
+  assert.match(stderr, /npm ci/);
 });
 
 test('a stop with clean changes, or one already answering a block, is let through', (t) => {

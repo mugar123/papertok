@@ -136,18 +136,29 @@ a session can finish, lints the files changed on the branch and in the working t
   that only describes the notice itself does not count) and the summary (at most three short
   bullets with the main changes; the page keeps the full list), with the page sentences behind
   each of its clauses, in `src/legal/privacy-policy.ts`. The
-  app shows that summary to each signed-in account in a dialog on /feed, after onboarding,
-  once per account: as soon as the dialog opens, the version is written to the account
+  app shows that summary to eligible accounts in a dialog on /feed after onboarding.
+  Until release 0.4, any record at or after the baseline settles later changes too.
+  As soon as the dialog opens, the current version is written to the account
   (`users/{uid}/settings/privacyNotice`, `src/services/privacy-notice-service.ts`) and to the
   browser, so Got it, Escape, the close button, a press outside and leaving /feed all settle it
   on every device. A browser without a copy asks the account first: until it answers, neither
   the dialog nor a nudge is chosen, and if the read fails the dialog stays shut for the rest
   of the visit. Guests and accounts created at or after that time do not see it, and their
   account is not asked; an account still onboarding waits until it finishes. Every account
-  counts as shown `PRIVACY_NOTICE_BASELINE_VERSION` (2026-11-07, which went out when only
-  the browser remembered it); leave it there. Deploy the Firestore rules for that document
-  before a frontend whose version is later than the baseline: until then the account read is
-  refused, so that version's dialog opens for nobody.
+  is exempt from notices through `PRIVACY_NOTICE_BASELINE_VERSION` (2026-11-07, which went
+  out when only the browser remembered it). Leave the baseline there. Deploy the Firestore
+  rules for that document before a frontend whose version is later than the baseline.
+  Until then the account read is refused, so that version's dialog opens for nobody.
+  On a visit with a qualifying browser copy, the app uses the account transaction to
+  copy the version actually shown if the account has no record or an older one.
+  A failed write leaves the browser copy available to retry on a later visit.
+
+- For release 0.4, replace the once-per-account rule in
+  [`privacyNoticeOwed`](src/utils/nudges.ts) with notices for material changes.
+  Mark a change as material when it adds a provider or data processor, stores or shares
+  new personal data, or adds a new purpose for using personal data. Show existing
+  accounts notices only for material changes, at most once per account per day.
+  Bumping the app version alone does not switch this rule.
 
 For large features or recommendation changes, open an issue first so the behavior and success
 criteria can be discussed.
@@ -155,6 +166,13 @@ criteria can be discussed.
 Changes listed in [decisions that need authorization](AGENTS.md#decisions-that-need-authorization),
 such as a new ranking rule or a new agent skill, need a person to approve their impact. Record
 each approval in the PR's `## Authorized decisions` section.
+
+## Production delivery
+
+After every Worker deploy, run `node scripts/production-smoke.ts` and confirm
+the version tag matches the deployed commit. The daily production smoke
+workflow reports failures in a GitHub issue. See the
+[Worker deployment instructions](worker/README.md#deployment).
 
 ## Documentation maintenance
 

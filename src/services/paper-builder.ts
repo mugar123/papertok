@@ -1,6 +1,7 @@
+import { givesArxivCategories } from './arxiv-records.ts';
 import { hasUsableAIAbstract } from '../utils/ai-explanation-access.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
-import { listedDois } from '../utils/publication-status.ts';
+import { isJournalArticleSource, listedDois } from '../utils/publication-status.ts';
 import { normalizeArxivId, normalizeDoi } from '../utils/public-navigation.ts';
 
 import type { Paper, PaperAuthor, PaperSources } from '../models/paper.ts';
@@ -57,7 +58,7 @@ function arxivIdKey(value: unknown) {
 
 // A DOI a publisher issued. arXiv's own DataCite DOI (10.48550/arXiv.<id>)
 // names the eprint, as the arXiv id does.
-export function isPublisherDoi(normalizedDoi: string) {
+function isPublisherDoi(normalizedDoi: string) {
   return normalizedDoi !== '' && !normalizedDoi.startsWith('10.48550/arxiv.');
 }
 
@@ -69,6 +70,65 @@ function doiRegistrant(normalizedDoi: string) {
 // `merge` lists in `enrichedBy` the source of each record it merges in.
 function hasMerged(record: Pick<Partial<Paper>, 'sources'>) {
   return (record.sources?.enrichedBy?.length ?? 0) > 0;
+}
+
+// Whether a record that has merged no other is OpenAlex's record of a work
+// whose own primary source can carry a journal article
+// (`isJournalArticleSource`), read from what OpenAlex's mappers keep of that
+// source: `venueId`, which they write only for a source of type `journal`
+// outside the listed series, and its name.
+function ownSourceIsJournal(record: Partial<Paper>) {
+  return !hasMerged(record) && Boolean(record.venueId)
+    && isJournalArticleSource({ id: record.venueId, type: 'journal', display_name: record.sourceName || record.journal });
+}
+
+/**
+ * OpenAlex's record of a journal article under a publisher's DOI, read from
+ * the record's own fields before it merges another: typed `article`,
+ * reviewed, no working paper, and filed under a journal that can carry one
+ * (`isJournalArticleSource`, as `openAlexIsJournalArticle` reads it).
+ */
+export function isJournalRecord(record: Partial<Paper>) {
+  return ownSourceIsJournal(record) && record.publicationType === 'article' && record.peerReviewed === true
+    && record.workingPaper !== true && isPublisherDoi(normalizeDoi(record.doi));
+}
+
+// OpenAlex listing again the version a journal record names by `doi`: its own
+// record under that DOI, in a journal that can carry an article, whatever it
+// is typed now (an editorial), and no working paper. A merged row is never
+// one, whatever DOI and journal it took from its records.
+function relistsJournalVersion(record: Partial<Paper>, doi: string) {
+  return ownSourceIsJournal(record) && record.workingPaper !== true && normalizeDoi(record.doi) === doi;
+}
+
+// The DOI of the journal record that leads a record: its own, or the one a
+// row keeps from the record that led it (`sources.journalRecordDoi`). Empty
+// when none does.
+function journalRecordDoiOf(record: Partial<Paper>) {
+  return isJournalRecord(record) ? normalizeDoi(record.doi) : record.sources?.journalRecordDoi ?? '';
+}
+
+// The type a record's merged records give it, which its review answer reads:
+// a row that shows another, its leading record's, keeps theirs in
+// `sources.recordsType`.
+function recordsTypeOf(record: Pick<Partial<Paper>, 'publicationType' | 'sources'>) {
+  return record.sources?.recordsType ?? record.publicationType;
+}
+
+// The topics and primary topic a row takes from a record: in place of its
+// own when the record's classification leads it (`replaces`), else only
+// where it has none.
+function takeTopics(row: Partial<Paper>, record: Partial<Paper>, replaces: boolean) {
+  if ((record.topics?.length as number) > 0 && (replaces || !row.topics?.length)) row.topics = record.topics;
+  const primaryTopic = record.primaryTopic || record.primary_topic;
+  if (primaryTopic && (replaces || !row.primaryTopic)) row.primaryTopic = primaryTopic;
+}
+
+// `sources.recordsType`, kept only where the row shows another type. Written
+// only when it changes.
+function markRecordsType(row: Partial<Paper> & Pick<Paper, 'sources'>, recordsType: string | undefined) {
+  const mark = recordsType !== row.publicationType ? recordsType : undefined;
+  if (mark !== row.sources.recordsType) row.sources = { ...row.sources, recordsType: mark };
 }
 
 // `arxivService` reads any DOI but a repository's as publication
@@ -282,10 +342,13 @@ export class PaperBuilder {
     }
 
     // Evidence of publication reopens only a preprint's `false` or a missing
-    // answer; a published record's answer stands.
+    // answer; a published record's answer stands. A row reads typed
+    // `preprint` here as its records type it (`recordsTypeOf`), whatever
+    // type it shows.
+    const rowRecordsType = recordsTypeOf(existingPaper);
     const reviewOpen = merged.peerReviewed === undefined
       || merged.publicationStatus === 'preprint'
-      || merged.publicationType === 'preprint';
+      || rowRecordsType === 'preprint';
 
     // Normalize DOI from enrichment if existing doesn't have it
     let newDoi = enrichmentData.doi;
@@ -478,16 +541,38 @@ export class PaperBuilder {
       const newConcepts = enrichmentData.concepts.filter(c => !existingConceptIds.has(c.id));
       merged.concepts = [...(merged.concepts || []), ...newConcepts];
     }
-    if ((enrichmentData.topics?.length as number) > 0) merged.topics = enrichmentData.topics;
-    if (enrichmentData.primaryTopic || enrichmentData.primary_topic) {
-      merged.primaryTopic = enrichmentData.primaryTopic || enrichmentData.primary_topic;
-    }
+    // A journal record's topics, primary topic and type are the row's,
+    // whichever record arrives first and however often another version is
+    // listed again (ENG-165). The incoming record leads when it is a journal
+    // record, or when it is a row one leads and the row has none yet, which
+    // it then brings. A merged row never replaces the classification of a
+    // row a journal record leads, whatever DOI it carries: it can be a copy
+    // from before OpenAlex retyped the article. That row leads against any
+    // record but OpenAlex listing its version again (`relistsJournalVersion`,
+    // an editorial, say): a working paper, a preprint or a row then fills
+    // only a topic or primary topic it lacks. A row that stays the working
+    // paper and keeps its `false` (`keepsOwnFalse`) takes none of the
+    // article's venue, and keeps its own classification the same way. Beside
+    // a row without either, the incoming record's replace the row's.
+    // A cached row can identify the article after OpenAlex has already
+    // retyped the base record under that DOI. Keep the base's classification.
+    const carriedJournalDoi = enrichmentData.sources?.journalRecordDoi ?? '';
+    const rowJournalDoi = journalRecordDoiOf(existingPaper)
+      || (carriedJournalDoi && relistsJournalVersion(existingPaper, carriedJournalDoi) ? carriedJournalDoi : '');
+    const incomingJournalDoi = keepsOwnFalse ? ''
+      : isJournalRecord(enrichmentData) ? normalizeDoi(enrichmentData.doi)
+        : rowJournalDoi === '' ? carriedJournalDoi
+          : '';
+    const rowLeads = keepsOwnFalse
+      || (rowJournalDoi !== '' && !relistsJournalVersion(enrichmentData, rowJournalDoi));
+    const takesClassification = incomingJournalDoi !== '' || !rowLeads;
+    takeTopics(merged, enrichmentData, takesClassification);
     // arXiv's categories are the paper's own classification, so they are taken
     // whichever record arrived first. An OpenAlex base lists concept names as
     // categories ("Mutual information" for 2605.02209, which arXiv files under
     // cs.AI); they stay in `concepts`. A record without an arXiv primary, such
     // as the abstract recovery, changes no category.
-    if (enrichmentData.sources?.primary === 'arxiv' && enrichmentData.primaryCategory) {
+    if (givesArxivCategories(enrichmentData)) {
       merged.primaryCategory = enrichmentData.primaryCategory;
       merged.categories = enrichmentData.categories;
       merged.allCategories = enrichmentData.allCategories || enrichmentData.categories;
@@ -523,7 +608,9 @@ export class PaperBuilder {
     merged.hasSupplement = Boolean(merged.hasSupplement || enrichmentData.hasSupplement);
 
     // Upgrade publication status/type if enrichment indicates it's peer-reviewed/published
-    const shouldUpgradePublication = readsAsPublished(enrichmentData);
+    // Read from the type the incoming record's records give it, as below.
+    const incomingRecordsType = recordsTypeOf(enrichmentData);
+    const shouldUpgradePublication = readsAsPublished({ publicationStatus: enrichmentData.publicationStatus, publicationType: incomingRecordsType });
     // A merged row that shows another DOI can hold a record that answered,
     // under this row's DOI, whether the paper was reviewed
     // (`sources.peerReviewedByDoi`, below). For this row it then answers as
@@ -557,9 +644,14 @@ export class PaperBuilder {
     const reviewDenied = incomingAnswer === false
       && !(merged.peerReviewed === true && isOpenAlexRecord(merged));
     if (shouldUpgradePublication) {
-      merged.publicationType = enrichmentData.publicationType || merged.publicationType;
+      if (takesClassification) merged.publicationType = enrichmentData.publicationType || merged.publicationType;
       merged.publicationStatus = 'published';
     }
+    // The type the records give the row, whichever type it shows: the review
+    // answer reads it (`reviewOpen`, `enrichmentReview`), as OpenAlex's
+    // record of the eprint listing a published copy reopens a journal
+    // article's answer.
+    const recordsType = shouldUpgradePublication ? incomingRecordsType || rowRecordsType : rowRecordsType;
     // A retraction stands whichever record states it and whichever comes
     // first: a later listing that reads published or preprint does not undo it.
     if (existingPaper.publicationStatus === 'retracted' || enrichmentData.publicationStatus === 'retracted') {
@@ -576,7 +668,7 @@ export class PaperBuilder {
       ? incomingAnswer
         ?? (isOpenAlexRecord(enrichmentData, sourceName) || hasMerged(enrichmentData)
           ? undefined
-          : merged.publicationType !== 'preprint')
+          : recordsType !== 'preprint')
       : undefined;
     // The row and the incoming record can both rest on an arXiv DOI: a topic
     // gets the same arXiv record from its category listing and its query, and
@@ -692,6 +784,14 @@ export class PaperBuilder {
     if (hasMerged(merged) && everyAnswer !== (merged.sources.peerReviewedByDoiComplete === true)) {
       merged.sources = { ...merged.sources, peerReviewedByDoiComplete: everyAnswer || undefined };
     }
+    // Once merged, the row no longer reads as a journal record by its own
+    // fields, so `sources.journalRecordDoi` keeps the DOI of the one that
+    // leads it. Written only when it changes.
+    const journalRecordDoi = incomingJournalDoi || rowJournalDoi;
+    if (hasMerged(merged) && journalRecordDoi !== (merged.sources.journalRecordDoi ?? '')) {
+      merged.sources = { ...merged.sources, journalRecordDoi: journalRecordDoi || undefined };
+    }
+    markRecordsType(merged, recordsType);
 
     // Open Access logic
     if (enrichmentData.openAccess !== undefined) {
@@ -715,6 +815,31 @@ export class PaperBuilder {
     }
 
     return merged;
+  }
+
+  /**
+   * `row` with what OpenAlex's own record among `records` of the version its
+   * journal record names, listed again (`relistsJournalVersion`), gives it
+   * through `merge`: that record's topics, primary topic and, when it reads
+   * published, its type. Nothing else of the record, which has been merged
+   * already: `ingestPapers` first merges a batch's records of one paper into
+   * one row, and that row replaces no classification of a row a journal
+   * record leads (ENG-165). The review answer keeps reading the type the
+   * records give the row (`sources.recordsType`).
+   */
+  static relistJournalVersion<T extends Partial<Paper> & Pick<Paper, 'sources'>>(row: T, records: Iterable<Partial<Paper>>): T {
+    const doi = journalRecordDoiOf(row);
+    if (doi === '') return row;
+    let relisted = row;
+    for (const record of records) {
+      if (!relistsJournalVersion(record, doi)) continue;
+      const recordsType = recordsTypeOf(relisted);
+      relisted = { ...relisted };
+      takeTopics(relisted, record, true);
+      if (readsAsPublished(record)) relisted.publicationType = record.publicationType || relisted.publicationType;
+      markRecordsType(relisted, recordsType);
+    }
+    return relisted;
   }
 
   /**

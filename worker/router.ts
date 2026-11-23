@@ -13,9 +13,7 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
-import { isAnthropicConfigured } from './anthropic-client.ts';
 import { READ_ALOUD_PATH, handleReadAloud } from './read-aloud-tts.ts';
-import { isNanConfigured } from './nan-client.ts';
 import {
   EmailNotificationError,
   handleEmailNotificationRequest,
@@ -32,7 +30,6 @@ import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAcces
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
 import { ZOTERO_PATHS, ZoteroError, handleZoteroRequest } from './zotero.ts';
 import { ORCID_PATHS, OrcidError, handleOrcidRequest } from './orcid.ts';
-import { isServiceAccountConfigured } from './firebase-service-account.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { handleOpenAlex } from './openalex-api.ts';
 import { handleCitationGraph } from './citation-graph.ts';
@@ -43,11 +40,11 @@ import { handleCorpusFeed } from './paper-feed.ts';
 import { FeedTimings } from './feed-timings.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
 import { handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
-import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
+import { handleScopus } from './scopus-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { handleShareRoute } from './share-route.ts';
 import { MCP_PATH, handleMcpRequest } from './mcp-server.ts';
-import { handleAIHealth, handleEmailHealth, handleOpenAlexBudget, handleOpenAlexHealth, handleScopusHealth } from './health-api.ts';
+import { getConfigurationHealth, handleAIHealth, handleEmailHealth, handleOpenAlexBudget, handleOpenAlexHealth, handleScopusHealth } from './health-api.ts';
 import {
   handleBioRxiv,
   handleCore,
@@ -520,32 +517,7 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
   if (url.pathname === '/health') {
-    return json({
-      ok: true,
-      aiConfigured: Boolean(env.GEMINI_API_KEY || isNanConfigured(env) || isAnthropicConfigured(env)),
-      openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
-      adsConfigured: Boolean(env.NASA_ADS_API_TOKEN),
-      scopusConfigured: isScopusEgressConfigured(env),
-      // Absent means PubMed runs on NCBI's anonymous 3 req/s rather than 10, so
-      // it belongs in the report even though the route works without it.
-      pubmedKeyConfigured: Boolean(env.NCBI_API_KEY),
-      // Not the same kind of flag as PubMed's, despite the shape. Measured on
-      // 2026-08-24, Semantic Scholar's anonymous pool refused 9 of 10 requests
-      // from the Worker and 10 of 10 from a residential address, so absent here
-      // does not mean "slower": it means `/sources/s2` and `/related` are dead.
-      // Present has been the difference between 0/6 and 5/6 since 2026-09-02.
-      semanticScholarKeyConfigured: Boolean(env.SEMANTIC_SCHOLAR_API_KEY),
-      emailConfigured: Boolean(
-        env.NOTIFICATION_STORE
-        && env.RESEND_API_KEY && env.RESEND_FROM_EMAIL,
-      ),
-      publishingConfigured: isServiceAccountConfigured(env),
-      // The `[version_metadata]` binding: which deploy is answering. `tag` is
-      // the one given to `wrangler deploy --tag`, and null for an untagged one.
-      version: env.CF_VERSION_METADATA
-        ? { id: env.CF_VERSION_METADATA.id, tag: env.CF_VERSION_METADATA.tag || null }
-        : null,
-    }, 200, corsHeaders(origin, env));
+    return json(getConfigurationHealth(env), 200, corsHeaders(origin, env));
   }
   if (url.pathname === '/health/email') {
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);

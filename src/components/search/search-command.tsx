@@ -340,6 +340,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
           type: 'institution',
           id: institution.id,
           name: institution.display_name,
+          externalIds: { ror: institution.ror },
         })}
       </CommandItem>
     )),

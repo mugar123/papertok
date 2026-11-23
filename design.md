@@ -452,6 +452,19 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   `Delete` buttons, each named for its feed. These buttons do what the tab's
   menu does, so no command needs a right click or a long press. A move at an
   end is disabled, and a saved move is announced with the feed's new position.
+- **Help** (`help/help-page.tsx`, its words in `help-guide.ts`) at `/help`: what
+  each button and gesture does, in the Settings page's style, with the section
+  links in place of its menu. It is a public page: a
+  visitor reaches it from the Help icon in the welcome's bar, a signed-in reader
+  from the last entry of the Settings menu. It is set in sections of ruled rows. A row with a
+  glyph puts it in a 40px tile beside the control's name, which is the row's
+  heading, so the tile is decoration. A row with no glyph (text controls,
+  gestures) takes the whole width. Under each sentence two mono stamps say what
+  the control spends (amber for an AI use or a public-list change, neutral for
+  nothing) and whether it needs an account. A section whose controls are all
+  behind sign-in says so once under its intro instead. The page opens with a
+  legend of the stamps and links to its sections; a link moves focus to that
+  section's heading.
 
 ### Inputs / Fields
 - **Style:** a hairline frame on paper, near-square.
@@ -477,6 +490,8 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the search page's own field and scope instead, and the shortcut focuses it;
   below 768px that field takes the tabs' place, and the tabs move into a
   "Search" picker beside the mark: a drawer on a phone, a menu up to 768px.
+  The Conference calendar icon sits beside Search and opens `/conferences`.
+  It fills in on the calendar and its edition pages at `/conferences/:editionId`.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
   Sunken Paper when highlighted.
 - **A feed tab's menu** (`custom-feeds/feed-tab-menu.tsx`): Edit feed, Move
@@ -571,7 +586,10 @@ arrow above the title, with the reading time under the title when the paper's
 text can be read and the paper's links (DOI, code, data) to its right; below
 come the status chips, topics and funding that are not on the card face;
 topics and funding are ruled rows, the field's rule in its ink and its topics'
-in a lighter one. Its heading and sections come in from the right one after
+in a lighter one. The journal OpenAlex identifies and the institutions of the authors that
+carry a verified id come as ruled rows, each name with the Follow control (the
+first five institutions, then `Show all`); a paper with neither has no such
+section. Its heading and sections come in from the right one after
 another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
@@ -583,7 +601,7 @@ notes are the full-text reader's notes panel and its selection opens the same
 highlight editor, whose second way out is Explain this to me.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
-institution, project, topic or journal can be followed: the Explorer header, beside a
+institution, project, topic or journal can be followed: a row of About this paper, the Explorer header, beside a
 Share glyph drawn the same way in the neutral rail, and search results. It is
 an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
 40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press

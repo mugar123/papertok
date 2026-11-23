@@ -32,11 +32,14 @@ interface FeedView {
   markNotInterested: (paper: Paper) => Promise<void>;
 }
 
+interface TestSource { papers: Paper[]; loading: boolean; error: unknown; takeFailureReport: () => boolean }
+
 /**
  * `cards` are the last visit's saved feed, which the provider restores on mount
- * as the cards on screen. `container` also mounts the feed screen.
+ * as the cards on screen. `container` also mounts the feed screen; without it,
+ * `showContainer` mounts it later, into the state the feed has reached.
  */
-export async function renderFeed({ container = false, cards = [] }: { container?: boolean; cards?: Paper[] } = {}) {
+export async function renderFeed({ container = false, cards = [], source }: { container?: boolean; cards?: Paper[]; source?: TestSource } = {}) {
   const app = await startAppModules();
   const worker = stubWorker();
   // The corpus is the one Worker route a feed load needs; a test answers it.
@@ -54,11 +57,11 @@ export async function renderFeed({ container = false, cards = [] }: { container?
   try {
     const firebase = await app.firebase();
     firebase.auth.currentUser = USER;
-    const contexts = await app.load<Record<'AuthContext' | 'FollowingContext' | 'AnalyticsContext', Context<unknown>>>('/src/context/contexts.ts');
+    const contexts = await app.load<Record<'AuthContext' | 'FollowingContext' | 'AnalyticsContext' | 'SimilarFeedContext', Context<unknown>>>('/src/context/contexts.ts');
     const { CustomFeedsContext } = await app.load<{ CustomFeedsContext: Context<unknown> }>('/src/context/custom-feeds-context.ts');
     const { LanguageProvider } = await app.load<{ LanguageProvider: Component }>('/src/context/language-context.tsx');
     const { FeedProvider, useFeed } = await app.load<{ FeedProvider: Component<{ feedRouteActive: boolean }>; useFeed: () => FeedView }>('/src/context/feed-context.tsx');
-    const { default: FeedContainer } = await app.load<{ default: Component<{ onOpenPdf: () => void; onSaveToList: () => void }> }>('/src/components/feed/feed-container.tsx');
+    const { default: FeedContainer } = await app.load<{ default: Component<{ source?: TestSource; onOpenPdf: () => void; onSaveToList: () => void }> }>('/src/components/feed/feed-container.tsx');
     const { writeFeedSnapshot } = await app.load<{ writeFeedSnapshot: typeof WriteFeedSnapshot }>('/src/context/feed-snapshot.ts');
     if (cards.length) writeFeedSnapshot(USER.uid, INTERESTS.join('|'), { papers: cards, page: 1, hasMore: true });
 
@@ -75,6 +78,8 @@ export async function renderFeed({ container = false, cards = [] }: { container?
     };
     const following = { followedEntities: [], followedByType: {}, loading: false, error: null, confirmed: true };
     const customFeeds = { feeds: [], status: 'ready', refreshRequest: null, requestRefresh: () => {} };
+    // A card's More like this pill opens nothing here.
+    const similarFeed = { openSimilar: () => {} };
 
     let feed: FeedView | null = null;
     function Probe() {
@@ -83,30 +88,42 @@ export async function renderFeed({ container = false, cards = [] }: { container?
       return null;
     }
 
-    const tree = (feedRouteActive: boolean) => createElement(MemoryRouter, null,
+    const shown = { feedRouteActive: true, container };
+    const tree = () => createElement(MemoryRouter, null,
       createElement(contexts.AuthContext.Provider, { value: auth },
         createElement(contexts.FollowingContext.Provider, { value: following },
           createElement(contexts.AnalyticsContext.Provider, { value: analytics },
             createElement(LanguageProvider, null,
               createElement(CustomFeedsContext.Provider, { value: customFeeds },
-                createElement(FeedProvider, { feedRouteActive },
-                  createElement(Probe),
-                  container ? createElement(FeedContainer, { onOpenPdf: () => {}, onSaveToList: () => {} }) : null,
-                )))))));
-    const view = render(tree(true));
+                createElement(contexts.SimilarFeedContext.Provider, { value: similarFeed },
+                  createElement(FeedProvider, { feedRouteActive: shown.feedRouteActive },
+                    createElement(Probe),
+                    shown.container ? createElement(FeedContainer, { source, onOpenPdf: () => {}, onSaveToList: () => {} }) : null,
+                  ))))))));
+    const view = render(tree());
 
     return {
-      /** The Worker's corpus route, which holds each feed load until the test refuses it. */
+      /** The Worker's corpus route, which holds each feed load until the test answers or refuses it. */
       corpus,
       /** The `app_error` events the app has sent. */
       appErrors: () => events.filter(event => event.name === 'app_error').map(event => event.params),
+      /** The `feed_load_started` events the app has sent. */
+      feedLoadsStarted: () => events.filter(event => event.name === 'feed_load_started').map(event => event.params),
       /** The feed's state and actions, as a card or screen reads them. */
       feed: () => {
         if (!feed) throw new Error('The feed provider has not rendered.');
         return feed;
       },
       /** The reader moves to or from /feed, where the feed screen shows. */
-      showFeed: (visible: boolean) => view.rerender(tree(visible)),
+      showFeed: (visible: boolean) => {
+        shown.feedRouteActive = visible;
+        view.rerender(tree());
+      },
+      /** The feed screen mounts, as when the reader opens /feed. */
+      showContainer: (visible = true) => {
+        shown.container = visible;
+        view.rerender(tree());
+      },
       stop,
     };
   } catch (error) {

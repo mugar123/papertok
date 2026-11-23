@@ -982,8 +982,12 @@ function subscriptionUid(key: string) {
 
 type StoredSlot = SubscriptionSlot<Subscription>;
 
+export function configuredEmailSubscriptionStore(env: WorkerEnv) {
+  return env.EMAIL_SUBSCRIPTIONS;
+}
+
 async function callSubscriptionStore(env: WorkerEnv, uid: string, payload: SubscriptionStorePayload) {
-  const namespace = env.EMAIL_SUBSCRIPTIONS;
+  const namespace = configuredEmailSubscriptionStore(env);
   if (!namespace) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const response = await namespace.get(namespace.idFromName(uid)).fetch('https://papertok.internal/email-subscription', {
     method: 'POST',
@@ -2203,7 +2207,7 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   return { papers, sourceReport };
 }
 
-function configuredEmailProvider(env: WorkerEnv) {
+export function configuredEmailProvider(env: WorkerEnv) {
   return env.RESEND_API_KEY && env.RESEND_FROM_EMAIL ? 'resend' : '';
 }
 
@@ -4058,7 +4062,7 @@ function renderInstitutionVerificationEmail(email: string, link: string) {
 <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;background:${paper};border:1px solid ${ink};border-radius:3px"><tr><td class="pt-shell" align="center" style="padding:40px 40px 32px;text-align:center">
 <img src="${VERIFICATION_ART_URL}" width="128" height="128" alt="" style="display:block;margin:0 auto 16px;border:0">
 <h1 class="pt-title" style="margin:0 auto;max-width:28ch;font:600 28px/1.2 ${serif};letter-spacing:-0.01em;color:${ink}">Verify your university email</h1>
-<p style="margin:12px auto 0;max-width:38ch;font:400 15px/1.55 ${sans};color:${secondary}">Petri has the key. Confirm that <strong style="font-weight:600;color:${ink}">${address}</strong> is yours to link your university to PaperTok.</p>
+<p style="margin:12px auto 0;max-width:38ch;font:400 15px/1.55 ${sans};color:${secondary}">Confirm that <strong style="font-weight:600;color:${ink}">${address}</strong> is yours to link your university to PaperTok.</p>
 <table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin:24px auto 0"><tr><td style="background:${ink};border-radius:3px"><a href="${href}" style="display:inline-block;padding:13px 22px;font:600 14px/1 ${sans};color:${paper};text-decoration:none">Verify and link university</a></td></tr></table>
 <p style="margin:16px auto 0;max-width:40ch;font:400 13px/1.55 ${sans};color:${tertiary}">Open it in the browser where you asked for it, signed in to the same account. It works once, within one hour.</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:32px;border-top:1px dashed ${rule}"><tr><td align="left" style="padding:18px 0 0;text-align:left;font:400 12px/1.6 ${sans};color:${tertiary}">

@@ -1,9 +1,7 @@
 /**
- * The privacy policy version the app announces. privacy.html promises that a
- * meaningful change updates its "Last updated" date and is announced in the
- * app to signed-in accounts created before the change took effect; the feed
- * shows PRIVACY_POLICY_CHANGE in a dialog (components/nudges/privacy-notice.tsx)
- * to each of them once for this PRIVACY_POLICY_VERSION.
+ * The version shown when a signed-in account is owed a notice
+ * (see utils/nudges.ts). Until 0.4, later edits update the policy page silently
+ * for accounts with a notice record at or after PRIVACY_NOTICE_BASELINE_VERSION.
  *
  * Whoever makes such a change to privacy.html sets the version to its new date
  * and rewrites the change to say the main changes since the previous version, in
@@ -14,19 +12,18 @@
  * privacy.html`, not only the commits you made: a merge brings in others'
  * edits to the page. privacy.test.ts fails while the version and the page's date
  * disagree. A second change on a day that already has a version takes a suffix
- * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
+ * ('2026-10-25.2'), so the account record identifies the text behind the notice.
  */
 export const PRIVACY_POLICY_VERSION = '2026-11-20.10';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
  * the day of the version (a page edited after midnight UTC is dated later than
- * its text went live). An account created before it read an older policy and is told;
- * one created at or after it started under the announced text and is not. Keep
- * it at or AFTER the moment the page text behind everything the summary
+ * its text went live). Only accounts created before it can be owed a notice.
+ * Keep it at or AFTER the moment the page text behind everything the summary
  * announces is live in production, never before: an earlier instant skips the
- * accounts created between it and that moment, who read the old policy and are
- * never told; a later one only tells a few accounts that did not need it. Page
+ * accounts created between it and that moment who may still need a notice.
+ * A later instant can also include accounts created under the new text. Page
  * text that only describes this notice does not count, nor does the notice's
  * own deploy. When the announced text ships in the same PR, that moment is
  * not known yet: set a time after the merge, raise it before merging if the
@@ -123,8 +120,7 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20.10';
  * Version 2026-11-20.6 describes the browser's week-one return mark and the
  * existing PostHog events used to measure returns. Version 2026-11-20.7 adds
  * account and browser storage of interest priorities, mix and area levels,
- * including guest choices awaiting sign-in. One notice covers all changes since
- * the first 20 November version because recording it settles earlier notices.
+ * including guest choices awaiting sign-in.
  * Version 2026-11-20.8 adds the optional ORCID citation lookup for weekly emails.
  * Version 2026-11-20.9 adds the session sample for activity before a profile loads.
  *
@@ -143,14 +139,13 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20.10';
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
 /**
- * The version every account counts as already shown, whatever this browser or
- * the account has recorded. The 2026-11-07 notice went live at 08:04Z that day
- * when only each browser remembered it, so a reader who had seen it would have
- * seen it again on every new browser or device. Pablo decided on 2026-11-07
- * (ENG-196) that no account is shown it again, including one that never saw
- * it, and that only later versions are remembered in the account. Leave this
- * at 2026-11-07: raising it would skip a later version's notice for every
- * account, and nothing is written to accounts for it.
+ * Notices through this version are retired for every account. A recorded
+ * version at or after it counts as a notice shown. The 2026-11-07 notice went
+ * live at 08:04Z that day when only each browser remembered it, so a reader
+ * who had seen it would have seen it again on every new browser or device.
+ * Pablo retired that notice for all accounts on 2026-11-07 (ENG-196).
+ * Keep this date. Raising it would retire later notices and could make
+ * accounts with older records eligible to see another notice.
  */
 export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 

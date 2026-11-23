@@ -9,7 +9,7 @@ import type { ArxivRecord } from './paper-sources.ts';
 import type { Paper } from '../src/models/paper.ts';
 import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
-import { mapBioRxivPaper } from '../src/services/domain-source-records.ts';
+import { mapAdsPaper, mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers } from './leaf-filing.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
@@ -1547,6 +1547,226 @@ test('a journal article and its OpenAlex working paper give the same journal row
   }
 });
 
+// arXiv's categories are the paper's own classification, and `merge` takes
+// them only from an arXiv record. An eprint can join OpenAlex's working-paper
+// row before the journal article upgrades it (ENG-205).
+test("a working-paper row keeps its arXiv eprint's categories through the journal article's upgrade, in any order, in one batch or on separate nights, and listed again", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const article = mapOpenAlexWork(gmmArticle)!;
+  const names = new Map([[eprint, 'eprint'], [workingPaper, 'working paper'], [article, 'article']]);
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  const expected = ['econ.EM', ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']];
+  for (const order of [
+    [eprint, workingPaper, article], [eprint, article, workingPaper],
+    [workingPaper, eprint, article], [workingPaper, article, eprint],
+    [article, eprint, workingPaper], [article, workingPaper, eprint],
+  ]) {
+    for (const nights of [[order], order.map(paper => [paper])]) {
+      const name = `${order.map(paper => names.get(paper)).join(', ')}, ${nights.length === 1 ? 'one batch' : 'separate nights'}`;
+      const once = await journalRowAfter(t, nights);
+      assert.deepEqual(categories(once.json), expected, name);
+      // A row the working paper started is the journal's once its article is listed.
+      if (order[0] === workingPaper) assert.equal((JSON.parse(once.json) as Paper).peerReviewed, true, name);
+      const relisted = await journalRowAfter(t, [...nights, ...nights]);
+      assert.deepEqual(categories(relisted.json), expected, `${name}, listed again`);
+    }
+  }
+});
+
+// Europe PMC's enrichment adds MeSH terms to a row's categories beside arXiv's
+// codes. The upgrade keeps the codes, and keeps the primary only when it is
+// one of them: an unknown primary stays unknown, and the series lane's area
+// key `econ` is no arXiv category.
+test("a working-paper row whose categories mix arXiv's codes with other terms keeps the codes through the upgrade, and its primary only when it is one of them", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const mixed = ['econ.EM', 'q-fin.ST', 'Models, Economic'];
+  for (const [stored, shown] of [['econ.EM', 'econ.EM'], ['', ''], ['econ', '']]) {
+    const storeMixed = (night: number, db: ReturnType<typeof testD1>['db']) => {
+      if (night > 0) return;
+      const row = db.prepare('SELECT id, paper FROM works').get() as { id: number; paper: string };
+      db.prepare('UPDATE works SET paper = ? WHERE id = ?').run(JSON.stringify({ ...JSON.parse(row.paper) as Paper, primaryCategory: stored, categories: mixed, allCategories: mixed }), row.id);
+    };
+    const nights = [[mapOpenAlexWork(gmmWorkingPaperWork)!, gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] })], [mapOpenAlexWork(gmmArticle)!]];
+    const paper = JSON.parse((await journalRowAfter(t, nights, storeMixed)).json) as Paper;
+    assert.deepEqual(
+      [paper.peerReviewed, paper.primaryCategory, paper.categories, paper.allCategories],
+      [true, shown, ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']],
+      `stored primary ${JSON.stringify(stored)}`,
+    );
+  }
+});
+
+// A batch that lists OpenAlex's working paper before its eprint merges the
+// eprint into OpenAlex's record, and `merge` takes categories only from an
+// arXiv record: the batch must still give the stored working-paper row the
+// eprint's categories, as the reverse order does (ENG-206).
+test("a stored working-paper row takes its arXiv eprint's categories in either order, in one batch or on separate nights, and listed again", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  const expected = ['econ.EM', ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']];
+  for (const [name, later] of [
+    ['working paper, then eprint, one batch', [[workingPaper, eprint]]],
+    ['eprint, then working paper, one batch', [[eprint, workingPaper]]],
+    ['working paper, then eprint, separate nights', [[workingPaper], [eprint]]],
+    ['eprint, then working paper, separate nights', [[eprint], [workingPaper]]],
+  ] as const) {
+    const nights = [[workingPaper], ...later.map(night => [...night])];
+    assert.deepEqual(categories((await journalRowAfter(t, nights)).json), expected, name);
+    assert.deepEqual(categories((await journalRowAfter(t, [...nights, ...nights.slice(1)])).json), expected, `${name}, listed again`);
+  }
+});
+
+// A stored row's list can lack the eprint's codes, as this loss left it with
+// the working paper's own list, or hold them beside MeSH terms Europe PMC's
+// enrichment added, with no primary. Listing the eprint again gives the row
+// the eprint's categories in either order; a batch without the eprint
+// changes no category, and the unknown primary stays unknown.
+test("a stored working-paper row whose categories lost or mixed its eprint's codes takes them back when the eprint is listed again", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  for (const [name, stored] of [['lost', workingPaper.categories], ['mixed', ['econ.EM', 'q-fin.ST', 'Models, Economic']]] as const) {
+    const storeList = (night: number, db: ReturnType<typeof testD1>['db']) => {
+      if (night !== 1) return;
+      const row = db.prepare('SELECT id, paper FROM works').get() as { id: number; paper: string };
+      db.prepare('UPDATE works SET paper = ? WHERE id = ?').run(JSON.stringify({ ...JSON.parse(row.paper) as Paper, primaryCategory: '', categories: stored, allCategories: stored }), row.id);
+    };
+    for (const later of [[workingPaper, eprint], [eprint, workingPaper]]) {
+      const relisted = await journalRowAfter(t, [[workingPaper], [eprint], later], storeList);
+      assert.deepEqual(categories(relisted.json), ['econ.EM', ['econ.EM', 'q-fin.ST'], ['econ.EM', 'q-fin.ST']], `${name}, ${later[0] === eprint ? 'eprint' : 'working paper'} first`);
+    }
+    const withoutEprint = await journalRowAfter(t, [[workingPaper], [eprint], [workingPaper]], storeList);
+    assert.deepEqual(categories(withoutEprint.json), ['', stored, stored], `${name}, working paper alone`);
+  }
+});
+
+// ADS copies arXiv's classes into its own list, beside its keywords, and can
+// leave some out. Its record listed alone is no eprint: it changes no
+// category of a row the eprint started, nor of one ADS started.
+test("an ADS record listed alone keeps the categories of a row the eprint or ADS started", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const eprint = gmmEprint({ categories: ['econ.EM', 'q-fin.ST'] });
+  const ads = mapAdsPaper({
+    bibcode: '2026arXiv261001234E', title: [gmmArticle.title], author: ['Economist, Ana'], abstract: 'The ADS copy of the arXiv version of this paper.',
+    identifier: ['arXiv:2610.01234'], arxiv_class: ['econ.EM'], keyword: ['Econometrics'], doctype: 'eprint', pubdate: '2026-10-00', year: '2026',
+  })!;
+  const categories = (json: string) => {
+    const paper = JSON.parse(json) as Paper;
+    return [paper.primaryCategory, paper.categories, paper.allCategories];
+  };
+  for (const [first, list] of [[eprint, ['econ.EM', 'q-fin.ST']], [ads, ['econ.EM', 'Econometrics']]] as const) {
+    const name = first.sources.primary;
+    assert.deepEqual(categories((await journalRowAfter(t, [[first]])).json), ['econ.EM', list, list], `${name} alone`);
+    assert.deepEqual(categories((await journalRowAfter(t, [[first], [ads]])).json), ['econ.EM', list, list], `${name}, then ADS`);
+  }
+});
+
+// arXiv's abstract recovery names arXiv among a row's sources but brings no
+// category. The series lane files a working paper under the area key 'econ',
+// with OpenAlex's concept names as its categories.
+test("a working-paper row whose abstract arXiv recovered shows its journal article's categories once upgraded", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const concept = (id: string, name: string) => [{ id: `https://openalex.org/${id}`, display_name: name, score: 0.9 }];
+  const workingPaper = { ...mapOpenAlexWork({ ...gmmWorkingPaperWork, abstract_inverted_index: null, ids: { arxiv: 'https://arxiv.org/abs/2610.01234' }, concepts: concept('C1', 'Econometrics') })!, primaryCategory: 'econ' };
+  const article = mapOpenAlexWork({ ...gmmArticle, concepts: concept('C2', 'Estimator') })!;
+  const recoverFromArxiv = (night: number, db: ReturnType<typeof testD1>['db']) => {
+    if (night > 0) return;
+    const row = db.prepare('SELECT id, paper FROM works').get() as { id: number; paper: string };
+    const [recovered] = mergeFeedAbstracts([JSON.parse(row.paper) as Paper], [gmmEprint({})]);
+    db.prepare('UPDATE works SET paper = ? WHERE id = ?').run(JSON.stringify(recovered), row.id);
+  };
+  const paper = JSON.parse((await journalRowAfter(t, [[workingPaper], [article]], recoverFromArxiv)).json) as Paper;
+  assert.deepEqual(
+    [paper.peerReviewed, paper.sources.enrichedBy.includes('arxiv'), paper.primaryCategory, paper.categories, paper.allCategories],
+    [true, true, '', ['Estimator'], ['Estimator']],
+  );
+});
+
+// ENG-165: the topics, primary topic and type of the row are the journal
+// article's, whichever record arrives first and however often the working
+// paper is listed again. Synthetic topics: the article's T10999 and the
+// working paper's T20001, as in the example of the ENG-133 review (PR #365).
+const econTopic = (id: string, name: string) => ({
+  id: `https://openalex.org/${id}`,
+  display_name: name,
+  subfield: { id: 'https://openalex.org/subfields/2002', display_name: 'Economics and Econometrics' },
+  field: { id: 'https://openalex.org/fields/20', display_name: 'Economics, Econometrics and Finance' },
+  domain: { id: 'https://openalex.org/domains/2', display_name: 'Social Sciences' },
+});
+const ARTICLE_TOPIC = econTopic('T10999', 'Asset pricing models');
+const WORKING_PAPER_TOPIC = econTopic('T20001', 'Financial econometrics');
+const classificationOf = (json: string) => {
+  const paper = JSON.parse(json) as Paper;
+  return [paper.primaryTopic?.id, paper.topics?.map(topic => topic.id), paper.publicationType, paper.peerReviewed, paper.doi];
+};
+
+test("a journal article's topics, primary topic and type are its row's in every order: one batch, separate nights, or the working paper listed again", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const workingPaper = mapOpenAlexWork({ ...gmmWorkingPaperWork, primary_topic: WORKING_PAPER_TOPIC, topics: [WORKING_PAPER_TOPIC] })!;
+  const article = mapOpenAlexWork({ ...gmmArticle, primary_topic: ARTICLE_TOPIC, topics: [ARTICLE_TOPIC] })!;
+  const expected = [ARTICLE_TOPIC.id, [ARTICLE_TOPIC.id], 'article', true, JBES_DOI];
+  for (const [name, nights] of [
+    ['working paper, then article, one batch', [[workingPaper, article]]],
+    ['article, then working paper, one batch', [[article, workingPaper]]],
+    ['working paper, then article, two nights', [[workingPaper], [article]]],
+    ['article, then working paper, two nights', [[article], [workingPaper]]],
+    ['working paper, article, working paper, three nights', [[workingPaper], [article], [workingPaper]]],
+    ['article and working paper in one batch, then the working paper again', [[article, workingPaper], [workingPaper]]],
+    ['working paper and article in one batch, then the working paper again', [[workingPaper, article], [workingPaper]]],
+  ] as const) {
+    const row = await journalRowAfter(t, nights.map(night => [...night]));
+    assert.deepEqual(classificationOf(row.json), expected, name);
+  }
+});
+
+// A row merged before ENG-165 can show the working paper's topics and type.
+// Nothing rewrites it: the article's next listing does, and the working paper
+// listed after that leaves the article's.
+test("a stored row that shows its working paper's topics and type takes the article's when the article is listed again, and keeps them", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const workingPaper = mapOpenAlexWork({ ...gmmWorkingPaperWork, primary_topic: WORKING_PAPER_TOPIC, topics: [WORKING_PAPER_TOPIC] })!;
+  const article = mapOpenAlexWork({ ...gmmArticle, primary_topic: ARTICLE_TOPIC, topics: [ARTICLE_TOPIC] })!;
+  // The row as an earlier Worker stored [article, working paper] in one batch.
+  const storedBefore = (night: number, db: ReturnType<typeof testD1>['db']) => {
+    if (night !== 0) return;
+    const row = JSON.parse(String((db.prepare('SELECT paper FROM works').all()[0] as { paper: string }).paper)) as Paper;
+    const sources = { ...row.sources };
+    delete sources.journalRecordDoi;
+    db.prepare('UPDATE works SET paper = ?').run(JSON.stringify({ ...row, primaryTopic: WORKING_PAPER_TOPIC, topics: [WORKING_PAPER_TOPIC], publicationType: 'report', sources }));
+  };
+  const row = await journalRowAfter(t, [[article, workingPaper], [workingPaper], [article], [workingPaper]], storedBefore);
+  assert.deepEqual(classificationOf(row.json), [ARTICLE_TOPIC.id, [ARTICLE_TOPIC.id], 'article', true, JBES_DOI]);
+});
+
+// A batch merges its records of one paper into one row first, which replaces
+// nothing in a row the article leads; OpenAlex's own record of the article in
+// the batch still does, whatever else the batch lists beside it.
+test("OpenAlex retyping the article as an editorial reaches its stored row from a batch that also lists its working paper", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
+  const workingPaper = mapOpenAlexWork({ ...gmmWorkingPaperWork, primary_topic: WORKING_PAPER_TOPIC, topics: [WORKING_PAPER_TOPIC] })!;
+  const article = mapOpenAlexWork({ ...gmmArticle, primary_topic: ARTICLE_TOPIC, topics: [ARTICLE_TOPIC] })!;
+  const editorialTopic = econTopic('T50001', 'Economic policy commentary');
+  const editorial = mapOpenAlexWork({ ...gmmArticle, type: 'editorial', primary_topic: editorialTopic, topics: [editorialTopic] })!;
+  for (const batch of [[editorial, workingPaper], [workingPaper, editorial]]) {
+    const row = await journalRowAfter(t, [[article, workingPaper], batch]);
+    assert.deepEqual(classificationOf(row.json), [editorialTopic.id, [editorialTopic.id], 'editorial', true, JBES_DOI], batch.map(paper => paper.id).join(', '));
+  }
+});
+
 test('a stored working-paper row upgraded once is not written again when the same records are listed again', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T03:00:00Z') });
   const workingPaper = mapOpenAlexWork(gmmWorkingPaperWork)!;
@@ -2566,6 +2786,48 @@ test("a notable lane's listing does not renew a paper without an abstract, so th
     'openalex:W2107743791': new Date(next).toISOString(),
     'openalex:W1000000004': enriched,
   });
+});
+
+// ENG-165: a notable lane can list a journal article and its working paper
+// together every week, and each listing renews the row's enrichment date, so
+// the refresh never asks OpenAlex for the article. The listing's own record of
+// the article must bring OpenAlex's new topic to the row the week it changes.
+// Synthetic records under q-fin.GN's topic ids
+// (open-alex-leaf-topics.generated.ts); OpenAlex types the FEDS series, a
+// listed working-paper series, as a `journal`.
+test("a notable lane that lists an article and its working paper every week gives their row the article's new topic the first week it changes", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-21T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const qfinTopic = (id: string) => ({ id: `https://openalex.org/${id}`, display_name: `Topic ${id}` });
+  const article = { ...gmmArticle, publication_date: '2025-10-14', publication_year: 2025, primary_topic: qfinTopic('T10047'), topics: [qfinTopic('T10047')] };
+  const fedsLocation = { is_published: true, landing_page_url: 'https://doi.org/10.17016/feds.2025.165', source: { id: 'https://openalex.org/S4210212089', display_name: 'Finance and Economics Discussion Series', type: 'journal', is_core: true } };
+  const workingPaper = { ...article, id: 'https://openalex.org/W7220000165', doi: 'https://doi.org/10.17016/feds.2025.165', primary_location: fedsLocation, locations: [fedsLocation] };
+  let listedArticle = article;
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' && listedYear(url) === 2025
+    ? { results: [workingPaper, listedArticle] }
+    : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const lane = { source: 'openalex-notable', lane: 'notable:q-fin.GN' } as const;
+  const shown = () => {
+    const rows = db.prepare('SELECT paper FROM works').all() as Array<{ paper: string }>;
+    return rows.map(row => JSON.parse(row.paper) as Paper).map(paper => [paper.primaryTopic?.id, paper.publicationType, paper.peerReviewed]);
+  };
+  await harvestLane(store, lane, first);
+  await enrichPending(store, 50, first);
+  assert.deepEqual(shown(), [['https://openalex.org/T10047', 'article', true]]);
+
+  listedArticle = { ...article, primary_topic: qfinTopic('T10127'), topics: [qfinTopic('T10127')] };
+  const weeks = [];
+  for (let week = 1; week <= 6; week++) {
+    const now = first + week * 7 * DAY;
+    t.mock.timers.setTime(now);
+    await harvestLane(store, lane, now);
+    await enrichPending(store, 50, now);
+    weeks.push(shown());
+  }
+  assert.deepEqual(weeks, Array.from({ length: 6 }, () => [['https://openalex.org/T10127', 'article', true]]));
 });
 
 test("a notable lane's listing does not renew a paper with a PubMed id, so the refresh reads PubMed's retraction from Europe PMC", async t => {

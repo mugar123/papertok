@@ -5,7 +5,7 @@ import type { WorkerEnv } from './env.ts';
 import type { QuotaPart } from './request-quota-ledger.ts';
 import type { FeedTimings } from './feed-timings.ts';
 
-import { PaperBuilder, isPublisherDoi } from '../src/services/paper-builder.ts';
+import { PaperBuilder, isJournalRecord } from '../src/services/paper-builder.ts';
 import { isFeedPublication, isFeedPublicationType } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
@@ -16,7 +16,7 @@ import { getAllLeafCategories, getArxivArchiveArea } from '../src/data/category-
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 import { entityLane, servedFollows } from '../src/utils/follow-lanes.ts';
 import { FOLLOWED_JOURNAL_WORK_TYPES } from '../src/utils/following.ts';
-import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
+import { ARXIV_FEED_AREAS, givesArxivCategories, isArxivCategory } from '../src/services/arxiv-records.ts';
 import { MAX_LIMIT as LEDGER_MAX_LIMIT, reserveRequestQuota } from './request-quota-ledger.ts';
 import { isKeywordLane } from './keyword-lanes.ts';
 
@@ -371,6 +371,18 @@ function storedPaper(paper: Paper): Paper {
   return stored;
 }
 
+// The arXiv codes among a paper's categories, as its categories, or nothing
+// when it has none. MeSH terms Europe PMC added beside them stay in
+// `biomedicalTerms`. The primary stays only when it is one of the codes: the
+// series lane's area key `econ` passes `isArxivCategory` but is no arXiv
+// category.
+function arxivCategoriesOf(paper: Paper): Pick<Paper, 'primaryCategory' | 'categories' | 'allCategories'> {
+  const codes = (paper.categories ?? []).filter(isArxivCategory);
+  return codes.length > 0
+    ? { primaryCategory: codes.find(code => code === paper.primaryCategory) ?? '', categories: codes, allCategories: codes }
+    : {};
+}
+
 // Without an abstract, the title alone: the mappers' "No abstract available."
 // would make every such paper alike.
 const embeddingText = (paper: Partial<Paper>) => (hasUsableAIAbstract(paper.abstract)
@@ -378,7 +390,12 @@ const embeddingText = (paper: Partial<Paper>) => (hasUsableAIAbstract(paper.abst
   : text(paper.title)).slice(0, EMBED_TEXT_CHARS);
 
 interface WorkRow { id: number; paper: string; kept_until: string }
-interface Group { paper: Paper; lanes: Set<string>; keys: Set<string> }
+// `arxivCategories`: the paper's categories are those of an arXiv record of
+// the batch. ADS and INSPIRE put arXiv codes in their own lists, so codes
+// alone do not say an eprint brought them.
+interface Group { paper: Paper; lanes: Set<string>; keys: Set<string>; arxivCategories: boolean }
+
+// The records `merge` takes categories from.
 
 // A new row's number comes from its paper id, so two writers filing the same
 // paper at once (a like looked up by two requests, a followed lane's run beside
@@ -431,12 +448,12 @@ const isWorkingPaperRow = (paper: Partial<Paper>) => paper.sources?.primary === 
 
 // The evidence is one listed record, never a merged row: OpenAlex's own record
 // typed `article` in a `journal` that `openAlexPeerReviewed` calls reviewed,
-// with a publisher's DOI. Without one, the reviewed row would keep the working
+// with a publisher's DOI (`isJournalRecord`, whose topics and type `merge`
+// gives the row). Without one, the reviewed row would keep the working
 // paper's DOI and link to the unreviewed version.
 function isJournalArticleRecord(paper: Paper, raw: unknown) {
   return paper.sources?.primary === 'openalex' && /^openalex:W\d+$/i.test(paper.id)
-    && paper.peerReviewed === true && paper.workingPaper !== true && isPublisherDoi(normalizeDoi(paper.doi))
-    && openAlexIsJournalArticle(raw as OpenAlexWork | undefined);
+    && isJournalRecord(paper) && openAlexIsJournalArticle(raw as OpenAlexWork | undefined);
 }
 
 // The row as the article's record would make it with the row merged in: the
@@ -451,7 +468,10 @@ function asJournalRow(row: Paper, article: Paper): Paper | undefined {
   // The article is the merge base, so the row's own enrichments (an abstract
   // from Semantic Scholar) keep their credit only through this list.
   const enrichedBy = [...new Set([...(row.sources?.enrichedBy ?? []), ...merged.sources.enrichedBy])];
-  return storedPaper({ ...merged, id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
+  // `merge` takes categories only from an arXiv record, so arXiv codes on this
+  // OpenAlex row came from an eprint merged into it, and the article's concept
+  // names (kept in `concepts`) must not replace them (ENG-205).
+  return storedPaper({ ...merged, ...arxivCategoriesOf(row), id: row.id, openAlexId: article.id.slice('openalex:'.length), sources: { ...merged.sources, enrichedBy } });
 }
 
 /**
@@ -603,16 +623,18 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const joined = [...new Set(keys.map(key => groupOfKey.get(key)).filter(Boolean) as Group[])];
     let group = joined[0];
     if (!group) {
-      group = { paper, lanes: new Set(), keys: new Set() };
+      group = { paper, lanes: new Set(), keys: new Set(), arxivCategories: givesArxivCategories(paper) };
       groups.push(group);
     } else {
       for (const other of joined.slice(1)) {
         group.paper = PaperBuilder.merge(group.paper, other.paper, other.paper.provider || other.paper.sources?.primary);
+        group.arxivCategories ||= givesArxivCategories(other.paper);
         other.lanes.forEach(lane => group.lanes.add(lane));
         other.keys.forEach(key => group.keys.add(key));
         groups.splice(groups.indexOf(other), 1);
       }
       group.paper = PaperBuilder.merge(group.paper, paper, paper.provider || paper.sources?.primary);
+      group.arxivCategories ||= givesArxivCategories(paper);
     }
     if (isJournalArticleRecord(paper, item.paper.raw)) articles.push(paper);
     item.lanes.forEach(lane => group.lanes.add(lane));
@@ -650,6 +672,14 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
       paper = stored.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other.paper, other.paper.provider || other.paper.sources?.primary), base);
       paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
+      // A batch that lists another source's record of the paper before its
+      // eprint brings the eprint's categories inside that record, which
+      // `merge` takes none from (ENG-206).
+      if (group.arxivCategories && group.paper.sources?.primary !== 'arxiv') paper = { ...paper, ...arxivCategoriesOf(group.paper) };
+      // The batch's row replaces no classification of a row a journal record
+      // leads, so OpenAlex's own listing in the batch of that record's version
+      // gives the row its topics and type (ENG-165).
+      paper = PaperBuilder.relistJournalVersion(paper, listed.values());
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }

@@ -7,6 +7,7 @@ interface FeedSource {
   papers: Paper[];
   loading: boolean;
   error?: unknown;
+  takeFailureReport?: () => boolean;
   hasMore?: boolean;
   /** Whether a load started. */
   loadMore?: () => boolean;
@@ -190,7 +191,8 @@ function refreshFaceMotion(phase: string, reduced: boolean | null): Pick<MotionP
 }
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
-// Whether the veil's heading holds the focus, read as the veil's exit starts.
+// Whether the veil's heading holds the focus, read as the veil's exit starts
+// and as the feed's status region takes new words.
 const holdsFocus = (heading: RefObject<HTMLElement | null>) => heading.current !== null && heading.current === document.activeElement;
 
 // The `<main>` landmark is opt-in (via the `landmark` prop) rather than baked
@@ -260,11 +262,14 @@ const endFade: FocusEventHandler<HTMLElement> = (event) => {
 // `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
 // dentro del otro sumaría el hueco de la barra dos veces, así que el landmark
 // ES el contenedor en cada rama en vez de un nivel más.
-function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, children }: PropsWithChildren<{
+function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, statusSaidBy = null, children }: PropsWithChildren<{
   landmark: FeedContainerProps['landmark'];
   className?: string;
   nodeRef?: (node: HTMLElement | null) => void;
   status?: string;
+  // The heading that says `status` itself while it holds the focus: the
+  // veil's, where a retry's focus waits (useWaitFocus).
+  statusSaidBy?: RefObject<HTMLElement | null> | null;
 }>) {
   // A live region speaks a change to its text, not the text it is inserted
   // with, and the feed's first render is often already a wait. So the region
@@ -276,8 +281,18 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, c
     const settle = setTimeout(() => { setRegionReady(true); }, STATUS_REGION_SETTLE_MS);
     return () => { clearTimeout(settle); };
   }, []);
+  // A screen reader reads the heading the focus lands on, so words that
+  // heading says when they arrive stay unsaid here: the wait is heard once
+  // (ENG-177). Decided as the words change, which is the commit the focus
+  // lands, and kept until they change again: the heading has said them even
+  // if the focus or the veil has gone by the time the region settles.
+  const saidByFocus = useEffectEvent(() => statusSaidBy !== null && holdsFocus(statusSaidBy));
+  const saidRef = useRef(false);
   useEffect(() => {
-    if (regionReady && statusRef.current) statusRef.current.textContent = status ?? '';
+    saidRef.current = saidByFocus();
+  }, [status]);
+  useEffect(() => {
+    if (regionReady && statusRef.current) statusRef.current.textContent = saidRef.current ? '' : status ?? '';
   }, [status, regionReady]);
   const statusRegion = <span ref={statusRef} className="visually-hidden" role="status" />;
   if (!landmark) {
@@ -321,10 +336,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     () => (source ? (source.loadMore || (() => false)) : feed.loadMore),
     [source, feed.loadMore],
   );
-  const refreshFeed = useMemo(
-    () => (source ? (source.refresh || (() => {})) : feed.refreshFeed),
-    [source, feed.refreshFeed],
-  );
+  const refreshFeed = useCallback((attempt?: 'manual_retry') => {
+    if (source) source.refresh?.();
+    else void feed.refreshFeed(attempt);
+  }, [source, feed.refreshFeed]);
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
   const dismissal = useMemo(() => dismissalFor(source, {
     hide: paper => { void markNotInterested(paper); },
@@ -880,8 +895,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     };
   }, [papers.length, loading, tail, showEndCard, feedNode, prefersReducedMotion]);
 
-  const handleRefresh = useCallback(() => {
-    refreshFeed();
+  const handleRetry = useCallback(() => {
+    refreshFeed('manual_retry');
   }, [refreshFeed]);
   // While its refresh runs the pill is `aria-disabled`, not `disabled`, which
   // would drop its keyboard focus to the page (ENG-178), so a press is
@@ -1192,11 +1207,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     loading,
   );
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
-  const hasSource = Boolean(source);
+  const takeFailureReport = source?.takeFailureReport;
   useEffect(() => {
-    // The For You feed reports each failed load itself (feed-context.tsx).
-    if (feedFailed && hasSource) void trackEvent('app_error', { kind: 'feed_load_failed' });
-  }, [feedFailed, hasSource, trackEvent]);
+    if (feedFailed && takeFailureReport?.()) void trackEvent('app_error', { kind: 'feed_load_failed' });
+  }, [feedFailed, takeFailureReport, trackEvent]);
 
   // Pull-to-refresh, touch only, and only where the pill exists: a source
   // without a refresh of its own (the Similar layer) has nothing to pull.
@@ -1337,7 +1351,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           art={<Petri pose="upset" className="feed-error-petri" />}
           title={'Error loading papers'}
           actions={(
-            <Button ref={retryButtonRef} size="sm" onClick={handleRefresh}>
+            <Button ref={retryButtonRef} size="sm" onClick={handleRetry}>
               <ArrowsClockwise size={16} aria-hidden="true" />
               {'Try again'}
             </Button>
@@ -1379,7 +1393,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           actions={(
             <>
               <Button size="sm" role="link" render={<Link to="/settings/discovery" />}>{'Add topics'}</Button>
-              <Button ref={retryButtonRef} size="sm" variant="outline" onClick={handleRefresh}>
+              <Button ref={retryButtonRef} size="sm" variant="outline" onClick={handleRetry}>
                 <ArrowsClockwise size={16} aria-hidden="true" />
                 {'Check again'}
               </Button>
@@ -1402,7 +1416,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         <p>
           {'There are no papers in your categories yet. Try broadening your interests.'}
         </p>
-        <button ref={retryButtonRef} className="feed-retry-btn" onClick={handleRefresh}>
+        <button ref={retryButtonRef} className="feed-retry-btn" onClick={() => refreshFeed()}>
           {'Explore again'}
         </button>
       </FeedLandmark>
@@ -1416,7 +1430,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const refreshLabel = refreshLabels[refreshPhase];
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
-    <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} landmark={landmark}>
+    <FeedLandmark nodeRef={setSwipeNode} status={feedStatus} statusSaidBy={atomVeil ? veilHeadingRef : null} landmark={landmark}>
       {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"
@@ -1572,9 +1586,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
                   failed: the slot is mounted ahead of the load, and a fresh
                   one after every page, so a live region carrying the words
                   from the start would speak for waits that are not
-                  happening. Under the veil there is no page to add to: the
-                  landmark's status speaks for that wait. */}
-              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', retrying: nextPageRetrying, lastVisit, asked: askedUnderLastVisit })}</span>
+                  happening. Under the veil there is no page to add to, and a
+                  refresh's load is not a next page: the landmark's status
+                  speaks for those waits. */}
+              <span className="visually-hidden" role="status">{nextPageStatusText({ loading, hasPapers: papers.length > 0, failed: tail === 'failed', retrying: nextPageRetrying, refreshing: isRefreshing, lastVisit, asked: askedUnderLastVisit })}</span>
             </div>
           </div>
         )}
@@ -1591,7 +1606,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           papers are on their way this is the whole screen; the frame they
           land, the cards mount underneath and this recedes over them. Not a
           live region: it is inserted with its words, which a region does not
-          speak, and the landmark's status announces the wait instead. */}
+          speak, and the landmark's status announces the wait instead, unless
+          a retry's focus waits on the heading, which then says it. */}
       <AnimatePresence custom={veilHeadingRef} onExitComplete={veilLeft}>
         {atomVeil && (
           <motion.div

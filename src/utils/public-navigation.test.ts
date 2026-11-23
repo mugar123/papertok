@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
+import { encodeBase64Url } from './base64-url.ts';
 import {
   DEFAULT_SHARE_IMAGE,
   PUBLIC_ENTITY_TYPES,
   decodePaperKey,
   getAbsoluteShareUrl,
+  getPaperIdentity,
   getPublicEntityPath,
   getPublicEntityUrl,
   getPublicPaperPath,
@@ -20,6 +22,7 @@ import {
   legacyPaperPath,
   legacyPaperRedirect,
   parsePaperKey,
+  readablePaperPath,
   encodePaperKey,
 } from './public-navigation.ts';
 import type { PathLike } from 'fs';
@@ -211,6 +214,74 @@ test('an id nobody can open is still no key at all', () => {
   assert.equal(getPublicPaperPath('pmid', '12a'), null);
 });
 
+test('a huge paper key resolves to not-found instead of throwing', () => {
+  const hugeDoi = `10.1000/${'a'.repeat(150_000)}`;
+  const hugeKey = encodeBase64Url(`doi:${hugeDoi}`);
+
+  assert.equal(hugeKey.length, 200_016);
+  assert.equal(parsePaperKey(hugeKey), null);
+  assert.equal(decodePaperKey(hugeKey), null);
+  assert.equal(encodePaperKey('doi', hugeDoi), null);
+  assert.equal(getPublicPaperPath(hugeKey), null);
+  assert.equal(getPublicPaperPath('doi', hugeDoi), null);
+});
+
+test('enforces maximum identity lengths at the exact boundaries', () => {
+  const maxDoi = `10.1000/${'a'.repeat(2040)}`;
+  assert.equal(maxDoi.length, 2048);
+  const maxDoiKey = encodePaperKey('doi', maxDoi);
+  assert.ok(maxDoiKey);
+  assert.equal(decodePaperKey(maxDoiKey), `doi:${maxDoi}`);
+  assert.deepEqual(parsePaperKey(maxDoiKey), { type: 'doi', value: maxDoi });
+  assert.equal(getPublicPaperPath('doi', maxDoi), `/paper/${maxDoiKey}`);
+
+  const maxUtf8Doi = `10.1000/${'漢'.repeat(2040)}`;
+  assert.equal(maxUtf8Doi.length, 2048);
+  const maxUtf8DoiKey = encodePaperKey('doi', maxUtf8Doi);
+  assert.ok(maxUtf8DoiKey);
+  assert.equal(decodePaperKey(maxUtf8DoiKey), `doi:${maxUtf8Doi}`);
+
+  const overDoi = `10.1000/${'a'.repeat(2041)}`;
+  assert.equal(overDoi.length, 2049);
+  assert.equal(getPaperIdentity('doi', overDoi), '');
+  assert.equal(encodePaperKey('doi', overDoi), null);
+  assert.equal(parsePaperKey(encodeBase64Url(`doi:${overDoi}`)), null);
+  assert.equal(getPublicPaperPath('doi', overDoi), null);
+
+  const maxArxiv = `${'a'.repeat(56)}/0612345`;
+  assert.equal(maxArxiv.length, 64);
+  const maxArxivKey = encodePaperKey('arxiv', maxArxiv);
+  assert.ok(maxArxivKey);
+  assert.deepEqual(parsePaperKey(maxArxivKey), { type: 'arxiv', value: maxArxiv });
+
+  const overArxiv = `${'a'.repeat(57)}/0612345`;
+  assert.equal(overArxiv.length, 65);
+  assert.equal(getPaperIdentity('arxiv', overArxiv), '');
+  assert.equal(parsePaperKey(encodeBase64Url(`arxiv:${overArxiv}`)), null);
+
+  const overArxivVersion = `2401.12345v${'9'.repeat(54)}`;
+  assert.equal(overArxivVersion.length, 65);
+  assert.equal(getPaperIdentity('arxiv', overArxivVersion), '');
+
+  const maxOpenAlex = `W${'1'.repeat(20)}`;
+  const maxOpenAlexKey = encodePaperKey('openalex', maxOpenAlex);
+  assert.ok(maxOpenAlexKey);
+  assert.deepEqual(parsePaperKey(maxOpenAlexKey), { type: 'openalex', value: maxOpenAlex });
+
+  const overOpenAlex = `W${'1'.repeat(21)}`;
+  assert.equal(getPaperIdentity('openalex', overOpenAlex), '');
+  assert.equal(parsePaperKey(encodeBase64Url(`openalex:${overOpenAlex}`)), null);
+
+  const maxPmid = '9'.repeat(20);
+  const maxPmidKey = encodePaperKey('pmid', maxPmid);
+  assert.ok(maxPmidKey);
+  assert.deepEqual(parsePaperKey(maxPmidKey), { type: 'pmid', value: maxPmid });
+
+  const overPmid = '9'.repeat(21);
+  assert.equal(getPaperIdentity('pmid', overPmid), '');
+  assert.equal(parsePaperKey(encodeBase64Url(`pmid:${overPmid}`)), null);
+});
+
 /**
  * The Vite base is what a project-path deployment (GitHub Pages' /papertok/)
  * puts in front of every route. It used to be followed by a `#`; now the route
@@ -328,4 +399,33 @@ test('every kind of public page previews with an image that ships in public/', (
   assert.equal(getShareImage('concept').path, '/og/papertok-share-topic-0.3.png', 'a concept is a research topic');
   assert.equal(getShareImage('paper'), DEFAULT_SHARE_IMAGE);
   assert.equal(getShareImage('toString'), DEFAULT_SHARE_IMAGE, 'a kind is looked up, not read off the prototype');
+});
+
+// ENG-218: a paper written by hand as /paper/<type>:<id>. The router hands the
+// page the decoded key, so a DOI's slash arrives as written with %2F.
+test('a readable paper key moves to the canonical path of the same paper', () => {
+  const canonical = (identity: string) => `/paper/${Buffer.from(identity).toString('base64url')}`;
+  assert.equal(readablePaperPath('arxiv:1706.03762'), '/paper/YXJ4aXY6MTcwNi4wMzc2Mg', 'the link from ENG-218');
+  assert.equal(readablePaperPath('arXiv:1706.03762'), canonical('arxiv:1706.03762'), 'the type is not case sensitive');
+  assert.equal(readablePaperPath('arxiv:1706.03762v7'), canonical('arxiv:1706.03762v7'), 'a version is kept');
+  assert.equal(readablePaperPath('arxiv:hep-th/9901001'), canonical('arxiv:hep-th/9901001'), 'an old-style id keeps its archive');
+  assert.equal(readablePaperPath('doi:10.48550/arXiv.1706.03762'), canonical('doi:10.48550/arxiv.1706.03762'), 'a DOI is lowercased');
+  assert.equal(readablePaperPath('DOI:10.1000/ABC'), readablePaperPath('doi:10.1000/abc'));
+  assert.equal(readablePaperPath('openalex:w2741809807'), canonical('openalex:W2741809807'), 'an OpenAlex id is uppercase');
+  assert.equal(readablePaperPath('pmid:31234567'), canonical('pmid:31234567'));
+  assert.equal(readablePaperPath('openreview:5pShDP8LSm'), canonical('openreview:5pShDP8LSm'), 'an OpenReview id keeps its case');
+});
+
+test('a readable key moves to a path whose key names the same paper', () => {
+  const path = readablePaperPath('doi:10.48550/arXiv.1706.03762');
+  assert.ok(path);
+  const key = path.slice('/paper/'.length);
+  assert.deepEqual(parsePaperKey(key), { type: 'doi', value: '10.48550/arxiv.1706.03762' });
+  assert.equal(readablePaperPath(key), null, 'the canonical key is not moved again, so no redirect loops');
+});
+
+test('a key that is not a readable paper address does not move', () => {
+  for (const key of ['foo:bar', 'arxiv:', ':1706.03762', 'arxiv:not-an-id', 'openalex:A2741809807', '1706.03762', '', 'YXJ4aXY6MTcwNi4wMzc2Mg']) {
+    assert.equal(readablePaperPath(key), null, JSON.stringify(key));
+  }
 });

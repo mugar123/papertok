@@ -15,14 +15,13 @@ export function restoreReadLater<Entry extends { readLater?: boolean; updatedAt?
 ): Record<string, Entry> {
   const current = library[paperId];
   if (!current) return library;
+  const readLater = Boolean(previous?.readLater);
+  const updatedAt = current.updatedAt === stamped.updatedAt ? previous?.updatedAt : current.updatedAt;
+  const paper = previous && current.paper === stamped.paper ? previous.paper : current.paper;
+  if (Boolean(current.readLater) === readLater && current.updatedAt === updatedAt && current.paper === paper) return library;
   return {
     ...library,
-    [paperId]: {
-      ...current,
-      readLater: Boolean(previous?.readLater),
-      updatedAt: current.updatedAt === stamped.updatedAt ? previous?.updatedAt : current.updatedAt,
-      paper: previous && current.paper === stamped.paper ? previous.paper : current.paper,
-    },
+    [paperId]: { ...current, readLater, updatedAt, paper },
   };
 }
 

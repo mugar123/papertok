@@ -2,11 +2,14 @@ import type { Paper, PaperAuthor } from '../models/paper.ts';
 import type { OpenAlexLocation, OpenAlexWork } from './adapters/open-alex-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PaperBuilder, isPlaceholderAuthorName } from './paper-builder.ts';
+import { PaperBuilder, isJournalRecord, isPlaceholderAuthorName } from './paper-builder.ts';
+import { openAlexIsJournalArticle } from '../utils/publication-status.ts';
 import { mapCrossrefInstitutionWork } from './crossref-institution-service.ts';
 import { mapAdsPaper } from './domain-source-records.ts';
-import { slimWorksPage } from './open-alex-service.ts';
-import { mapOpenAlexEnrichmentWork } from '../utils/open-alex-work.ts';
+import { mapPubmedSummary } from './adapters/pubmed-records.ts';
+import { getWorksByEntity, slimWorksPage } from './open-alex-service.ts';
+import { openAlexClient } from './open-alex-client.ts';
+import { mapOpenAlexEnrichmentWork, mapOpenAlexWork } from '../utils/open-alex-work.ts';
 import { OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
 import { PubmedAdapter } from './adapters/pubmed-adapter.ts';
 import { searchPapersAcrossSources } from './paper-search-service.ts';
@@ -314,6 +317,190 @@ test("a row keeps the OpenAlex id of its journal as it keeps the journal's name"
     journal: 'Journal of International Economics', venueId: 'S99999999',
   }]);
   assert.deepEqual([row.id, row.journal, row.venueId], ['openalex:W200', undefined, undefined]);
+});
+
+// ENG-165: the row's topics, primary topic and type are the journal
+// article's, whichever record arrives first and however often another is
+// merged again. A working paper or a preprint fills only what the article
+// leaves empty. Synthetic works shaped as OpenAlex returns them; T10999 and
+// T20001 are the example of the ENG-133 review (PR #365).
+test("a journal article's topics, primary topic and type lead its row in any order; a working paper or a preprint fills only what it lacks", () => {
+  const topic = (id: string) => ({ id: `https://openalex.org/${id}`, display_name: `Topic ${id}` });
+  const location = (doi: string, source: { id: string; display_name: string; type: string }) => ({
+    is_published: source.type !== 'repository',
+    landing_page_url: `https://doi.org/${doi}`,
+    source: { id: `https://openalex.org/${source.id}`, display_name: source.display_name, type: source.type },
+  });
+  const JOURNAL = { id: 'S149240962', display_name: 'Journal of Financial Economics', type: 'journal' };
+  const NBER = { id: 'S2809516038', display_name: 'National Bureau of Economic Research', type: 'repository' };
+  const ARXIV = { id: 'S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' };
+  const ARTICLE_DOI = '10.1016/j.jfineco.2026.104001';
+  const work = (id: string, doi: string, type: string, source: typeof JOURNAL, primaryTopic: ReturnType<typeof topic> | null, extraLocations: OpenAlexLocation[] = []): OpenAlexWork => ({
+    id: `https://openalex.org/${id}`,
+    doi: `https://doi.org/${doi}`,
+    title: 'Liquidity premia in sovereign bond markets',
+    type,
+    publication_date: '2026-10-14',
+    authorships: [{ author: { id: 'https://openalex.org/A5000000165', display_name: 'Ana Economist' } }],
+    primary_location: location(doi, source),
+    locations: [location(doi, source), ...extraLocations],
+    primary_topic: primaryTopic ?? undefined,
+    topics: primaryTopic ? [primaryTopic] : [],
+  });
+  const article = mapOpenAlexWork(work('W7100000001', ARTICLE_DOI, 'article', JOURNAL, topic('T10999')))!;
+  const workingPaper = mapOpenAlexWork(work('W7100000002', '10.3386/w99999', 'report', NBER, topic('T20001')))!;
+  const preprint = mapOpenAlexWork(work('W7100000003', '10.48550/arxiv.2610.00001', 'preprint', ARXIV, topic('T30001')))!;
+  // OpenAlex's record of the eprint listing the published copy reads published.
+  const publishedEprint = mapOpenAlexWork(work('W7100000003', '10.48550/arxiv.2610.00001', 'preprint', ARXIV, topic('T30001'), [location(ARTICLE_DOI, JOURNAL)]))!;
+  assert.deepEqual([publishedEprint.publicationType, publishedEprint.publicationStatus], ['preprint', 'published']);
+  const classification = (paper: Partial<Paper>) => [paper.primaryTopic?.id, paper.topics?.map(subject => subject.id), paper.publicationType];
+  const articleRow = PaperBuilder.deduplicate([article, workingPaper]);
+  assert.equal(articleRow.length, 1);
+  for (const [name, row] of [
+    ['article, then working paper', articleRow[0]],
+    ['article, working paper, preprint', PaperBuilder.deduplicate([article, workingPaper, preprint])[0]],
+    ['preprint, article, working paper', PaperBuilder.deduplicate([preprint, article, workingPaper])[0]],
+    ['article, then the eprint listing it', PaperBuilder.deduplicate([article, publishedEprint])[0]],
+    ['the row, then the working paper again', PaperBuilder.merge(articleRow[0], workingPaper, 'openalex')],
+    ['the row, then the eprint listing it', PaperBuilder.merge(articleRow[0], publishedEprint, 'openalex')],
+    ['the row folded into a preprint row, then the working paper', PaperBuilder.merge(PaperBuilder.merge(PaperBuilder.create(preprint), articleRow[0], 'openalex'), workingPaper, 'openalex')],
+  ] as const) {
+    assert.deepEqual(classification(row), ['https://openalex.org/T10999', ['https://openalex.org/T10999'], 'article'], name);
+  }
+
+  // A row that stays the working paper (its DOI and `false`) keeps the
+  // working paper's, whatever the article and later listings bring.
+  for (const [name, rows] of [
+    ['working paper, then article', PaperBuilder.deduplicate([workingPaper, article])],
+    ['working paper, article, working paper', PaperBuilder.deduplicate([workingPaper, article, workingPaper])],
+  ] as const) {
+    assert.deepEqual(rows.map(row => [...classification(row), row.doi, row.peerReviewed]),
+      [['https://openalex.org/T20001', ['https://openalex.org/T20001'], 'report', '10.3386/w99999', false]], name);
+  }
+
+  // The eprint's `preprint` still reopens the row's review answer, though
+  // the row shows `article`, and PubMed's record of the article, without a
+  // DOI or an answer of its own, answers it from its own type: reviewed.
+  const pubmed = mapPubmedSummary({ uid: '40000001', title: 'Liquidity premia in sovereign bond markets', authors: [{ name: 'Economist A' }], source: 'J Financ Econ', pubdate: '2026 Oct 14', pubtype: ['Journal Article'] });
+  const reviewed = PaperBuilder.deduplicate([article, publishedEprint, pubmed]);
+  assert.deepEqual(reviewed.map(row => [row.publicationType, row.peerReviewed]), [['article', true]]);
+
+  // An article OpenAlex lists without topics takes the working paper's, and
+  // keeps its own type; the preprint listed later adds nothing.
+  const untopical = mapOpenAlexWork(work('W7100000001', ARTICLE_DOI, 'article', JOURNAL, null))!;
+  for (const [name, row] of [
+    ['article, then working paper', PaperBuilder.deduplicate([untopical, workingPaper])[0]],
+    ['article, working paper, preprint', PaperBuilder.deduplicate([untopical, workingPaper, preprint])[0]],
+  ] as const) {
+    assert.deepEqual(classification(row), ['https://openalex.org/T20001', ['https://openalex.org/T20001'], 'article'], name);
+  }
+
+  // Only OpenAlex's own record of the article's DOI, listed again, replaces
+  // them: a retyped editorial does. A merged row under that DOI and journal
+  // does not, though it shows the working paper's (one an earlier Worker
+  // merged, folded with this one), nor does a working paper OpenAlex files
+  // under the article's DOI and journal.
+  const earlierRow = { ...articleRow[0], topics: [topic('T20001')], primaryTopic: topic('T20001'), publicationType: 'report', sources: { ...articleRow[0].sources, journalRecordDoi: undefined } };
+  const reportUnderArticleDoi = mapOpenAlexWork(work('W7100000004', ARTICLE_DOI, 'report', JOURNAL, topic('T40001')))!;
+  for (const [name, row] of [
+    ['a row merged before, folded in', PaperBuilder.merge(articleRow[0], earlierRow, 'openalex')],
+    ["a working paper under the article's DOI", PaperBuilder.merge(articleRow[0], reportUnderArticleDoi, 'openalex')],
+  ] as const) {
+    assert.deepEqual(classification(row), ['https://openalex.org/T10999', ['https://openalex.org/T10999'], 'article'], name);
+  }
+  const editorial = mapOpenAlexWork(work('W7100000001', ARTICLE_DOI, 'editorial', JOURNAL, topic('T50001')))!;
+  const retyped = PaperBuilder.merge(articleRow[0], editorial, 'openalex');
+  assert.deepEqual(classification(retyped), ['https://openalex.org/T50001', ['https://openalex.org/T50001'], 'editorial']);
+
+  // A merged row never replaces a row a journal record leads, though it
+  // carries that record's DOI: a copy of the row from before the retype,
+  // merged in or met again on the Explorer's next page, leaves the editorial.
+  for (const [name, row] of [
+    ['merged in', PaperBuilder.merge(retyped, articleRow[0], 'openalex')],
+    ["the Explorer's next page", PaperBuilder.deduplicate([retyped, articleRow[0]])[0]],
+  ] as const) {
+    assert.deepEqual(classification(row), ['https://openalex.org/T50001', ['https://openalex.org/T50001'], 'editorial'], name);
+  }
+  // It still brings the journal record to a row none leads yet.
+  const healed = PaperBuilder.merge(earlierRow, articleRow[0], 'openalex');
+  assert.deepEqual([...classification(healed), healed.sources.journalRecordDoi],
+    ['https://openalex.org/T10999', ['https://openalex.org/T10999'], 'article', ARTICLE_DOI]);
+});
+
+test('a cached second Explorer page preserves the fresh editorial on page one', async t => {
+  // Synthetic OpenAlex records for two versions with the same title and author.
+  const work = (id: string, doi: string, type: string, topicId: string, source: OpenAlexLocation['source']) => {
+    const topic = { id: `https://openalex.org/${topicId}`, display_name: topicId };
+    const location = { source, is_published: source?.type === 'journal', landing_page_url: `https://doi.org/${doi}` };
+    return {
+      id: `https://openalex.org/${id}`, doi: `https://doi.org/${doi}`, type,
+      title: 'Liquidity premia in sovereign bond markets',
+      authorships: [{ author: { display_name: 'Ana Economist' } }],
+      primary_location: location, locations: [location], topics: [topic], primary_topic: topic,
+    };
+  };
+  const journal = { id: 'https://openalex.org/S149240962', display_name: 'Journal of Financial Economics', type: 'journal' };
+  const article = work('W7100000001', '10.1016/j.jfineco.2026.104001', 'article', 'T10999', journal);
+  const editorial = work('W7100000001', '10.1016/j.jfineco.2026.104001', 'editorial', 'T50001', journal);
+  const report = work('W7100000002', '10.3386/w99999', 'report', 'T20001', {
+    id: 'https://openalex.org/S2809516038', display_name: 'National Bureau of Economic Research', type: 'repository',
+  });
+  const { storage, persistentStore } = openAlexClient;
+  t.after(() => { Object.assign(openAlexClient, { storage, persistentStore }); });
+  const cache = new Map<string, string>();
+  openAlexClient.storage = { getItem: key => cache.get(key) ?? null, setItem: (key, value) => { cache.set(key, value); } };
+  openAlexClient.persistentStore = null;
+  const fetched: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (input: string | URL) => {
+    const page = new URL(String(input)).searchParams.get('page')!;
+    fetched.push(page);
+    return Response.json({ meta: { count: 60 }, results: page === '2' ? [article, report] : [editorial] });
+  });
+  const load = (page: number) => getWorksByEntity('author', 'A7100016599', 'cited_by_count:desc', page);
+  await load(2);
+  const first = PaperBuilder.deduplicate((await load(1)).papers);
+  const second = PaperBuilder.deduplicate((await load(2)).papers);
+  assert.deepEqual(fetched, ['2', '1']);
+  assert.deepEqual(first.map(row => [row.publicationType, row.primaryTopic?.id]), [['editorial', 'https://openalex.org/T50001']]);
+  assert.deepEqual(second.map(row => [row.publicationType, row.primaryTopic?.id]), [['article', 'https://openalex.org/T10999']]);
+  const combined = PaperBuilder.deduplicate([...first, ...second]);
+  assert.deepEqual(combined.map(row => [row.publicationType, row.primaryTopic?.id]), [['editorial', 'https://openalex.org/T50001']]);
+});
+
+// ENG-165: a series OpenAlex types `journal` but names as a working-paper
+// series, outside the listed ones, is no journal for its article, even when
+// another location is one: `isJournalRecord` reads the primary journal as
+// `openAlexIsJournalArticle` does, and the row is the journal article's in
+// either order. Synthetic works shaped as OpenAlex returns them.
+test("an article whose primary source is named like a working-paper series is no journal record, so its journal article leads in either order", () => {
+  const topic = (id: string) => ({ id: `https://openalex.org/${id}`, display_name: `Topic ${id}` });
+  const location = (doi: string, source: { id: string; display_name: string; type: string }) => ({
+    is_published: true,
+    landing_page_url: `https://doi.org/${doi}`,
+    source: { id: `https://openalex.org/${source.id}`, display_name: source.display_name, type: source.type },
+  });
+  const JOURNAL = { id: 'S149240962', display_name: 'Journal of Financial Economics', type: 'journal' };
+  const SERIES = { id: 'S999999165', display_name: 'Central Bank Working Papers', type: 'journal' };
+  const work = (id: string, doi: string, source: typeof JOURNAL, topicId: string, other: OpenAlexLocation[] = []): OpenAlexWork => ({
+    id: `https://openalex.org/${id}`,
+    doi: `https://doi.org/${doi}`,
+    title: 'Liquidity premia in sovereign bond markets',
+    type: 'article',
+    publication_date: '2026-10-14',
+    authorships: [{ author: { id: 'https://openalex.org/A5000000165', display_name: 'Ana Economist' } }],
+    primary_location: location(doi, source),
+    locations: [location(doi, source), ...other],
+    primary_topic: topic(topicId),
+    topics: [topic(topicId)],
+  });
+  const seriesWork = work('W7100000090', '10.17016/cbwp.2026.165', SERIES, 'T40001', [location('10.1016/j.jfineco.2026.104001', JOURNAL)]);
+  const series = mapOpenAlexWork(seriesWork)!;
+  const article = mapOpenAlexWork(work('W7100000001', '10.1016/j.jfineco.2026.104001', JOURNAL, 'T10999'))!;
+  assert.deepEqual([openAlexIsJournalArticle(seriesWork), isJournalRecord(series), isJournalRecord(article)], [false, false, true]);
+  for (const [name, records] of [['article first', [article, series]], ['series first', [series, article]]] as const) {
+    const [row] = PaperBuilder.deduplicate([...records]);
+    assert.deepEqual([row.primaryTopic?.id, row.publicationType], ['https://openalex.org/T10999', 'article'], name);
+  }
 });
 
 test('a working paper joined to a different article by title alone does not unreview the article', () => {

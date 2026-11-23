@@ -4,7 +4,7 @@ This Cloudflare Worker protects provider keys and serves scientific queries, AI,
 
 ## Source structure
 
-Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker, its three bound Durable Object classes and the harvest Workflow to PostHog. The request and schedule implementation stays in `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)) and runs each cron of `wrangler.toml` by its expression: `*/20 7-13 * * *` runs the email schedule, `30 2 * * *` starts the paper harvest and `* * * * *` pings the paper store (see [Paper store](#paper-store)). Any other expression runs the email schedule.
+Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker, its three bound Durable Object classes and the harvest Workflow to PostHog. The request and schedule implementation stays in `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)) and runs each cron of `wrangler.toml` by its expression: `*/20 7-13 * * *` runs the email schedule, `30 2 * * *` starts the paper harvest and deletes expired author save receipts (see [Author save collection](#author-save-collection)), and `* * * * *` pings the paper store (see [Paper store](#paper-store)). Any other expression runs the email schedule.
 
 - `router.ts` owns dispatch order, the Origin checks for the feature and health routes (`/health` and `/notifications/unsubscribe` have none), Firebase identity for `PROTECTED_PROVIDER_PATHS`, institution access and `/ai/quota`, a GET-only check for every route after the AI POST routes, and error responses. Most feature handlers check their own methods.
 - Provider handlers refuse a disallowed Origin themselves. A request without an Origin passes, except on `/pdf`, which requires one. The `/sources/*` handlers check through `sourceRequestContext` in `provider-runtime.ts`. `/share/*` has no Origin check because it serves crawlers.
@@ -185,13 +185,16 @@ an attempt. Following, Similar papers and the guest demo are not covered.
   loads (including the error screen's Try again, mode, follow or interest
   changes), `load_more` for additional pages (including the feed tail's Try
   again). Retries and skipped-page continuations keep that load type.
-- `attempt`: `original`, `automatic_retry`, or `continuation` when a page had no
-  showable paper. A short page's subsequent fill is a new `load_more` attempt.
+- `attempt`: `original`, `automatic_retry`, `manual_retry`, or `continuation` when a
+  page had no showable paper. A short page's subsequent fill is a new `load_more` attempt.
   `automatic_retry` marks the automatic retry of a failed `initial` or `refresh`
   load, and each `load_more` the feed sends by itself once a pause has passed
   after a failed load with papers on screen: a failed next page, and also a
   failed refresh that kept the papers. A next page the reader asks for again,
   by scrolling back to the end or with the tail's Try again, is `original`.
+  `manual_retry` marks a refresh the reader started with the error screen's Try
+  again or the empty screen's Check again. Explore again, pull-to-refresh, the
+  refresh pill, mode, follow and interest changes stay `original`.
 - `first_screen`: whether this attempt uses the empty-list first-screen policy;
   a first-screen timeout's automatic retry uses the shorter deadline.
 - `duration_ms`: monotonic elapsed time from the accepted attempt before requests
@@ -433,14 +436,14 @@ The notable lane of each medicine and biology leaf whose Europe PMC sample passe
 
 A new or emptied database needs a harvest before a frontend that reads it is published: apply the migrations (0011, which cleared the marks of the weekly notable listing once, finds none to clear), deploy the Worker, start a run with `npx wrangler workflows trigger papertok-paper-harvest`, and wait for its lanes to fill. Until then the feed answers an empty first page with an empty state that asks the reader to add topics or check again, and retries only a failed request on its own; the `app_error` it sends keeps `reason: empty`.
 
-Records of one paper from several sources merge with `PaperBuilder.merge` into the row any of their identifiers names; the row keeps the id readers already hold. A merge that changes the title or abstract drops the vector for the next embedding pass. The stored row is the base of every later harvest's and enrichment's merge. Once a batch is saved, a separate step (`upgradeWorkingPapers`, ENG-133) makes each working-paper row OpenAlex started the journal's reviewed row when the batch holds OpenAlex's own journal-article record filed under it (by work id or DOI), with a publisher's DOI: the row keeps its id, takes the article's DOI, landing page, text and date (in each of its lanes too), is filed under the lanes the article's record names (`recordLanes`, so a reader who follows a coauthor only the article names finds the row on its first listing), and follows the article's own listing for title and abstract (`openAlexId`), never the working paper's. The evidence is that one record, never a merged row. Records from other sources (PubMed, Europe PMC, an arXiv eprint naming its journal, CORE, OSTI) and rows other sources started merge as before; upgrading them is ENG-145. The row keeps what `merge` records in `sources` about the records it merged (`arxivDoiOnly`, `deniedElsewhere`, `peerReviewedByDoi`, `peerReviewedByDoiComplete`). A row merged before `peerReviewedByDoi` existed lacks its earlier records' entries and has no `peerReviewedByDoiComplete`; nothing is backfilled. Later harvests add their records' entries to such a row. A `false` among them counts, but no `true` among them confirms review, and a merge with such a row does not keep a `true` the way a merge of complete rows does (`repeatsTrue`, `keepsConfirmed`), whether the store merges the row or a browser merges the served copy. Only a row built again from all its records holds every answer; the store never rebuilds a row in place, so such a row stays incomplete until eviction removes it. The first run backfills 90 days of arXiv and each lane's first pages; embedding the backlog takes several daily runs.
+Records of one paper from several sources merge with `PaperBuilder.merge` into the row any of their identifiers names; the row keeps the id readers already hold. A merge that changes the title or abstract drops the vector for the next embedding pass. The stored row is the base of every later harvest's and enrichment's merge. Once a batch is saved, a separate step (`upgradeWorkingPapers`, ENG-133) makes each working-paper row OpenAlex started the journal's reviewed row when the batch holds OpenAlex's own journal-article record filed under it (by work id or DOI), with a publisher's DOI: the row keeps its id, takes the article's DOI, landing page, text and date (in each of its lanes too), is filed under the lanes the article's record names (`recordLanes`, so a reader who follows a coauthor only the article names finds the row on its first listing), and follows the article's own listing for title and abstract (`openAlexId`), never the working paper's. The evidence is that one record, never a merged row. Records from other sources (PubMed, Europe PMC, an arXiv eprint naming its journal, CORE, OSTI) and rows other sources started merge as before; upgrading them is ENG-145. A journal record (`isJournalRecord`: OpenAlex's record typed `article`, reviewed, under a publisher's DOI, whose primary source is a journal that can carry an article by the criterion `openAlexIsJournalArticle` reads too, `isJournalArticleSource`) gives the row its topics, primary topic and type in any order of arrival (ENG-165). Any other record (the working paper, a preprint, another provider's record, or a row merged from records, even under the journal record's DOI) fills only a topic or primary topic the journal record left empty and leaves the type. A merged row that a journal record leads brings that record's to a row none leads yet, and never replaces them in a row one does. OpenAlex's own record of that DOI listed again, in such a journal and no working paper, replaces them: OpenAlex can retype an article as an editorial. If Explorer receives that editorial first, it keeps its classification when a cached page contributes a merged row led by the same article. In the store a batch first merges its records of one paper into one row (`ingestPapers`), and that row replaces nothing in a stored row a journal record leads; OpenAlex's own record in the batch of the version that leads the stored row then gives it its topics, primary topic and, when that record reads published, its type (`PaperBuilder.relistJournalVersion`), whatever else the batch lists. A weekly notable listing of the article and its working paper renews the row's enrichment date, so without that step a new topic would wait for an enrichment that never comes. A row that stays the working paper (its DOI and `false`) keeps the working paper's the same way until the upgrade makes it the journal's. A row that stops being the working paper some other way (in a browser's merge, or a row another source started) takes the next record's, as before ENG-165. The review answer still reads the type the records give the row, which a row showing another keeps in `sources.recordsType`: OpenAlex's record of the eprint listing the published copy reopens the answer, though the row shows `article`. A row stored before ENG-165 keeps what its last record gave it until the journal record is listed again; nothing is backfilled, and each such row is written once more when a listing or enrichment first records which journal record leads it. The row keeps what `merge` records in `sources` about the records it merged (`arxivDoiOnly`, `deniedElsewhere`, `journalRecordDoi`, `peerReviewedByDoi`, `peerReviewedByDoiComplete`, `recordsType`). A row merged before `peerReviewedByDoi` existed lacks its earlier records' entries and has no `peerReviewedByDoiComplete`; nothing is backfilled. Later harvests add their records' entries to such a row. A `false` among them counts, but no `true` among them confirms review, and a merge with such a row does not keep a `true` the way a merge of complete rows does (`repeatsTrue`, `keepsConfirmed`), whether the store merges the row or a browser merges the served copy. Only a row built again from all its records holds every answer; the store never rebuilds a row in place, so such a row stays incomplete until eviction removes it. The first run backfills 90 days of arXiv and each lane's first pages; embedding the backlog takes several daily runs.
 
 When the source a row was built from lists the paper again, as arXiv does with a new version, its title and abstract replace the stored ones; other sources only fill a missing abstract. A listing without an abstract keeps the stored one, unless that opens as a funding note, thanks or a disclaimer (`opensAsFrontMatter`): a row filed with one before `isPlausibleAbstract` refused it loses it when its source lists the paper again, which also drops its vector; the paper then awaits an abstract, which a young paper's retries and the 14-day refresh look for in the other sources (steps 3 and 5). Hugging Face copies arXiv's title and abstract, so a row it started takes arXiv's new versions and not its own copy. That change drops the vector too. After the arXiv sets, each run copies the vectors of the arXiv-only store (migration 0001) to rows that have none, but only while a row keeps the title and abstract that vector was computed from.
 
 ```bash
 npx wrangler d1 migrations apply PAPER_STORE --local        # or --remote before deploying (0012 before the Worker that writes `arrived`, above; 0011 came after its deploy: step 3)
 npx wrangler dev --port 8787 --test-scheduled
-curl "http://localhost:8787/__scheduled?cron=30+2+*+*+*"    # starts a harvest on local D1; embeddings use the remote AI binding
+curl "http://localhost:8787/__scheduled?cron=30+2+*+*+*"    # starts a harvest on local D1; embeddings use the remote AI binding; also runs the receipt cleanup against the Firestore project in .dev.vars
 curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"     # one ping of local D1
 npx wrangler workflows instances list papertok-paper-harvest  # production runs
 ```
@@ -452,6 +455,15 @@ npx wrangler d1 execute PAPER_STORE --remote --command "UPDATE works SET paper =
 ```
 
 Each row then reads as one merged before the map existed. The older version adds no mark to the rows it merges later, so this one update also covers the next deploy of current code. A harvest that was running at the rollback can still write the mark: if `npx wrangler workflows instances list papertok-paper-harvest` shows one running, run the update again when it ends. A card served before the update can still show from a browser's feed snapshot for up to 15 minutes, and for up to three days when the feed's first load fails (`lastVisitCards` in `src/context/feed-snapshot.ts`).
+
+A Worker version from before ENG-165 reads a row's review evidence from the type the row shows, and keeps `sources.recordsType` and `sources.journalRecordDoi` on a row it merges, unchanged, while it changes the row's type and topics. Current code would then read a stale `recordsType`. So, right after rolling the Worker back to such a version, run these two commands in this order. The first takes each row that holds `recordsType` out of its journals' lanes (`source:`) when that type is one a journal's lane does not admit (`FOLLOWED_JOURNAL_WORK_TYPES`: `article`, `review`). The older version never does this on a later write, because it takes a row out of those lanes only when the stored type admitted it. The second gives each such row that type and removes both marks:
+
+```bash
+npx wrangler d1 execute PAPER_STORE --remote --command "DELETE FROM work_lanes WHERE lane LIKE 'source:%' AND work_id IN (SELECT id FROM works WHERE json_extract(paper, '$.sources.recordsType') NOT IN ('article', 'review'))"
+npx wrangler d1 execute PAPER_STORE --remote --command "UPDATE works SET paper = json_remove(CASE WHEN json_extract(paper, '$.sources.recordsType') IS NULL THEN paper ELSE json_set(paper, '$.publicationType', json_extract(paper, '$.sources.recordsType')) END, '$.sources.recordsType', '$.sources.journalRecordDoi') WHERE json_extract(paper, '$.sources.recordsType') IS NOT NULL OR json_extract(paper, '$.sources.journalRecordDoi') IS NOT NULL"
+```
+
+Each row then shows the type the older version would have given it, is served in a journal's lane only if that type admits it, and keeps its topics until a record replaces them. A row the older version retyped before the commands gets the stale type back instead, and leaves its journals' lanes when that stale type does not admit it. As above, run both again, in the same order, after a harvest that was running at the rollback ends, and expect browsers' feed snapshots to show cards served before them for up to three days.
 
 `works.enrich_misses` holds 0 before a paper's first enrichment and after a counted one, 1 to 4 for the times in a row OpenAlex did not know the paper and, since the abstract retries (step 5), -1 (`UNCOUNTED` in `worker/paper-enrichment.ts`). An enrichment other than a retry writes -1 in place of a counted one's 0 when a failed source interrupted it and the paper is younger than 14 days: a first enrichment, the one in which OpenAlex first knows a paper it had missed, or a refresh of a paper dated later than its enrichment date. An interrupted retry leaves the value as it was, so a row can keep -1 after its paper turns 14 days old, until an enrichment no source interrupts, or a refresh once the paper is 14 days old, writes 0. The `enriched_at` of a row with -1 holds the paper's own date, or the time of its last retry. No migration adds the value: the column is `INTEGER NOT NULL DEFAULT 0` with no check (migration 0002, whose comment names only the misses). The retries and the refresh take `enrich_misses <= 0`. The notable listing's renewal (`renewsEnrichment`, step 3) takes `= 0`, so it passes over such a row and does not put off its refresh.
 
@@ -479,7 +491,10 @@ The card links the ID to the registry. The timing of registration remains
 unknown.
 These requests use the existing provider budgets. Stored rows gain the fields
 when a listing or enrichment supplies them. The interaction's paper copy
-keeps the fields for Liked and Saved.
+keeps the fields for Liked and Saved. Firestore interaction writes merge a
+key for the selected label into `paper.studyTypes`. Reads apply the same
+precedence to those keys and the legacy `paper.studyType` value. An older
+write that lost a label can recover it when another copy supplies it.
 
 ## Deployment
 
@@ -512,6 +527,16 @@ npx wrangler secret put ORCID_CLIENT_SECRET # that client's secret
 npm run worker:deploy:dry-run
 npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health then names this commit
 ```
+
+After every Worker deploy, run `node scripts/production-smoke.ts` from the
+repository root and confirm the reported version tag matches the deployed
+commit. The script checks Worker health, AI provider availability, ORCID's
+sign-in challenge, public MCP search, guest paper discovery and the website.
+It makes one AI health request and limits MCP search to OpenAlex.
+
+GitHub Actions runs the same script daily and on manual dispatch. A failed run
+opens or updates **Production smoke check failing** with the failed probes.
+The next successful run closes that issue.
 
 ### Email digest subscription deploy
 
@@ -807,8 +832,23 @@ previously assigned canonical IDs, collection skips the conflicting save.
 
 A browser tab writes an immutable receipt under `users/{uid}/authorMetricReceipts`
 after the save succeeds. It writes and submits the receipt in the background,
-then deletes it. The `expiresAt` field makes an abandoned receipt eligible for
-Firestore TTL deletion after five minutes. A transaction rechecks the switch,
+then deletes it. The browser sets `expiresAt` five minutes after the save. If the
+tab closes first, the receipt stays until the daily 02:30 UTC cron, which deletes
+every receipt whose `expiresAt` has passed (`runAuthorReceiptCleanup` in
+`worker/author-metrics.ts`). Firestore TTL would need billing, and the project
+stays on the free Spark plan. The cron queries the `authorMetricReceipts`
+collection group, up to five pages of 200, and logs a warning when it stops at
+that cap. A query costs one Firestore read per receipt it returns, and one read
+when it returns none. An idle day costs one read; a day with abandoned receipts
+costs one read and one delete per receipt, plus one read when the last page
+comes back empty. A run never exceeds 1,000 reads and 1,000 deletes. The query needs the
+collection-group index on `expiresAt` in `firestore.indexes.json`. Until that
+index is ready, Firestore refuses the query with `FAILED_PRECONDITION`: the cron
+logs the error code, deletes nothing and tries again the next day. A Worker
+without the service account logs `SERVICE_ACCOUNT_NOT_CONFIGURED` the same way.
+Firestore has no local emulator path here, so a local `__scheduled` call for
+`30 2 * * *` with the production service account in `.dev.vars` deletes expired
+production receipts. A transaction rechecks the switch,
 account, preference, receipt and a recent server save timestamp on the saved
 copy. The earlier server timestamp determines the week. The Worker accepts
 receipts for two minutes after they are written, including at midnight UTC.
@@ -820,8 +860,8 @@ its own preference in Settings → Privacy. Verified-email accounts count by def
 Account deletion fences new contributions before sweeping the weekly documents
 and preference. It removes the fence after deleting the sign-in account.
 
-Deploy Firestore rules, the receipt TTL configuration in `firestore.indexes.json`
-and the Worker before publishing the frontend. Collection runs outside the save
+Deploy Firestore rules, the receipt index in `firestore.indexes.json` (wait until
+it is READY) and the Worker before publishing the frontend. Collection runs outside the save
 operation. A failed or expired submission leaves the reader's save intact.
 Phase 2 will need to reconcile identifiers when new evidence connects previously
 independent mappings. It will wait for the receipt window and in-flight writes, publish one
@@ -1107,7 +1147,7 @@ The global search palette asks the author index first (`/authors?search=` with 1
 
 | Tier | Share | What spends it |
 | --- | --- | --- |
-| essential | 100% | One work by identifier with `per-page=1` (or `per_page=1`): a paper being opened, such as the arXiv fallback of the public paper page. |
+| essential | 100% | One work by identifier with `per-page=1` (or `per_page=1`): a paper being opened, such as the public paper page's OpenAlex lookup of an arXiv paper, asked beside arXiv as both its fallback and its enrichment. |
 | feed | 95% | The paper harvest, whatever it asks: the topic, venue, notable and area lanes and working-paper series, followed entities, searches and projects, and enrichment. It goes through `handleHarvestOpenAlex`, and its misses also count against its own 4,000 units a day (`OPENALEX_HARVEST_DAILY_UNITS`) in place of the minute's ceiling, as two ledger subjects: 300 for the runs new follows start (`OPENALEX_NEW_FOLLOWS_DAILY_UNITS`) and 3,700 for the nightly run. A category or nightly followed lane's misses count against its part of the nightly run's share too (steps 2 to 4 of the paper harvest). |
 | enrichment | 80% | `works` lists filtered only by `doi`, `openalex`, `ids.openalex` or `locations.landing_page_url` (cards already shown, followed DOIs, saved papers a list holds with no field), and the share pages' billed lookups. |
 | exploration | 60% | Graph expansions (`select=id,ids`), every search, `/citation-graph`, autocomplete, profile pages and lookups, and any shape not listed above. Also every OpenAlex request for a scheduled or test email. |
@@ -1336,7 +1376,31 @@ Subscription preferences and delivery state use separate, generation-scoped KV r
 
 **Live health probes.** `/health/openalex`, `/health/scopus` and `/health/email` call a provider on an edge-cache miss and need no session, and a request without an `Origin` passes. The edge cache is per data centre and nothing joins concurrent misses, so before calling the provider each miss reserves one probe in `REQUEST_QUOTA_LEDGER` for the current UTC window, app-wide: 6 per 10 minutes for OpenAlex, 1 per 10 minutes for Scopus and 6 per 5 minutes for email (Pablo, 2026-10-24). That is at most 864 OpenAlex list calls a day outside its ledger (about $0.09 of the $1 day), 144 Scopus probes and 1,728 Resend domain lists. Once the window is spent, a miss answers `429 HEALTH_PROBE_LIMITED` with `no-store` and a `retry-after` that ends with the window, without calling the provider; the email settings then say the status is unknown instead of unavailable and still let readers turn updates on or off, since saving preferences does not call Resend and a test send reports its own failure. It is a 429 because every 5xx is reported to PostHog (see Error monitoring). Without the binding, or when the ledger answers with an error, no probe runs and the route answers `503 PROVIDER_QUOTA_NOT_CONFIGURED`, also `no-store`; the email settings read that as status unknown too. A refusal is never cached, so the next probe admitted in that location refreshes its entry, and cache hits reserve nothing. Anyone can spend a window, and a location that finds it spent waits for the next one, so a `HEALTH_PROBE_LIMITED` answer says nothing about the provider.
 
-`GET /health` needs no `Origin` and reports configuration, not whether providers answer: `ok`, booleans such as `aiConfigured` and `semanticScholarKeyConfigured` (described above), and `version: { id, tag }` from the `[version_metadata]` binding (`CF_VERSION_METADATA`). `id` is the Cloudflare version id and `tag` is what the deploy passed to `--tag`, or `null` when it passed none. `version` is `null` where the binding does not exist, as in the Node tests.
+`GET /health` needs no `Origin`. It returns `ok`, the existing configuration
+booleans, and `version: { id, tag }` from `CF_VERSION_METADATA`. The tag is
+`null` if the deployment was untagged. The entire version is `null` if the
+binding is absent.
+
+The response includes a `features` object with boolean configuration checks.
+The Worker computes them from its environment without sending credentials or
+calling providers. Signed-in routes still require Firebase authentication, and
+requests still go through their normal quota checks. Use the live health
+routes to check provider availability.
+
+| Flag | Required configuration |
+| --- | --- |
+| `ai` | The provider the AI routes select has a credential that passes its local check. Anthropic requires the `sk-ant-` prefix, NaN requires `sk-`, and Gemini requires a nonempty printable ASCII token without spaces. `aiConfigured` reports the same value. |
+| `orcid` | A supported ORCID registry, client ID and secret, and a Firestore service account. |
+| `zotero` | Zotero client credentials and token key, and a Firestore service account. |
+| `scopus` | The Scopus proxy URL and shared secret. |
+| `email` | `NOTIFICATION_STORE`, `EMAIL_SUBSCRIPTIONS`, the Resend key and sender, and the durable delivery ledger. The legacy `emailConfigured` field checks the notification store, key and sender. |
+| `publishing` | A Firestore service account and the request quota ledger. The legacy `publishingConfigured` field checks the service account. |
+| `institutionLink` | A Firestore service account. |
+| `accountDeletion` | A Firestore service account. When `NOTIFICATION_STORE` is bound, subscription cleanup also requires `EMAIL_SUBSCRIPTIONS`. |
+| `institutionEmailVerification` | A Firestore service account, Resend key and sender, and both quota and delivery ledgers. |
+| `openReviewLookup` | OpenReview username and password for lookups by ID. Public search works without them. |
+| `semanticScholar` | A Semantic Scholar key for reliable search and related-paper requests. |
+| `pdf`, `mcp` | The request quota ledger and a `PDF_RATE_LIMIT_SECRET` of at least 32 characters for caller rate limits. |
 
 ### Logs
 
@@ -1355,7 +1419,9 @@ more than 2 hours; a load's main page and follows' page each log one), one `slow
 line for each `POST /store/papers` slower than 1.5 s (see Slow feed requests below), a fixed line,
 `Feed quota ledger did not answer; request let through`, with the object's own error, for each feed
 request whose call to the quota ledger threw (it names no reader; an error answer or a missing
-binding logs nothing), and one `{ route, status }`
+binding logs nothing), the daily receipt cleanup's `Author receipt cleanup failed` with an error
+code or class name and `Author receipt cleanup stopped at its cap` with a count (neither names an
+account or a paper; [Author save collection](#author-save-collection)), and one `{ route, status }`
 line from `worker/index.ts` for every 429 or 5xx answer, including an uncaught throw (logged as
 500). Its `route` is the fixed part of the path, such as `/openalex/works`, `/share` or
 `/notifications/unsubscribe`, never an id, a query string or an address. On the Workers Free plan
@@ -1659,8 +1725,8 @@ SDK is not used, so the package lock is unchanged.
 
 | Tool | Route asked in-process | Result |
 | --- | --- | --- |
-| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` filtered to the app's search types (`OPENALEX_SEARCH_TYPES`: articles, conference papers, reviews, preprints), and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` (by DOI, arXiv id, or an identical title whose first authors can be one person: one surname with given names that agree, as "Ana Economist" and "Economist A" do and "Maria Garcia" and "Jose Garcia" do not; the `Unknown` the OpenAlex mappers write for a missing name is no name, and a title under 20 letters and digits, such as "Introduction", joins no two records whose DOIs differ unless one is arXiv's own) and ranked by title match with the app's `mergeRankedPapers`, plus the sources that refused or failed. A paper has OpenAlex's `openalex:W…` id when OpenAlex found it, else its arXiv id, and arXiv's categories when arXiv found it, else OpenAlex's concept names, or its topic names for a work without concepts, which `get_paper` keeps in `topics` only. Unlike the app's search, which drops weak title matches when the query reads as a title, it keeps papers found only through their abstract |
-| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when the arXiv beat refuses the agent (about one try in two) or the arXiv relay fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back. A successful relay response with an unreadable feed or an Atom error entry returns `UPSTREAM_UNAVAILABLE` without an OpenAlex lookup | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work is id'd `openalex:W…`, as a search ids it, whatever identifier found it, and its `categories` are its concept names, so a paper both sources found comes back without the arXiv categories the search listed. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; a valid arXiv listing without the paper is `NOT_FOUND` |
+| `search_papers(query, sources?, since?, limit?)` | `/openalex/works?search=` filtered to the app's search types (`OPENALEX_SEARCH_TYPES`: articles, conference papers, reviews, preprints), and `/arxiv?search_query=all:"<query>"`, 10 results each whatever `limit` asks | Up to `limit` (default 5, at most 10) papers merged with `PaperBuilder.deduplicate` (by DOI, arXiv id, or an identical title whose first authors can be one person: one surname with given names that agree, as "Ana Economist" and "Economist A" do and "Maria Garcia" and "Jose Garcia" do not; the `Unknown` the OpenAlex mappers write for a missing name is no name, and a title under 20 letters and digits, such as "Introduction", joins no two records whose DOIs differ unless one is arXiv's own) and ranked by title match with the app's `mergeRankedPapers`, plus the sources that refused or failed. A paper has OpenAlex's `openalex:W…` id when OpenAlex found it, else its arXiv id, and arXiv's categories when arXiv found it, else OpenAlex's concept names, or its topic names for a work without concepts. Unlike the app's search, which drops weak title matches when the query reads as a title, it keeps papers found only through their abstract |
+| `get_paper(id)` | `/openalex/works/<id>` for a DOI, PubMed or OpenAlex id, as the app's paper page asks; `/arxiv?id_list=` for an arXiv id, and when the arXiv beat refuses the agent (about one try in two) or the arXiv relay fails, `/openalex/works?filter=locations.landing_page_url:` with the arXiv landing page, as the paper page falls back. A successful relay response with an unreadable feed or an Atom error entry returns `UPSTREAM_UNAVAILABLE` without an OpenAlex lookup | One paper from `formatOpenAlexWorkAsPaper` (as the paper page builds it) or `arxivRecordPaper`. An OpenAlex work keeps its `openalex:W…` id for OpenAlex, DOI and PMID lookups. Detail includes the source taxonomies available to the lookup (below). Successful fallback adds `fallback: { from: 'arxiv', to: 'openalex', code }` beside `paper`, where `code` is the arXiv error. The fallback returns the work only when its arXiv id is the one asked for, and otherwise arXiv's error; a valid arXiv listing without the paper is `NOT_FOUND` |
 | `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest. It takes a DOI only: a paper known by its arXiv or OpenAlex id needs `get_paper` first for its DOI |
 
 ENG-91's phase 1 also lists `get_citation_graph(id)` and `get_figures(arxiv_id)`.
@@ -1671,6 +1737,22 @@ not in this phase either. `/resources/figures` is public with a per-IP
 allowance of 20 misses a minute, but it does not take the arXiv beat's seat:
 each miss fetches arXiv's HTML rendering and ar5iv's at once. Offering it to
 agents waits for phase 2, with the citation graph (ENG-91).
+
+Both paper tools include `taxonomySources` when they return categories, concepts or
+topics. Its keys name those fields and its values are `arxiv` or `openalex`.
+OpenAlex subjects retain their provider IDs. A search can return arXiv categories
+alongside OpenAlex concepts and topics for the same paper. For ten minutes the
+edge can reuse OpenAlex concepts and topics when the detail lookup returns
+the same OpenAlex work ID. Cached arXiv categories require the same versionless
+arXiv ID. DOI and PMID lookups use the IDs on the returned OpenAlex work.
+Direct arXiv detail can therefore omit OpenAlex subjects seen in search, and
+DOI detail can omit arXiv categories when OpenAlex supplies no arXiv ID.
+A canonical arXiv DOI can identify the preprint for display and fallback matching.
+Reading its cached categories requires an explicit arXiv ID or arXiv location
+on the detail record. A DOI alone never authorizes cached enrichment.
+Only taxonomy and its public paper identifiers enter this cache. A cache miss
+or eviction leaves detail with the evidence from its own provider response.
+The lookup makes the same provider requests either way.
 
 Tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract, the feed's internal fields (the
@@ -1683,7 +1765,7 @@ the arXiv fallback's record included, names no repository as its journal, as
 a search's record of it names none. They come with
 bounded lists: 20 authors in a search and 100 in `get_paper` (about 7 KB), 10
 institutions, 5 concepts, 5 names in `categories` (an OpenAlex record's concept
-names, or in a search its topic names when it has no concepts; an arXiv record's categories) and in `keywords` and `allCategories`
+names, or its topic names when it has no concepts; an arXiv record's categories) and in `keywords` and `allCategories`
 where they differ from it, and 3 topics. A search also cuts each abstract at the
 last space within 1,500 characters and ends it with `…`; `get_paper` sends the
 whole abstract (up to the 6,000 characters `usableOpenAlexAbstract` accepts). A
@@ -1730,9 +1812,8 @@ points:
   odd period is never an agent's, so even on an idle Worker every agent arXiv
   miss in an odd period is refused: about half of uncached arXiv lookups,
   which a search lists under `unavailable` and `get_paper` answers from
-  OpenAlex for one billed unit. That answer is the OpenAlex record: id
-  `openalex:W…` and concept names in `categories`, where arXiv's answer has
-  the arXiv id and arXiv categories. A refused seat is
+  OpenAlex for one billed unit. That answer identifies OpenAlex as the fallback and keeps its
+  `openalex:W…` id. Cached arXiv categories take precedence over OpenAlex names. A refused seat is
   `PROVIDER_RATE_LIMITED` with `retryAfterSeconds` counted to the start of the
   next public seat (1 to 6 seconds, rounded up), under `unavailable` in a
   search; `get_paper` then asks OpenAlex, and logs arXiv's refusal with

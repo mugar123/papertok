@@ -8,8 +8,12 @@ import './provider-sign-in.css';
 // modal and the welcome's disclosure), next to use-provider-sign-in.ts.
 
 // One account per email address: the address already signs in some other way.
+// One element, and the subject in one span that stays while its contents
+// change: a browser translating the page replaces bare text, and React throws
+// when it removes the replaced text or inserts beside it (facebook/react#11538).
+// An address is not words to translate.
 export function CollisionNote({ email }: { email?: string }) {
-  return <>{email ? <strong>{email}</strong> : 'That address'} already signs in another way. Use that method, then connect the other from Settings.</>;
+  return <span><span>{email ? <strong translate="no">{email}</strong> : 'That address'}</span> already signs in another way. Use that method, then connect the other from Settings.</span>;
 }
 
 // Stands in for the provider's mark while its window is open, and while it
@@ -42,11 +46,14 @@ export function PreparingNote({ id, state, onRetry, keepLine = true }: { id: str
     describedControl()?.focus();
     onRetry();
   };
+  // Each line in its own span: a browser translating the page replaces bare
+  // text with its own nodes, and React then throws removing the old text when
+  // the line changes (facebook/react#11538). An element it can remove whole.
   return (
     <p className={waited && (state !== 'ready' || keepLine) ? 'provider-preparing' : 'sr-only'}>
       <span id={id} role="status">
-        {state === 'preparing' && 'Preparing sign-in…'}
-        {state === 'failed' && 'Sign-in could not load.'}
+        {state === 'preparing' && <span>Preparing sign-in…</span>}
+        {state === 'failed' && <span>Sign-in could not load.</span>}
         {state === 'ready' && waited && <span className="sr-only">Sign-in ready.</span>}
       </span>
       {state === 'failed' && (

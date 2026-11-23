@@ -54,6 +54,16 @@ export function stubWorker() {
           route.verdict = verdict;
           route.waiting.splice(0).forEach(settle => { settle(verdict()); });
         },
+        /** Answers the requests waiting and every later one with `body`, as a Worker that is up does. */
+        answer(body: unknown) {
+          const verdict = () => Response.json(body);
+          route.verdict = verdict;
+          route.waiting.splice(0).forEach(settle => { settle(verdict()); });
+        },
+        /** Holds the requests that arrive from now on again, until the next answer or refusal. */
+        wait() {
+          route.verdict = null;
+        },
       };
     },
     /** Ends the requests nobody answered, as a closed tab does, and restores `fetch`. */

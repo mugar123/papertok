@@ -117,6 +117,7 @@ import type { ReaderCard, ReaderMenu } from './paper-menu.tsx';
 import { paperActions, shareMethod } from './paper-actions.ts';
 import { useZoteroAction } from '../pdf/use-zotero-action.ts';
 import { followReasonLabels } from '../../utils/follow-reasons.ts';
+import { AboutFollows } from './about-follows.tsx';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import useClipTooltip from '../../hooks/use-clip-tooltip.ts';
@@ -1913,6 +1914,7 @@ const PaperCard = memo(function PaperCard({
               </ul>
             </section>
           )}
+          <AboutFollows paper={paper} onAuthRequired={() => requireAuthentication('follow')} onOpenSettings={(inReader) => { if (inReader) window.open('/settings/following', '_blank', 'noopener'); else navigate('/settings/following'); }} />
     </>
   );
   useLayoutEffect(() => {

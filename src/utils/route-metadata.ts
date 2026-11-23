@@ -2,6 +2,9 @@
 // (only for routes that do not title themselves) and the route-change
 // announcement for screen readers (all mapped routes).
 
+import { matchRoutes } from 'react-router-dom'
+import { findConferenceEdition } from '../data/conferences.ts'
+import { isConferencePath } from './conference-calendar.ts'
 import { customFeedIdFromPath } from './feed-tabs.ts'
 
 const LABELS: Record<string, string> = {
@@ -11,6 +14,7 @@ const LABELS: Record<string, string> = {
   '/profile': 'My profile',
   '/following': 'Following',
   '/search': 'Search',
+  '/help': 'Help',
   // Each settings page titles itself "<page> · Settings" (settings-page.tsx),
   // so the announcement calls the page what the page calls itself.
   '/settings': 'Settings',
@@ -48,6 +52,10 @@ type NamedFeed = { id: string; name: string }
 /** A custom feed's page is called by the feed's name; an id the reader has no feed for has none. */
 export function routeLabel(pathname: string, feeds: readonly NamedFeed[] = []) {
   const normalized = normalize(pathname)
+  if (isConferencePath(normalized)) {
+    const id = matchRoutes([{ path: '/conferences/:editionId' }], normalized)?.[0]?.params.editionId
+    return id ? findConferenceEdition(id)?.name ?? 'Conference not found' : 'Conference calendar'
+  }
   const feedId = customFeedIdFromPath(normalized)
   if (feedId !== null) return feeds.find(feed => feed.id === feedId)?.name ?? null
   return LABELS[normalized] || null

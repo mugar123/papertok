@@ -1,6 +1,10 @@
 import type { Paper } from '../models/paper.ts';
 
-import { withJournalOf, withPublicationEvidenceOf } from '../models/paper.ts';
+import type { InteractionDocumentData } from '../utils/interaction-profile.ts';
+
+import { readStoredClassification, withJournalOf, withPublicationEvidenceOf } from '../models/paper.ts';
+import { readStoredStudyType, studyTypeFromIds } from '../models/paper-evidence.ts';
+import { copyOfRecordWithoutCopy, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 
 // A like or save may settle after a read, note or Read later change has replaced the entry's paper.
@@ -10,6 +14,36 @@ export interface LibraryEntry {
   [localPaperWrite]?: symbol;
   paperId: string; paper: Partial<Paper>; readLater?: boolean; readAt?: string | number | null;
   note?: string; tags?: string[]; updatedAt?: string | number | null;
+}
+
+type Library = Record<string, LibraryEntry>;
+export type LibraryState = {
+  personalLibrary: Library;
+  libraryPapers: Record<string, Partial<Paper>>;
+};
+
+/**
+ * Apply updates in call order, then give React the resulting snapshots.
+ * A write answer needs the result before the next render, and React can
+ * replay a state updater, so the caller handles effects after this returns.
+ */
+export function createLibraryUpdater(publish: (state: LibraryState) => void) {
+  let current: LibraryState = { personalLibrary: {}, libraryPapers: {} };
+  const setLibraryState = (update: LibraryState | ((state: LibraryState) => LibraryState)): boolean => {
+    const next = typeof update === 'function' ? update(current) : update;
+    if (next === current) return false;
+    current = next;
+    publish(next);
+    return true;
+  };
+  return {
+    getLibraryState: () => current,
+    setLibraryState,
+    setPersonalLibrary: (update: (entries: Library) => Library) => setLibraryState(state => {
+      const personalLibrary = update(state.personalLibrary);
+      return personalLibrary === state.personalLibrary ? state : { ...state, personalLibrary };
+    }),
+  };
 }
 
 /** Keep evidence from the existing entry and the loaded interaction. */
@@ -109,11 +143,6 @@ export function loadedAfterLoad(current: Record<string, Partial<Paper>>, papers:
   return next;
 }
 
-type LibraryState = {
-  personalLibrary: Record<string, LibraryEntry>;
-  libraryPapers: Record<string, Partial<Paper>>;
-};
-
 /** A server answer refreshes journals unless a local interaction replaced its copy during the read. */
 export function libraryAfterRead(
   current: LibraryState, beforeRead: LibraryState, entries: LibraryState['personalLibrary'],
@@ -147,4 +176,18 @@ export function libraryCopyOf(library: Record<string, LibraryEntry>, papers: Rec
   const entryCopy = library[paperId]?.paper;
   const loaded = papers[paperId];
   return loaded && entryCopy ? withJournalOf(withPublicationEvidenceOf(loaded, entryCopy), entryCopy) : loaded ?? entryCopy;
+}
+
+export function serializeInteractionPaper(paper: Paper, state: LibraryState) {
+  const studyType = studyTypeFromIds([
+    paper.studyType, state.personalLibrary[paper.id]?.paper.studyType, state.libraryPapers[paper.id]?.studyType,
+  ]);
+  return serializeLibraryPaper({ ...paper, studyType });
+}
+
+export function readInteractionPaper(id: string, record: InteractionDocumentData) {
+  const copy = record.paper;
+  return copy
+    ? { ...copy, studyType: readStoredStudyType(copy), ...readStoredClassification({ ...copy, id }) }
+    : copyOfRecordWithoutCopy(id, record);
 }
