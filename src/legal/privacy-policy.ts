@@ -184,7 +184,7 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
   'Translations, now including full papers, and explanations go to Anthropic without your account or email, possibly outside the EU.',
   "Limits on translations, OpenAlex lookups and conference pages count hashed or protected IDs, scheduled for deletion within three days. Cloudflare's 30-day recovery history may keep deleted counters.",
-  'Opt-in reminders use your last signed-in visit hour for 30 days. If account deletion cannot schedule its email cleanup, a change counter and IDs, with no address or preferences, may stay.',
+  'Opt-in reminders use your last signed-in visit hour for 30 days. If account deletion cannot schedule its email cleanup, a change counter and marks, with no address or preferences, may stay.',
 ];
 
 /**
@@ -215,10 +215,10 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['Opt-in reminders', /you can opt in to digest reminders in Settings/],
     ['use your last signed-in visit hour for 30 days', /PaperTok uses the visit for 30 days from the hour it records/],
     ['last signed-in visit hour', /keeps only the hour of your last signed-in visit when the app is visible/],
-    // EmailSubscriptionStore's `forget` (endEmailSubscription, tried twice by account deletion) schedules the end.
-    ['If account deletion cannot schedule its email cleanup', /the request that schedules this deletion fails or gets no reply both times PaperTok sends it, the deletion may never be scheduled/],
-    ['a change counter and IDs', /The count, and the mark and record identifiers if the object holds them, can then stay with no set end/],
-    ['with no address or preferences', /none of them holds your address or preferences/],
+    // EmailSubscriptionStore's `forget` (endEmailSubscription, tried twice after the Auth delete) schedules the end.
+    ['If account deletion cannot schedule its email cleanup', /In rare cases PaperTok cannot schedule this deletion, for example when the confirmation that your sign-in account was deleted is lost, or both attempts to schedule it fail/],
+    ['a change counter and marks', /The count, the number of the change that last ended the subscription and, if there is one, the mark then stay with no end date/],
+    ['with no address or preferences', /They hold neither your address nor your preferences/],
   ],
   unsaid: [
     [/(stores?|keeps?|logs?|records?|counts?) (your|the) IP address/i, 'the counters hold a derived identifier, not the address'],

@@ -147,14 +147,14 @@ test('the page says what a full-paper translation sends to Anthropic, what Paper
   assert.match(html, /Anthropic may process the text in any region it serves and ordinarily deletes API inputs and outputs within 30 days, subject to its agreement with PaperTok and exceptions for policy enforcement and legal obligations\./);
 });
 
-// worker/email-subscription-store.ts: only `forget` sets `forgetAt`; worker/account-deletion.ts tries it twice.
-test('the page says the count of email changes can stay with no set end if the request that schedules its deletion fails', () => {
+// worker/email-subscription-store.ts: only `forget` sets `forgetAt`; endEmailSubscription runs it twice, after the Auth delete.
+test('the page says what stays with no end date if account deletion cannot schedule the email object\'s end', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
-  assert.match(html, /If, when you delete your account, the request that schedules this deletion fails or gets no reply both times PaperTok sends it, the deletion may never be scheduled\. The count, and the mark and record identifiers if the object holds them, can then stay with no set end; none of them holds your address or preferences\./);
+  assert.match(html, /In rare cases PaperTok cannot schedule this deletion, for example when the confirmation that your sign-in account was deleted is lost, or both attempts to schedule it fail\. The count, the number of the change that last ended the subscription and, if there is one, the mark then stay with no end date\. They hold neither your address nor your preferences\./);
   const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
-  assert.match(kept, /If the request that schedules the count's deletion fails, the count can stay with no set end \(see Email updates\)\./);
+  assert.match(kept, /In rare cases PaperTok cannot schedule the count's deletion, and the count, the number of the change that last ended the subscription and the mark then stay with no end date \(see Email updates\)\./);
   const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
-  assert.match(summary, /\(see Email updates\)\. In one rare case, explained there, the count can stay longer\./);
+  assert.match(summary, /\(see Email updates\)\. In rare cases, explained there, the count can stay with no end date, and a late write can leave a copy of your email subscription, with your address, in Cloudflare Workers KV for up to 120 days\./);
 });
 
 // worker/full-text.ts fromArxiv asks arxiv.org/html, then ar5iv.labs.arxiv.org; worker/account-deletion.ts never reaches REQUEST_QUOTA_LEDGER.
@@ -214,7 +214,7 @@ test('the current notice announces revision 11: translations, request limits and
   assert.match(notice, /Limits on translations, OpenAlex lookups and conference pages count hashed or protected IDs, scheduled for deletion within three days/);
   assert.match(notice, /Cloudflare's 30-day recovery history may keep deleted counters/);
   assert.match(notice, /Opt-in reminders use your last signed-in visit hour for 30 days/);
-  assert.match(notice, /If account deletion cannot schedule its email cleanup, a change counter and IDs, with no address or preferences, may stay/);
+  assert.match(notice, /If account deletion cannot schedule its email cleanup, a change counter and marks, with no address or preferences, may stay/);
 });
 
 test('the notice start is an ISO UTC instant that is not before the effective time', () => {
@@ -311,12 +311,14 @@ test('the page says a count of changes to the email subscription stays after uns
 test('the page says how long the mark of a welcome start and a late index write stay, what stays in a browser that never signs in, and that the request counts outlive the account', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   assert.match(html, /If the email was started from the welcome screen, the object also keeps a mark that it was\./);
-  // Nothing on the page says that these stay without a limit, except when account deletion never schedules their end.
+  // Nothing on the page says that these stay without a limit, except when account deletion cannot schedule their end.
   assert.doesNotMatch(html, /The mark stays as well|stays until that link is used|The count stays after you delete your account|also stays, and (a deleted|an) email subscription/);
   assert.match(html, /leaves one for those 30 days too\. If deleting the subscription's other email records is still failing then, the object waits for it, for at most 30 more days\. The mark is kept and deleted with the count\./);
-  assert.match(html, /In the rare case that Cloudflare's storage answers late while the email is being started, its settings saved or an email sent, an entry with your account identifier and the unsubscribe identifier, without your address, can be written to <strong>Cloudflare Workers KV<\/strong> after you have unsubscribed or deleted your account\. It starts no email\. If the email was started from the welcome screen, the entry the schedule reads is removed at its next run\. The entry of the unsubscribe link expires 120 days after it was written\./);
+  // Every KV put of a subscription key carries a 120-day expirationTtl (#598).
+  assert.match(html, /In the rare case that Cloudflare's storage answers late while the email is being started, its settings saved or an email sent, entries can be written to <strong>Cloudflare Workers KV<\/strong> after you have unsubscribed or deleted your account: one with your account identifier and the unsubscribe identifier and, after a save of your settings, a copy of your email subscription with your address\. They start no email, and each is deleted within 120 days of being written\./);
+  assert.doesNotMatch(html, /unsubscribe identifier, without your address, can be written/);
   const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
-  assert.match(kept, /The mark that the email was started from the welcome screen is kept and deleted with the count\. An entry that links an unsubscribe identifier to your account identifier, which a late write can leave in Cloudflare Workers KV, expires 120 days after it was written\./);
+  assert.match(kept, /The mark that the email was started from the welcome screen is kept and deleted with the count\. Entries that a late write can leave in Cloudflare Workers KV, one linking an unsubscribe identifier to your account identifier and, after a save of your settings, a copy of your email subscription with your address, are each deleted within 120 days of being written\./);
   assert.match(html, /In a browser that never signs in, these answers stay until you clear this site's data; a yes older than 24 hours stays with them but is not used\./);
   assert.match(kept, /The request counts Cloudflare keeps under hashed account identifiers, to limit test emails, requests to start the email and citation lookups, are not deleted with the account either: they expire on their own within three days, or at the end of their week for citation lookups \(see Email updates\)\./);
 });
