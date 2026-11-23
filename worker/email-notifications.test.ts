@@ -162,14 +162,8 @@ function digestSubscription(overrides: Partial<Subscription> = {}): Subscription
 // env a test builds around the same KV reaches the same objects.
 const subscriptionStores = new WeakMap<object, WorkerEnv['EMAIL_SUBSCRIPTIONS']>();
 function subscriptionsFor(kv: object) {
-  if (!subscriptionStores.has(kv)) subscriptionStores.set(kv, inMemorySubscriptionStores(kv as KVNamespace));
+  if (!subscriptionStores.has(kv)) subscriptionStores.set(kv, inMemorySubscriptionStores());
   return subscriptionStores.get(kv);
-}
-
-// A fresh KV with the readers' objects that write their indexes to it.
-function freshStores() {
-  const kv = createMemoryKv();
-  return { NOTIFICATION_STORE: kv, EMAIL_SUBSCRIPTIONS: subscriptionsFor(kv) };
 }
 
 async function callSubscriptionObject(kv: object, uid: string, payload: unknown) {
@@ -1345,7 +1339,7 @@ test('rejects oversized notification preference payloads before parsing them', a
   });
 
   await assert.rejects(
-    () => saveSubscription(request, freshStores(), {
+    () => saveSubscription(request, { NOTIFICATION_STORE: createMemoryKv(), EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() }, {
       uid: 'reader',
       email: 'reader@example.com',
       displayName: 'Reader',
@@ -3009,14 +3003,10 @@ test('a background sync restores an unsubscribe link whose first write failed', 
     if (key.startsWith('notification:unsubscribe:')) throw new Error('KV write failed');
     return basePut(key, value, options);
   };
-  // The reader's object writes the indexes, and answers a failed put as a retryable failure.
-  await assert.rejects(
-    () => saveSubscription(preferencesPut(body), env, SYNC_READER),
-    error => (error as { code?: string }).code === 'EMAIL_UNAVAILABLE' && (error as { status?: number }).status === 503,
-  );
+  await assert.rejects(() => saveSubscription(preferencesPut(body), env, SYNC_READER), /KV write failed/);
   kv.put = basePut;
   const stored = await storedSubscriptionWithState(kv, SYNC_READER_KEY);
-  assert.ok(stored?.enabled, 'the save stored the subscription');
+  assert.ok(stored?.enabled, 'the opt-in stored the subscription');
 
   await saveSubscription(preferencesPut({ ...body, sync: true }), env, SYNC_READER);
 
@@ -3113,7 +3103,7 @@ test('an unusable unsubscribe link explains itself on a locked-down page with no
   // An already-used link: its token no longer resolves to a subscription.
   const response = await handleEmailUnsubscribe(
     new Request('https://example.com/notifications/unsubscribe?token=already-used-unsubscribe-token'),
-    freshStores(),
+    { NOTIFICATION_STORE: createMemoryKv(), EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() },
   );
 
   assert.equal(response.status, 400);
@@ -6218,9 +6208,8 @@ for (const source of ['kv', 'object']) {
   for (const pauseAtRead of [true, false]) {
     test(`reactivation withdrawal invalidates a pending grant and a visit from an earlier grant (${source}, ${pauseAtRead ? 'before read' : 'before write'})`, async t => {
       const identity = { uid: 'reader', email: 'reader@example.com', displayName: '' };
-      const kv = createMemoryKv();
-      const stores = inMemorySubscriptionStores(kv);
-      const env = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+      const stores = inMemorySubscriptionStores();
+      const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
       t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: identity.uid, email: identity.email, emailVerified: true }] }));
       const settings = () => reactivationRequest('GET', '/notifications/reactivation', env);
       const withdraw = () => reactivationRequest('PUT', '/notifications/reactivation', env, { enabled: false });
@@ -6258,9 +6247,8 @@ for (const source of ['kv', 'object']) {
 
   test(`reactivation is opt-in, account scoped, hourly and expires after 30 days (${source})`, async t => {
     const uid = 'reader';
-    const kv = createMemoryKv();
-    const stores = inMemorySubscriptionStores(kv);
-    const env = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+    const stores = inMemorySubscriptionStores();
+    const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
     let account = { localId: uid, email: 'reader@example.com', emailVerified: false };
     let clock = Date.UTC(2026, 10, 20, 10, 5);
     t.mock.method(Date, 'now', () => clock);
@@ -6342,9 +6330,8 @@ for (const source of ['kv', 'object']) {
   test(`a visit older than 30 days is absent and deleted on the next access, even after its alarm failed (${source})`, async t => {
     const uid = 'reader';
     const identity = { uid, email: 'reader@example.com', displayName: '' };
-    const kv = createMemoryKv();
-    const stores = inMemorySubscriptionStores(kv);
-    const env = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+    const stores = inMemorySubscriptionStores();
+    const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
     let clock = Date.UTC(2026, 10, 20, 10, 5);
     t.mock.method(Date, 'now', () => clock);
     t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: uid, email: identity.email, emailVerified: true }] }));
@@ -6369,9 +6356,8 @@ for (const source of ['kv', 'object']) {
   test(`a firing alarm before the visit expires schedules it again (${source})`, async t => {
     const uid = 'reader';
     const identity = { uid, email: 'reader@example.com', displayName: '' };
-    const kv = createMemoryKv();
-    const stores = inMemorySubscriptionStores(kv);
-    const env = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+    const stores = inMemorySubscriptionStores();
+    const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
     let clock = Date.UTC(2026, 10, 20, 10, 5);
     t.mock.method(Date, 'now', () => clock);
     t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: uid, email: identity.email, emailVerified: true }] }));
@@ -6391,9 +6377,8 @@ for (const source of ['kv', 'object']) {
     test(`${cancellation} clears the visit and wins against an in-flight visit (${source})`, async t => {
       const uid = 'reader';
       const identity = { uid, email: 'reader@example.com', displayName: '' };
-      const kv = createMemoryKv();
-      const stores = inMemorySubscriptionStores(kv);
-      const env = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
+      const stores = inMemorySubscriptionStores();
+      const env = { ...identityEnvironment(createMemoryKv()), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: source };
       t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: uid, email: identity.email, emailVerified: true }] }));
       const settings = () => reactivationRequest('GET', '/notifications/reactivation', env);
       await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, identity);
@@ -6428,7 +6413,7 @@ for (const source of ['kv', 'object']) {
 test('reactivation status reports stale KV as unavailable and recovers on retry', async t => {
   const identity = { uid: 'reader', email: 'reader@example.com', displayName: '' };
   const kv = createMemoryKv();
-  const stores = inMemorySubscriptionStores(kv);
+  const stores = inMemorySubscriptionStores();
   const env = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
   t.mock.method(globalThis, 'fetch', async () => Response.json({ users: [{ localId: identity.uid, email: identity.email, emailVerified: true }] }));
   const settings = (target: WorkerEnv = env) => reactivationRequest('GET', '/notifications/reactivation', target);
@@ -6462,7 +6447,7 @@ for (const source of ['kv', 'object']) {
   test(`a KV miss for a subscribed reader is an unavailable read, not an unsubscribe, and withdrawal still works (${source})`, async t => {
     const identity = { uid: 'reader', email: 'reader@example.com', displayName: '' };
     const kv = createMemoryKv();
-    const stores = inMemorySubscriptionStores(kv);
+    const stores = inMemorySubscriptionStores();
     // The reader subscribed and opted in while KV held the record (phase 1).
     const phase1 = { ...identityEnvironment(kv), EMAIL_SUBSCRIPTIONS: stores, EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
     const env = { ...phase1, EMAIL_SUBSCRIPTION_SOURCE: source };
@@ -7618,7 +7603,7 @@ test('a subscription with no follows is saved with the chosen leaves, and refuse
   assert.deepEqual((await storedRecordOf(kv, SYNC_READER_KEY))?.interests, ['cs.LG', 'quant-ph']);
 
   await assert.rejects(
-    () => saveSubscription(preferencesPut({ enabled: true, follows: [], interests: ['not-a-leaf'] }), freshStores(), SYNC_READER),
+    () => saveSubscription(preferencesPut({ enabled: true, follows: [], interests: ['not-a-leaf'] }), { NOTIFICATION_STORE: createMemoryKv(), EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() }, SYNC_READER),
     error => (error as { code?: string }).code === 'EMAIL_FOLLOWS_REQUIRED',
   );
 });
@@ -7666,45 +7651,56 @@ function optInPost(body: unknown) {
   });
 }
 
-// Holds the next put of the reader's schedule key until `release`: `held`
-// resolves once that put is waiting. The requests a test then makes start
-// outside the object's gate, as other requests of the same reader would.
-// With `failLink`, the put of the link index made beside it fails.
-function heldSchedulePut(kv: ReturnType<typeof createMemoryKv>, { failLink = false } = {}) {
+// A KV that has stopped answering one request's index writes: the puts of the
+// reader's schedule key and link index made in the same turn as the first of
+// them wait until `release`, which resolves once they have landed. `held`
+// resolves once they wait. Puts made afterwards, such as those of a later Off
+// or On, go through. With `failLink`, the first link put fails at once instead.
+function heldIndexPuts(kv: ReturnType<typeof createMemoryKv>, { failLink = false } = {}) {
   const put = kv.put.bind(kv);
-  let waiting: (() => void) | undefined;
-  let release: () => void = () => {};
-  let landed = false;
+  let holding = true;
   let linkFails = failLink;
+  let waiting: () => void = () => {};
+  let open: () => void = () => {};
   const held = new Promise<void>((resolve) => { waiting = resolve; });
-  const released = new Promise<void>((resolve) => { release = resolve; });
+  const released = new Promise<void>((resolve) => { open = resolve; });
+  const landings: Array<Promise<void>> = [];
   kv.put = async (key: string, value: string) => {
-    if (linkFails && key.startsWith('notification:unsubscribe:')) {
+    const link = key.startsWith('notification:unsubscribe:');
+    if (link && linkFails) {
       linkFails = false;
       throw new Error('KV put failed');
     }
-    if (key !== SYNC_READER_KEY || !waiting) return put(key, value);
-    const announce = waiting;
-    waiting = undefined;
-    announce();
-    await released;
-    await put(key, value);
-    landed = true;
-    return undefined;
+    if (!holding || (!link && key !== SYNC_READER_KEY)) return put(key, value);
+    waiting();
+    // Only this turn's puts: the request that made them makes no other.
+    queueMicrotask(() => { holding = false; });
+    const landing = released.then(() => put(key, value));
+    landings.push(landing);
+    return landing;
   };
-  return { held, release, landed: () => landed, restore: () => { kv.put = put; } };
+  return {
+    held,
+    release: async () => {
+      open();
+      await Promise.all(landings);
+    },
+    restore: () => { kv.put = put; },
+  };
 }
 
-// A reader's Off and then On in Settings, made while something else is under
-// way; `ranBefore` says whether the Off was handled before `landed` turned true.
-function offThenOn(env: WorkerEnv, landed: () => boolean) {
-  let ranBefore = false;
-  const done = (async () => {
-    await switchDigestOff(env);
-    ranBefore = !landed();
-    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
-  })();
-  return { done, ranBefore: () => ranBefore };
+// The first put of the reader's schedule key fails, as when KV is briefly down.
+function failingSchedulePut(kv: ReturnType<typeof createMemoryKv>) {
+  const put = kv.put.bind(kv);
+  let failed = false;
+  kv.put = async (key: string, value: string) => {
+    if (!failed && key === SYNC_READER_KEY) {
+      failed = true;
+      throw new Error('KV put failed');
+    }
+    await put(key, value);
+  };
+  return () => { kv.put = put; };
 }
 
 // Each call brings an hour's allowance of its own, unless the test gives the ledger.
@@ -7828,87 +7824,161 @@ for (const phase of DEPLOY_PHASES) {
     assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${saved!.unsubscribeToken}`]);
   });
 
-  test(`${phase}: a Settings switch-off that lands between the welcome yes's write and its indexes leaves no subscription and nothing in KV`, async () => {
+  // The Worker writes the indexes, so an Off can land while they are written or
+  // between them and the object's answer. Either way the opt-in learns it from
+  // the object and removes what it wrote.
+  for (const moment of ['while its indexes are written', 'after its indexes are written and before the object confirms them'] as const) {
+    test(`${phase}: a Settings switch-off that lands ${moment} leaves no subscription and nothing in KV`, async () => {
+      const kv = createMemoryKv();
+      const env = twoPhases(kv)[phase];
+      let token = '';
+      let raced = false;
+      let stores = env.EMAIL_SUBSCRIPTIONS;
+      if (moment === 'while its indexes are written') {
+        const put = kv.put.bind(kv);
+        kv.put = async (key: string, value: string) => {
+          if (key.startsWith('notification:unsubscribe:')) token = key.slice('notification:unsubscribe:'.length);
+          if (!raced) {
+            raced = true;
+            await switchDigestOff(env);
+          }
+          await put(key, value);
+        };
+      } else {
+        stores = interceptedStores(env.EMAIL_SUBSCRIPTIONS, (payload: { action?: string; token?: string }) => {
+          if (payload.action === 'announce') token = String(payload.token);
+          return payload.action === 'announce';
+        }, async () => {
+          raced = true;
+          await switchDigestOff(env);
+        });
+      }
+
+      const answer = await optIn({ ...env, EMAIL_SUBSCRIPTIONS: stores });
+
+      assert.ok(raced && token);
+      assert.equal(answer.outcome, 'declined');
+      assert.equal(await loadSubscriptionWithState(env, SYNC_READER_KEY), null);
+      assert.equal((await objectOf(kv)).subscription, null);
+      assert.deepEqual([...kv.values.keys()], [], 'the opt-in left a key for a subscription that was cancelled');
+      // The link of the subscription that lasted an instant cancels nothing.
+      const before = await everythingStored(kv);
+      await postLink(env, token);
+      assert.deepEqual(await everythingStored(kv), before);
+      assert.equal((await optIn(env)).outcome, 'declined');
+    });
+  }
+
+  // Round 3 of the outside verifier (ENG-215): KV stops answering the welcome
+  // yes's index writes. Nothing of the reader's waits behind them, so an Off
+  // and a new On in Settings are handled at once, and the puts that land
+  // afterwards replace nothing of the new subscription.
+  test(`${phase}: a switch-off and a new subscribe in Settings are handled while the welcome yes's index writes hang, and the writes that land later change nothing`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    let token = '';
-    const stores = interceptedStores(env.EMAIL_SUBSCRIPTIONS, (payload: { action?: string; token?: string }) => {
-      if (payload.action === 'index') token = String(payload.token);
-      return payload.action === 'index';
-    }, async () => { await switchDigestOff(env); });
-
-    const answer = await optIn({ ...env, EMAIL_SUBSCRIPTIONS: stores });
-
-    assert.ok(stores.intercepted && token);
-    assert.equal(answer.outcome, 'declined');
-    assert.equal(await loadSubscriptionWithState(env, SYNC_READER_KEY), null);
-    assert.equal((await objectOf(kv)).subscription, null);
-    assert.deepEqual([...kv.values.keys()], [], 'the refused index write left a key');
-    // The link of the subscription that lasted an instant cancels nothing.
-    const before = await everythingStored(kv);
-    await postLink(env, token);
-    assert.deepEqual(await everythingStored(kv), before);
-    assert.equal((await optIn(env)).outcome, 'declined');
-  });
-
-  // The verifier's interleaving (ENG-215): the opt-in's schedule-key put is held
-  // while the reader turns the email off and on again in Settings. Written by
-  // the Worker, that put landed last and replaced the record of the new
-  // subscription in phase 1. Written by the reader's object, it holds the Off
-  // and the On back until it has landed.
-  test(`${phase}: a switch-off and a new subscribe in Settings made while the welcome yes's index write is held come after it, and that subscription survives`, async () => {
-    const kv = createMemoryKv();
-    const env = twoPhases(kv)[phase];
-    const { held, release, landed } = heldSchedulePut(kv);
+    const { held, release } = heldIndexPuts(kv);
 
     const yes = optIn(env);
     await held;
-    // Two more requests of the same reader, while the object waits for its put.
-    let ranBeforeTheIndex = false;
-    const later = (async () => {
-      await switchDigestOff(env);
-      ranBeforeTheIndex = !landed();
-      await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
-    })();
-    // The Off and the On get every chance to run before the put lands.
-    await new Promise(resolve => setTimeout(resolve, 25));
-    release();
+    const welcomeToken = (await objectOf(kv)).subscription!.unsubscribeToken;
+    // Both answer while the index writes hang.
+    await switchDigestOff(env);
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+    const saved = await everythingStored(kv);
+    await release();
     const answer = await yes;
-    await later;
 
-    assert.equal(answer.outcome, 'created');
-    assert.equal(ranBeforeTheIndex, false, 'the switch-off was handled while the index write was still on its way');
+    assert.deepEqual([answer.outcome, answer.preferences.maxPapers], ['on', 10]);
     const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
     assert.deepEqual([kept?.enabled, kept?.maxPapers, kept?.follows, kept?.welcomeConsent], [true, 10, [digestFollow()], undefined]);
+    assert.notEqual(kept!.unsubscribeToken, welcomeToken);
+    // The late puts wrote the index the key already held, and a link the opt-in removed again.
+    assert.deepEqual(await everythingStored(kv), saved);
     assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${kept!.unsubscribeToken}`]);
     assert.equal((await optIn(env)).outcome, 'on');
-    assert.equal((await loadSubscriptionWithState(env, SYNC_READER_KEY))?.maxPapers, 10);
   });
 
-  // The same interleaving through a sync of a reader the welcome yes subscribed:
-  // their record is in the object, so a changed sync writes the schedule index too.
-  test(`${phase}: a switch-off and a new subscribe made while a sync's index write is held come after it, and that subscription survives`, async () => {
+  // The hang itself: the puts never answer while the request lives. The route
+  // gives up at its own deadline, far below any platform limit, and whatever
+  // the reader decided meanwhile stands when the puts land after all.
+  for (const later of ['a switch-off', 'a switch-off and a new subscribe'] as const) {
+    test(`${phase}: a welcome yes whose index writes never answer fails at its deadline, ${later} made meanwhile is handled at once, and the writes that land afterwards are harmless`, async (t) => {
+      t.mock.timers.enable({ apis: ['setTimeout'] });
+      const kv = createMemoryKv();
+      const env = twoPhases(kv)[phase];
+      const { held, release } = heldIndexPuts(kv);
+
+      const yes = optIn(env).then(answer => answer, (error: unknown) => error);
+      await held;
+      const welcomeToken = (await objectOf(kv)).subscription!.unsubscribeToken!;
+      await switchDigestOff(env);
+      if (later !== 'a switch-off') await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+      const decided = await everythingStored(kv);
+      assert.equal(Boolean(decided.object.subscription), later !== 'a switch-off');
+
+      t.mock.timers.tick(5_000);
+      assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes), 'the opt-in did not give up at its deadline');
+      assert.deepEqual(await everythingStored(kv), decided);
+
+      // KV answers at last: the abandoned puts land after the reader's later decision.
+      await release();
+
+      assert.deepEqual(await objectOf(kv), decided.object);
+      const reader = await loadSubscriptionWithState(env, SYNC_READER_KEY);
+      assert.deepEqual(
+        [reader?.enabled, reader?.maxPapers, reader?.unsubscribeToken],
+        later === 'a switch-off' ? [undefined, undefined, undefined] : [true, 10, decided.object.subscription!.unsubscribeToken],
+      );
+      // The schedule key holds the index and nothing else, and the late link cancels nothing.
+      assert.equal(kv.values.get(SYNC_READER_KEY), JSON.stringify({ uid: SYNC_READER.uid }));
+      assert.equal(kv.values.get(`notification:unsubscribe:${welcomeToken}`), SYNC_READER.uid);
+      await postLink(env, welcomeToken);
+      assert.deepEqual(await objectOf(kv), decided.object);
+      assert.equal(kv.values.has(`notification:unsubscribe:${welcomeToken}`), false, 'the spent link kept its index');
+      assert.equal((await optIn(env)).outcome, later === 'a switch-off' ? 'declined' : 'on');
+    });
+  }
+
+  test(`${phase}: a welcome yes whose index writes never answer is completed and announced once by its retry, and the abandoned writes change nothing when they land`, async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const kv = createMemoryKv();
+    const env = twoPhases(kv)[phase];
+    const { held, release, restore } = heldIndexPuts(kv);
+
+    const yes = optIn(env).then(answer => answer, (error: unknown) => error);
+    await held;
+    t.mock.timers.tick(4_999);
+    assert.equal(await Promise.race([yes, Promise.resolve('waiting')]), 'waiting');
+    t.mock.timers.tick(1);
+    assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes));
+    assert.equal(kv.values.size, 0);
+    restore();
+
+    assert.deepEqual([(await optIn(env)).outcome, (await optIn(env)).outcome], ['created', 'on']);
+    const started = await everythingStored(kv);
+    assert.equal(kv.values.size, 2);
+    await release();
+    assert.deepEqual(await everythingStored(kv), started);
+  });
+
+  // The same through a sync of a reader the welcome yes subscribed: their record
+  // is in the object, so a sync that finds the schedule index missing writes it.
+  test(`${phase}: a switch-off and a new subscribe are handled while a sync's index write hangs, and the write that lands later changes nothing`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
     assert.equal((await optIn(env)).outcome, 'created');
     await kv.delete(SYNC_READER_KEY);
-    const { held, release, landed } = heldSchedulePut(kv);
+    const { held, release } = heldIndexPuts(kv);
 
-    // A sync that finds the schedule index missing asks the object to write it again.
     const sync = saveSubscription(preferencesPut({ sync: true, enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG', 'stat.ML'] }), env, SYNC_READER);
     await held;
-    let ranBeforeTheIndex = false;
-    const later = (async () => {
-      await switchDigestOff(env);
-      ranBeforeTheIndex = !landed();
-      await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
-    })();
-    await new Promise(resolve => setTimeout(resolve, 25));
-    release();
+    await switchDigestOff(env);
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+    const saved = await everythingStored(kv);
+    await release();
     await sync;
-    await later;
 
-    assert.equal(ranBeforeTheIndex, false, 'the switch-off was handled while the index write was still on its way');
+    assert.deepEqual(await everythingStored(kv), saved);
     const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
     assert.deepEqual([kept?.enabled, kept?.maxPapers, kept?.follows], [true, 10, [digestFollow()]]);
     assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${kept!.unsubscribeToken}`]);
@@ -7948,13 +8018,21 @@ for (const phase of DEPLOY_PHASES) {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
     assert.equal((await optIn(env)).outcome, 'created');
-    // The link index was lost, so the repeated yes asks the object to write it again.
+    // The link index was lost, so the repeated yes writes both indexes again.
     await kv.delete(linkIndexes(kv)[0]);
-    const stores = interceptedStores(env.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'index', async () => { await switchDigestOff(env); });
+    const put = kv.put.bind(kv);
+    let raced = false;
+    kv.put = async (key: string, value: string) => {
+      if (!raced) {
+        raced = true;
+        await switchDigestOff(env);
+      }
+      await put(key, value);
+    };
 
-    const answer = await optIn({ ...env, EMAIL_SUBSCRIPTIONS: stores });
+    const answer = await optIn(env);
 
-    assert.ok(stores.intercepted);
+    assert.ok(raced);
     assert.deepEqual([answer.outcome, answer.preferences.enabled], ['declined', false]);
     assert.deepEqual([...kv.values.keys()], []);
     assert.equal((await objectOf(kv)).subscription, null);
@@ -8133,16 +8211,22 @@ for (const phase of DEPLOY_PHASES) {
     const env = twoPhases(kv)[phase];
     let saved: Subscription | null | undefined;
     let keyAfterSave: string | undefined;
-    const stores = interceptedStores(env.EMAIL_SUBSCRIPTIONS, payload => payload.action === 'index', async () => {
-      await switchDigestOff(env);
-      await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
-      saved = await loadSubscriptionWithState(env, SYNC_READER_KEY);
-      keyAfterSave = kv.values.get(SYNC_READER_KEY);
-    });
+    const put = kv.put.bind(kv);
+    let raced = false;
+    kv.put = async (key: string, value: string) => {
+      if (!raced) {
+        raced = true;
+        await switchDigestOff(env);
+        await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+        saved = await loadSubscriptionWithState(env, SYNC_READER_KEY);
+        keyAfterSave = kv.values.get(SYNC_READER_KEY);
+      }
+      await put(key, value);
+    };
 
-    const answer = await optIn({ ...env, EMAIL_SUBSCRIPTIONS: stores });
+    const answer = await optIn(env);
 
-    assert.ok(stores.intercepted);
+    assert.ok(raced);
     assert.deepEqual([answer.outcome, answer.preferences.maxPapers], ['on', 10]);
     const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
     assert.deepEqual([kept?.unsubscribeToken, kept?.maxPapers, kept?.welcomeConsent], [saved!.unsubscribeToken, 10, undefined]);
@@ -8208,84 +8292,67 @@ test('without the quota ledger a welcome opt-in is a retryable 503 and writes no
   assert.equal(kv.values.size, 0);
 });
 
-test('the object writes its indexes only for the subscription it holds at the version asked for, under keys it builds from its own record', async () => {
-  const kv = createMemoryKv();
-  const stores = subscriptionsFor(kv)!;
-  const ask = (payload: unknown) => stores.get(stores.idFromName('index-reader')).fetch('https://papertok.internal/email-subscription', { method: 'POST', body: JSON.stringify(payload) });
-  const indexes = ['schedule', 'link'];
-  await ask({ action: 'write', expectedVersion: 0, subscription: { uid: 'index-reader', unsubscribeToken: 'tok-1', enabled: true } });
-
-  assert.equal((await ask({ action: 'index', expectedVersion: 0, token: 'tok-1', indexes })).status, 409, 'a version the object has left');
-  assert.equal((await ask({ action: 'index', expectedVersion: 1, token: 'tok-other', indexes })).status, 409, 'another subscription\'s token');
-  // The caller names no key or value: anything but the two indexes is refused.
-  assert.equal((await ask({ action: 'index', expectedVersion: 1, token: 'tok-1', indexes: ['notification:schedule:cursor'] })).status, 400);
-  assert.equal((await ask({ action: 'index', expectedVersion: 1, token: 'tok-1', entries: [['notification:subscription:someone-else', '{}']] })).status, 400);
-  assert.equal(kv.values.size, 0);
-
-  assert.equal((await ask({ action: 'index', expectedVersion: 1, token: 'tok-1', indexes: ['link'] })).status, 200);
-  assert.deepEqual([...kv.values], [['notification:unsubscribe:tok-1', 'index-reader']]);
-  assert.equal((await ask({ action: 'index', expectedVersion: 1, token: 'tok-1', indexes })).status, 200);
-  assert.deepEqual([...kv.values].sort(), [['notification:subscription:index-reader', '{"uid":"index-reader"}'], ['notification:unsubscribe:tok-1', 'index-reader']]);
-
-  await ask({ action: 'write', expectedVersion: 1, subscription: null });
-  kv.values.clear();
-  assert.equal((await ask({ action: 'index', expectedVersion: 2, token: 'tok-1', indexes })).status, 409, 'a deleted subscription');
-  assert.equal(kv.values.size, 0);
-});
-
-// Round 2 of the outside verifier (ENG-215): the put of the schedule key is
-// held and the put of the link index beside it fails. The object answered the
-// failure at once and let the next request in, so the held put landed after a
-// later Off and On and replaced that subscription's record in phase 1.
+// Round 2 of the outside verifier (ENG-215): one index put fails while the
+// other is still on its way. The failure is answered at once, and the put that
+// lands after a later Off and On replaces nothing.
 for (const phase of DEPLOY_PHASES) {
-  test(`${phase}: when one index write of a welcome yes fails while the other is held, the object takes nothing else until both have settled, and a later subscription survives`, async () => {
+  test(`${phase}: when one index write of a welcome yes fails while the other hangs, the failure is answered at once, and a later subscription survives the write that lands late`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    const { held, release, landed, restore } = heldSchedulePut(kv, { failLink: true });
+    const { held, release, restore } = heldIndexPuts(kv, { failLink: true });
 
-    let answered = false;
-    const yes = optIn(env).then((answer) => { answered = true; return answer; }, (error: unknown) => { answered = true; return error; });
+    await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
     await held;
-    const later = offThenOn(env, landed);
-    await new Promise(resolve => setTimeout(resolve, 25));
-    assert.equal(answered, false, 'the failure was answered while the other put was still on its way');
-    release();
-    const refused = await yes;
-    await later.done;
+    await switchDigestOff(env);
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+    const saved = await everythingStored(kv);
+    await release();
     restore();
 
-    assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(refused), 'the failed index write was not answered as a retryable failure');
-    assert.equal(later.ranBefore(), false, 'the switch-off was handled while an index write was still on its way');
+    assert.deepEqual(await everythingStored(kv), saved);
     const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
     assert.deepEqual([kept?.enabled, kept?.maxPapers, kept?.follows], [true, 10, [digestFollow()]]);
     assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${kept!.unsubscribeToken}`]);
   });
 
-  test(`${phase}: when one index write of a sync fails while the other is held, the object takes nothing else until both have settled, and a later subscription survives`, async () => {
+  test(`${phase}: when one index write of a sync fails while the other hangs, a later subscription survives the write that lands late`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
     assert.equal((await optIn(env)).outcome, 'created');
-    // Both indexes are gone, so the sync asks the object to write both again.
+    // Both indexes are gone, so the sync writes both again.
     await Promise.all([...kv.values.keys()].map(key => kv.delete(key)));
-    const { held, release, landed, restore } = heldSchedulePut(kv, { failLink: true });
+    const { held, release, restore } = heldIndexPuts(kv, { failLink: true });
 
-    let answered = false;
-    const sync = saveSubscription(preferencesPut({ sync: true, enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG', 'stat.ML'] }), env, SYNC_READER)
-      .then((answer) => { answered = true; return answer; }, (error: unknown) => { answered = true; return error; });
+    await assert.rejects(saveSubscription(preferencesPut({ sync: true, enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG', 'stat.ML'] }), env, SYNC_READER), /KV put failed/);
     await held;
-    const later = offThenOn(env, landed);
-    await new Promise(resolve => setTimeout(resolve, 25));
-    assert.equal(answered, false, 'the failure was answered while the other put was still on its way');
-    release();
-    const refused = await sync;
-    await later.done;
+    await switchDigestOff(env);
+    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+    const saved = await everythingStored(kv);
+    await release();
     restore();
 
-    assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(refused));
-    assert.equal(later.ranBefore(), false, 'the switch-off was handled while an index write was still on its way');
+    assert.deepEqual(await everythingStored(kv), saved);
     const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
     assert.deepEqual([kept?.enabled, kept?.maxPapers, kept?.follows], [true, 10, [digestFollow()]]);
     assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${kept!.unsubscribeToken}`]);
+  });
+
+  test(`${phase}: a Settings save that keeps the subscription of a welcome yes not yet announced leaves its start for the retry to announce`, async () => {
+    const kv = createMemoryKv();
+    const env = twoPhases(kv)[phase];
+    const restore = failingSchedulePut(kv);
+    await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
+    restore();
+    const { unsubscribeToken } = (await objectOf(kv)).subscription!;
+
+    // The reader changes a setting before the app retries the yes.
+    await saveSubscription(preferencesPut({ enabled: true, maxPapers: 10, follows: [], previewItems: [], interests: ['cs.LG', 'stat.ML'] }), env, SYNC_READER);
+    const saved = (await objectOf(kv)) as { version: number; subscription: Subscription | null; unannounced?: string };
+    assert.deepEqual([saved.version, saved.subscription?.maxPapers, saved.unannounced], [2, 10, unsubscribeToken]);
+
+    const answers = [await optIn(env), await optIn(env)];
+    assert.deepEqual(answers.map(answer => [answer.outcome, answer.preferences.maxPapers]), [['created', 10], ['on', 10]]);
+    assert.equal(((await objectOf(kv)) as { unannounced?: string }).unannounced, undefined);
   });
 
   // `created` is the reader's object's to say, once, whatever KV shows.
@@ -8329,17 +8396,9 @@ for (const phase of DEPLOY_PHASES) {
   test(`${phase}: two retries of a welcome yes whose index failed announce it once between them`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    const put = kv.put.bind(kv);
-    let failed = false;
-    kv.put = async (key: string, value: string) => {
-      if (!failed && key === SYNC_READER_KEY) {
-        failed = true;
-        throw new Error('KV put failed');
-      }
-      await put(key, value);
-    };
+    const restore = failingSchedulePut(kv);
     await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
-    kv.put = put;
+    restore();
 
     // Both read the creation as unannounced before either has completed it.
     const answers = await Promise.all([optIn(env), optIn(env)]);
@@ -8351,17 +8410,9 @@ for (const phase of DEPLOY_PHASES) {
   test(`${phase}: a sync that restores the indexes of an unannounced welcome yes does not announce it, and the retry of the yes still does`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    const put = kv.put.bind(kv);
-    let failed = false;
-    kv.put = async (key: string, value: string) => {
-      if (!failed && key === SYNC_READER_KEY) {
-        failed = true;
-        throw new Error('KV put failed');
-      }
-      await put(key, value);
-    };
+    const restore = failingSchedulePut(kv);
     await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
-    kv.put = put;
+    restore();
 
     // The reader's app opens and syncs before the yes is retried.
     await saveSubscription(preferencesPut({ sync: true, enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG', 'stat.ML'] }), env, SYNC_READER);
@@ -8373,17 +8424,9 @@ for (const phase of DEPLOY_PHASES) {
   test(`${phase}: a welcome yes cancelled before it was announced is never announced`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    const put = kv.put.bind(kv);
-    let failed = false;
-    kv.put = async (key: string, value: string) => {
-      if (!failed && key === SYNC_READER_KEY) {
-        failed = true;
-        throw new Error('KV put failed');
-      }
-      await put(key, value);
-    };
+    const restore = failingSchedulePut(kv);
     await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
-    kv.put = put;
+    restore();
 
     await switchDigestOff(env);
     assert.equal((await optIn(env)).outcome, 'declined');
@@ -8394,27 +8437,87 @@ for (const phase of DEPLOY_PHASES) {
   });
 }
 
-test('the object announces the start of a welcome subscription once, to the call that writes both of its indexes', async () => {
+test('the object announces the start of a welcome subscription once, and only while it holds that subscription', async () => {
   const kv = createMemoryKv();
   const stores = subscriptionsFor(kv)!;
-  const ask = async (payload: unknown) => {
-    const response = await stores.get(stores.idFromName('welcome-reader')).fetch('https://papertok.internal/email-subscription', { method: 'POST', body: JSON.stringify(payload) });
-    return { status: response.status, ...(await response.json<{ unannounced?: string; announced?: boolean }>()) };
+  const asker = (uid: string) => async (payload: unknown) => {
+    const response = await stores.get(stores.idFromName(uid)).fetch('https://papertok.internal/email-subscription', { method: 'POST', body: JSON.stringify(payload) });
+    return { status: response.status, ...(await response.json<{ unannounced?: string; announced?: boolean; resident?: boolean }>()) };
   };
-  const index = (extra: object) => ask({ action: 'index', expectedVersion: 1, token: 'tok-1', indexes: ['schedule', 'link'], ...extra });
-  await ask({ action: 'write', expectedVersion: 0, subscription: { uid: 'welcome-reader', unsubscribeToken: 'tok-1', enabled: true }, welcome: true });
+  const ask = asker('welcome-reader');
+  const record = (unsubscribeToken: string, maxPapers = 5) => ({ uid: 'welcome-reader', unsubscribeToken, enabled: true, maxPapers });
+  assert.equal((await ask({ action: 'read' })).resident, undefined);
+  await ask({ action: 'write', expectedVersion: 0, subscription: record('tok-1'), welcome: true });
+  assert.deepEqual([(await ask({ action: 'read' })).unannounced, (await ask({ action: 'read' })).resident], ['tok-1', true]);
+
+  assert.equal((await ask({ action: 'announce' })).status, 400);
+  assert.equal((await ask({ action: 'announce', token: 'tok-other' })).announced, false);
+  // A save that keeps the subscription keeps its start unannounced.
+  await ask({ action: 'write', expectedVersion: 1, subscription: record('tok-1', 10) });
   assert.equal((await ask({ action: 'read' })).unannounced, 'tok-1');
 
-  // A save's index write, or one that does not write both, announces nothing.
-  assert.equal((await index({})).announced, false);
-  assert.equal((await index({ announce: true, indexes: ['link'] })).announced, false);
-  assert.equal((await ask({ action: 'read' })).unannounced, 'tok-1');
-
-  assert.deepEqual([(await index({ announce: true })).announced, (await index({ announce: true })).announced], [true, false]);
+  assert.deepEqual([(await ask({ action: 'announce', token: 'tok-1' })).announced, (await ask({ action: 'announce', token: 'tok-1' })).announced], [true, false]);
   assert.equal((await ask({ action: 'read' })).unannounced, undefined);
 
-  // A subscription Settings started is never one to announce.
-  await ask({ action: 'write', expectedVersion: 1, subscription: null });
-  await ask({ action: 'write', expectedVersion: 2, subscription: { uid: 'welcome-reader', unsubscribeToken: 'tok-2', enabled: true } });
-  assert.equal((await ask({ action: 'index', expectedVersion: 3, token: 'tok-2', indexes: ['schedule', 'link'], announce: true })).announced, false);
+  // A subscription Settings started is never one to announce, and the reader stays in the object.
+  await ask({ action: 'write', expectedVersion: 2, subscription: null });
+  assert.equal((await ask({ action: 'read' })).resident, true);
+  await ask({ action: 'write', expectedVersion: 3, subscription: record('tok-2') });
+  assert.equal((await ask({ action: 'announce', token: 'tok-2' })).announced, false);
+
+  // A record another write put there (Settings in phase 2) does not make its reader a resident.
+  const moved = asker('moved-reader');
+  await moved({ action: 'write', expectedVersion: 0, subscription: { uid: 'moved-reader', unsubscribeToken: 'tok-5', enabled: true } });
+  assert.deepEqual([(await moved({ action: 'read' })).resident, (await moved({ action: 'read' })).unannounced], [undefined, undefined]);
+
+  // A start cancelled before it was announced has nothing to announce, however it was cancelled.
+  for (const [uid, cancel] of [['deleted-reader', { action: 'write', expectedVersion: 1, subscription: null }], ['closed-reader', { action: 'mark', migratable: false }]] as const) {
+    const other = asker(uid);
+    await other({ action: 'write', expectedVersion: 0, subscription: { uid, unsubscribeToken: 'tok-9', enabled: true }, welcome: true });
+    await other(cancel);
+    assert.deepEqual([(await other({ action: 'announce', token: 'tok-9' })).announced, (await other({ action: 'read' })).unannounced], [false, undefined]);
+  }
 });
+
+test('phase 1: a reader the welcome yes subscribed stays in their object when they subscribe again, so their schedule key never holds a record', async () => {
+  const kv = createMemoryKv();
+  const { phase1: env } = twoPhases(kv);
+  assert.equal((await optIn(env)).outcome, 'created');
+  await switchDigestOff(env);
+
+  await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+
+  const { subscription } = await objectOf(kv);
+  assert.deepEqual([subscription?.maxPapers, subscription?.email], [10, SYNC_READER.email]);
+  assert.equal(kv.values.get(SYNC_READER_KEY), JSON.stringify({ uid: SYNC_READER.uid }));
+  assert.deepEqual(keysWithAddress(kv), []);
+  assert.equal((await loadSubscriptionWithState(env, SYNC_READER_KEY))?.maxPapers, 10);
+  await unsubscribeWithLink(env, subscription!.unsubscribeToken);
+  assert.equal(await loadSubscriptionWithState(env, SYNC_READER_KEY), null);
+
+  // A reader whose record never lived in their object is still written to KV in phase 1.
+  const other = { uid: 'kv-reader', email: 'kv-reader@example.com', displayName: '' };
+  await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), env, other);
+  assert.equal((await kv.get<Subscription>('notification:subscription:kv-reader', 'json'))?.email, other.email);
+});
+
+for (const phase of DEPLOY_PHASES) {
+  test(`${phase}: the schedule removes the index a late write left for a reader whose object holds no subscription`, async () => {
+    const kv = createMemoryKv();
+    const phaseEnv = twoPhases(kv)[phase];
+    assert.equal((await optIn(phaseEnv)).outcome, 'created');
+    await switchDigestOff(phaseEnv);
+    assert.equal(kv.values.has(SYNC_READER_KEY), false);
+    // The abandoned put of the welcome yes lands after the Off.
+    await kv.put(SYNC_READER_KEY, JSON.stringify({ uid: SYNC_READER.uid }));
+    const env = { ...emailEnvironment(kv), EMAIL_SUBSCRIPTIONS: phaseEnv.EMAIL_SUBSCRIPTIONS, EMAIL_SUBSCRIPTION_SOURCE: phaseEnv.EMAIL_SUBSCRIPTION_SOURCE };
+
+    await withDigestUpstream((url) => { throw new Error(`Unexpected request: ${url}`); }, async () => {
+      const summary = await runEmailNotificationSchedule(env, INTEREST_NOW);
+      assert.deepEqual([summary.scanned, summary.sent, summary.failed], [1, 0, 0]);
+    });
+
+    assert.equal(kv.values.has(SYNC_READER_KEY), false, 'the index of a reader with no subscription stayed on the schedule');
+    assert.equal((await objectOf(kv)).subscription, null);
+  });
+}

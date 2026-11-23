@@ -26,16 +26,14 @@ type SubscriptionTransaction = LedgerTransaction & Pick<DurableObjectTransaction
  * Grants and withdrawals advance `consentRevision` independently of the
  * subscription version, so they invalidate pending consent and visit writes
  * without invalidating a weekly digest draft.
- * `unannounced` is the token of a subscription a welcome yes created whose
- * start no caller has been told yet (see `UNANNOUNCED_KEY`); only a `read`
- * returns it. `announced` is true on the answer of the one `index` call that
- * announces it.
+ * `resident` is true once a welcome yes has put the reader's record in the
+ * object (see `RESIDENT_KEY`). `unannounced` is the token of a subscription a welcome yes
+ * created whose start no caller has been told yet (see `UNANNOUNCED_KEY`).
+ * A `read` returns both. `announced` is true on the answer of the one
+ * `announce` that announces it.
  */
-export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string; cleanup?: CleanupEntry[]; reactivation?: ReactivationConsent; consentRevision?: number; unannounced?: string; announced?: boolean }
-export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; expectedConsentRevision?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown; email?: unknown; indexes?: unknown; welcome?: unknown; announce?: unknown }
-/** What the object needs besides its storage: the KV namespace its `index` action writes, and the gate that holds other requests meanwhile. */
-type SubscriptionState = { storage: LedgerStorage<SubscriptionTransaction>; blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T> };
-type IndexStore = { put(key: string, value: string): Promise<unknown> };
+export interface SubscriptionSlot<Record = unknown> { version: number; subscription: Record | null; migratable: boolean; cancelledAt?: number; token?: string; cleanup?: CleanupEntry[]; reactivation?: ReactivationConsent; consentRevision?: number; resident?: boolean; unannounced?: string; announced?: boolean }
+export interface SubscriptionStorePayload { action?: unknown; expectedVersion?: unknown; expectedConsentRevision?: unknown; subscription?: unknown; migratable?: unknown; token?: unknown; ack?: unknown; email?: unknown; welcome?: unknown }
 /**
  * One record the object deleted, by the version that step reached (`at`): its
  * delivery state id and unsubscribe token, which name the KV keys it leaves
@@ -59,25 +57,30 @@ const TOKEN_KEY = 'token';
 const CLEANUP_KEY = 'cleanup';
 const REACTIVATION_KEY = 'reactivation';
 /**
+ * True once a welcome yes (`write` with `welcome: true`) has put a record in
+ * this object, and never removed. In phase 1 such a reader stays here: when
+ * they subscribe again after a cancellation, the record is written to the
+ * object, never to KV. Their schedule key in KV therefore only ever holds the
+ * index `{"uid"}`, so an index write that lands late, behind a later
+ * unsubscribe and re-subscribe, puts the same value again and cannot replace
+ * a record (ENG-215). The mark holds no address or preference and stays with
+ * the version, also after a cancellation or an account deletion. A reader
+ * phase 2 moved is not marked: after a rollback, phase 1 writes them to KV
+ * again when they subscribe after a cancellation, as before.
+ */
+const RESIDENT_KEY = 'resident';
+/**
  * The unsubscribe token of a subscription that a welcome yes created
- * (`write` with `welcome: true`) and whose start has not been announced: no
- * `index` call with `announce: true` has written both of its indexes yet. It is
+ * (`write` with `welcome: true`) and whose start has not been announced. It is
  * written in the same transaction as that subscription, and it goes in the
- * transaction that announces it or with the subscription. So the answer
- * `created` of `POST /notifications/opt-in` is decided here, once, whatever a
- * KV read says: a creation whose index write failed is announced by the retry
- * that completes it, and nothing announces it twice.
+ * transaction that announces it (`announce`) or with the subscription. So the
+ * answer `created` of `POST /notifications/opt-in` is decided here, once,
+ * whatever a KV read says: a creation whose index write failed is announced
+ * by the retry that completes it, and nothing announces it twice.
  */
 const UNANNOUNCED_KEY = 'unannounced';
 const CONSENT_REVISION_KEY = 'consentRevision';
 const LAST_VISIT_KEY = 'lastVisitAt';
-/**
- * The two KV keys that point at a reader's subscription: the one the schedule
- * lists, which in phase 1 holds the record itself for a reader whose record is
- * in KV, and the unsubscribe link's.
- */
-export const SUBSCRIPTION_PREFIX = 'notification:subscription:';
-export const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
 const HOUR_MS = 60 * 60 * 1000;
 const VISIT_RETENTION_MS = 30 * 24 * HOUR_MS;
 
@@ -107,7 +110,7 @@ async function liveVisit(transaction: SubscriptionTransaction) {
 }
 
 // A string field of a subscription record the object holds.
-function recordField(record: unknown, field: 'unsubscribeToken' | 'stateId' | 'email' | 'uid') {
+function recordField(record: unknown, field: 'unsubscribeToken' | 'stateId' | 'email') {
   if (typeof record !== 'object' || record === null) return undefined;
   const value: unknown = Reflect.get(record, field);
   return typeof value === 'string' && value ? value : undefined;
@@ -144,65 +147,17 @@ function json(payload: unknown, status = 200) {
  * Once a write raised the version past the reopening mark, the token that
  * counts is the one of the subscription the object holds, if any.
  *
- * `index` writes the KV indexes of the subscription the object holds
- * (`schedule`: the key the schedule lists; `link`: the unsubscribe link's),
- * from inside the object, and only while it still holds that subscription at
- * `expectedVersion`. The object builds both from its own record, so the
- * caller names no key. No other request reaches the object until those puts
- * have landed (`blockConcurrencyWhile`), so every later cancellation or save,
- * and the KV write each makes after its own step here, comes after them. A
- * Worker that wrote those keys itself after its `write` could land them after
- * a later unsubscribe and re-subscribe, over the record a phase 1 save keeps
- * at the schedule key (ENG-215).
+ * The object makes no request of its own and never waits on one: every action
+ * is one storage transaction. A step that held other requests while it
+ * awaited KV (`blockConcurrencyWhile`) would be reset by the platform after 30
+ * seconds, taking a queued unsubscribe with it, so the Worker writes the KV
+ * indexes and the object only answers what it holds.
  */
 export class EmailSubscriptionStore {
-  declare state: SubscriptionState;
-  declare indexes: IndexStore | undefined;
+  declare state: { storage: LedgerStorage<SubscriptionTransaction> };
 
-  constructor(state: SubscriptionState, env?: { NOTIFICATION_STORE?: IndexStore }) {
+  constructor(state: { storage: LedgerStorage<SubscriptionTransaction> }) {
     this.state = state;
-    this.indexes = env?.NOTIFICATION_STORE;
-  }
-
-  /** The `index` action: see the class comment. */
-  private async writeIndexes(payload: SubscriptionStorePayload) {
-    const wanted = payload.indexes;
-    const indexes = this.indexes;
-    if (
-      !Number.isInteger(payload.expectedVersion) || typeof payload.token !== 'string' || !payload.token
-      || !Array.isArray(wanted) || !wanted.length || !wanted.every(name => name === 'schedule' || name === 'link')
-    ) {
-      return json({ code: 'INVALID_REQUEST' }, 400);
-    }
-    if (!indexes) return json({ code: 'NOT_CONFIGURED' }, 503);
-    return this.state.blockConcurrencyWhile(async () => {
-      const slot = await this.state.storage.transaction(async transaction => ({
-        version: Number(await transaction.get<number>(VERSION_KEY)) || 0,
-        subscription: (await transaction.get(SUBSCRIPTION_KEY)) ?? null,
-        migratable: (await transaction.get(CLOSED_KEY)) !== true,
-        cancelledAt: Number(await transaction.get<number>(CANCELLED_AT_KEY)) || 0,
-      }));
-      const uid = recordField(slot.subscription, 'uid');
-      if (payload.expectedVersion !== slot.version || !uid || recordField(slot.subscription, 'unsubscribeToken') !== payload.token) return json(slot, 409);
-      // Both puts settle before the gate opens, also when one of them fails:
-      // a put still on its way after a failed sibling would land behind a
-      // later unsubscribe and re-subscribe, which is what the gate prevents.
-      const puts = await Promise.allSettled([
-        wanted.includes('schedule') ? indexes.put(`${SUBSCRIPTION_PREFIX}${uid}`, JSON.stringify({ uid })) : null,
-        wanted.includes('link') ? indexes.put(`${UNSUBSCRIBE_PREFIX}${payload.token}`, uid) : null,
-      ]);
-      // The caller answers a retryable failure; a later request puts them again.
-      if (puts.some(put => put.status === 'rejected')) return json({ code: 'INDEX_WRITE_FAILED' }, 503);
-      // Announcing needs both indexes written by this call, so that "the email
-      // started" is said only once the schedule and the link can reach it.
-      const announced = payload.announce === true && wanted.includes('schedule') && wanted.includes('link')
-        && await this.state.storage.transaction(async (transaction) => {
-          if ((await transaction.get<string>(UNANNOUNCED_KEY)) !== payload.token) return false;
-          await transaction.delete(UNANNOUNCED_KEY);
-          return true;
-        });
-      return json({ ...slot, announced });
-    });
   }
 
   async alarm() {
@@ -212,16 +167,17 @@ export class EmailSubscriptionStore {
   async fetch(request: Request) {
     if (request.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
     const payload = await request.json<SubscriptionStorePayload>().catch(() => null);
-    if (payload?.action === 'index') return this.writeIndexes(payload);
     const write = payload?.action === 'write';
     const mark = payload?.action === 'mark';
     const optIn = payload?.action === 'reactivation-on';
     const optOut = payload?.action === 'reactivation-off';
     const visit = payload?.action === 'visit';
+    const announce = payload?.action === 'announce';
     const record = payload?.subscription;
     if (
       !payload
-      || (!write && !mark && !optIn && !optOut && !visit && payload.action !== 'read')
+      || (!write && !mark && !optIn && !optOut && !visit && !announce && payload.action !== 'read')
+      || (announce && (typeof payload.token !== 'string' || !payload.token))
       || ((optIn || visit) && (!Number.isInteger(payload.expectedVersion)
         || !Number.isInteger(payload.expectedConsentRevision)
         || typeof payload.email !== 'string' || !payload.email
@@ -250,6 +206,13 @@ export class EmailSubscriptionStore {
       const reactivation = await transaction.get<ReactivationConsent>(REACTIVATION_KEY);
       const consentRevision = (await transaction.get<number>(CONSENT_REVISION_KEY)) ?? 0;
       const unannounced = await transaction.get<string>(UNANNOUNCED_KEY);
+      if (announce) {
+        // Only for the subscription the object still holds: one cancelled or
+        // replaced since has nothing to announce.
+        const announced = unannounced === payload.token && recordField(subscription, 'unsubscribeToken') === payload.token;
+        if (announced) await transaction.delete(UNANNOUNCED_KEY);
+        return { status: 200, slot: { version, subscription, migratable, cancelledAt, announced } };
+      }
       if (optIn || optOut || visit) {
         const slot = { version, subscription: null, migratable };
         if (optOut) {
@@ -300,7 +263,8 @@ export class EmailSubscriptionStore {
           if (cleanup.length) await transaction.put(CLEANUP_KEY, cleanup);
           else await transaction.delete(CLEANUP_KEY);
         }
-        return { status: 200, slot: { version, subscription, migratable, cancelledAt, token, reactivation, consentRevision, ...(unannounced ? { unannounced } : {}), ...(cleanup.length ? { cleanup } : {}) } };
+        const resident = (await transaction.get(RESIDENT_KEY)) === true;
+        return { status: 200, slot: { version, subscription, migratable, cancelledAt, token, reactivation, consentRevision, ...(resident ? { resident } : {}), ...(unannounced ? { unannounced } : {}), ...(cleanup.length ? { cleanup } : {}) } };
       }
       if (mark) {
         // The subscription a closing mark would cancel: the one the last
@@ -351,8 +315,12 @@ export class EmailSubscriptionStore {
       // would only outlive an unsubscribe or an account deletion.
       await transaction.delete(TOKEN_KEY);
       const written = recordField(record, 'unsubscribeToken');
-      if (payload.welcome === true && written) await transaction.put(UNANNOUNCED_KEY, written);
-      else if (unannounced && unannounced !== written) await transaction.delete(UNANNOUNCED_KEY);
+      if (payload.welcome === true && written) {
+        await transaction.put(UNANNOUNCED_KEY, written);
+        await transaction.put(RESIDENT_KEY, true);
+      } else if (unannounced && unannounced !== written) {
+        await transaction.delete(UNANNOUNCED_KEY);
+      }
       if (record !== null) {
         await transaction.put(SUBSCRIPTION_KEY, record);
         return { status: 200, slot: { version: next, subscription: record, migratable: false, cancelledAt, reactivation: keepsConsent ? reactivation : undefined, consentRevision: reactivation && !keepsConsent ? consentRevision + 1 : consentRevision } };

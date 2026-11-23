@@ -218,7 +218,7 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     'notification:unsubscribe:tok-1': UID,
     [`notification:delivery-state:${UID}`]: JSON.stringify({ lastSentAt: 1 }),
   });
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(store) };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
 
   try {
     const setReminder = await handleEmailReactivationRequest(new Request('https://worker.test/notifications/reactivation', {
@@ -433,7 +433,7 @@ test('a digest turned on while the Auth delete is in flight is purged too', asyn
   const store = kvStore();
   const env = {
     ...SERVICE,
-    NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(store),
+    NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(),
     RESEND_API_KEY: 're_test',
     RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
@@ -474,7 +474,7 @@ test('an unsubscribe index a save in flight writes back after the purge is remov
     [`notification:subscription:${UID}`]: JSON.stringify({ uid: UID, unsubscribeToken: 'tok-1', enabled: true }),
     'notification:unsubscribe:tok-1': UID,
   });
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(store) };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
 
   const result = await runAccountDeletionSlice(memoryAdmin(), UID, env, {
     idToken: TOKEN,
@@ -529,7 +529,7 @@ test('a purge that fails after the Auth delete still lets the final sweep run, a
     }
     return get(key, type);
   };
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(store) };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
   const errors = captureErrors();
 
   try {
@@ -574,7 +574,7 @@ test('a purge that KV refuses just after the Auth delete is retried once the sec
     }
     return remove(key);
   };
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(store) };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
   const errors = captureErrors();
   const restore = stubIdentityLookup();
 
@@ -619,7 +619,7 @@ test('an unsubscribe index KV refuses after the Auth delete is still removed by 
     }
     return remove(key);
   };
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(store) };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
   const errors = captureErrors();
   const restore = stubIdentityLookup();
 
@@ -657,7 +657,7 @@ test('a final sweep that fails after the Auth delete still purges the subscripti
     return runQuery(options);
   });
   const store = kvStore();
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(store) };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
   const errors = captureErrors();
 
   try {
@@ -742,7 +742,7 @@ test('a sign-in that is not recent is refused before anything is deleted', async
     'notification:unsubscribe:tok-1': UID,
   });
   const authCalls: string[] = [];
-  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores(store) };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: inMemorySubscriptionStores() };
 
   try {
     for (const [why, token] of Object.entries({
@@ -816,8 +816,7 @@ const WELCOME_YES_REQUEST = () => new Request('https://worker.test/notifications
 
 function welcomeEnvironment() {
   const store = kvStore();
-  // The reader's object writes the opt-in's indexes to the same KV.
-  const subscriptions = inMemorySubscriptionStores(store);
+  const subscriptions = inMemorySubscriptionStores();
   const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace, EMAIL_SUBSCRIPTIONS: subscriptions, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
   const object = async () => (await subscriptions.get(subscriptions.idFromName(UID)).fetch('https://papertok.internal/email-subscription', {
     method: 'POST',
