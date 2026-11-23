@@ -2,11 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { entityLane, followLane, servedFollows } from './follow-lanes.ts';
 
-test('a followed area has no search lane for its stored name', () => {
+test('a followed area uses its taxonomy label even with a translated name or stored query', () => {
   const area = { type: 'topic', canonicalId: 'physics', displayName: 'Física' };
   const keyword = { type: 'topic', canonicalId: 'query:abc', displayName: 'Surface code', metadata: { query: 'surface code', categoryIds: ['quant-ph'] } };
-  assert.equal(followLane(area), '');
-  assert.deepEqual(servedFollows([area, keyword]), [{ follow: keyword, lane: 'query:surface code' }]);
+  assert.equal(followLane(area), 'query:physics');
+  assert.equal(followLane({ ...area, metadata: { query: 'Física' } }), 'query:physics');
+  assert.deepEqual(servedFollows([area, keyword]), [
+    { follow: area, lane: 'query:physics' },
+    { follow: keyword, lane: 'query:surface code' },
+  ]);
 });
 
 test('a follow is served from the lane its entity names, and a followed category from the category itself', () => {

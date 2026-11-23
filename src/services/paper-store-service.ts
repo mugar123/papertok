@@ -187,8 +187,8 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
     ...(exact ? { exact } : {}),
     // Only the follows the Worker reads travel (`servedFollows`): the first
     // MAX_FOLLOWED_JOURNALS journals and FEED_MAX_FOLLOWS other follows with a
-    // lane. A topic follow that is one of the app's categories has none; it is asked for as that category. When no follow
-    // has a lane, the first still travels, so the request stays the follows'
+    // lane. The app requests a followed leaf by category alone. When no
+    // follow has a lane, the first still travels, so the request stays the follows'
     // page: the Worker reads no area lane for it, and answers it with no
     // papers when it has no categories either (`handleCorpusFeed`).
     // A string is cut as the Worker reads it (`cutFollowText`), so the lane it

@@ -3,12 +3,11 @@ import type { followedCorpusRequest } from './feed-corpus-requests.ts';
 import { fetchCorpusPage } from '../services/paper-store-service.ts';
 
 /**
- * Papers of the reader's follows from the paper corpus: the Worker serves an
- * author, institution, OpenAlex topic, project or followed query from the
- * lane it harvests for it, and says which follows each paper matched.
- * A followed leaf or area matches a paper when `_fetchedFor` includes one
- * of the leaves requested for that follow. With `seen`, a Worker that skips
- * seen papers sends the follows' next unseen ones.
+ * The Worker serves followed entities from the lanes it harvests for them
+ * and reports which follows matched each paper. A followed area's search
+ * lane uses its English taxonomy label. The app also matches `_fetchedFor`
+ * against a followed leaf's ID or up to 12 leaves per followed area.
+ * With `seen`, a Worker that skips seen papers sends the follows' next unseen ones.
  */
 export async function fetchFollowedEntityCandidates({ request, categoryFollows }: ReturnType<typeof followedCorpusRequest>, options?: Parameters<typeof fetchCorpusPage>[1]) {
   const { papers } = await fetchCorpusPage(request, options);
