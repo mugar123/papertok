@@ -1331,7 +1331,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         examples: profileSignals.current.positiveExamples,
         exposure: profileSignals.current.categoryExposure,
         affinities: profileSignals.current.categoryAffinities,
-      }, interestSettings);
+      }, interestSettings, interactionProfile.current);
       let newPapers: Paper[] = [];
       let rankingSeen = false;
       if (activeMode === 'top' || activeMode === null) {

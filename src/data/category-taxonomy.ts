@@ -364,10 +364,8 @@ const ARXIV_DISPLAY_LABELS: Record<string, string> = {
   'stat.OT': 'Other Statistics',
 };
 
-/**
- * Get the human-readable label for a given arXiv category.
- */
-export function getCategoryLabel(arxivCategory: string) {
+/** The category's own label, when the taxonomy names it. */
+export function getKnownCategoryLabel(arxivCategory: string) {
   if (Object.hasOwn(ARXIV_DISPLAY_LABELS, arxivCategory)) return ARXIV_DISPLAY_LABELS[arxivCategory];
   // Own keys only: a stored category named `constructor` or `toString` is
   // unknown, not a member inherited from Object.prototype.
@@ -381,11 +379,13 @@ export function getCategoryLabel(arxivCategory: string) {
       return category.label || category.label;
     }
   }
-  const fallbackArea = CATEGORIES[getArxivArchiveArea(arxivCategory) as string];
-  if (fallbackArea) {
-    return fallbackArea.label || fallbackArea.label;
-  }
-  return arxivCategory;
+  return undefined;
+}
+
+export function getCategoryLabel(arxivCategory: string) {
+  return getKnownCategoryLabel(arxivCategory)
+    ?? CATEGORIES[getArxivArchiveArea(arxivCategory) as string]?.label
+    ?? arxivCategory;
 }
 
 /**

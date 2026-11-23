@@ -122,7 +122,8 @@ flowchart TD
   vectors and ranking storage. [paper-feed.ts](worker/paper-feed.ts) serves its
   authenticated read API. [paper-harvest.ts](worker/paper-harvest.ts) runs the
   harvest Workflow started by cron or new followed lanes; scientific retrieval,
-  enrichment and Workers AI embeddings populate the corpus. See
+  enrichment and Workers AI embeddings populate the corpus. The nightly run also
+  stores author impact and positive paper-quality signals in D1. See
   [the paper-store contract](worker/README.md#paper-store) for budgets and retention.
 - [proxy/README.md](proxy/README.md) explains the optional Scopus egress and
   its separate credentials. Other external integrations also have direct
@@ -191,6 +192,7 @@ flowchart TD
     Sources["Scientific sources · normalize and merge Paper records"]
     Vectors["Workers AI · paper embeddings"]
     Corpus[("D1 · papers, lanes and vectors")]
+    Quality[("D1 · author h-index cache and paper quality")]
     API["/store/papers · recency and vector similarity"]
     Feed["FeedContext · client scoring and unread queue"]
     Custom["Custom feed page · one feed's exact lanes"]
@@ -202,6 +204,7 @@ flowchart TD
     Trigger --> Harvest --> Sources --> Corpus
     Harvest --> Vectors --> Corpus
     Corpus --> Vectors
+    Harvest -->|Nightly, after enrichment| Quality
     Corpus --> API --> Feed --> UI
     API --> Custom --> UI
     API --> Recent --> UI
@@ -214,7 +217,7 @@ flowchart TD
     classDef logic fill:#f0fdfa,stroke:#0f766e,color:#134e4a
     classDef view fill:#eff6ff,stroke:#2563eb,color:#172554
     class Trigger,Sources,Vectors source
-    class Corpus,Signals data
+    class Corpus,Quality,Signals data
     class Harvest,API,Feed,Custom,Recent,Search logic
     class UI view
 ```
@@ -224,7 +227,9 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 [paper-enrichment.ts](worker/paper-enrichment.ts) populate it using the shared
 [Paper](src/models/paper.ts) contract and
 [PaperBuilder](src/services/paper-builder.ts). Harvesting and embedding have
-separate bounded steps; the diagram summarizes the resulting data flow.
+separate bounded steps. After enrichment, [paper-quality.ts](worker/paper-quality.ts)
+computes the stored signals from the paper bylines, OpenAlex author metrics
+and Hugging Face votes.
 
 Paper cards display native category names, including arXiv categories outside the
 selectable feed leaves. When no native category is available, the masthead names

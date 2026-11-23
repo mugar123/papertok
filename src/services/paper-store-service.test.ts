@@ -316,7 +316,7 @@ test('a grouped page with long example ids fits the request body limit and keeps
 });
 
 test('trimming long examples takes those of no group first, then the oldest of the fullest group', async () => {
-  const { asked, options } = harness(answered([]));
+  const { asked, options } = harness(answered([STORED]));
   const ids = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => `10.1234/${prefix}${index}${'a'.repeat(283)}`);
   const leaves = Array.from({ length: 149 }, (_, index) => `leaf.${index}`);
   const groups = [
@@ -324,7 +324,11 @@ test('trimming long examples takes those of no group first, then the oldest of t
     { categories: ['econ.EM'], exampleCategories: ['econ.EM', 'econ.GN'], positiveIds: ids('cold', 2), weight: 2 },
   ];
   const unassigned = ids('none', 2);
-  await fetchCorpusPage({ groups, positiveIds: unassigned, page: 0, pageSize: 15, seen: new Set(['2610.00001']), notable: 5 }, options);
+  const exampleKindsById = new Map<string, Array<'liked' | 'saved'>>();
+  for (const group of groups) for (const id of group.positiveIds) exampleKindsById.set(id, ['liked']);
+  for (const id of unassigned) exampleKindsById.set(id, ['saved']);
+  const { papers } = await fetchCorpusPage({ groups, positiveIds: unassigned, exampleKindsById, page: 0, pageSize: 15, seen: new Set(['2610.00001']), notable: 5 }, options);
+  assert.deepEqual(papers[0]._semanticExampleKinds, ['liked']);
   const body = asked[0].body as { positiveIds: string[]; groups: Array<{ positiveIds: string[] }> };
   assert.ok(new TextEncoder().encode(JSON.stringify(body)).byteLength <= 16_384);
   assert.deepEqual(body.positiveIds.filter(id => unassigned.includes(id)), [], 'the examples of no group go first');
