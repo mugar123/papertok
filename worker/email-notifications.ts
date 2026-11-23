@@ -734,6 +734,16 @@ function wait(delayMs: number) {
   return new Promise<void>(resolve => setTimeout(resolve, delayMs));
 }
 
+/** A KV write or delete, tried once more after the second in which KV refuses another write to its key. */
+async function kvWrite(step: () => Promise<unknown>) {
+  try {
+    await step();
+  } catch {
+    await wait(KV_SAME_KEY_WRITE_INTERVAL_MS);
+    await step();
+  }
+}
+
 // `beforeAttempt` runs ahead of every attempt, the retry too, so a source that
 // is metered counts each call it will receive. What it throws ends the call
 // without another attempt.
@@ -1500,7 +1510,7 @@ async function deleteScheduleIndex(env: WorkerEnv, uid: string, deleted?: Set<st
  * A retry passes the same `keys`: once the subscription is gone, only the
  * earlier attempt still knows its unsubscribe index and delivery state.
  */
-export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>(), { accountDeleted = false } = {}) {
+export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>()) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
   // A KV record that a closed object hides (one a Worker from before the
@@ -1518,11 +1528,6 @@ export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys =
   // or a later step fails finds no record to learn its token and delivery state from.
   const { held } = await closeBeforeCancelling(env, uid, undefined, undefined, keys);
   const { previous: changed, slot } = await changeSubscription(env, uid, current => (current ? null : undefined));
-  // Once the sign-in account is gone (`accountDeleted`, the purge after the
-  // Auth delete), the object keeps its marks for 30 more days, then deletes
-  // them (forget in email-subscription-store.ts). The purge before the Auth
-  // delete does not: that delete can still be refused, and the account kept.
-  if (accountDeleted) await callSubscriptionStore(env, uid, { action: 'forget' });
   if (!subscriptionInKv(env)) await collectHiddenRecord();
   const previous = changed || held;
   keys.add(key).add(deliveryStateKey(uid, previous || { uid }));
@@ -1537,6 +1542,18 @@ export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys =
   const after = await acknowledgeCleanup(env, uid, await deleteJournaledKeys(env, uid, slot, keys));
   if (!after?.cleanup?.length) await env.NOTIFICATION_STORE.delete(key);
   return { purged: true };
+}
+
+/**
+ * Account deletion, once the sign-in account is gone: the reader's object keeps
+ * its marks for 30 more days, then deletes them (forget in
+ * email-subscription-store.ts). Never before the Auth delete, which can still be
+ * refused and the account kept. It reads no KV, so a purge that KV fails does
+ * not leave the object without its end date.
+ */
+export async function endEmailSubscription(env: WorkerEnv, uid: string) {
+  if (!env.EMAIL_SUBSCRIPTIONS) return;
+  await callSubscriptionStore(env, uid, { action: 'forget' });
 }
 
 /** The follows and previews of a request body, as a subscription stores them. */
@@ -1617,8 +1634,8 @@ async function readOptInState(env: WorkerEnv, uid: string) {
  * The gate is the version of the reader's object. It is 0 only while nothing
  * has reached that object: since phase 1 every save that subscribes, every
  * unsubscribe (Settings, the email's link, the app's shut-off) and every
- * account purge raises it in the object's own transaction, and the object is
- * never deleted. So the subscription is written only at `expectedVersion: 0`,
+ * account purge raises it in the object's own transaction, and the object
+ * keeps it while the account exists. So the subscription is written only at `expectedVersion: 0`,
  * in both deploy phases: a decision recorded first makes the write fail and
  * the answer `declined`, one that lands afterwards cancels the subscription as
  * usual. An unsubscribe that a Worker from before phase 1 handled left no mark
@@ -1718,14 +1735,12 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
     // just now. The answer is what the object holds either way. What is left
     // goes by itself: the link index expires (LINK_INDEX_TTL_SECONDS), and the
     // schedule's next window removes an index that points at no subscription.
-    const tidy = async (step: () => Promise<unknown>) => {
-      try {
-        await step();
-      } catch {
-        await wait(KV_SAME_KEY_WRITE_INTERVAL_MS);
-        await step().catch((error: unknown) => console.warn('Could not remove an index the opt-in wrote', (error as Error)?.message || error));
-      }
-    };
+    // The log names no error text: a KV error can quote the key, and with it
+    // the unsubscribe token or the uid.
+    const tidy = (step: () => Promise<unknown>) => kvWrite(step).catch((error: unknown) => {
+      const reason = error as { code?: unknown; name?: unknown } | null;
+      console.warn('Could not remove an index the opt-in wrote', String(reason?.code || reason?.name || 'unknown'));
+    });
     await tidy(() => store.delete(linkKey));
     // The schedule key goes only when the reader has no subscription: one
     // they made since owns it. deleteScheduleIndex leaves a record alone and
@@ -3241,9 +3256,12 @@ function draftMatchesSubscription(draft: { provider?: string; subscriptionVersio
  * also renews its expiry, so an email never goes out with a link that answers
  * 400. A save whose link write failed, while an index of the reader's
  * schedule key outlived the cancellation before it, left exactly that.
- * `link-unavailable` when KV cannot write it: the send waits for a later
- * window. An index written here for a subscription the object no longer
- * holds is deleted again.
+ * A test email follows its own save, which wrote that key a moment before, so
+ * the write is tried once more after a second (kvWrite), still before the
+ * object is read. `link-unavailable` when KV cannot write it: the send waits for
+ * a later window. An index written here for a subscription the object no
+ * longer holds is deleted again, also when it was there and a cancellation
+ * removed it meanwhile.
  */
 async function checkDraft(env: WorkerEnv, key: string, draft: Parameters<typeof draftMatchesSubscription>[0] & { orcidConnectedAt?: string; unsubscribeUrl?: string | null }) {
   const uid = subscriptionUid(key);
@@ -3256,7 +3274,7 @@ async function checkDraft(env: WorkerEnv, key: string, draft: Parameters<typeof 
   if (linkKey) {
     try {
       written = (await store.get(linkKey)) !== uid;
-      await store.put(linkKey, uid, { expirationTtl: LINK_INDEX_TTL_SECONDS });
+      await kvWrite(() => store.put(linkKey, uid, { expirationTtl: LINK_INDEX_TTL_SECONDS }));
     } catch {
       return 'link-unavailable';
     }
@@ -3267,8 +3285,11 @@ async function checkDraft(env: WorkerEnv, key: string, draft: Parameters<typeof 
     : kv && slot.migratable && kv.revision === slot.version ? kv : null;
   const subscription = current && withVersion(current);
   if (subscription?.enabled && draftMatchesSubscription(draft, subscription)) return 'current';
+  // The object, read after the write, names another subscription, or is closed and holds none.
+  const named = slot.subscription?.unsubscribeToken ?? slot.token;
+  const spent = named ? named !== token : !slot.migratable && !slot.subscription;
   // Best effort: an index left here expires with the rest (LINK_INDEX_TTL_SECONDS).
-  if (linkKey && written && subscription?.unsubscribeToken !== token && slot.token !== token) await store.delete(linkKey).catch(() => undefined);
+  if (linkKey && (written || spent) && subscription?.unsubscribeToken !== token && slot.token !== token) await kvWrite(() => store.delete(linkKey)).catch(() => undefined);
   return 'subscription-changed';
 }
 

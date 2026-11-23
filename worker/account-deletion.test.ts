@@ -888,3 +888,29 @@ test('a deletion whose sign-in account delete is refused leaves the subscription
   assert.equal(env.EMAIL_SUBSCRIPTIONS.visitState(UID).alarm, null);
   assert.ok((await object()).version > 0, 'the object lost its marks');
 });
+
+// The outside verifier's P3 (ENG-215, round 5): a KV read stood before the end date.
+test('a deletion whose KV fails after the sign-in account is gone still gives the subscription object its end date', async () => {
+  const { store, env, object } = welcomeEnvironment();
+  const phase1 = { ...env, EMAIL_SUBSCRIPTION_SOURCE: 'kv' };
+  assert.equal((await emailNotificationInternals.startDigestOptIn(WELCOME_YES_REQUEST(), phase1, { uid: UID, email: 'alice@example.com', displayName: '' })).outcome, 'created');
+  let failedReads = 0;
+
+  const result = await runAccountDeletionSlice(memoryAdmin(), UID, phase1, {
+    idToken: TOKEN,
+    fetchImpl: async () => {
+      // The Auth delete: KV answers nothing from here on.
+      store.get = async () => {
+        failedReads += 1;
+        throw new Error('KV get failed');
+      };
+      return new Response('{}', { status: 200 });
+    },
+  });
+
+  assert.equal(result.complete, true);
+  assert.equal(failedReads, 2, 'the purge and its retry did not both fail');
+  const { alarm } = env.EMAIL_SUBSCRIPTIONS.visitState(UID);
+  assert.ok(alarm !== null && alarm > Date.now() + 29 * 24 * 60 * 60 * 1000, String(alarm));
+  assert.equal((await object()).subscription, null);
+});

@@ -257,8 +257,9 @@ export class EmailSubscriptionStore {
       const consentRevision = (await transaction.get<number>(CONSENT_REVISION_KEY)) ?? 0;
       const unannounced = await transaction.get<string>(UNANNOUNCED_KEY);
       if (forget) {
-        // Account deletion, once it has closed the object. A retry keeps the
-        // first date, so repeating the purge never postpones the end.
+        // Account deletion, once the sign-in account is gone. A repeated call
+        // keeps the first date, and the purge that runs beside it closes the
+        // object again without moving that date (clearReactivation).
         const forgetAt = (await transaction.get<number>(FORGET_AT_KEY)) ?? Date.now() + FORGET_AFTER_MS;
         await transaction.put(FORGET_AT_KEY, forgetAt);
         await transaction.setAlarm(forgetAt);
