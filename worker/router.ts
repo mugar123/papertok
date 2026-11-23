@@ -450,8 +450,9 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
-      return new Response(await handleReadAloud(request, env), {
-        headers: { ...corsHeaders(origin, env), 'content-type': 'audio/mpeg', 'cache-control': 'private, no-store' },
+      const { body, type } = await handleReadAloud(request, env);
+      return new Response(body, {
+        headers: { ...corsHeaders(origin, env), 'content-type': type, 'cache-control': 'private, no-store' },
       });
     } catch (error) {
       captureWorkerException(error);

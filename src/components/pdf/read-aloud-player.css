@@ -5,13 +5,36 @@
   outline-offset: var(--space-2);
 }
 
+/* The word the voice is on: a box under the text that slides from word to word
+   along a line and jumps to the next line (`data-jump`) instead of sweeping back. */
+.ft-scroll:has(> .rd-word) { position: relative; isolation: isolate; }
+.rd-word {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  margin: -1px 0 0 -3px;
+  padding: 1px 3px;
+  box-sizing: content-box;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-secondary) 20%, transparent);
+  pointer-events: none;
+  transition: transform 180ms var(--ease-out), width 180ms var(--ease-out);
+}
+.rd-word[data-jump] { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rd-word { transition: none; }
+}
+
 /* The read-aloud player, in the paper viewer's dock in place of its tools. */
 .rd-listen {
   display: grid;
   /* A long chapter title is cut short instead of widening the player. */
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
-  width: min(460px, calc(100vw - 2 * var(--space-4) - 10px));
+  /* As wide as the paper's text (measured while the player is open, pdf-viewer.tsx),
+     less the bar's own padding and border around the player. */
+  width: calc(var(--ft-text-w, 460px) - 2 * var(--space-1) - 2px);
   max-width: calc(100vw - 2 * var(--space-4) - 10px);
   padding: var(--space-1) var(--space-2) 0;
   animation: rd-listen-in 200ms var(--ease-out) 60ms backwards;

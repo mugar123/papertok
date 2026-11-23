@@ -128,14 +128,15 @@ export function audioKey(provider: Provider['name'], text: string) {
  * allowance per reader; a reader past their ElevenLabs allowance gets no
  * Cartesia. `storedOnly` asks for stored audio and nothing else, so a reader
  * whose allowance or the providers' characters ran out still gets every
- * paragraph already made.
+ * paragraph already made. `timings` asks for the stored ElevenLabs timings of
+ * the paragraph instead, as JSON, and never synthesizes.
  */
 export async function handleReadAloud(request: Request, env: WorkerEnv) {
   if (Number(request.headers.get('content-length') || 0) > MAX_REQUEST_BYTES) {
     throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   }
   const account = await verifyFirebaseAccount(request, env);
-  const payload = await readBoundedJson<{ text?: unknown; storedOnly?: unknown }>(request, MAX_REQUEST_BYTES, {
+  const payload = await readBoundedJson<{ text?: unknown; storedOnly?: unknown; timings?: unknown }>(request, MAX_REQUEST_BYTES, {
     tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
     invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
   });
@@ -146,8 +147,15 @@ export async function handleReadAloud(request: Request, env: WorkerEnv) {
   if (!store) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
 
   const keys = await Promise.all(PROVIDERS.map(provider => audioKey(provider.name, text)));
+  // Only ElevenLabs stores timings, and its audio is the one served whenever it exists;
+  // timings whose audio failed to store would belong to another voice's clip.
+  if (payload?.timings === true) {
+    const [audio, timings] = await Promise.all([store.head(`${keys[0]}.mp3`), store.get(`${keys[0]}.json`)]);
+    if (!audio || !timings) throw new AIExplanationError('AI_TIMINGS_NOT_STORED', 404);
+    return { body: await timings.arrayBuffer(), type: 'application/json' };
+  }
   const stored = (await Promise.all(keys.map(key => store.get(`${key}.mp3`)))).find(Boolean);
-  if (stored) return stored.arrayBuffer();
+  if (stored) return { body: await stored.arrayBuffer(), type: 'audio/mpeg' };
   if (payload?.storedOnly === true) throw new AIExplanationError('AI_AUDIO_NOT_STORED', 404);
 
   const day = new Date().toISOString().slice(0, 10);
@@ -187,7 +195,7 @@ export async function handleReadAloud(request: Request, env: WorkerEnv) {
       ]).catch((error: unknown) => {
         console.error('Read-aloud audio not stored', error);
       });
-      return audio;
+      return { body: audio, type: 'audio/mpeg' };
     } catch (error) {
       await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, ledgerRequest).catch(() => undefined);
       refusal = error instanceof AIExplanationError

@@ -67,10 +67,14 @@ export function overlapping<T extends { quote: string; occurrence?: number }>(te
 export const blockText = (block: Element) => joinText(textNodes(block)).text;
 
 export function passageRange(block: Element, quote: string, occurrence = 0) {
+  const offsets = quoteOffsets(blockText(block), quote, occurrence);
+  return offsets && offsetsRange(block, offsets);
+}
+
+/** The DOM range of [start, end) in `blockText(block)`. */
+export function offsetsRange(block: Element, offsets: [number, number]) {
   const nodes = textNodes(block);
-  const { text, starts } = joinText(nodes);
-  const offsets = quoteOffsets(text, quote, occurrence);
-  if (!offsets) return null;
+  const { starts } = joinText(nodes);
   const range = document.createRange();
   for (const [index, node] of nodes.entries()) {
     const seen = starts[index];

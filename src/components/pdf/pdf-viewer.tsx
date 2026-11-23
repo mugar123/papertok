@@ -33,6 +33,7 @@ import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-vie
 import type { ReadAloudChapter, SpokenPassage } from './read-aloud.ts';
 import { fullTextListen, readAloudStart } from './read-aloud.ts';
 import { useReadAloud } from './use-read-aloud.ts';
+import { useSpokenWord } from './use-spoken-word.ts';
 import { useZoteroAction } from './use-zotero-action.ts';
 import { ZoteroMark } from './zotero-mark.tsx';
 import ReadAloudPlayer from './read-aloud-player.tsx';
@@ -255,12 +256,30 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
     onError: () => toast.error('Reading aloud stopped. This browser could not play the voice.'),
   });
   const { paragraph: speaking, reset: resetReadAloud } = readAloud;
+  useSpokenWord({ root: textScroll, queue: spoken?.queue ?? NO_PASSAGES, speaking, timings: readAloud.timings, live: readAloud.live, playing: readAloud.playing, position: readAloud.position });
   const canListen = Boolean(uid) && showsText && Boolean(spoken?.queue.length) && (!fullText?.lang || /^en\b/i.test(fullText.lang));
   useEffect(() => () => resetReadAloud(), [spoken, showsText, resetReadAloud]);
   const readAloudButton = useRef<HTMLButtonElement | null>(null);
   // The closed dock's outline while the player is open, which it grows out of.
   const [playerFrom, setPlayerFrom] = useState<{ width: number; height: number } | null>(null);
   const playerOpen = playerFrom !== null && canListen;
+  // The player is as wide as the text column, which narrows when the notes open (read-aloud-player.css).
+  useEffect(() => {
+    const article = textScroll?.querySelector<HTMLElement>('.ft-article');
+    const stage = textScroll?.closest<HTMLElement>('.pdf-stage');
+    if (!playerOpen || !article || !stage) return undefined;
+    const measure = () => {
+      const style = getComputedStyle(article);
+      stage.style.setProperty('--ft-text-w', `${article.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)}px`);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(article);
+    return () => {
+      observer.disconnect();
+      stage.style.removeProperty('--ft-text-w');
+    };
+  }, [playerOpen, textScroll]);
   const followsVoice = useRef(true);
   useEffect(() => {
     if (!textScroll) return undefined;
@@ -383,6 +402,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                 event.preventDefault();
                 notes.pickBlock(block);
               } : undefined}>
+                <span className="rd-word" aria-hidden="true" hidden />
                 <FullTextArticle doc={fullText} paper={paper} showAbstract={abstractShown} passageHint={notesOn ? 'viewer-passage-hint' : undefined} />
               </div>
             )}

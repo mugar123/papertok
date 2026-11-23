@@ -35,6 +35,7 @@ function memoryBucket(initial: Record<string, Uint8Array> = {}) {
       const bytes = objects.get(key);
       return bytes ? { arrayBuffer: async () => bytes.buffer } : null;
     },
+    head: async (key: string) => (objects.has(key) ? { key } : null),
     put: async (key: string, value: ArrayBuffer | string) => {
       objects.set(key, typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value));
     },
@@ -283,4 +284,34 @@ test('a busy ElevenLabs is reported as busy when Cartesia\'s day is spent, so th
   assert.equal(response.status, 429);
   assert.equal((await response.json<{ code: string }>()).code, 'AI_BUSY');
   assert.deepEqual(calls.map(call => call.provider), ['elevenlabs']);
+});
+
+test('asked for timings, a paragraph returns ElevenLabs\' stored timings with its audio, never for Cartesia\'s, without calling a provider', async () => {
+  const ledger = recordingLedger();
+  const elevenLabsKey = await audioKey('elevenlabs', TEXT);
+  const bucket = memoryBucket({
+    [`${elevenLabsKey}.mp3`]: MP3,
+    [`${elevenLabsKey}.json`]: new TextEncoder().encode(JSON.stringify(ALIGNMENT)),
+  });
+  const { response, calls } = await withProviders(
+    {},
+    () => signedIn(() => reportApi.fetch(paragraphRequest({ text: TEXT, timings: true }), env(ledger, bucket))),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/json');
+  assert.deepEqual(await response.json(), ALIGNMENT);
+
+  // Cartesia's audio, with ElevenLabs timings whose own audio never got stored.
+  const cartesiaOnly = memoryBucket({
+    [`${await audioKey('cartesia', TEXT)}.mp3`]: CARTESIA_MP3,
+    [`${elevenLabsKey}.json`]: new TextEncoder().encode(JSON.stringify(ALIGNMENT)),
+  });
+  const missing = await withProviders(
+    {},
+    () => signedIn(() => reportApi.fetch(paragraphRequest({ text: TEXT, timings: true }), env(ledger, cartesiaOnly))),
+  );
+  assert.equal(missing.response.status, 404);
+  assert.equal((await missing.response.json<{ code?: string }>()).code, 'AI_TIMINGS_NOT_STORED');
+  assert.equal(calls.length + missing.calls.length, 0);
+  assert.equal(ledger.calls.length, 0);
 });

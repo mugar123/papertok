@@ -6,7 +6,11 @@ export interface SpokenPassage {
   /** The `data-passage` of the block it reads, so the reader can mark and scroll to it. */
   passage: string;
   utterances: string[];
+  /** The heading read before the passage, as its first utterance; it is not in the passage's block. */
+  heading?: string;
 }
+
+export const passageText = (item: SpokenPassage) => item.utterances.join(' ');
 
 /** Below the Worker's 3,000 characters a request, so a long paragraph is sent in parts. */
 const MAX_PART_CHARS = 2_500;
@@ -27,9 +31,13 @@ export function spokenInlines(content: Inline[]): string {
 
 const tidy = (text: string) => text.replace(/\s+/g, ' ').replace(/\s+([,.;:)])/g, '$1').replace(/\(\s*\)|\[\s*\]/g, '').trim();
 
+const sentenceSegmenter = typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter('en', { granularity: 'sentence' })
+  : null;
+
 function sentences(text: string) {
-  if (typeof Intl.Segmenter !== 'function') return text ? [text] : [];
-  return [...new Intl.Segmenter('en', { granularity: 'sentence' }).segment(text)]
+  if (!sentenceSegmenter) return text ? [text] : [];
+  return [...sentenceSegmenter.segment(text)]
     .map(part => part.segment.trim())
     .filter(Boolean);
 }
@@ -86,8 +94,11 @@ export function fullTextListen(doc: FullText, { withAbstract }: { withAbstract: 
       : block.items.map(item => spokenInlines(item)).join('. '));
     if (!text) return;
     const lines = [...(heading ? [heading] : []), ...sentences(text)];
+    const said = heading;
     heading = null;
-    for (const group of parts(lines)) queue.push({ passage: `${prefix}${index}`, utterances: group });
+    for (const [part, group] of parts(lines).entries()) {
+      queue.push({ passage: `${prefix}${index}`, utterances: group, ...(part === 0 && said ? { heading: said } : {}) });
+    }
   });
 
   if (withAbstract && doc.abstract.length > 0) {
@@ -145,4 +156,66 @@ export function chapterAt(timeline: ReadAloudTimeline, seconds: number) {
 export function readAloudStart(paused: number | null, visible: { first: number; last: number } | null) {
   if (!visible) return paused ?? 0;
   return paused !== null && paused >= visible.first && paused <= visible.last ? paused : visible.first;
+}
+
+/** ElevenLabs' timings of a passage, as the Worker stores them: one start per character. */
+export interface CharacterTimings { characters: string[]; character_start_times_seconds: number[] }
+
+/** The words of a text, as [start, end) character offsets. */
+export function wordSpans(text: string): Array<[number, number]> {
+  return [...text.matchAll(/\S+/g)].map(match => [match.index, match.index + match[0].length]);
+}
+
+/** When each word starts, from the character timings, or null when they are not this text's. */
+export function wordStarts(text: string, timings: CharacterTimings | null) {
+  if (!timings || timings.characters.join('') !== text) return null;
+  return wordSpans(text).map(([start]) => timings.character_start_times_seconds[start]);
+}
+
+/**
+ * The word being spoken: by its timing when the clip's seconds and the timings
+ * are known, otherwise by how far through the text the voice is.
+ */
+export function spokenWordAt(text: string, starts: number[] | null, { seconds, fraction }: { seconds: number | null; fraction: number }) {
+  if (starts && seconds !== null) {
+    let index = 0;
+    while (index + 1 < starts.length && starts[index + 1] <= seconds) index += 1;
+    return index;
+  }
+  const spans = wordSpans(text);
+  const at = fraction * text.length;
+  const found = spans.findIndex(([, end]) => at < end);
+  return found === -1 ? spans.length - 1 : found;
+}
+
+const letters = (word: string) => word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+
+/**
+ * For each spoken word, the word on the page it reads. The voice leaves out
+ * citation marks and reads formulas as words, so a word is matched by itself
+ * within the next few words on the page; failing that, where it and the next
+ * spoken word stand together further on, which catches up past a long run of
+ * citations. A word with no letters, or one the page does not have, stays on
+ * the last match.
+ */
+export function matchSpokenWords(spoken: readonly string[], page: readonly string[], lookahead = 8) {
+  const said = spoken.map(letters);
+  const shown = page.map(letters);
+  let cursor = 0;
+  const take = (index: number) => {
+    cursor = index + 1;
+    return index;
+  };
+  return said.map((word, index) => {
+    if (word) {
+      for (let at = cursor; at < Math.min(shown.length, cursor + lookahead); at += 1) {
+        if (shown[at] === word) return take(at);
+      }
+      const next = said[index + 1];
+      for (let at = cursor; at < shown.length; at += 1) {
+        if (shown[at] === word && (!next || shown[at + 1] === next)) return take(at);
+      }
+    }
+    return Math.max(0, cursor - 1);
+  });
 }

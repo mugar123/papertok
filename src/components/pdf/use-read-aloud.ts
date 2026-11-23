@@ -1,14 +1,13 @@
-import type { ReadAloudChapter, SpokenPassage } from './read-aloud.ts';
+import type { CharacterTimings, ReadAloudChapter, SpokenPassage } from './read-aloud.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { locateInListen, readAloudTimeline } from './read-aloud.ts';
-import { ReadAloudError, fetchParagraphAudio } from '../../services/read-aloud-service.ts';
+import { locateInListen, passageText, readAloudTimeline } from './read-aloud.ts';
+import { ReadAloudError, fetchParagraphAudio, fetchParagraphTimings } from '../../services/read-aloud-service.ts';
 
 const hasBrowserVoice = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 /** Passages one listener asks for at once, well inside the plan's concurrent generations shared by every listener. */
 const WORKERS = 3;
 const BUSY_RETRIES = 3;
 
-const passageText = (item: SpokenPassage) => item.utterances.join(' ');
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** How long a clip plays, read from its own metadata. */
@@ -40,6 +39,13 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   const [playing, setPlaying] = useState(false);
   // Each passage's audio that has arrived, by its text, with how long it plays.
   const [lengths, setLengths] = useState<Record<string, number>>({});
+  // ElevenLabs' timings of each passage that has them, by its text.
+  const [timings, setTimings] = useState<Record<string, CharacterTimings>>({});
+  // Which voice is reading the passage (none while its clip loads), and how far the browser's voice has got through it.
+  const voice = useRef<'audio' | 'browser' | null>(null);
+  // Passages whose timings were asked for, so each is asked once, as it starts playing.
+  const timed = useRef(new Set<string>());
+  const spokenChars = useRef(0);
   // Every passage has been asked for, so any still missing will not come.
   const [prepareDone, setPrepareDone] = useState(false);
   const run = useRef(0);
@@ -53,7 +59,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   const fetchingAll = useRef<SpokenPassage[] | null>(null);
 
   const timeline = useMemo(() => readAloudTimeline(queue, chapters, item => lengths[passageText(item)]), [chapters, lengths, queue]);
-  const ready = queue.filter(item => lengths[passageText(item)] !== undefined).length;
+  const ready = useMemo(() => queue.reduce((count, item) => count + Number(lengths[passageText(item)] !== undefined), 0), [lengths, queue]);
 
   const pause = useCallback(() => {
     run.current += 1;
@@ -162,6 +168,10 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       }
       const utterance = new SpeechSynthesisUtterance(item.utterances[sentence]);
       utterance.lang = 'en-US';
+      const before = item.utterances.slice(0, sentence).reduce((sum, line) => sum + line.length + 1, 0);
+      voice.current = 'browser';
+      spokenChars.current = before;
+      utterance.onboundary = (event) => { if (current()) spokenChars.current = before + event.charIndex; };
       utterance.onend = () => {
         if (!current()) return;
         setProgress((sentence + 1) / item.utterances.length);
@@ -198,6 +208,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       }
       setParagraph(index);
       setProgress(from);
+      voice.current = null;
       clip(queue[index]).then((url) => {
         if (!current()) return undefined;
         const element = audio.current ?? new Audio();
@@ -212,6 +223,14 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
         element.onerror = () => fallBack(index, element.error);
         if (element.src !== url) element.src = url;
         else if (Number.isFinite(element.duration)) element.currentTime = from * element.duration;
+        voice.current = 'audio';
+        const text = passageText(queue[index]);
+        if (!timed.current.has(text)) {
+          timed.current.add(text);
+          void fetchParagraphTimings(text, { signal: fetches.current?.signal }).then((found) => {
+            if (found) setTimings(known => ({ ...known, [text]: found }));
+          });
+        }
         return element.play();
       }).catch((error: unknown) => fallBack(index, error));
     }
@@ -231,8 +250,24 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     }
   };
 
+  /**
+   * Where the voice is in the current passage now, read from the playing audio or the
+   * browser voice's last word rather than from `position`, which moves a few times a second.
+   */
+  const live = useCallback(() => {
+    const element = audio.current;
+    const item = paragraph === null ? null : queue[paragraph];
+    if (playing && voice.current === 'browser' && item) return { seconds: null, fraction: spokenChars.current / Math.max(1, passageText(item).length) };
+    if (playing && voice.current === 'audio' && element && Number.isFinite(element.duration) && element.duration > 0) {
+      return { seconds: element.currentTime, fraction: element.currentTime / element.duration };
+    }
+    return { seconds: at ? progress * (at.end - at.start) : null, fraction: progress };
+  }, [at, paragraph, playing, progress, queue]);
+
   return {
     timeline,
+    timings,
+    live,
     /** How much of the paper's audio exists yet; `failed` once a passage was refused and the rest will not come. */
     prepared: { ready, total: queue.length, failed: prepareDone && ready < queue.length },
     paragraph,

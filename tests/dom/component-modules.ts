@@ -1,5 +1,6 @@
 import './dom-environment.ts';
 import type { ReactNode } from 'react';
+import type { ReadAloudChapter, ReadAloudTimeline, SpokenPassage } from '../../src/components/pdf/read-aloud.ts';
 import { startAppModules } from './app-modules.ts';
 
 /**
@@ -41,6 +42,25 @@ export async function loadReaderText() {
     { getKatex: () => unknown; loadKatex: () => Promise<unknown> },
   ]>('/src/components/reader/highlighted-scientific-text.tsx', '/src/utils/katex-loader.ts');
   return { HighlightedScientificText: text.default, ...katex, close };
+}
+
+export async function loadReadAloud() {
+  const { modules: [hook, firebase], close } = await loadModules<[
+    { useReadAloud: (queue: SpokenPassage[], chapters: ReadAloudChapter[], callbacks: {
+      onFallback: (error: unknown) => void;
+      onError: () => void;
+    }) => {
+      prepared: { ready: number; total: number; failed: boolean };
+      timeline: ReadAloudTimeline;
+      paragraph: number | null;
+      position: number;
+      play: (start: number) => void;
+      pause: () => void;
+      seek: (seconds: number) => void;
+    } },
+    import('./firebase-stub.ts').FirebaseStub,
+  ]>('/src/components/pdf/use-read-aloud.ts', '/src/services/firebase.ts');
+  return { ...hook, firebase, close };
 }
 
 interface WelcomeAction { label: string; onClick?: () => void }

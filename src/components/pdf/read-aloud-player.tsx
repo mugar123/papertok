@@ -103,7 +103,6 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
       role="group"
       aria-label="Voice"
       onKeyDown={onKeyDown}
-      style={openedFrom ? { width: openedFrom.width } : undefined}
     >
       <div className="rd-listen-top">
         <p className="rd-listen-chapter">

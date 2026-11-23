@@ -36,3 +36,27 @@ export async function fetchParagraphAudio(text: string, { signal, storedOnly = f
   }
   return response.blob();
 }
+
+/**
+ * ElevenLabs' character timings of a paragraph whose audio exists, or null
+ * when there are none (Cartesia's audio, or timings that were not stored).
+ * Only reads what is stored: it never spends credits.
+ */
+export async function fetchParagraphTimings(text: string, { signal }: { signal?: AbortSignal } = {}) {
+  const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
+  if (!apiBase) return null;
+  const response = await authenticatedWorkerFetch(`${apiBase}/tts/paragraph`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text, timings: true }),
+    signal,
+  }, PARAGRAPH_TIMEOUT_MS).catch(() => null);
+  if (!response?.ok || !response.headers.get('content-type')?.startsWith('application/json')) return null;
+  const body = await response.json().catch(() => null) as { characters?: unknown; character_start_times_seconds?: unknown } | null;
+  const { characters, character_start_times_seconds: starts } = body ?? {};
+  return Array.isArray(characters) && Array.isArray(starts) && characters.length === starts.length
+    && characters.every((character: unknown): character is string => typeof character === 'string')
+    && starts.every((start: unknown): start is number => typeof start === 'number' && Number.isFinite(start))
+    ? { characters, character_start_times_seconds: starts }
+    : null;
+}
