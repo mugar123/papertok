@@ -16,7 +16,7 @@ import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cit
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
 import { withCrossrefType } from '../src/services/feed-publication-rules.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
-import { fetchHarvestOpenAlexList, openAlexFilterBatches } from './openalex-api.ts';
+import { OpenAlexUnavailable, fetchHarvestOpenAlexList, openAlexFilterBatches } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
 import { fetchWithDeadline, reserveInternalCall } from './provider-runtime.ts';
 import { database, rewriteWorks } from './paper-store.ts';
@@ -77,10 +77,6 @@ type EnrichEnv = StoreEnv & WorkerEnv;
 interface Row { id: number; paper: string; enrich_misses: number; published: string; enriched_at: string | null }
 
 const chunks = <T>(values: T[], size: number) => Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
-
-// OpenAlex will not answer this run: its day (or the harvest's share of it) is
-// spent, or it is failing. The papers still waiting for it wait for the next run.
-class OpenAlexUnavailable extends Error {}
 
 async function openAlexChunk(env: EnrichEnv, filter: string) {
   const url = new URL('https://papertok.internal/openalex/works');

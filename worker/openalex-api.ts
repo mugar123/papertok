@@ -416,7 +416,7 @@ async function refuseLookup(env: WorkerEnv, now: string, caller: { minute: strin
 async function relayMiss(request: Request, target: URL, cacheKey: Request, env: WorkerEnv, harvest: HarvestAsk | null, asker: Asker): Promise<RelayedAnswer> {
   const key = await sharedKey(cacheKey);
   const shared = await readShared(env, key);
-  if (shared) {
+  if (shared && (shared.status !== 200 || harvest?.canCacheList?.(shared.body) !== false)) {
     const headers = relayHeaders();
     headers.set('cache-control', cacheControl(shared.status));
     await putAtEdge(cacheKey, new Response(shared.body, { status: shared.status, headers }));
@@ -479,7 +479,7 @@ async function relayMiss(request: Request, target: URL, cacheKey: Request, env: 
   // A refusal is relayed with its own status and its own `retry-after`, because
   // flattening it into a 502 would leave the client guessing how long to wait --
   // and since February 2026 that wait can be most of a day.
-  if (!upstream.ok && upstream.status !== 404) {
+  if ((!upstream.ok && upstream.status !== 404) || (upstream.status === 200 && harvest?.canCacheList?.(body) === false)) {
     headers.set('cache-control', 'no-store');
     await observed;
     return { status: upstream.status, body, headers };
@@ -520,7 +520,7 @@ export function handleAgentOpenAlex(request: Request, env: WorkerEnv) {
 
 // What a billed harvest miss spends: the new follows' share for a run a new
 // follow started, otherwise the nightly run's, and the part of it a lane names.
-export type HarvestAsk = Pick<OpenAlexBudget, 'part' | 'newFollow'>;
+export type HarvestAsk = Pick<OpenAlexBudget, 'part' | 'newFollow'> & { canCacheList?: (body: string) => boolean };
 
 /**
  * The relay as the paper harvest asks it in-process: the same validation,
@@ -532,15 +532,22 @@ export function handleHarvestOpenAlex(request: Request, env: WorkerEnv, ask: Har
   return relayOpenAlex(request, env, ask, 'reader');
 }
 
+export class OpenAlexUnavailable extends Error {}
+
+export function shortOpenAlexWait(response: Response) {
+  const wait = Number(response.headers.get('retry-after'));
+  return response.status === 429 && wait > 0 && wait <= 60 ? wait : 0;
+}
+
 // OpenAlex's short rate limit can clear during a harvest step. The ledger's
 // five-minute refusal means the harvest has spent its allowance for the night.
-export async function fetchHarvestOpenAlexList(url: URL, env: WorkerEnv, ask?: HarvestAsk) {
+export async function fetchHarvestOpenAlexList(url: URL, env: WorkerEnv) {
   const request = new Request(url);
-  const response = await handleHarvestOpenAlex(request, env, ask);
-  const wait = Number(response.headers.get('retry-after'));
-  if (response.status === 429 && wait > 0 && wait <= 60) {
+  const response = await handleHarvestOpenAlex(request, env);
+  const wait = shortOpenAlexWait(response);
+  if (wait) {
     await new Promise(resolve => setTimeout(resolve, wait * 1000));
-    return handleHarvestOpenAlex(request, env, ask);
+    return handleHarvestOpenAlex(request, env);
   }
   return response;
 }

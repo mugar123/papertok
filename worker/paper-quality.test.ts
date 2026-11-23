@@ -157,6 +157,21 @@ test('a malformed OpenAlex list leaves the batch retryable and still materialize
   assert.equal(db.prepare('SELECT hf_upvotes FROM work_quality').get()?.hf_upvotes, 10);
 });
 
+test('a provider timeout leaves authors due and an unexpected error propagates', async t => {
+  const { env, db, add } = corpus();
+  let failure: Error = new DOMException('deadline exceeded', 'TimeoutError');
+  const warnings = t.mock.method(console, 'warn', () => {});
+  const batches = openAlex(t, () => { throw failure; });
+  add(1, { authors: [{ id: 'A1' }] });
+  const load = () => loadPaperAuthorImpact(env.PAPER_STORE, env, now, { after: null, pending: [] });
+  assert.equal(await load(), null);
+  assert.match(String(warnings.mock.calls[0].arguments[0]), /TimeoutError/);
+  failure = new TypeError('unexpected provider adapter error');
+  await assert.rejects(load, error => error === failure);
+  assert.equal(batches.length, 2);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact').get()?.n, 0);
+});
+
 for (const [size, answered, stored] of [[19, 0, 19], [20, 0, 0], [20, 1, 20]]) {
   test(`a batch of ${size} requested authors with ${answered} valid records stores ${stored} authors`, async t => {
     const { env, db, add } = corpus();
@@ -173,6 +188,48 @@ for (const [size, answered, stored] of [[19, 0, 19], [20, 0, 0], [20, 1, 20]]) {
   });
 }
 
+test('a rejected discovery batch is logged and can recover the next night within the shared cache TTL', async t => {
+  const { env, db, add } = corpus();
+  const entries = new Map<string, { value: string; metadata: unknown }>();
+  Object.assign(env, { NOTIFICATION_STORE: {
+    getWithMetadata: async (key: string) => entries.get(key) ?? { value: null, metadata: null },
+    put: async (key: string, value: string, options: { metadata: unknown }) => { entries.set(key, { value, metadata: options.metadata }); },
+  } });
+  const warnings = t.mock.method(console, 'warn', () => {});
+  let recovered = false;
+  const batches = openAlex(t, ids => Response.json({ results: recovered ? ids.map(id => ({ id, summary_stats: { h_index: 8 } })) : [] }));
+  for (let id = 101; id <= 120; id++) add(id, { authors: [{ id: 'A' + (221 - id) }] });
+  await run(env);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact').get()?.n, 0);
+  assert.equal(entries.size, 0);
+  const firstNight = warnings.mock.calls.map(call => String(call.arguments[0]));
+  recovered = true;
+  const nextNight = now + day - 60_000;
+  t.mock.timers.setTime(nextNight);
+  await run(env, nextNight);
+  assert.equal(batches.length, 2);
+  assert.equal(entries.size, 1);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact WHERE h_index = 8').get()?.n, 20);
+  assert.equal(firstNight.length, 1);
+  assert.match(firstNight[0], /20 requested authors.*A101/);
+});
+
+test('an unanswered full refresh keeps the old metrics and advances to the next author', async t => {
+  const { env, db, add } = corpus();
+  const warnings = t.mock.method(console, 'warn', () => {});
+  const batches = openAlex(t, ids => Response.json({ results: ids.length === 1 ? [{ id: ids[0], summary_stats: { h_index: 7 } }] : [] }));
+  const seed = db.prepare('INSERT INTO openalex_author_impact (author_id, h_index, fetched_at) VALUES (?, 4, ?)');
+  for (let id = 101; id <= 201; id++) {
+    add(id, { authors: [{ id: 'A' + id }] });
+    seed.run('A' + id, new Date(now - 31 * day).toISOString());
+  }
+  await run(env);
+  assert.deepEqual(batches.map(batch => batch.length), [100, 1]);
+  assert.deepEqual(db.prepare('SELECT h_index, count(*) FROM openalex_author_impact WHERE fetched_at = ? GROUP BY h_index ORDER BY h_index')
+    .all(new Date(now).toISOString()).map(Object.values), [[4, 100], [7, 1]]);
+  assert.deepEqual(warnings.mock.calls.map(call => call.arguments[0]), ['OpenAlex author list gave no valid record for 100 of 100 authors']);
+});
+
 test('only an answered author can replace its cached h-index with an unknown value', async t => {
   const { env, db, add } = corpus();
   openAlex(t, () => Response.json({ results: [
@@ -188,17 +245,6 @@ test('only an answered author can replace its cached h-index with an unknown val
   const rows = db.prepare('SELECT h_index, fetched_at FROM openalex_author_impact ORDER BY author_id').all();
   assert.deepEqual(rows.map(row => row.h_index), [null, 9, 9, null]);
   assert.ok(rows.every(row => row.fetched_at === new Date(now).toISOString()));
-});
-
-test('a short OpenAlex rate limit is waited out once for author lookups', async t => {
-  const { env, db, add } = corpus();
-  let asks = 0;
-  openAlex(t, () => ++asks === 1 ? new Response(null, { status: 429, headers: { 'retry-after': '1' } })
-    : Response.json({ results: [{ id: 'A1', summary_stats: { h_index: 4 } }] }));
-  add(1, { authors: [{ id: 'A1' }] });
-  await run(env);
-  assert.equal(asks, 2);
-  assert.equal(db.prepare('SELECT max_h_index FROM work_quality').get()?.max_h_index, 4);
 });
 
 test('sparse misses across publication pages share a single author request', async t => {

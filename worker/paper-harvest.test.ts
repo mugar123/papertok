@@ -135,14 +135,44 @@ test('the nightly run stores quality after enrichment even when author lookup fa
   assert.equal(db.prepare('SELECT count(*) AS n FROM work_quality').get()?.n, 0);
 
   const nightly = workflowStep({ skipLanes: true, fail: name => name.startsWith('backfill ') || name.startsWith('evict ') });
-  const warnings = t.mock.method(console, 'warn', () => {});
+  const errors = t.mock.method(console, 'error', () => {});
   await runPaperHarvest(env, dailyRun(), nightly.step);
   assert.ok(nightly.steps.indexOf('author impact 0') > nightly.steps.indexOf('enrich 0'));
   assert.ok(nightly.steps.indexOf('paper quality 0') < nightly.steps.indexOf('embed 0'));
   assert.equal(asked.filter(url => url.pathname === '/authors').length, 1);
-  assert.equal(warnings.mock.calls.filter(call => String(call.arguments[0]).includes('HTTP 401')).length, 1);
+  const failures = errors.mock.calls.filter(call => call.arguments[0] === 'Paper harvest phase failed: author impact');
+  assert.equal(failures.length, 1);
+  assert.match(String(failures[0].arguments[1]), /HTTP 401/);
   assert.deepEqual(db.prepare('SELECT max_h_index, hf_upvotes FROM work_quality').all().map(Object.values), [[null, 4]]);
 });
+
+for (const recovers of [false, true]) {
+  test(recovers ? 'three short waits cover author discovery and refresh together' : 'a second 429 on the same author batch ends the phase', async t => {
+    const { env, db } = corpus();
+    const warnings = t.mock.method(console, 'warn', () => {});
+    let asks = 0;
+    providers(t, url => {
+      if (url.pathname !== '/authors') return undefined;
+      asks++;
+      if (!recovers || asks % 2) return new Response(null, { status: 429, headers: { 'retry-after': '1' } });
+      const ids = url.searchParams.get('filter')!.slice('openalex:'.length).split('|');
+      return Response.json({ results: ids.map(id => ({ id, summary_stats: { h_index: 7 } })) });
+    });
+    const today = new Date().toISOString();
+    const work = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+    const cached = db.prepare("INSERT INTO openalex_author_impact (author_id, h_index, fetched_at) VALUES (?, 4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-31 days'))");
+    for (let id = 1; id <= 301; id++) {
+      work.run(id, JSON.stringify({ authors: [{ id: 'A' + id }] }), today, today);
+      if (id > 200) cached.run('A' + id);
+    }
+    const nightly = workflowStep({ skipLanes: true, fail: name => /^(enrich |embed |evict |backfill )/.test(name) });
+    await runPaperHarvest(env, dailyRun(), nightly.step);
+    assert.equal(asks, recovers ? 7 : 2);
+    assert.equal(nightly.sleeps.filter(duration => duration === 1000).length, recovers ? 3 : 1);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM openalex_author_impact WHERE h_index = 7').get()?.n, recovers ? 300 : 0);
+    assert.equal(warnings.mock.calls.filter(call => String(call.arguments[0]).includes('429')).length, 1);
+  });
+}
 
 test('a failed D1 author write reuses the relay answer and the nightly run refreshes stale authors', async t => {
   const { env, db } = corpus();

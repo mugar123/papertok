@@ -1,7 +1,7 @@
 import type { OpenAlexAuthor, OpenAlexPage } from '../src/services/adapters/open-alex-types.ts';
 import type { WorkerEnv } from './env.ts';
 
-import { fetchHarvestOpenAlexList, openAlexFilterBatches } from './openalex-api.ts';
+import { OpenAlexUnavailable, handleHarvestOpenAlex, openAlexFilterBatches, shortOpenAlexWait } from './openalex-api.ts';
 import { CORPUS_DAYS, daysFromNow } from './paper-store.ts';
 
 const AUTHOR_REFRESH_DAYS = 30;
@@ -44,24 +44,32 @@ const harvestLimits: Record<string, string> = {
   global: 'daily feed ceiling reached',
 };
 
-async function fetchImpact(env: WorkerEnv, ids: string[]) {
-  const url = new URL('https://papertok.internal/openalex/authors');
-  url.searchParams.set('filter', 'openalex:' + ids.toSorted().join('|'));
-  url.searchParams.set('select', 'id,summary_stats');
-  url.searchParams.set('per_page', String(AUTHORS_PER_CALL));
-  const response = await fetchHarvestOpenAlexList(url, env, { part: AUTHOR_IMPACT_PART });
-  if (!response.ok) {
-    const scope = response.headers.get('x-papertok-harvest-scope');
-    const spent = harvestLimits[scope ?? ''];
-    throw new Error(`OpenAlex author list returned HTTP ${response.status}${spent ? ' (' + spent + ')' : ''}`);
+export class AuthorRateLimit extends Error {
+  readonly seconds: number;
+  readonly firstAuthor: string;
+
+  constructor(seconds: number, firstAuthor: string) {
+    super('OpenAlex author list returned HTTP 429');
+    this.seconds = seconds;
+    this.firstAuthor = firstAuthor;
   }
-  const page = await response.json<OpenAlexPage<OpenAlexAuthor>>();
-  if (!Array.isArray(page?.results)) throw new Error('OpenAlex author list is missing results');
+}
+
+type AuthorLookup = 'discovery' | 'refresh';
+
+function authorMetrics(body: string, requested: Set<string>) {
+  let page: OpenAlexPage<OpenAlexAuthor> | null;
+  try {
+    page = JSON.parse(body) as OpenAlexPage<OpenAlexAuthor> | null;
+  } catch (error) {
+    if (error instanceof SyntaxError) return null;
+    throw error;
+  }
+  if (!Array.isArray(page?.results)) return null;
 
   // Only a valid record says anything: an author the answer leaves out, or
   // returns malformed, is not known to have no h-index, so it gets no entry
   // and keeps whatever value the cache already holds (`storeAuthorBatch`).
-  const requested = new Set(ids);
   const metrics = new Map<string, number | null>();
   for (const author of page.results) {
     const id = authorId(author?.id);
@@ -71,8 +79,38 @@ async function fetchImpact(env: WorkerEnv, ids: string[]) {
     if (h != null && (!Number.isSafeInteger(h) || h < 0)) continue;
     metrics.set(id, h ?? null);
   }
-  if (!metrics.size && ids.length >= MIN_AUTHORS_REQUIRING_ANSWER) {
-    throw new Error(`OpenAlex author list gave no valid records for ${ids.length} requested authors`);
+  return metrics;
+}
+
+async function fetchImpact(env: WorkerEnv, ids: string[], lookup: AuthorLookup) {
+  const url = new URL('https://papertok.internal/openalex/authors');
+  url.searchParams.set('filter', 'openalex:' + ids.join('|'));
+  url.searchParams.set('select', 'id,summary_stats');
+  url.searchParams.set('per_page', String(AUTHORS_PER_CALL));
+  const requested = new Set(ids);
+  const requiresAnswer = lookup === 'discovery' && ids.length >= MIN_AUTHORS_REQUIRING_ANSWER;
+  const response = await handleHarvestOpenAlex(new Request(url), env, {
+    part: AUTHOR_IMPACT_PART,
+    canCacheList: requiresAnswer ? body => Boolean(authorMetrics(body, requested)?.size) : undefined,
+  }).catch((error: unknown) => {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new OpenAlexUnavailable(`OpenAlex author list failed: ${error.name}`);
+    }
+    throw error;
+  });
+  const wait = shortOpenAlexWait(response);
+  if (wait) throw new AuthorRateLimit(wait, ids[0]);
+  if (!response.ok) {
+    const scope = response.headers.get('x-papertok-harvest-scope');
+    const spent = harvestLimits[scope ?? ''];
+    const message = `OpenAlex author list returned HTTP ${response.status}${spent ? ' (' + spent + ')' : ''}`;
+    if (response.status === 408 || response.status === 429 || response.status >= 500) throw new OpenAlexUnavailable(message);
+    throw new Error(message);
+  }
+  const metrics = authorMetrics(await response.text(), requested);
+  if (!metrics) throw new OpenAlexUnavailable('OpenAlex author list is malformed');
+  if (requiresAnswer && !metrics.size) {
+    throw new OpenAlexUnavailable(`OpenAlex author list gave no valid records for ${ids.length} requested authors starting with ${ids[0]}`);
   }
   const unanswered = ids.length - metrics.size;
   if (unanswered) console.warn(`OpenAlex author list gave no valid record for ${unanswered} of ${ids.length} authors`);
@@ -133,8 +171,9 @@ async function qualityPage(db: D1Database, now: number, after: QualityCursor | n
 
 export type AuthorProgress = { after: QualityCursor | null; pending: string[] } | 'refresh';
 
-async function storeAuthorBatch(db: D1Database, env: WorkerEnv, batch: string[]) {
-  const fetched = await fetchImpact(env, batch).catch((error: Error) => {
+async function storeAuthorBatch(db: D1Database, env: WorkerEnv, batch: string[], lookup: AuthorLookup) {
+  const fetched = await fetchImpact(env, batch.toSorted(), lookup).catch((error: unknown) => {
+    if (!(error instanceof OpenAlexUnavailable)) throw error;
     console.warn(`Stopping author impact for this run: ${error.message}`);
     return null;
   });
@@ -164,7 +203,7 @@ export async function loadPaperAuthorImpact(db: D1Database, env: WorkerEnv, now:
     const batches = openAlexFilterBatches('openalex', due.results.map(row => row.author_id), AUTHORS_PER_CALL);
     // One filter per refresh step keeps its cache key stable if the D1 write fails.
     const batch = batches[0];
-    if (!batch || !await storeAuthorBatch(db, env, batch)) return null;
+    if (!batch || !await storeAuthorBatch(db, env, batch, 'refresh')) return null;
     return due.results.length === AUTHORS_PER_CALL || batches.length > 1 ? 'refresh' : null;
   }
 
@@ -185,7 +224,7 @@ export async function loadPaperAuthorImpact(db: D1Database, env: WorkerEnv, now:
   const pending = next && last && last.length < AUTHORS_PER_CALL ? last : [];
   if (pending.length) batches.pop();
   for (const batch of batches) {
-    if (!await storeAuthorBatch(db, env, batch)) return null;
+    if (!await storeAuthorBatch(db, env, batch, 'discovery')) return null;
   }
   return next ? { after: next, pending } : 'refresh';
 }

@@ -281,8 +281,8 @@ notable lane on the same night, 400 followed lanes, full PubMed backfill and
 eviction. Allow up to 12,000 more for the harvest's 4,000 daily OpenAlex misses:
 two shared-cache calls and a ledger write when OpenAlex reports its balance
 (step 5). The 600 billed author lookups come out of that same allowance.
-For 250,825 recent papers, quality takes 502 pages of 500. Allow six D1 calls
-per page across author discovery and scoring (3,012), plus a refresh selection
+For the measured 258,703 recent papers, quality reads 518 pages per pass. Allow six D1 calls
+per page across author discovery and scoring (3,108), plus a refresh selection
 and a write per billed author batch (up to 1,200). Pruning 693,790 author rows
 in batches of 2,000 would add 347 calls. Corpus size, cache hits and retries
 affect the actual total.
@@ -295,14 +295,14 @@ steps per instance by default on Workers Paid, configurable up to 25,000.
 2026 took 2,311, 1,953 and 1,930 steps respectively, counted with
 `wrangler workflows instances describe`. [Cloudflare Workflows limits](https://developers.cloudflare.com/workflows/reference/limits/)
 
-With 258,000 recent papers, a complete author discovery pass and a complete
-scoring pass add 517 steps each. Each reads 516 full pages of 500 and one empty
-page to finish. Refresh reads up to 100 authors per step. With all 600 units
+For those 258,703 papers, author discovery and scoring take 518 steps each.
+Each pass reads 517 pages of 500 papers and a final page of 203. Refresh reads up to 100 authors per step. With all 600 units
 available for refresh and no relay cache hits, allow up to 600 billed steps
 and one final empty or refused step. Cache hits can add steps without spending
 units. Each prune step deletes up to 2,000 expired rows from each table and
 repeats if either deletion fills its batch. With one prune step, the largest
-of those three runs would reach about 3,950 steps, under half the default.
+of those three runs would reach 3,949 steps (2,311 + 518 + 518 + 601 + 1).
+A short rate limit can add up to three author steps to retry a page.
 A run that exhausts its step limit during quality would lose the remaining
 embedding, backfill, eviction and leaf filing phases.
 
@@ -512,7 +512,9 @@ The job reads papers newer than the 90-day cutoff, including future publication 
 
 For bylines of up to 30 authors, the job reads the first author and the last three in `works.paper.authors`. It looks up missing author IDs first in batches of up to 100, then refreshes eligible cached authors in order of oldest fetch. Each billed list spends one of the nightly share’s 3,700 units and one of the 600 allowed for author lookups. After the 2026-11-23 harvest finished at 04:27 UTC, `/health/openalex/budget` showed 870 of 3,700 units used. That left 2,830 units that night, enough for the 600-call cap. Enrichment can use the whole nightly share before author lookups begin.
 
-The relay retries a short OpenAlex rate limit once when the requested wait is at most 60 seconds. A remaining refusal, a failed or malformed list, or zero valid requested records in a batch of 20 or more ends author lookups for the night. The job logs the reason and leaves that batch due. Earlier batches stay in D1. A D1 failure retries the page and can reuse the relay’s shared answer for 24 hours.
+Author lookups wait up to 60 seconds for an OpenAlex 429, once per batch and at most three times across discovery and refresh each night. A further refusal, a provider outage or a malformed list ends the phase for the night and leaves the batch due. A credential rejection or an unexpected error fails the phase. Scoring still runs with the evidence already in D1.
+
+When a discovery batch of at least 20 authors returns no valid requested records, the job logs its size and first author ID and stops discovery for the night. The relay skips such answers when reading and writing its shared store. During refresh, an empty list advances the fetch date and preserves each cached h-index, so the next batch gets its turn. A D1 failure retries the page and can reuse an accepted shared answer for 24 hours.
 
 A second pass computes scores from the stored h-index, including values still waiting for refresh, and positive `huggingFaceUpvotes`.
 

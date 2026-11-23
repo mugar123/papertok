@@ -7,7 +7,7 @@ import type { UpstreamError } from './provider-runtime.ts';
 
 import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired, thinLeaves, thinLeavesReport } from './paper-store.ts';
 import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, notableLaneJobs } from './paper-sources.ts';
-import { computePaperQuality, loadPaperAuthorImpact, prunePaperQuality } from './paper-quality.ts';
+import { AuthorRateLimit, computePaperQuality, loadPaperAuthorImpact, prunePaperQuality } from './paper-quality.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
 
@@ -68,6 +68,8 @@ const OAI_STEP = { retries: { limit: 3, delay: '1 minute', backoff: 'exponential
 // next time.
 const OAI_MAX_WAIT_SECONDS = 300;
 const OAI_MAX_WAITS = 3;
+type AuthorStepResult = AuthorProgress | null | { seconds: number; firstAuthor: string } | Error;
+const AUTHOR_MAX_WAITS = 3;
 const AUTHOR_STEP = { ...PAGE_STEP, timeout: '10 minutes' } as const;
 const LANE_STEP = { retries: { limit: 2, delay: '1 minute', backoff: 'exponential' }, timeout: '10 minutes' } as const;
 
@@ -301,9 +303,33 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   });
   await phase('author impact', async () => {
     let progress: AuthorProgress | null = { after: null, pending: [] };
+    let lastWaitedAuthor: string | null = null;
+    let waits = 0;
     for (let batch = 0; progress; batch += 1) {
       const page: AuthorProgress = progress;
-      progress = await step.do(`author impact ${batch}`, AUTHOR_STEP, (): Promise<AuthorProgress | null> => loadPaperAuthorImpact(db, env, started, page));
+      const result = await step.do(`author impact ${batch}`, AUTHOR_STEP, async (): Promise<AuthorStepResult> => {
+        try {
+          return await loadPaperAuthorImpact(db, env, started, page);
+        } catch (error) {
+          if (isD1Error(error)) throw error;
+          if (error instanceof AuthorRateLimit) return { seconds: error.seconds, firstAuthor: error.firstAuthor };
+          // Fail the phase outside the step so its D1 retries cannot repeat a refused provider call.
+          return error instanceof Error ? error : new Error(String(error));
+        }
+      });
+      if (result instanceof Error) throw result;
+      if (result && typeof result === 'object' && 'seconds' in result) {
+        if (waits >= AUTHOR_MAX_WAITS || lastWaitedAuthor === result.firstAuthor) {
+          console.warn(`Stopping author impact for this run: HTTP 429 for ${result.firstAuthor} after ${waits} waits`);
+          break;
+        }
+        waits++;
+        lastWaitedAuthor = result.firstAuthor;
+        await step.sleep(`author wait ${batch}`, result.seconds * 1000);
+      } else {
+        progress = result;
+        lastWaitedAuthor = null;
+      }
     }
   });
   await phase('paper quality', async () => {
