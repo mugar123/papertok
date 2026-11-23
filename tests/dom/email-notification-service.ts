@@ -25,7 +25,10 @@ export async function loadEmailNotificationService() {
   const app = await startAppModules();
   try {
     const { auth } = await app.firebase();
-    const signIn = (uid: string) => { auth.currentUser = { uid, getIdToken: async () => `${uid}-token` }; };
+    // `whileTokenLoads` runs while the ID token is fetched, as an account switch during a refresh would.
+    const signIn = (uid: string, whileTokenLoads?: () => void) => {
+      auth.currentUser = { uid, getIdToken: async () => { whileTokenLoads?.(); return `${uid}-token`; } };
+    };
     const service = await app.load<EmailNotificationService>('/src/services/email-notification-service.ts');
     return { service, signIn, close: app.close };
   } catch (error) {

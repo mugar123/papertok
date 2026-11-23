@@ -239,4 +239,12 @@ test('a yes from the welcome is posted to the opt-in route under the account tha
     (error: unknown) => (error as { code?: string }).code === 'EMAIL_ACCOUNT_CHANGED',
   );
   assert.equal(requests.length, 3);
+
+  // The account changes while its token is fetched: the yes is not sent, and the error says so.
+  signIn('reader', () => signIn('someone-else'));
+  await assert.rejects(
+    service.startEmailDigestOptIn({ consent: 'topics-from-signup-1', interests: ['cs.LG'] }, 'reader'),
+    (error: unknown) => (error as { code?: string }).code === 'EMAIL_ACCOUNT_CHANGED',
+  );
+  assert.equal(requests.length, 3);
 });
