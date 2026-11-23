@@ -258,6 +258,16 @@ export class RequestQuotaLedger {
       return json({ code: 'INVALID_REQUEST' }, 400);
     }
 
+    // The deletion is scheduled before anything is written, never after: a
+    // counter derived from an address or an account must not be stored in an
+    // object that has no alarm. If scheduling fails, this throws with nothing
+    // written, and each caller does what it does when the ledger cannot be
+    // reached. An alarm on an object the transaction then leaves empty clears
+    // nothing.
+    const alarm = await this.state.storage.getAlarm();
+    const cleanupAt = expiresAt === undefined ? Date.now() + RETENTION_MS : Number(expiresAt);
+    if (alarm === null || cleanupAt < alarm) await this.state.storage.setAlarm(cleanupAt);
+
     const result = await this.state.storage.transaction(async transaction => {
       const subjectStorageKey = `subject:${subjectKey}`;
       const partStorageKey = `subject:${partKey}`;
@@ -318,7 +328,7 @@ export class RequestQuotaLedger {
         if (tallyName) addToTally(tally.used, tallyName, -amount);
         await Promise.all([
           transaction.put(subjectStorageKey, releasedSubjectUsage),
-          transaction.put('global', releasedGlobalUsage),
+          globalAmount > 0 ? transaction.put('global', releasedGlobalUsage) : undefined,
           tallyName ? transaction.put('tally', tally) : undefined,
           partKey ? transaction.put(partStorageKey, Math.max(0, partUsage - amount)) : undefined,
           secondPartKey ? transaction.put(secondPartStorageKey, Math.max(0, secondPartUsage - amount)) : undefined,
@@ -384,7 +394,8 @@ export class RequestQuotaLedger {
       if (tallyName) addToTally(tally.used, tallyName, amount);
       await Promise.all([
         transaction.put(subjectStorageKey, nextSubjectUsage),
-        transaction.put('global', nextGlobalUsage),
+        // A caller-only reservation counts nothing for the object as a whole.
+        globalAmount > 0 ? transaction.put('global', nextGlobalUsage) : undefined,
         tallyName ? transaction.put('tally', tally) : undefined,
         partKey ? transaction.put(partStorageKey, partUsage + amount) : undefined,
         secondPartKey ? transaction.put(secondPartStorageKey, secondPartUsage + amount) : undefined,
@@ -398,10 +409,6 @@ export class RequestQuotaLedger {
         ...paced,
       };
     });
-
-    const alarm = await this.state.storage.getAlarm();
-    const cleanupAt = expiresAt === undefined ? Date.now() + RETENTION_MS : Number(expiresAt);
-    if (alarm === null || cleanupAt < alarm) await this.state.storage.setAlarm(cleanupAt);
     return json(result);
   }
 

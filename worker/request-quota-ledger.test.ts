@@ -25,6 +25,45 @@ function storageHarness() {
   };
 }
 
+// A counter is never stored in an object with no scheduled deletion.
+test('a reservation whose deletion cannot be scheduled fails and stores nothing, and the next one stores its counters with an alarm', async () => {
+  const harness = storageHarness();
+  let failing = true;
+  const setAlarm = harness.storage.setAlarm;
+  harness.storage.setAlarm = async (value: number) => {
+    if (failing) throw new Error('alarm not scheduled');
+    await setAlarm(value);
+  };
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const reserve = () => ledger.fetch(new Request('https://internal', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'reserve', subjectKey: 'a'.repeat(64), subjectLimit: 3_000, globalLimit: 3_000, globalAmount: 0,
+      partKey: 'b'.repeat(64), partLimit: 300,
+    }),
+  }));
+
+  await assert.rejects(reserve(), /alarm not scheduled/);
+  assert.equal(harness.values.size, 0, 'no counter without an alarm');
+  assert.equal(harness.alarm(), null);
+
+  failing = false;
+  assert.equal((await (await reserve()).json<QuotaReading>()).accepted, true);
+  assert.equal(typeof harness.alarm(), 'number');
+  // A caller-only reservation stores the caller's counters and nothing else.
+  const callerKeys = [`subject:${'a'.repeat(64)}`, `subject:${'b'.repeat(64)}`];
+  assert.deepEqual([...harness.values.keys()].sort(), callerKeys);
+  // Giving it back stores nothing else either.
+  await ledger.fetch(new Request('https://internal', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'release', subjectKey: 'a'.repeat(64), subjectLimit: 3_000, globalLimit: 3_000, globalAmount: 0,
+      partKey: 'b'.repeat(64), partLimit: 300,
+    }),
+  }));
+  assert.deepEqual([...harness.values.keys()].sort(), callerKeys);
+});
+
 test('reserves subject and global quota atomically', async () => {
   const harness = storageHarness();
   const ledger = new RequestQuotaLedger({ storage: harness.storage });

@@ -4929,7 +4929,8 @@ test("one address's OpenAlex lookups by id stop at its allowance for the day, wh
   assert.equal(upstream.length, 3_002);
 });
 
-test('an OpenAlex lookup by id with no caller address, no secret or no ledger is refused and asks OpenAlex nothing', async () => {
+test('an OpenAlex lookup by id with no caller address, no secret or no ledger is refused and asks OpenAlex nothing', async t => {
+  const warn = t.mock.method(console, 'warn', () => {});
   const ledger = () => inMemoryQuotaLedger().binding;
   const unreachable = {
     idFromName: ((name: string): unknown => name) as TestNamespace['idFromName'],
@@ -4950,6 +4951,10 @@ test('an OpenAlex lookup by id with no caller address, no secret or no ledger is
     }
   });
   assert.deepEqual(upstream, []);
+  // The unreachable ledger's error is not written to the log.
+  const logged = warn.mock.calls.map(call => call.arguments).filter(args => String(args[0]).includes('LOOKUP_LEDGER_UNAVAILABLE'));
+  assert.deepEqual(logged, [[JSON.stringify({ route: '/openalex', code: 'LOOKUP_LEDGER_UNAVAILABLE' })]]);
+  assert.equal(warn.mock.calls.some(call => call.arguments.some(argument => argument instanceof Error)), false);
 });
 
 // The paper store's lookups of liked papers and the author metrics' ask

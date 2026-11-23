@@ -382,8 +382,9 @@ async function refuseLookup(env: WorkerEnv, now: string, caller: { minute: strin
     // The ledger requires a ceiling; with nothing spent against it, it is never read.
     globalLimit: OPENALEX_CALLER_DAILY_LOOKUPS,
     globalAmount: 0,
-  }).catch((error: unknown) => {
-    console.warn('OpenAlex lookup ledger unreachable', error);
+  }).catch(() => {
+    // A fixed code: the ledger's error is not written to the log.
+    console.warn(JSON.stringify({ route: '/openalex', code: 'LOOKUP_LEDGER_UNAVAILABLE' }));
     return { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE', scope: undefined };
   });
   // A lookup is a paper or a profile being opened, the tier a billed one spends.
