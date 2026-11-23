@@ -142,8 +142,10 @@ for (const status of [401, 403]) {
     const nightly = workflowStep({ skipLanes: true, fail: name => name === 'author impact 1' || name.startsWith('backfill ') || name.startsWith('evict ') });
     const errors = t.mock.method(console, 'error', () => {});
     await runPaperHarvest(env, dailyRun(), nightly.step);
-    assert.deepEqual(nightly.steps.filter(name => /^(enrich|prune paper quality|author impact|paper quality|embed) 0$/.test(name)),
-      ['enrich 0', 'prune paper quality 0', 'author impact 0', 'paper quality 0', 'embed 0']);
+    assert.deepEqual(nightly.steps.filter(name => /^(enrich|embed|embed backfill|evict) 0$/.test(name)),
+      ['enrich 0', 'embed 0', 'embed backfill 0', 'evict 0']);
+    assert.deepEqual(nightly.steps.slice(nightly.steps.indexOf('file area papers')),
+      ['file area papers', 'prune paper quality 0', 'author impact 0', 'paper quality 0']);
     assert.equal(asked.filter(url => url.pathname === '/authors').length, 1);
     const failures = errors.mock.calls.filter(call => call.arguments[0] === 'Paper harvest phase failed: author impact');
     assert.equal(failures.length, 1);
