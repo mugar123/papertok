@@ -1,7 +1,7 @@
 import type { ConferenceEdition } from '../data/conferences.ts';
 
 export function isConferencePath(path: string) {
-  return /^\/conferences(?:\/[^/]+)?\/?$/i.test(path);
+  return /^\/conferences(?:\/[^/]+(?:\/papers)?)?\/?$/i.test(path);
 }
 
 export function groupConferences(editions: readonly ConferenceEdition[], today: string) {

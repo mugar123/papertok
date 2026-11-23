@@ -234,6 +234,11 @@ name = "papertok-paper-harvest"
 binding = "PAPER_HARVEST"
 class_name = "PaperHarvestWorkflow"
 
+[[workflows]]
+name = "conference-ingest"
+binding = "CONFERENCE_INGEST"
+class_name = "ConferenceIngestWorkflow"
+
 [[durable_objects.bindings]]
 name = "EMAIL_DELIVERY_LEDGER"
 class_name = "EmailDeliveryLedger"

@@ -7,6 +7,7 @@ import { EmailSubscriptionStore as SubscriptionStore } from './email-subscriptio
 import { RequestQuotaLedger as QuotaLedger } from './request-quota-ledger.ts';
 import { PaperRewriteSession as RewriteSession } from './ai-rewrite-session.ts';
 import { runPaperHarvest } from './paper-harvest.ts';
+import { runConferenceIngest } from './conference-ingest.ts';
 import { trackErrors } from './error-tracking.ts';
 
 // Storage and quota behavior stay in the existing implementations; these
@@ -52,6 +53,12 @@ export class PaperRewriteSession extends DurableObject<WorkerEnv> {
 export class PaperHarvestWorkflow extends WorkflowEntrypoint<WorkerEnv, { lanes?: string[] } | undefined> {
   run(event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
     return trackErrors(this.env, this.ctx, 'workflow', () => runPaperHarvest(this.env, event, step));
+  }
+}
+
+export class ConferenceIngestWorkflow extends WorkflowEntrypoint<WorkerEnv> {
+  run(_event: Readonly<WorkflowEvent<unknown>>, step: WorkflowStep) {
+    return trackErrors(this.env, this.ctx, 'workflow', () => runConferenceIngest(this.env, step));
   }
 }
 

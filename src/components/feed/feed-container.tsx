@@ -15,6 +15,8 @@ interface FeedSource {
   refresh?: () => void;
   isRefreshing?: boolean;
   onPaperViewed?: (paper: Paper) => void;
+  trackImpressions?: boolean;
+  persistReadingPosition?: boolean;
   surface?: string;
   endCard?: ReactNode;
   /** The source's own empty state; a retry button of its own takes FeedRetryRefContext. */
@@ -24,6 +26,7 @@ interface FeedSource {
   dismissal?: { hide: (paper: Paper) => void; restore: (paper: Paper) => void; label: string; hint: string };
 }
 interface FeedContainerProps {
+  onAuthRequired?: (reason: string) => void;
   onOpenPdf?: (paper: Paper, menu: ReaderMenu) => void;
   /** Opens the list picker; `surface` is the card's (PaperCard's `onPickList`). */
   onSaveToList?: (paper: Paper, surface?: string) => void;
@@ -64,7 +67,7 @@ import {
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { FEED_DISPLAY_STATES, FEED_EMPTY, feedAtomVeilCopy, feedStatusText, feedTailState, firstLoadSettled, getFeedDisplayState, lastVisitNote, nextPageStatusText, showsLastVisit, refreshEndBeat, refreshStatusText, type RefreshEnd, type RefreshWatch } from '../../utils/feed-loading-state.ts';
-import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
+import { createFeedResumeMemory, feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { arrowKeyMovesFeed } from '../../utils/feed-arrow-keys.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
@@ -84,8 +87,6 @@ import { EASE_OUT, EASE_OUT_EXPO, EASE_OUT_QUAD } from '../../utils/motion-curve
 // sessionStorage once the scroll settles, so it outlives the reload the tab
 // gives itself after a deploy (utils/feed-resume-memory.ts). FeedContext reads
 // For You's place from the same memory.
-const resumeMemory = feedResumeMemory;
-
 /**
  * The card a feed opens on, and the memory row that answer came out of.
  *
@@ -97,7 +98,7 @@ const resumeMemory = feedResumeMemory;
  * paints complete for a frame and then blanks and refades the whole card
  * body the moment the scroll event lands (paper-card.css).
  */
-function resumeAnchor(papers: Paper[], scrollKey: string) {
+function resumeAnchor(papers: Paper[], scrollKey: string, resumeMemory: typeof feedResumeMemory) {
   const saved = resumeMemory.get(scrollKey);
   return { saved, index: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }) };
 }
@@ -316,11 +317,15 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, s
  * `endCard` is a node the source appends as one more snap item once the feed
  * has genuinely run out — same height, same snapping, same swipe.
  */
-export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey: surfaceKey, landmark = null, tabPath: ownTabPath }: FeedContainerProps) {
+export default function FeedContainer({ onOpenPdf, onSaveToList, onAuthRequired, source = null, scrollKey: surfaceKey, landmark = null, tabPath: ownTabPath }: FeedContainerProps) {
   const feed = useFeed();
   const { user } = useAuth();
   // For You's place is the account's (forYouScrollKey).
   const scrollKey = surfaceKey ?? forYouScrollKey(user?.uid);
+  const persistReadingPosition = source?.persistReadingPosition !== false;
+  const resumeMemory = useMemo(() => persistReadingPosition
+    ? feedResumeMemory
+    : createFeedResumeMemory({ storage: null }), [persistReadingPosition]);
   const { trackEvent } = useAnalyticsConsent();
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
@@ -400,7 +405,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // then blanked and refaded over 280ms plus 175ms of stagger the instant
   // the scroll event corrected it. The restore effect below re-seeds it for
   // the other resume shape, a reload whose papers had not arrived yet.
-  const [activeIndex, setActiveIndex] = useState(() => resumeAnchor(papers, scrollKey).index);
+  const [activeIndex, setActiveIndex] = useState(() => resumeAnchor(papers, scrollKey, resumeMemory).index);
   // One gesture's worth of state. `phase` is 'idle' until a touch lands
   // somewhere a pull may begin, 'pending' until its first move says which
   // way it is going, and 'owning' once it is ours — from there the feed is
@@ -454,7 +459,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   useEffect(() => { papersRef.current = papers; }, [papers]);
   const [mountWindow, setMountWindow] = useState(
     () => {
-      const { saved, index } = resumeAnchor(papers, scrollKey);
+      const { saved, index } = resumeAnchor(papers, scrollKey, resumeMemory);
       return initialMountWindow({
         total: papers.length,
         anchorIndex: index,
@@ -478,13 +483,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const anchoredWindow = useMemo(() => {
     if (mountWindow.hi !== 0) return windowReachingReader(mountWindow, activeIndex, papers.length);
     if (papers.length === 0) return mountWindow;
-    const { saved, index } = resumeAnchor(papers, scrollKey);
+    const { saved, index } = resumeAnchor(papers, scrollKey, resumeMemory);
     return initialMountWindow({
       total: papers.length,
       anchorIndex: index,
       radius: saved.paperId ? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,
     });
-  }, [mountWindow, papers, scrollKey, activeIndex]);
+  }, [mountWindow, papers, scrollKey, activeIndex, resumeMemory]);
   useEffect(() => {
     if (mountWindowCovers(anchoredWindow, papers.length)) return undefined;
     // `requestIdleCallback` where it exists, so a chunk never lands inside a
@@ -707,7 +712,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     // the context here, not left to the scroll event the programmatic
     // scrollTop fires later: the profile load's re-rank must find the anchor
     // already set.
-    const { saved, index } = resumeAnchor(papers, scrollKey);
+    const { saved, index } = resumeAnchor(papers, scrollKey, resumeMemory);
     reportVisiblePaper?.(papers[index]?.id ?? null);
     // The other resume shape: a reload restores its place before the papers
     // have arrived, so the seed above could only answer 0. This runs in a
@@ -728,7 +733,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         el.style.scrollBehavior = prevBehavior;
       });
     }
-  }, [papers, reportVisiblePaper, scrollKey]);
+  }, [papers, reportVisiblePaper, scrollKey, resumeMemory]);
 
   useEffect(() => {
     if (loading) initialLoadStartedRef.current = true;
@@ -797,7 +802,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       // the place the settle timer was about to write.
       resumeMemory.persist(scrollKey);
     };
-  }, [scrollKey, flushSkipExit]);
+  }, [scrollKey, flushSkipExit, resumeMemory]);
 
   // Infinite scroll: observe sentinel element. After a failed page the
   // sentinel waits for the reader or a pause (next-page-sentinel.ts).
@@ -1147,7 +1152,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     if (pendingSkippedPapersRef.current.size > 0) {
       schedulePendingSkipFlush();
     }
-  }, [reportVisiblePaper, schedulePendingSkipFlush, scrollKey]);
+  }, [reportVisiblePaper, schedulePendingSkipFlush, scrollKey, resumeMemory]);
 
   const displayState = getFeedDisplayState({
     hasPapers: papers.length > 0,
@@ -1515,6 +1520,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           >
             <PaperCard
               paper={paper}
+              publicMode={Boolean(onAuthRequired && !user)}
+              onAuthRequired={onAuthRequired}
               isLiked={likedPaperIds.has(interactionIdFor(paper)!)}
               isSaved={savedPaperIds.has(interactionIdFor(paper)!)}
               isRead={readPaperIds?.has(interactionIdFor(paper)!)}
@@ -1525,6 +1532,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               onUnmarkAsRead={unmarkAsRead}
               trackViewTime={handleViewTime}
               trackSkip={handleSkip}
+              trackImpressions={source?.trackImpressions}
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
               onPickList={onSaveToList}

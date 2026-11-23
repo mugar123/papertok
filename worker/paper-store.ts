@@ -365,7 +365,7 @@ export function publishedOf(paper: Partial<Paper>, now = Date.now()) {
 // `openAlex` is enrichment's copy of OpenAlex's answer, whose fields the app
 // reads are already merged into the paper;
 // `summary` repeats the abstract.
-function storedPaper(paper: Paper): Paper {
+export function storedPaper(paper: Paper): Paper {
   const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw' && key !== 'openAlex' && key !== 'summary')) as Paper;
   if (stored.authors?.length > STORED_AUTHORS) stored.authors = stored.authors.slice(0, STORED_AUTHORS);
   return stored;

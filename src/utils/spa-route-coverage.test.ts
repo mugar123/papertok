@@ -53,6 +53,7 @@ test('a shared conference address opens the app directly', async () => {
   assert.ok(matches('/conferences'));
   assert.ok(matches('/conferences/neurips-2026'));
   assert.ok(matches('/conferences/neurips-2026/'));
+  assert.ok(matches('/conferences/neurips-2026/papers'));
   assert.ok(!matches('/conferences/neurips-2026/extra'));
 });
 

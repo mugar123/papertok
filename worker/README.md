@@ -1841,3 +1841,10 @@ No authentication is configured. claude.ai calls a custom connector from
 Anthropic's servers rather than the reader's device, so its users share the
 per-IP allowances of those addresses; Claude Code calls from the reader's own
 address. Test with `node --test worker/mcp-server.test.ts`.
+## Conference accepted-paper lists
+
+`GET /conferences/status` returns stored counts and update timestamps for the five OpenReview editions. `GET /conferences/:editionId/papers?after=<cursor>` returns up to 15 public paper records in oral, spotlight, poster and unspecified order, with the next cursor when more records are available. Both use the existing allowed-origin CORS and caller quota secret. They require no Firebase session.
+
+The conference workflow uses anonymous OpenReview search on the existing nightly cron, independently of corpus harvesting. An atomic quota limits it to 12 requests per minute and 150 per UTC day. It stops after an upstream failure and honors Retry-After across runs. It keeps exact accepted venue evidence and the source's stated presentation track, when known. Search coverage may be incomplete. A fresh list is exposed after both search passes, and an unexpectedly large drop retains earlier results.
+
+To release, apply migration `0014_conference_lists.sql` to `PAPER_STORE` first, then deploy the Worker with its `CONFERENCE_INGEST` binding. Verify D1 storage capacity and the existing `REQUEST_QUOTA_LEDGER` and `PDF_RATE_LIMIT_SECRET` before setting the Worker variable `CONFERENCE_PAPERS_ENABLED=1`. Check the populated lists and signed-out Worker routes before publishing the web. The Papers tab appears only after the API reports a nonzero list.
