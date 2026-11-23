@@ -20,6 +20,10 @@ export interface RecommendationContext {
   // nothing of a dormant paper; without the list none is.
   interestProgress?: Record<string, number>; coldAdded?: string[]; dormantCategories?: string[];
   temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
+  // How the reader made the examples the Worker ranked the page by
+  // (positiveExampleKinds). Not scored: the card names them when it says it is
+  // similar to them (feed-reason.ts).
+  exampleKinds?: PaperRecommendationScore['exampleKinds'];
 }
 interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
 type StableScore = ReturnType<typeof computeStableScore>;
@@ -484,6 +488,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     dormantCategories: context.dormantCategories,
     temporalPreference: context.temporalPreference,
     explicitNow: context.now,
+    exampleKinds: context.exampleKinds,
 
     stableParts,
     stableTotal: Object.values(stableParts).reduce((sum, value) => sum + value, 0),
@@ -554,7 +559,8 @@ function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
     && cached.coldAdded === context.coldAdded
     && cached.dormantCategories === context.dormantCategories
     && cached.temporalPreference === context.temporalPreference
-    && cached.explicitNow === context.now) {
+    && cached.explicitNow === context.now
+    && cached.exampleKinds === context.exampleKinds) {
     return cached;
   }
 
@@ -581,6 +587,7 @@ export function scorePaperForRecommendation(paper: Partial<Paper>, context: Reco
     authorBoost: stable.authorBoost,
     followedEntityMatches: stable.followedEntityMatches,
     isExploration: stable.isExploration,
+    ...(stable.exampleKinds?.length ? { exampleKinds: stable.exampleKinds } : {}),
   }, parts);
 
   stable.lastDiversityBoost = diversityBoost;

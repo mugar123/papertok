@@ -1,5 +1,5 @@
 import type { BloomFilter } from 'bloomfilter';
-import type { Paper } from '../models/paper.ts';
+import type { Paper, PaperRecommendationScore } from '../models/paper.ts';
 export type CuratedSetName = 'liked' | 'saved' | 'read' | 'notInterested' | 'readLater';
 export interface DecayedAffinity { value: number; at: number; }
 export interface CategoryExposure { shown: number; engaged: number; }
@@ -93,6 +93,8 @@ export interface ProfileSignals {
   // The likes, saves and long reads the reader keeps, newest first, up to
   // MAX_POSITIVE_EXAMPLES_PER_AREA for each area.
   positiveExamples: PositiveExample[];
+  // How the reader made those examples (positiveExampleKinds).
+  exampleKinds: PositiveExampleKind[];
   temporal: TemporalSignal;
 }
 export interface StoredInteractionProfile {
@@ -642,6 +644,7 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
     interactionCount: 0,
     dwellMedianSeconds: DEFAULT_DWELL_MEDIAN_SECONDS,
     positiveExamples: [],
+    exampleKinds: [],
     temporal: { notable: { shown: 0, engaged: 0 }, recent: { shown: 0, engaged: 0 }, lean: 0 },
   };
   if (!profile) return signals;
@@ -669,6 +672,7 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
   signals.interactionCount = profile.counters.interactions;
   signals.dwellMedianSeconds = profile.dwell.median;
   signals.positiveExamples = profile.positives.map(example => ({ ...example }));
+  signals.exampleKinds = positiveExampleKinds(profile);
   const { notable, recent, lean } = profile.temporal;
   signals.temporal = { notable: { ...notable }, recent: { ...recent }, lean };
   return signals;
@@ -772,6 +776,25 @@ function removeCurated(profile: InteractionProfile, name: CuratedSetName, paperI
 export function curatedIds(profile: InteractionProfile | null | undefined, name: CuratedSetName) {
   const set = profile && curatedSet(profile, name);
   return set ? [...set.order] : [];
+}
+
+export type PositiveExampleKind = NonNullable<PaperRecommendationScore['exampleKinds']>[number];
+
+/**
+ * How the reader made the examples the feed ranks by: liking, saving, or
+ * reading a card at length, which is an example in neither set.
+ */
+export function positiveExampleKinds(profile: InteractionProfile | null | undefined): PositiveExampleKind[] {
+  if (!profile) return [];
+  const liked = curatedSet(profile, 'liked')!.members;
+  const saved = curatedSet(profile, 'saved')!.members;
+  const made = new Set<PositiveExampleKind>();
+  for (const { id } of profile.positives) {
+    if (liked.has(id)) made.add('liked');
+    if (saved.has(id)) made.add('saved');
+    if (!liked.has(id) && !saved.has(id)) made.add('read');
+  }
+  return (['liked', 'saved', 'read'] as const).filter(kind => made.has(kind));
 }
 
 /**

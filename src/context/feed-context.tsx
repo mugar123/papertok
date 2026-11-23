@@ -662,6 +662,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       coldAdded: memory.coldAdded,
       dormantCategories: memory.dormantCategories,
       temporalPreference: readerLean(),
+      exampleKinds: signals.exampleKinds,
       weights: recommendationWeights.current,
       recentPropsCount
     });

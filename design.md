@@ -316,6 +316,12 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   publisher's page, whose head rows yield after the panel and scroll (Cards /
   Containers, "A card with no abstract"). On a tablet the column stops at a
   40rem reading measure.
+- **The kicker** reads field · reason · year · citations and wraps when it has
+  to. The reason (`utils/feed-reason.ts`) says why the feed shows the card, in
+  `--text-secondary`: "Because you follow …", "Highly cited in …", "Similar to
+  papers you liked" (saved, liked or saved, engaged with) or "In your area". A
+  card no feed ranked, such as a search result, has none unless the reader
+  follows something on it.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 

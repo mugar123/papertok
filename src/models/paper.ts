@@ -127,6 +127,9 @@ export interface PaperRecommendationScore {
   // from its lane in the corpus (`_followedEntityMatches`) and get no boost.
   followedEntityMatches: Record<Exclude<PaperFollowMatch['type'], 'journal'>, boolean>;
   isExploration: boolean;
+  // What the examples the page was ranked by are: liked, saved or read at
+  // length. Absent when the reader has none.
+  exampleKinds?: ReadonlyArray<'liked' | 'saved' | 'read'>;
   explanation: string;
 }
 
