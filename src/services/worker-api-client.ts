@@ -154,6 +154,7 @@ export async function authenticatedWorkerFetch(
     ? await tokenWithSignal(() => currentUser.getIdToken(), tokenSignal)
     : await currentUser.getIdToken();
   tokenSignal?.throwIfAborted();
+  if (auth.currentUser !== currentUser) throw new WorkerApiAuthError();
   const headers = new Headers(options.headers || {});
   headers.set('authorization', `Bearer ${token}`);
   // Every caller but `publicListService` passed a signal of its own, and that one

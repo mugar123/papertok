@@ -45,3 +45,25 @@ test('translation settles while the ID token is still pending and never sends a 
     assert.equal(fetch.mock.callCount(), 0);
   }
 });
+
+test('translation never sends the outgoing account token after the Firebase account changes', async t => {
+  const app = await loadPaperTranslationService();
+  t.after(() => app.close());
+  const { requestPaperTranslation } = app.entry;
+  const { auth } = await app.firebase();
+  const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json({}, { status: 502 }));
+  const nextAccount = { uid: 'reader-2', getIdToken: async () => 'next-token' };
+
+  for (const next of [nextAccount, null]) {
+    let giveToken: (token: string) => void = () => {};
+    const getIdToken = t.mock.fn(() => new Promise<string>(resolve => { giveToken = resolve; }));
+    auth.currentUser = { uid: 'reader-1', getIdToken };
+    const result = requestPaperTranslation(input, new AbortController().signal);
+    assert.equal(getIdToken.mock.callCount(), 1);
+    auth.currentUser = next;
+    giveToken('outgoing-token');
+
+    assert.deepEqual(await result, { code: 'AI_AUTH_REQUIRED' });
+    assert.equal(fetch.mock.callCount(), 0);
+  }
+});

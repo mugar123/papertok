@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import type { PropsWithChildren, ReactNode } from 'react';
 import { createServer, createServerModuleRunner } from 'vite';
 import type { FirebaseStub } from './firebase-stub.ts';
 
@@ -60,6 +61,11 @@ export function loadPaperTranslationService() {
   return loadAppModule<typeof import('../../src/services/paper-translation-service.ts')>('/src/services/paper-translation-service.ts');
 }
 
+interface AuthProviderModule {
+  AuthProvider: (props: PropsWithChildren) => ReactNode;
+  useAuth: () => { user: { uid: string } | null; loading: boolean };
+}
+
 export function loadAuthProvider() {
-  return loadAppModule<typeof import('../../src/context/auth-context.tsx')>('/src/context/auth-context.tsx', { stubFirestore: true });
+  return loadAppModule<AuthProviderModule>('/src/context/auth-context.tsx', { stubFirestore: true });
 }
