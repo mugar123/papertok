@@ -645,22 +645,6 @@ function ReadingPage() {
             );
           })}
         </RadioGroup>
-        <div className="profile-fields">
-          <Label className="profile-switch">
-            <span className="profile-switch-copy">
-              <span className="profile-switch-label">{copy.readAloudFromPosition}</span>
-              <span className="profile-switch-hint">{copy.readAloudFromPositionHint}</span>
-            </span>
-            <Switch
-              className="settings-toggle"
-              checked={readingPreferences.readAloudFromPosition}
-              aria-label={copy.readAloudFromPosition}
-              onCheckedChange={(checked) => {
-                updateReadingPreferences({ readAloudFromPosition: checked }).catch(() => notify('error', copy.readAloudError));
-              }}
-            />
-          </Label>
-        </div>
       </section>
       <ReaderSection />
       {/* Keyed by account: another account starts from an empty list, and a
@@ -671,18 +655,33 @@ function ReadingPage() {
 }
 
 function ReaderSection() {
+  const { readingPreferences, updateReadingPreferences } = useAuth();
   const showAbstract = useSyncExternalStore(subscribeShowAbstract, readShowAbstract);
   const label = 'Show the abstract';
   return (
     <section className="settings-section" aria-labelledby="settings-reader-heading">
-      <SectionHeading id="settings-reader-heading" title="Reader" description="How a paper's full text opens. Saved in this browser." />
+      <SectionHeading id="settings-reader-heading" title="Reader" description="How a paper's full text opens and is read aloud." />
       <div className="profile-fields">
         <Label className="profile-switch">
           <span className="profile-switch-copy">
             <span className="profile-switch-label">{label}</span>
-            <span className="profile-switch-hint" id="settings-reader-abstract-hint">Start each paper with its abstract, above the first section.</span>
+            <span className="profile-switch-hint" id="settings-reader-abstract-hint">Start each paper with its abstract, above the first section. Saved in this browser.</span>
           </span>
           <Switch className="settings-toggle" checked={showAbstract} aria-label={label} aria-describedby="settings-reader-abstract-hint" onCheckedChange={saveShowAbstract} />
+        </Label>
+        <Label className="profile-switch">
+          <span className="profile-switch-copy">
+            <span className="profile-switch-label">{copy.readAloudFromPosition}</span>
+            <span className="profile-switch-hint">{copy.readAloudFromPositionHint}</span>
+          </span>
+          <Switch
+            className="settings-toggle"
+            checked={readingPreferences.readAloudFromPosition}
+            aria-label={copy.readAloudFromPosition}
+            onCheckedChange={(checked) => {
+              updateReadingPreferences({ readAloudFromPosition: checked }).catch(() => notify('error', copy.readAloudError));
+            }}
+          />
         </Label>
       </div>
     </section>
