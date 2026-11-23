@@ -97,6 +97,10 @@ flowchart TD
   restoration and revalidates in the background. A confirmed missing list clears
   that entry; a failed refresh leaves the already-read list visible. Reloads
   and new history entries read afresh.
+- The conference calendar's filters live in the query string
+  ([conference-filters.ts](src/utils/conference-filters.ts)). Covers are drawn in
+  the browser from the field and the series, and "Add to calendar" builds its file
+  there, so covers and calendar files need no third-party request.
 - The navbar calendar icon opens the public `/conferences` route.
   `/conferences/:editionId` opens a public event page. Both routes use the
   static [edition registry](src/data/conferences.ts) and the Vercel SPA rewrite.

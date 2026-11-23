@@ -11,7 +11,8 @@ export function localCalendarDate(date: Date, timeZone?: string) {
   return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)?.value).join('-');
 }
 
-export function groupConferences(editions: readonly ConferenceEdition[], today: string) {
+/** Groups by the month an edition starts in, or under the month the reader chose. */
+export function groupConferences(editions: readonly ConferenceEdition[], today: string, chosenMonth: string | null = null) {
   const upcoming = new Map<string, ConferenceEdition[]>();
   const undated: ConferenceEdition[] = [];
   const past: ConferenceEdition[] = [];
@@ -27,7 +28,7 @@ export function groupConferences(editions: readonly ConferenceEdition[], today: 
     } else if (!firstRemaining) {
       past.push(edition);
     } else {
-      const month = start.slice(0, 7);
+      const month = chosenMonth ?? start.slice(0, 7);
       const group = upcoming.get(month) ?? [];
       group.push(edition);
       upcoming.set(month, group);

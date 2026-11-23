@@ -249,7 +249,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('search', 'Search', MagnifyingGlass,
         'Searches papers, authors, institutions, topics and projects. The keys / or Ctrl+K (⌘K on a Mac) open it from most screens.'),
       entry('conferences', 'Conference calendar', CalendarBlank,
-        'The calendar next to Search opens /conferences. Filter by research field and open an edition for dates, locations, and sources. Calendar and edition links work without an account.'),
+        'The calendar next to Search opens /conferences. Filter by research field, month and format, and share the address to share the filters. Open an edition for its dates, location, venue and deadlines when they are known, and its source. Add to calendar saves its dates as a file for your calendar app. Calendar and edition links work without an account.'),
     ],
   },
   {
