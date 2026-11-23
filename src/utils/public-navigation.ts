@@ -50,6 +50,8 @@ const SHARE_IMAGES: Readonly<Record<string, ShareImage>> = Object.freeze({
 export function getShareImage(kind: string): ShareImage {
   return Object.hasOwn(SHARE_IMAGES, kind) ? SHARE_IMAGES[kind] : DEFAULT_SHARE_IMAGE;
 }
+import { isConferencePath } from './conference-calendar.ts';
+
 export const PUBLIC_ROUTE_PREFIX = '/public';
 export const PUBLIC_ENTITY_TYPES = Object.freeze([
   'author',
@@ -507,6 +509,7 @@ function startsWithSegments(path: string, prefix: string[]) {
  * doors (like, save, follow) leaves the new account right there.
  */
 export function isPublicRoutePath(path: string) {
+  if (isConferencePath(path)) return true;
   return [['public'], ['explorer'], ['paper']].some(prefix => startsWithSegments(path, prefix));
 }
 
@@ -515,6 +518,7 @@ export function isPublicRoutePath(path: string) {
  * entity page and a custom feed.
  */
 export function keepsNavbarPath(path: string) {
+  if (isConferencePath(path)) return true;
   return [['paper'], ['public', 'list'], ['explorer'], ['feeds']].some(prefix => startsWithSegments(path, prefix));
 }
 

@@ -72,6 +72,7 @@ const ListsPage = lazyWithPreload(() => import('./components/lists/lists-page.ts
 const PDFViewer = lazyWithPreload(() => import('./components/pdf/pdf-viewer.tsx'))
 const SaveToListModal = lazyWithPreload(() => import('./components/lists/save-to-list-modal.tsx'))
 const SearchPage = lazyWithPreload(() => import('./components/search/search-page.tsx'))
+const ConferencePage = lazyWithPreload(() => import('./components/conferences/conference-page.tsx'))
 const EntityExplorer = lazyWithPreload(() => import('./components/explorer/entity-explorer.tsx'))
 const FollowingFeedPage = lazyWithPreload(() => import('./components/following/following-feed-page.tsx'))
 const RecentFeedPage = lazyWithPreload(() => import('./components/recent/recent-feed-page.tsx'))
@@ -591,6 +592,8 @@ function AppContent() {
               </PageTransition>
             }
           />
+          <Route path="/conferences" element={<PageTransition><ConferencePage /></PageTransition>} />
+          <Route path="/conferences/:editionId" element={<PageTransition><ConferencePage /></PageTransition>} />
           <Route
             path="/explorer/:type/:id"
             element={
