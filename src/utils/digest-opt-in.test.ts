@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequestChain, deliverWelcomeYes, legacyFlagSettles, optInAttemptStep, optInFailureReason, readAnswerApplies } from './digest-opt-in.ts';
+import { createRequestChain, deliverWelcomeYes, legacyFlagSettles, optInAttemptStep, optInFailureReason, optInRefused, readAnswerApplies } from './digest-opt-in.ts';
 
 const failure = (code: string, status = 0) => ({ code, status });
 const NETWORK = failure('EMAIL_UNAVAILABLE');
@@ -53,13 +53,27 @@ test('a request that never reached the server is sent again, and the answer of t
 
 test('a welcome yes is sent four times at most, and a refusal is sent once', async () => {
   const exhausted = scriptedDelivery([NETWORK, NETWORK, NETWORK, NETWORK, 'created']);
-  assert.deepEqual(await exhausted.result, { failed: NETWORK });
+  assert.deepEqual(await exhausted.result, { failed: NETWORK, uncertain: true });
   assert.equal(exhausted.attempts(), 4);
 
   const refusal = failure('EMAIL_ADDRESS_NOT_VERIFIED', 403);
   const refused = scriptedDelivery([refusal, 'created']);
-  assert.deepEqual(await refused.result, { failed: refusal });
+  assert.deepEqual(await refused.result, { failed: refusal, uncertain: false });
   assert.equal(refused.attempts(), 1);
+});
+
+test('only a request the server refused before writing anything is a certain failure', async () => {
+  for (const status of [400, 401, 403, 405, 409, 413, 429]) assert.equal(optInRefused(failure('EMAIL_REFUSED', status)), true, String(status));
+  // A build with no Worker address sends nothing.
+  assert.equal(optInRefused(failure('EMAIL_NOT_CONFIGURED')), true);
+  // No answer, a timeout or a 5xx can follow the server's write.
+  for (const unanswered of [NETWORK, TIMEOUT, failure('EMAIL_UNAVAILABLE', 503), failure('EMAIL_UNAVAILABLE', 500), failure('EMAIL_NOT_CONFIGURED', 503)]) {
+    assert.equal(optInRefused(unanswered), false, JSON.stringify(unanswered));
+  }
+
+  // A refusal that follows an attempt that may have written is not certain either.
+  const refusal = failure('EMAIL_OPT_IN_RATE_LIMIT', 429);
+  assert.deepEqual(await scriptedDelivery([failure('EMAIL_UNAVAILABLE', 503), refusal]).result, { failed: refusal, uncertain: true });
 });
 
 test('once the account that said yes is no longer the one signed in, nothing more is sent and nothing is reported', async () => {

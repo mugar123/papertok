@@ -246,6 +246,19 @@ test('the page says a count of changes to the email subscription stays after uns
   assert.match(kept, /The count of the changes made to your email subscription, which holds neither your address nor your preferences, also stays, and an email subscription or reminder consent deleted from your account's Durable Object can remain in Cloudflare's 30-day storage history/);
 });
 
+// worker/email-subscription-store.ts: `resident` outlives the record. worker/email-notifications.ts: an index
+// put can land after INDEX_WRITE_DEADLINE_MS, and after a later unsubscribe or account purge.
+// worker/account-deletion.ts does not reach RequestQuotaLedger, whose subjects expire on their own.
+test('the page says the mark of a welcome start stays, what a late index write can leave, and that the request counts outlive the account', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /If the email was started from the welcome screen, the object also keeps a mark that it was\./);
+  assert.match(html, /leaves one too\. The mark stays as well\./);
+  assert.match(html, /In the rare case that Cloudflare's storage answers late while the email is being started from the welcome screen, an entry with your account identifier and the unsubscribe identifier, without your address, can be written to <strong>Cloudflare Workers KV<\/strong> after you have unsubscribed or deleted your account\. It starts no email\. The entry the schedule reads is removed at its next run, and the entry of the unsubscribe link when that link is used\./);
+  const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(kept, /The mark that the email was started from the welcome screen stays too\./);
+  assert.match(kept, /The request counts Cloudflare keeps under hashed account identifiers, to limit test emails, requests to start the email and citation lookups, are not deleted with the account either: they expire on their own within three days, or at the end of their week for citation lookups \(see Email updates\)\./);
+});
+
 // wrangler.toml lists EmailSubscriptionStore under new_sqlite_classes: Cloudflare keeps 30 days of
 // point-in-time history for that storage. The record holds `displayName` (worker/email-notifications.ts).
 test('the page says a deleted subscription can stay in Cloudflare\'s storage history for 30 days, that the subscription holds the sign-in name, and that welcome requests are counted', () => {

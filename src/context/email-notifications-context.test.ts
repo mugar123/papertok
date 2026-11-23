@@ -207,3 +207,72 @@ test('the started-email notice goes once the server confirms an unsubscribe made
   assert.ok(!screen.queryByText('Your weekly email is on'), 'the notice came back');
   assert.equal(reader.server.enabled, false);
 });
+
+// The security verifier's finding (ENG-215): no answer, a timeout or a 5xx can
+// follow the server's write, so only a refusal may say the email did not start.
+// Each test answers the first attempt with a 503 and the retry, two seconds
+// later, with a refusal, which ends the delivery without the longer waits.
+function unansweredThenRefused(storesTheEmail: boolean) {
+  const attempts = { made: 0 };
+  const answer = async (sent: Sent, server: { enabled: boolean }) => {
+    if (sent.path !== '/notifications/opt-in') return undefined;
+    attempts.made += 1;
+    if (attempts.made > 1) return Response.json({ code: 'EMAIL_OPT_IN_RATE_LIMIT' }, { status: 429 });
+    // The subscription is stored, and its index write fails.
+    if (storesTheEmail) server.enabled = true;
+    return Response.json({ code: 'EMAIL_UNAVAILABLE' }, { status: 503 });
+  };
+  return { attempts, answer };
+}
+
+test('a welcome yes the server stored before it failed is shown as on, with the way to turn it off', async (t) => {
+  const { attempts, answer } = unansweredThenRefused(true);
+  const reader = await startProvider(t, { enabled: false, answer });
+
+  act(() => { reader.settings().startWelcomeDigest({ uid: 'reader', interests: ['cs.LG'] }); });
+
+  const notice = (await screen.findByText('Your weekly email is on', undefined, { timeout: 10_000 })).closest('li');
+  assert.ok(notice);
+  assert.match(notice.textContent ?? '', /It goes to reader@example\.com on Mondays/);
+  assert.ok(within(notice).getByRole('button', { name: 'Turn off' }));
+  assert.equal(attempts.made, 2);
+  assert.equal(reader.settings().preferences.enabled, true);
+  assert.ok(!screen.queryByText("Your weekly email didn't start"), 'the email is on, and a notice says it did not start');
+  assert.ok(!screen.queryByText("We couldn't confirm your weekly email"));
+});
+
+test('a welcome yes left without a certain answer, which the server does not show as on, is reported as unconfirmed and never as not started', async (t) => {
+  const { attempts, answer } = unansweredThenRefused(false);
+  const reader = await startProvider(t, { enabled: false, answer });
+
+  act(() => { reader.settings().startWelcomeDigest({ uid: 'reader', interests: ['cs.LG'] }); });
+
+  const notice = (await screen.findByText("We couldn't confirm your weekly email", undefined, { timeout: 10_000 })).closest('li');
+  assert.ok(notice);
+  assert.match(notice.textContent ?? '', /it may already be on\. Check it in Settings\./);
+  assert.ok(within(notice).getByRole('button', { name: 'Open Settings' }));
+  assert.equal(attempts.made, 2);
+  assert.ok(!screen.queryByText("Your weekly email didn't start"), 'an uncertain failure was reported as certain');
+  assert.ok(!screen.queryByText('Your weekly email is on'));
+});
+
+test('a welcome yes the server refused outright says the email did not start, and why', async (t) => {
+  let attempts = 0;
+  const reader = await startProvider(t, {
+    enabled: false,
+    answer: async (sent) => {
+      if (sent.path !== '/notifications/opt-in') return undefined;
+      attempts += 1;
+      return Response.json({ code: 'EMAIL_OPT_IN_RATE_LIMIT' }, { status: 429 });
+    },
+  });
+
+  act(() => { reader.settings().startWelcomeDigest({ uid: 'reader', interests: ['cs.LG'] }); });
+
+  const notice = (await screen.findByText("Your weekly email didn't start", undefined, { timeout: 5_000 })).closest('li');
+  assert.ok(notice);
+  assert.match(notice.textContent ?? '', /too many requests to start your weekly email/);
+  assert.equal(attempts, 1);
+  assert.equal(reader.settings().preferences.enabled, false);
+  assert.ok(!screen.queryByText("We couldn't confirm your weekly email"));
+});

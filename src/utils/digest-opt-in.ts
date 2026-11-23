@@ -28,17 +28,30 @@ export function optInAttemptStep(error: unknown, attemptsMade: number): 'done' |
 }
 
 /**
+ * Whether a failed opt-in request is one the server refused before it wrote
+ * anything: any 4xx, or a build with no Worker address, which sends nothing.
+ * Every other failure (no answer, a timeout, a 5xx) can come after the server
+ * has started the email, so it does not say whether the email is on.
+ */
+export function optInRefused(error: unknown) {
+  const status = statusOf(error);
+  return (status >= 400 && status < 500) || (status === 0 && codeOf(error) === 'EMAIL_NOT_CONFIGURED');
+}
+
+/**
  * Hands a welcome yes to the server: one `send` per attempt, with the waits
  * `optInAttemptStep` asks for in between. `current` says the account that said
  * yes is still the one shown and signed in; once it is not, nothing more is
  * sent. Resolves with the server's answer, with the error of a failure that
- * will not pass, or with `null` when the yes was dropped.
+ * will not pass, or with `null` when the yes was dropped. `uncertain` says
+ * the email may be on all the same: the last attempt, or one before it, failed
+ * in a way that can follow the server's write (optInRefused).
  */
 export async function deliverWelcomeYes<Answer>({ send, current, wait }: {
   send: () => Promise<Answer>;
   current: () => boolean;
   wait: (milliseconds: number) => Promise<void>;
-}): Promise<{ answer: Answer } | { failed: unknown } | null> {
+}): Promise<{ answer: Answer } | { failed: unknown; uncertain: boolean } | null> {
   for (let attemptsMade = 1; ; attemptsMade += 1) {
     if (!current()) return null;
     let failure: unknown = null;
@@ -51,7 +64,8 @@ export async function deliverWelcomeYes<Answer>({ send, current, wait }: {
     const step = optInAttemptStep(failure, attemptsMade);
     if (step === 'done') return { answer: answer as Answer };
     if (step === 'drop') return null;
-    if (step === 'fail') return { failed: failure };
+    // Every attempt before the last failed in a way that may pass, which is also a way that may follow a write.
+    if (step === 'fail') return { failed: failure, uncertain: attemptsMade > 1 || !optInRefused(failure) };
     await wait(step.retryInMs);
   }
 }

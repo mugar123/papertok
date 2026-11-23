@@ -445,8 +445,18 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   // may not be the visitor who said yes, and was never asked. An overlay that
   // opens meanwhile, such as the privacy notice a new account can be owed, only
   // holds it back (toastStandingNotice).
-  const reportOptIn = useCallback((uid: string, startedAt: ActionStart, result: { outcome: DigestOptInOutcome; email: string } | { failed: unknown }, covers: string) => {
-    if ('failed' in result) {
+  const reportOptIn = useCallback((uid: string, startedAt: ActionStart, result: { outcome: DigestOptInOutcome; email: string } | { failed: unknown } | { unconfirmed: true }, covers: string) => {
+    if ('unconfirmed' in result) {
+      // No answer, a timeout or a 5xx can follow the server's write, so this
+      // does not say the email did not start. Settings reads what the server holds.
+      if (!accountCurrent(uid)) return;
+      toastError("We couldn't confirm your weekly email", {
+        startedAt,
+        description: "The email service didn't answer in time, so it may already be on. Check it in Settings.",
+        action: { label: 'Open Settings', onClick: () => { void navigateRef.current('/settings/notifications'); } },
+      });
+    } else if ('failed' in result) {
+      // Only for a request the server refused before it wrote anything (optInRefused).
       if (!accountCurrent(uid)) return;
       toastError("Your weekly email didn't start", {
         startedAt,
@@ -464,6 +474,20 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     }
   }, [accountCurrent, turnOffFromNotice]);
 
+  // Reads the stored preferences once the writes already queued have been
+  // answered, and shows them unless a newer write has the answer. A read that
+  // fails changes nothing: what is shown then stays as it was.
+  const readAfterUncertainOptIn = useCallback(async (uid: string) => {
+    try {
+      await chain.idle();
+      const start = chain.mark();
+      const stored = await getEmailNotificationPreferences(uid);
+      if (chain.readApplies(start) && accountCurrent(uid)) showServerPreferences(uid, stored);
+    } catch (readError) {
+      console.warn('Could not read the weekly email after its start went unanswered', readError);
+    }
+  }, [accountCurrent, chain, showServerPreferences]);
+
   // A yes given on the welcome under the text that promises the email from
   // sign-up. Onboarding hands it over once the account's profile is written
   // (completeOnboarding), and it is sent to the server from here, where it
@@ -480,11 +504,27 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       send: () => sendOptIn(uid, { consent: DIGEST_CONSENT_FROM_SIGNUP, interests: chosen }),
       current: () => accountCurrent(uid),
       wait: waitWhileMounted,
-    }).then((result) => {
+    }).then(async (result) => {
       if (!result) return;
-      reportOptIn(uid, startedAt, 'answer' in result ? result.answer : result, 'in your topics');
+      if ('answer' in result) {
+        reportOptIn(uid, startedAt, result.answer, 'in your topics');
+        return;
+      }
+      if (!result.uncertain) {
+        reportOptIn(uid, startedAt, result, 'in your topics');
+        return;
+      }
+      // The server may have started the email before the failure: an index
+      // write that failed after the subscription was stored, or an answer
+      // that was lost. One read shows what it holds. When the email is on,
+      // the reader gets the same notice as for a start that was answered,
+      // with its way to turn it off; otherwise nothing claims it did not start.
+      await readAfterUncertainOptIn(uid);
+      if (!accountCurrent(uid)) return;
+      const { enabled, email } = shown.current;
+      reportOptIn(uid, startedAt, enabled ? { outcome: 'on', email } : { unconfirmed: true }, 'in your topics');
     });
-  }, [accountCurrent, reportOptIn, sendOptIn, waitWhileMounted]);
+  }, [accountCurrent, readAfterUncertainOptIn, reportOptIn, sendOptIn, waitWhileMounted]);
 
   // A yes given under the earlier welcome text ("Starts with your first
   // follow") waits in the profile (`emailDigestPending`) and keeps that
