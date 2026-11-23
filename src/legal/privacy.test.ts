@@ -110,9 +110,9 @@ test('the page names the public pages a shared link opens as places for the Priv
   const where = html.match(/with the <strong>Privacy<\/strong> button ([^.]*)\./)?.[1];
   assert.ok(where, 'the policy no longer says where the Privacy button is');
   assert.match(where, /welcome screens/);
-  // The sentence Pablo approved on 2026-10-25, word for word.
+  // The sentence Pablo approved on 2026-10-25, with the conference pages he added on 2026-11-23, word for word.
   assert.ok(
-    where.endsWith('screens and of the public pages a shared link opens: a paper, a list, an author, institution, journal, topic or project page, and the page for a link that no longer works'),
+    where.endsWith('screens and of the public pages a shared link opens: a paper, a list, an author, institution, journal, topic or project page, a conference calendar, edition or Papers page, and the page for a link that no longer works'),
     where,
   );
   assert.doesNotMatch(where, /\bfeed\b/);
@@ -123,7 +123,7 @@ test('the page says figure lookups count against the caller address like the oth
   // worker/source-api.ts gives /resources/figures a per-address allowance through worker/caller-quota.ts.
   assert.match(html, /When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to\s+PaperTok's MCP server, or a public request looks up\s+papers, paper figures,\s+open-access links or a shared page, or a translation needs a fresh arXiv lookup,\s+that server uses the IP address/);
   // reserveCallerMinute (worker/caller-quota.ts) schedules every per-minute caller counter, figures included, for deletion a minute after its window.
-  assert.match(html, /The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule/);
+  assert.match(html, /The arXiv, paper-figure, open-access lookup, MCP and conference counters use the same cleanup schedule/);
 });
 
 test('the page describes translation data, quota retention, and how to remove the browser preference', () => {
@@ -136,11 +136,40 @@ test('the page describes translation data, quota retention, and how to remove th
   assert.match(storage, /language you chose for your last successful translation under your account identifier, in <code>papertok:paper-translation-language:\$\{uid\}<\/code>\. Signing out, deleting the account from Settings in this browser, or clearing the site's data removes that choice/);
 });
 
+// worker/ai-translation.ts handleFullPaperTranslation (the full-paper PR) sends the article text without the account.
+test('the page says what a full-paper translation sends to Anthropic, what PaperTok keeps and how long Anthropic keeps it', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /If you request a full-paper translation, PaperTok sends the article text needed for the translation and your chosen language to Anthropic\. PaperTok does not include your account identifier or email\. The article may itself name people\./);
+  assert.match(html, /PaperTok keeps the translation in memory while you read and does not store it on its servers\. PaperTok counts requests against a hashed account identifier in Cloudflare to enforce daily limits\. PaperTok schedules deletion within three days, though Cloudflare can run the cleanup late\./);
+  // The link lands on the paragraph that says a deleted counter can stay in Cloudflare's recovery history.
+  assert.match(html, /<a href="#request-counter-retention">counter recovery policy<\/a> below also applies/);
+  assert.match(html, /<p id="request-counter-retention"> The request counters this policy describes/);
+  assert.match(html, /Anthropic may process the text in any region it serves and ordinarily deletes API inputs and outputs within 30 days, subject to its agreement with PaperTok and exceptions for policy enforcement and legal obligations\./);
+});
+
+// Digest reminders (#555): the visit hour kept in the account's EmailSubscriptionStore with the reader's consent.
+test('the page says what opt-in digest reminders keep, for how long, and that they stay apart from analytics', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /If you subscribe to the weekly digest and verify your email, you can opt in to digest reminders in Settings\. With your consent, PaperTok keeps only the hour of your last signed-in visit when the app is visible, in your account's Cloudflare Durable Object\./);
+  assert.match(html, /PaperTok uses the visit for 30 days from the hour it records, then deletes it, and deletes it sooner if you turn reminders off, unsubscribe from the digest or delete your account\./);
+  assert.match(html, /if the run does not reach it, the visit stays stored, unused, until PaperTok next reads your subscription/);
+  assert.match(html, /PaperTok keeps this visit separate from usage analytics\./);
+});
+
+// The conference status and paper-list routes (#583) count each address per route and UTC minute.
+test('the page says conference requests have their own per-address limits under protected identifiers', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /Conference requests use separate per-address limits of 30 status requests and 60 paper-list requests per UTC minute, including when the server already has the answer\. The Worker counts these requests under protected identifiers derived from the address, route and minute using a secret key\./);
+});
+
 test('the page describes who sees the once-per-account announcement until 0.4', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // Guests and accounts created at or after the effective time are not told (nudges.ts privacyNoticeOwed).
   assert.match(html, /Until PaperTok 0\.4, you will see the current announcement in the app if you sign in to an account created before the change took effect and have no record of seeing an announcement from 7 November 2026 or later/);
   assert.match(html, /Once your account has that record, later changes will appear here without another announcement on any device/);
+  // PRIVACY_NOTICE_SHOWN_FROM, read against the reader's clock (nudges.ts privacyNoticeOwed).
+  assert.match(html, /The announcement appears from 30 November 2026, as your device's clock reads it\. Without an account, changes appear only on this page\./);
+  assert.match(html, /Revision 11 adds full-paper translation by Anthropic, per-minute limits on conference requests, the weekly email started from the welcome screen and how long its records are kept, and opt-in digest reminders\./);
   // PRIVACY_NOTICE_BASELINE_VERSION (src/legal/privacy-policy.ts) settles 2026-11-07 for every account.
   assert.match(html, /The announcement of the 7 November 2026 change is no longer shown, including to accounts that had not seen it/);
   // users/{uid}/settings/privacyNotice (src/services/privacy-notice-service.ts) is listed with the account's data.
@@ -160,11 +189,13 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('the current notice announces the 23 November policy changes and the 20 November Anthropic point', () => {
+test('the current notice announces revision 11: translations, request limits and the weekly email', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
-  assert.match(notice, /OpenAlex lookups now count per IP address each day.*scheduled for deletion within three days/i);
-  assert.match(notice, /Cloudflare's 30-day recovery history may keep any deleted request counter for up to 30 days more/i);
-  assert.match(notice, /Anthropic may run rewrites\/explanations outside the EU/i);
+  assert.match(notice, /^Translations, now including full papers, go to Anthropic without your account or email, possibly outside the EU\./);
+  assert.match(notice, /Limits on translations, OpenAlex lookups and conference pages count hashed or protected IDs, scheduled for deletion within three days/);
+  assert.match(notice, /Cloudflare's 30-day recovery history may keep deleted counters/);
+  assert.match(notice, /Weekly email records now expire, and opt-in reminders use your last signed-in visit hour for 30 days/);
+  assert.match(notice, /If an account deletion reply is lost, only a change counter, with no address or preferences, may remain/);
 });
 
 test('the notice start is an ISO UTC instant that is not before the effective time', () => {
@@ -227,4 +258,66 @@ test('the page lists the notice key among what the browser keeps and what remove
   const changes = html.match(/<h2>Changes<\/h2>.*?<\/p>/)?.[0] ?? '';
   assert.match(changes, /Once the announcement is shown, your account remembers that version however you close it/);
   assert.doesNotMatch(changes, /Hide for now/);
+});
+
+// worker/email-notifications.ts `startDigestOptIn` and the welcome hand-off in
+// context/email-notifications-context.tsx; `emailDigestOptIn` in context/auth-context.tsx.
+test('the page says a welcome yes starts the weekly email when the account is created, and that a yes under the earlier wording waits in the profile', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /If you say yes to the weekly email on the welcome screen, it starts as soon as you finish creating your account/);
+  assert.match(html, /Your browser sends that yes to PaperTok's server with the subjects you chose and the version of the welcome's wording you saw/);
+  assert.match(html, /If it cannot reach the server, it tries again up to three times over the next few minutes/);
+  assert.match(html, /If you said yes while the welcome said the email would start with your first follow, PaperTok keeps that yes in your account profile in <strong>Google Firestore<\/strong>\. When you first follow an author, topic, institution or project, your browser asks PaperTok's server to start the email, which it does unless you have already turned email updates on or off yourself/);
+  // legacyFlagSettles (utils/digest-opt-in.ts): any answer, or a refusal no retry changes.
+  assert.match(html, /The saved yes is deleted once the email starts, PaperTok finds it cannot start, or you save your email settings yourself/);
+  // No per-account record of the yes is kept in the browser any more.
+  assert.doesNotMatch(html, /which wording of the welcome's weekly email choice you said yes to, or that this yes no longer applies/);
+});
+
+// worker/email-subscription-store.ts: `version`, `cancelledAt` and the cleanup journal outlive the record.
+test('the page says a count of changes to the email subscription stays after unsubscribing, and for 30 days, or at most 60, after account deletion, up top too', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /Unsubscribing deletes the subscription\. So that a yes you gave earlier, or a request still on its way, can never turn the email back on, the Durable Object of your account then keeps, under your account identifier and without your address or preferences, a count of the changes made to your email subscription and the number of the change that last ended it/);
+  assert.match(html, /Until PaperTok confirms it has deleted the subscription's other email records, the object also keeps their identifiers/);
+  assert.match(html, /After you delete your account, the count stays for 30 days and is then deleted, with everything else the object holds; deleting an account that never had the email leaves one for those 30 days too/);
+  const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
+  assert.match(summary, /A count of the changes made to your email subscription, without your address, stays for 30 more days, or at most 60 if deleting your other email records keeps failing, and a deleted email subscription can remain in Cloudflare's storage history for up to 30 days \(see Email updates\)/);
+  const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(kept, /The count of the changes made to your email subscription, which holds neither your address nor your preferences, stays for 30 more days, or at most 60 if deleting your other email records keeps failing, and an email subscription or reminder consent deleted from your account's Durable Object can remain in Cloudflare's 30-day storage history/);
+});
+
+// worker/email-subscription-store.ts: `resident` outlives the record. worker/email-notifications.ts: an index
+// put can land after INDEX_WRITE_DEADLINE_MS, and after a later unsubscribe or account purge.
+// worker/account-deletion.ts does not reach RequestQuotaLedger, whose subjects expire on their own.
+test('the page says how long the mark of a welcome start and a late index write stay, what stays in a browser that never signs in, and that the request counts outlive the account', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /If the email was started from the welcome screen, the object also keeps a mark that it was\./);
+  // Nothing on the page says that these stay without a limit.
+  assert.doesNotMatch(html, /The mark stays as well|stays until that link is used|The count stays after you delete your account|also stays, and (a deleted|an) email subscription/);
+  assert.match(html, /leaves one for those 30 days too\. If deleting the subscription's other email records is still failing then, the object waits for it, for at most 30 more days\. The mark is kept and deleted with the count\./);
+  assert.match(html, /In the rare case that Cloudflare's storage answers late while the email is being started, its settings saved or an email sent, an entry with your account identifier and the unsubscribe identifier, without your address, can be written to <strong>Cloudflare Workers KV<\/strong> after you have unsubscribed or deleted your account\. It starts no email\. If the email was started from the welcome screen, the entry the schedule reads is removed at its next run\. The entry of the unsubscribe link expires 120 days after it was written\./);
+  const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(kept, /The mark that the email was started from the welcome screen is kept and deleted with the count\. An entry that links an unsubscribe identifier to your account identifier, which a late write can leave in Cloudflare Workers KV, expires 120 days after it was written\./);
+  assert.match(html, /In a browser that never signs in, these answers stay until you clear this site's data; a yes older than 24 hours stays with them but is not used\./);
+  assert.match(kept, /The request counts Cloudflare keeps under hashed account identifiers, to limit test emails, requests to start the email and citation lookups, are not deleted with the account either: they expire on their own within three days, or at the end of their week for citation lookups \(see Email updates\)\./);
+});
+
+// wrangler.toml lists EmailSubscriptionStore under new_sqlite_classes: Cloudflare keeps 30 days of
+// point-in-time history for that storage. The record holds `displayName` (worker/email-notifications.ts).
+test('the page says a deleted subscription can stay in Cloudflare\'s storage history for 30 days, that the subscription holds the sign-in name, and that welcome requests are counted', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /Cloudflare keeps a 30-day point-in-time history of the Durable Object's storage\. A subscription deleted from it, with its address, name, subjects and follows, and reminder consent with its address, can therefore remain in that history for up to 30 more days after you unsubscribe, withdraw the consent or delete your account; PaperTok never reads or restores that history/);
+  assert.match(html, /PaperTok stores your email address, the name your sign-in gives \(the email greets you with it\), your sending preferences/);
+  // RequestQuotaLedger is a SQLite-backed Durable Object too (wrangler.toml).
+  assert.match(html, /The same history covers the request counts Cloudflare keeps in Durable Objects under hashed identifiers/);
+  // OPT_IN_ACCOUNT_HOURLY_LIMIT in worker/email-notifications.ts; the ledger keeps a subject for three days.
+  assert.match(html, /To limit test emails, and to allow at most ten requests an hour to start the email from the welcome, Cloudflare counts them under a hashed account identifier that it keeps for up to three days/);
+});
+
+// utils/guest-interests.ts: `emailDigestConsent` travels with a yes, and `WELCOME_DIGEST_YES_MAX_AGE_MS` bounds it.
+test('the page says the browser keeps the welcome answer about the weekly email with its wording version, and that a yes is used only for 24 hours', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(storage, /This browser saves your welcome interests, area priorities and feed mix, and your answer about the weekly email with the version of the welcome's wording you saw, until they are saved to a new account, an account with existing interests loads, or you sign out or switch accounts/);
+  assert.match(storage, /A yes to the weekly email is used only for 24 hours after you give it/);
 });

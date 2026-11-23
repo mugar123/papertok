@@ -14,7 +14,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so the account record identifies the text behind the notice.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-23.10';
+export const PRIVACY_POLICY_VERSION = '2026-11-24.11';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -139,8 +139,23 @@ export const PRIVACY_POLICY_VERSION = '2026-11-23.10';
  * PRIVACY_NOTICE_SHOWN_FROM below: Pablo asked on 2026-11-23 that it appear no
  * earlier than 30 November, with the 0.4 changes. That instant says when the
  * dialog may open, not who is owed it: who is still decided by this instant.
+ *
+ * Version 2026-11-24.11 adds full-paper translation by Anthropic, the
+ * per-address, per-minute limits of the conference status and paper-list
+ * routes (#583), the weekly email started from the welcome screen with how
+ * long its leftover records stay (#570, #577) and opt-in digest reminders
+ * (#555). Its text ships in its own pull request, merged before any of those
+ * features is enabled, so the page is live before them. Its summary keeps the
+ * points of 2026-11-23.10, whose notice has not opened yet. Pablo chose on
+ * 2026-11-23 to keep the once-per-account rule and PRIVACY_NOTICE_SHOWN_FROM:
+ * the notice, now announcing this version, opens from 30 November. The
+ * release window runs past midnight UTC, so the page is dated 24 November and
+ * this instant stands at the end of that day. If the merge slips to a later
+ * UTC day, move the page's "Last updated" date, this version and this instant
+ * to the merge day before merging, and lower this instant to the deployment's
+ * success time once it is live.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-23T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-24T23:59:59Z';
 
 /**
  * The earliest instant (ISO UTC) at which the in-app notice may open, read
@@ -166,9 +181,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  'OpenAlex lookups now count per IP address each day, under a protected day identifier scheduled for deletion within three days.',
-  "Cloudflare's 30-day recovery history may keep any deleted request counter for up to 30 days more.",
-  'Anthropic may run rewrites/explanations outside the EU.',
+  'Translations, now including full papers, go to Anthropic without your account or email, possibly outside the EU.',
+  "Limits on translations, OpenAlex lookups and conference pages count hashed or protected IDs, scheduled for deletion within three days. Cloudflare's 30-day recovery history may keep deleted counters.",
+  'Weekly email records now expire, and opt-in reminders use your last signed-in visit hour for 30 days. If an account deletion reply is lost, only a change counter, with no address or preferences, may remain.',
 ];
 
 /**
@@ -181,20 +196,32 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  lead: 'OpenAlex',
+  lead: 'Translations',
   clauses: [
-    ['count per IP address each day', /so that one address cannot use up the day's shared OpenAlex allowance: each address has 1,000 billed units and 3,000 lookups by identifier per UTC day/],
-    ['a protected day identifier', /a second identifier, derived the same way from the address and the current day/],
+    ['Translations', /When you request a translation, PaperTok sends the arXiv title, abstract and chosen language to Anthropic without your identity or email/],
+    ['now including full papers', /If you request a full-paper translation, PaperTok sends the article text needed for the translation and your chosen language to Anthropic/],
+    ['without your account or email', /PaperTok does not include your account identifier or email/],
+    ['possibly outside the EU', /Anthropic may process the request in any region it serves, including outside the European Union/],
+    ['Limits on translations', /PaperTok counts requests against a hashed account identifier in Cloudflare to enforce daily limits/],
+    ['OpenAlex lookups', /so that one address cannot use up the day's shared OpenAlex allowance/],
+    ['conference pages', /Conference requests use separate per-address limits of 30 status requests and 60 paper-list requests per UTC minute/],
+    ['hashed or protected IDs', /The Worker counts these requests under protected identifiers derived from the address, route and minute using a secret key/],
     ['scheduled for deletion within three days', /Each store's deletion is scheduled for at most three days after the first request it receives/],
     ["Cloudflare's 30-day recovery history", /Cloudflare keeps a recovery history of that storage that reaches back 30 days/],
-    ['any deleted request counter', /The request counters this policy describes, whether kept under a hashed account identifier, a protected identifier derived from an IP address or a hashed recipient identifier/],
-    ['may keep', /a deleted counter may remain there for up to 30 days more/],
-    ['rewrites/explanations', /Paper explanations and rewrites are generated by a Claude language model/],
-    ['outside the EU', /Anthropic may process the request in any region it serves, including outside the European Union/],
+    ['may keep deleted counters', /a deleted counter may remain there for up to 30 days more/],
+    ['Weekly email records now expire', /After you delete your account, the count stays for 30 days and is then deleted/],
+    ['Weekly email records now expire', /expires 120 days after it was written/],
+    ['opt-in reminders', /you can opt in to digest reminders in Settings/],
+    ['use your last signed-in visit hour for 30 days', /PaperTok uses the visit for 30 days from the hour it records/],
+    ['last signed-in visit hour', /keeps only the hour of your last signed-in visit when the app is visible/],
+    // PENDING PABLO: replace with the #570 lane's lost-reply sentence once approved.
+    ['If an account deletion reply is lost, only a change counter, with no address or preferences, may remain', /If the reply to an account deletion is lost, only the count of changes, without your address or preferences, may remain/],
   ],
   unsaid: [
     [/(stores?|keeps?|logs?|records?|counts?) (your|the) IP address/i, 'the counters hold a derived identifier, not the address'],
     [/(is|are|gets?) deleted|deleted (after|within)/i, 'deletion is scheduled, and Cloudflare can run it late'],
     [/PaperTok (reads|uses) the recovery history/i, 'PaperTok has no feature that reads the recovery history'],
+    [/(keep|stor|retain|hold|delet|eras)\w*[^.]*visit hour[^.]*30 days/i, 'an expired visit can stay stored, unused, until the next read of the subscription'],
+    [/stores? (the|your) translation/i, 'PaperTok keeps translations only in memory while you read'],
   ],
 };
