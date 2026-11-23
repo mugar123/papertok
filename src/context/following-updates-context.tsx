@@ -1,3 +1,4 @@
+import { sourceFeedFailure } from './source-feed-failure.ts';
 import type { PropsWithChildren } from 'react';
 import type { Paper } from '../models/paper.ts';
 type FollowingResult = Awaited<ReturnType<typeof fetchFollowingUpdates>>;
@@ -7,6 +8,7 @@ interface StoredUpdates {
 }
 export interface FollowingUpdatesContextValue {
   items: Paper[]; seenIds: Set<string>; loading: boolean; refreshing: boolean;
+  takeFailureReport: (() => boolean) | undefined;
   error: unknown; meta: Omit<FollowingResult, 'papers'>; lastUpdatedAt: string | null;
   refresh: (options?: { silent?: boolean }) => Promise<void>;
   markSeen: (paper: string | Partial<Paper>) => void;
@@ -81,7 +83,8 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
   const seenIdsRef = useRef(seenIds);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const [failure, setFailure] = useState<ReturnType<typeof sourceFeedFailure> | null>(null);
+  const error = failure?.error ?? null;
   const [meta, setMeta] = useState({ checkedEntities: 0, totalEntities: 0, failedEntities: 0 });
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const initializedForUser = useRef<string | null>(null);
@@ -166,7 +169,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
     if (!followedEntities.length) {
       // No follow is left to fail: an earlier refresh's error goes with them,
       // so the empty state shows instead of an error Try again cannot clear.
-      setError(null);
+      setFailure(null);
       showItems([]);
       setMeta({ checkedEntities: 0, totalEntities: 0, failedEntities: 0 });
       setLastUpdatedAt(new Date().toISOString());
@@ -185,7 +188,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
 
     if (silent) setLoading(true);
     else setRefreshing(true);
-    setError(null);
+    setFailure(null);
 
     const isCurrent = () => isCurrentFollowingRequest(activeRequestRef.current, { userId, signature });
     await settleFollowingRefresh(request, {
@@ -218,7 +221,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
         // in which every follow failed rejects (fetchFollowingUpdates), and the
         // cards it would have replaced are still the newest answer (ENG-176).
         console.error('Error loading followed updates', refreshError);
-        setError(refreshError);
+        setFailure(sourceFeedFailure(refreshError));
       },
       // Only the latest refresh started ends the spinner; when the follows
       // that replaced these start none (a fresh cache, or no follow left),
@@ -362,11 +365,12 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
     loading,
     refreshing,
     error,
+    takeFailureReport: failure?.takeReport,
     meta,
     lastUpdatedAt,
     refresh,
     markSeen,
-  }), [error, shownItems, lastUpdatedAt, loading, markSeen, meta, refreshing, refresh, seenIds]);
+  }), [error, failure, shownItems, lastUpdatedAt, loading, markSeen, meta, refreshing, refresh, seenIds]);
 
   return <FollowingUpdatesContext.Provider value={value}>{children}</FollowingUpdatesContext.Provider>;
 }

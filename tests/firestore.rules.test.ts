@@ -22,12 +22,15 @@ import {
 import { buildSavedPaperPayload } from '../src/utils/saved-paper-payload.ts';
 import { paperLegacyAdapter, storedClassification } from '../src/models/paper.ts';
 import { areaLabelForPaper } from '../src/utils/area-accent.ts';
+import { serializeInteractionPaper } from '../src/context/library-entry.ts';
 import { serializeLibraryPaper } from '../src/utils/reading-library.ts';
 import { journalExplorerLink } from '../src/utils/explorer-paths.ts';
 import { copyForMergeWrite } from '../src/utils/stored-copy-write.ts';
 import { LIST_COLORS } from '../src/utils/list-colors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
 import { CATEGORIES } from '../src/data/category-taxonomy.ts';
+import { INTEREST_MIXES, normalizeInterestSettings } from '../src/utils/area-preferences.ts';
+import { AI_EXPLANATION_LEVEL_IDS, normalizeReadingPreferences } from '../src/utils/user-settings.ts';
 import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
@@ -121,6 +124,142 @@ test('only the account owner can store a valid mix and per-area preferences', as
   await assertFails(updateDoc(doc(asBob(), 'users', ALICE), { interestMix: 'balanced' }));
   await assertFails(getDoc(doc(asBob(), 'users', ALICE)));
   await assertSucceeds(updateDoc(ref, { areaPreferences: {}, interestMix: deleteField() }));
+});
+
+// =========================================================================
+// Interest mix and per-area preferences, written the way the client writes them
+//
+// The test above updates an existing document. These use the client's own write
+// calls (src/context/auth-context.tsx), including the create that an account's
+// first onboarding write is, and the client's own lists of values.
+// =========================================================================
+
+/** The write `updatePreferences` makes: whole-field replacement, not a deep merge. */
+const settingsWrite = (ref: ReturnType<typeof doc>, patch: Record<string, unknown>) =>
+  setDoc(ref, patch, { mergeFields: Object.keys(patch) });
+
+test('a new account\'s onboarding write is a create the rules accept', async () => {
+  await reset();
+  const ref = doc(asAlice(), 'users', ALICE);
+  // No document exists, so this merge is a create: the first write of an account.
+  const settings = normalizeInterestSettings({
+    interestMix: 'half-and-half',
+    areaPreferences: { ai: { priority: 'curiosity', level: 'researcher' }, physics: { priority: 'essential' } },
+  }, ['ai', 'physics']);
+  await assertSucceeds(setDoc(ref, {
+    onboardingComplete: true,
+    readingPreferences: normalizeReadingPreferences({ aiExplanationLevel: 'beginner' }),
+    preferences: ['cs.AI', 'physics.optics'],
+    ...settings,
+  }, { merge: true }));
+  const stored = (await getDoc(ref)).data();
+  assert.equal(stored?.interestMix, 'half-and-half');
+  assert.deepEqual(stored?.areaPreferences, { ai: { priority: 'curiosity', level: 'researcher' }, physics: { priority: 'essential' } });
+  assert.deepEqual(stored?.readingPreferences, { aiExplanationLevel: 'beginner', language: 'en', languagePreferenceSet: false });
+});
+
+test('an onboarding write that sets no mix and no area preference is a create the rules accept', async () => {
+  await reset();
+  const ref = doc(asAlice(), 'users', ALICE);
+  await assertSucceeds(setDoc(ref, { onboardingComplete: true, preferences: ['cs.LG'] }, { merge: true }));
+  assert.deepEqual((await getDoc(ref)).data(), { onboardingComplete: true, preferences: ['cs.LG'] });
+});
+
+test('every mix, area, priority and level the client can write is accepted', async () => {
+  // The rules hand-copy these lists. Areas, levels and mixes come from the
+  // client's own constants, so adding one there without the rules fails here.
+  // The client has no runtime list of priorities (`AreaPriority` is a type),
+  // so those two are written out.
+  const areas = Object.keys(CATEGORIES);
+  const priorities = ['essential', 'curiosity'];
+  const levels = [...AI_EXPLANATION_LEVEL_IDS].filter((level): level is string => typeof level === 'string');
+  const areaPreferences = Object.fromEntries(areas.map((area, index) => [
+    area,
+    { priority: priorities[index % priorities.length], level: levels[index % levels.length] },
+  ]));
+  // Every priority and level lands on at least one area.
+  assert.deepEqual(new Set(Object.values(areaPreferences).map(entry => entry.priority)), new Set(priorities));
+  assert.deepEqual(new Set(Object.values(areaPreferences).map(entry => entry.level)), new Set(levels));
+
+  await reset();
+  const ref = doc(asAlice(), 'users', ALICE);
+  for (const interestMix of Object.keys(INTEREST_MIXES)) {
+    // What the client keeps of this choice: nothing the rules would be asked to judge is lost.
+    const settings = normalizeInterestSettings({ interestMix, areaPreferences });
+    assert.equal(settings.interestMix, interestMix);
+    assert.deepEqual(settings.areaPreferences, areaPreferences);
+    await assertSucceeds(setDoc(ref, { onboardingComplete: true, preferences: ['cs.LG'], ...settings }, { merge: true }));
+    const stored = (await getDoc(ref)).data();
+    assert.equal(stored?.interestMix, interestMix);
+    assert.deepEqual(stored?.areaPreferences, areaPreferences);
+  }
+});
+
+test('a mix or area preference the client never writes is refused, on create and on a later write', async () => {
+  const invalid: Record<string, unknown>[] = [
+    { areaPreferences: { astrology: { priority: 'essential' } } },
+    { areaPreferences: { 'cs.AI': { priority: 'essential' } } },
+    { areaPreferences: { ai: { priority: 'urgent' } } },
+    { areaPreferences: { ai: { level: 'expert' } } },
+    { areaPreferences: { ai: { priority: 'essential', note: 'x' } } },
+    { areaPreferences: { ai: 'essential' } },
+    { areaPreferences: [] },
+    { areaPreferences: 'ai' },
+    { areaPreferences: null },
+    { interestMix: 'all-play' },
+    { interestMix: 75 },
+  ];
+
+  await reset();
+  for (const bad of invalid) {
+    await assertFails(setDoc(doc(asAlice(), 'users', ALICE), { onboardingComplete: true, preferences: ['cs.LG'], ...bad }, { merge: true }));
+  }
+  assert.equal((await getDoc(doc(asAlice(), 'users', ALICE))).exists(), false, 'no refused create left a document behind');
+
+  const valid = { interestMix: 'balanced', areaPreferences: { ai: { priority: 'essential', level: 'university' } } };
+  await assertSucceeds(setDoc(doc(asAlice(), 'users', ALICE), { onboardingComplete: true, preferences: ['cs.LG'], ...valid }, { merge: true }));
+  for (const bad of invalid) {
+    await assertFails(settingsWrite(doc(asAlice(), 'users', ALICE), bad));
+  }
+  const stored = (await getDoc(doc(asAlice(), 'users', ALICE))).data();
+  assert.equal(stored?.interestMix, 'balanced');
+  assert.deepEqual(stored?.areaPreferences, valid.areaPreferences);
+});
+
+test('the Settings write replaces the per-area map and clears it on an onboarded account', async () => {
+  await reset();
+  const ref = doc(asAlice(), 'users', ALICE);
+  await assertSucceeds(setDoc(ref, {
+    onboardingComplete: true,
+    preferences: ['cs.AI', 'physics.optics'],
+    ...normalizeInterestSettings({
+      interestMix: 'half-and-half',
+      areaPreferences: { ai: { priority: 'curiosity', level: 'researcher' }, physics: { priority: 'essential' } },
+    }, ['ai', 'physics']),
+  }, { merge: true }));
+
+  // Replace: `physics` is gone from the stored map, which a deep merge would keep.
+  await assertSucceeds(settingsWrite(ref, {
+    preferences: ['cs.AI'],
+    deselectedPreferences: ['physics.optics'],
+    addedPreferences: [],
+    ...normalizeInterestSettings({ interestMix: 'mostly-work', areaPreferences: { ai: { level: 'beginner' } } }, ['ai']),
+  }));
+  let stored = (await getDoc(ref)).data();
+  assert.equal(stored?.interestMix, 'mostly-work');
+  assert.deepEqual(stored?.areaPreferences, { ai: { level: 'beginner' } });
+
+  // Clear: the map is written empty.
+  await assertSucceeds(settingsWrite(ref, {
+    preferences: ['cs.AI'],
+    deselectedPreferences: ['physics.optics'],
+    addedPreferences: [],
+    ...normalizeInterestSettings({ interestMix: 'balanced' }, ['ai']),
+    areaPreferences: {},
+  }));
+  stored = (await getDoc(ref)).data();
+  assert.equal(stored?.interestMix, 'balanced');
+  assert.deepEqual(stored?.areaPreferences, {});
 });
 
 // =========================================================================
@@ -1818,4 +1957,60 @@ test('custom feeds: the owner keeps up to eight feeds in one document, and nobod
   await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'settings', 'customFeeds')));
   await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'settings', 'customFeeds'), { feeds: [], updatedAt: serverTimestamp() }));
   await assertFails(getDoc(doc(asGuest(), 'users', ALICE, 'settings', 'customFeeds')));
+});
+
+test('likes and saves accept older corpus revisions and changes at the same revision', async () => {
+  await reset();
+  const id = '2611.26060';
+  const paper = { id, title: 'A conference paper' };
+  const dated = { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' as const };
+  const undated = { id: 'S4306419637', label: 'ICLR', evidence: 'openreview' as const };
+  for (const collection of ['interactions', 'savedPapers']) {
+    const ref = doc(asAlice(), 'users', ALICE, collection, id);
+    const write = (mark?: typeof dated | typeof undated, corpusUpdatedAt?: number) => {
+      const card = paperLegacyAdapter({ ...paper, acceptedConference: mark, corpusUpdatedAt });
+      return collection === 'interactions'
+        ? { liked: true, paper: copyForMergeWrite(serializeInteractionPaper(card, { personalLibrary: {}, libraryPapers: {} })) }
+        : copyForMergeWrite(buildSavedPaperPayload(card));
+    };
+    await assertSucceeds(setDoc(ref, write(dated), { merge: true }));
+    await assertSucceeds(setDoc(ref, write(), { merge: true }));
+    const read = async () => {
+      const data = (await getDoc(ref)).data()!;
+      return (collection === 'interactions' ? data.paper : data).acceptedConference;
+    };
+    assert.deepEqual(await read(), dated);
+    await assertSucceeds(setDoc(ref, write(undated), { merge: true }));
+    assert.deepEqual(await read(), undated);
+    await assertSucceeds(setDoc(ref, write(dated, 100), { merge: true }));
+    const fresh = write(undefined, 200);
+    await assertSucceeds(setDoc(ref, collection === 'interactions' ? { ...fresh, liked: false } : fresh, { merge: true }));
+    assert.equal(await read(), undefined);
+    await assertSucceeds(setDoc(ref, write(dated, 100), { merge: true }));
+    assert.deepEqual(await read(), dated);
+    const data = (await getDoc(ref)).data()!;
+    if (collection === 'interactions') assert.equal(data.liked, true);
+    assert.equal((collection === 'interactions' ? data.paper : data).corpusUpdatedAt, 100);
+    await assertSucceeds(setDoc(ref, write(undated, 100), { merge: true }));
+    assert.deepEqual(await read(), undated);
+    await assertFails(setDoc(doc(asBob(), 'users', ALICE, collection, id), write(dated), { merge: true }));
+  }
+});
+
+test('library rules reject malformed conference marks and corpus revisions on both copies', async () => {
+  await reset();
+  const dated = { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' };
+  for (const collection of ['interactions', 'savedPapers']) {
+    const ref = doc(asAlice(), 'users', ALICE, collection, '2611.26060');
+    const write = (fields: Record<string, unknown>) => setDoc(ref, collection === 'interactions'
+      ? { liked: true, paper: fields } : { title: 'A conference paper', ...fields });
+    await assertSucceeds(write({ acceptedConference: dated, corpusUpdatedAt: 100 }));
+    for (const revision of [-1, 0.5, '100', null]) {
+      await assertFails(write({ corpusUpdatedAt: revision }));
+    }
+    for (const mark of [null, 'NeurIPS', {}, { ...dated, id: '' }, { ...dated, label: '' },
+      { ...dated, year: 26 }, { ...dated, year: 2025.5 }, { ...dated, evidence: 'title' }, { ...dated, evidence: 'openalex' }, { ...dated, comments: 'full text' }]) {
+      await assertFails(write({ acceptedConference: mark }));
+    }
+  }
 });

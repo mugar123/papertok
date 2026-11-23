@@ -8,7 +8,7 @@ import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
 import { reviewTagForPaper } from '../utils/paper-status.ts';
 import { hydrateSeededPaper } from '../utils/paper-seed.ts';
 import { listPaperFromCopies } from '../utils/list-paper-copies.ts';
-import { libraryAfterRead, libraryAfterLoad, libraryCopyOf, libraryAfterInteraction, loadedAfterLoad, loadedAfterInteraction, readLaterChange, withLibraryCopy } from './library-entry.ts';
+import { serializeInteractionPaper, libraryAfterRead, libraryAfterLoad, libraryCopyOf, libraryAfterInteraction, loadedAfterLoad, loadedAfterInteraction, readLaterChange, withLibraryCopy } from './library-entry.ts';
 
 const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const wakefield = { id: 'pmid:9500320', title: 'Ileal-lymphoid-nodular hyperplasia', journal: 'Lancet', publicationType: 'article' as const };
@@ -230,4 +230,46 @@ test('a refused Read later change puts back the entry as it was, retraction and 
   assert.equal(restored.readLater, false);
   assert.equal(restored.updatedAt, undefined);
   assert.equal(restored.readAt, '2026-10-29T11:00:00.000Z');
+});
+
+test('liking and saving keep the corpus conference and its provenance across a library reload', () => {
+  const acceptedConference = { id: 'S4306419644', label: 'ICML', evidence: 'openreview' as const };
+  const card = paperLegacyAdapter({ id: '2611.26060', title: 'A stored paper', acceptedConference });
+  const staleCard = { ...card, acceptedConference: { id: 'S4363606243', label: 'NeurIPS', year: 2025, evidence: 'arxiv-comment' as const } };
+  const copy = serializeLibraryPaper(card);
+  const state = { personalLibrary: {}, libraryPapers: { [card.id]: throughFirestore(copy) } };
+  assert.deepEqual(serializeInteractionPaper(staleCard, state).acceptedConference, acceptedConference);
+  const saved = buildSavedPaperPayload(card);
+  const loaded = loadedAfterInteraction(state.libraryPapers, card.id, serializeLibraryPaper(staleCard));
+  assert.deepEqual(loaded[card.id].acceptedConference, acceptedConference);
+  assert.deepEqual(listPaperFromCopies(loaded[card.id], throughFirestore(saved)).acceptedConference, acceptedConference);
+  assert.deepEqual(hydrateSeededPaper(staleCard, card)?.acceptedConference, acceptedConference);
+});
+
+test('a newer corpus answer removes a stale mark across a like, save, reload and paper page', () => {
+  const mark = { id: 'S4306419637', label: 'ICLR', year: 2025, evidence: 'openreview' as const };
+  const provider = paperLegacyAdapter({ id: 'openreview:abc', title: 'A withdrawn paper' });
+  const old = { ...provider, acceptedConference: mark, corpusUpdatedAt: 100 };
+  const corpus = { ...provider, corpusUpdatedAt: 200 };
+  const known = { [old.id]: loadedCopy(old) };
+  const entries = withLibraryCopy({}, old.id, known[old.id], { readLater: true });
+  const state = { libraryPapers: known, personalLibrary: entries };
+  const liked = serializeInteractionPaper(corpus, state);
+  const loaded = loadedAfterInteraction(known, old.id, liked);
+  const library = libraryAfterInteraction(entries, old.id, liked, entries[old.id]);
+  const copy = libraryCopyOf(library, loaded, old.id);
+  const saved = savedDocument(corpus);
+  for (const paper of [liked, loaded[old.id], library[old.id].paper, copy, saved,
+    listPaperFromCopies(loadedCopy(copy), savedDocument(old)),
+    listPaperFromCopies(known[old.id], saved),
+    hydrateSeededPaper(old, corpus), hydrateSeededPaper(corpus, provider)]) {
+    assert.ok(paper);
+    assert.equal(paper.acceptedConference, undefined);
+  }
+  const direct = serializeInteractionPaper(provider, state);
+  assert.equal('acceptedConference' in direct, false);
+  assert.equal('corpusUpdatedAt' in direct, false);
+  assert.deepEqual(loadedAfterInteraction(known, old.id, direct)[old.id].acceptedConference, mark);
+  assert.deepEqual(hydrateSeededPaper(old, provider)?.acceptedConference, mark);
+  assert.deepEqual(hydrateSeededPaper(saved, { ...old, corpusUpdatedAt: 300 })?.acceptedConference, mark);
 });

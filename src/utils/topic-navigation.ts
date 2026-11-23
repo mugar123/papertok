@@ -87,7 +87,7 @@ function getTaxonomyIndex() {
   return taxonomyIndex;
 }
 
-function findLocalTopic(value: string|undefined) {
+export function findLocalTopic(value: string|undefined) {
   if (!value) return null;
   if (Object.hasOwn(CATEGORIES, value)) {
     const area = CATEGORIES[value as keyof typeof CATEGORIES];

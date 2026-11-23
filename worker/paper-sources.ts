@@ -20,13 +20,13 @@ import {
   mapBioRxivPaper,
   mapEuropePmcSearchResult,
 } from '../src/services/domain-source-records.ts';
-import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { OPENALEX_WORK_SEARCH_FIELDS, doiPathId, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { openAlexNotableFilterForLeaf, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
 import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
 import { FOLLOWED_JOURNAL_TYPE_FILTER } from '../src/utils/following.ts';
 import { handleHarvestArxiv, nextOwnSeatSeconds, takeArxivSeat } from './arxiv-api.ts';
-import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
+import { handleAccountOpenAlex, handleHarvestOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
@@ -35,6 +35,7 @@ import { KEYWORD_LANE_PREFIX, isKeywordLane, keywordFilter, keywordSearchText } 
 import { OPENALEX_LEAF_VENUES, OPENALEX_NOTABLE_VENUE_LEAVES } from './openalex-leaf-venues.generated.ts';
 import { EUROPE_PMC_NOTABLE_QUERIES } from './europepmc-notable-leaves.generated.ts';
 import { ADS_NOTABLE_OWN_CLASS_LEAVES } from './ads-notable-leaves.generated.ts';
+import { conferenceInText } from './accepted-conference.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -196,7 +197,7 @@ export function parseArxivAtom(xml: string) {
 
 /** An arXiv record as the paper the browser built from the same record. */
 export function arxivRecordPaper(record: ArxivRecord): Paper {
-  return arxivPaper({
+  const paper = arxivPaper({
     arxivId: record.arxivId,
     title: record.title,
     abstract: record.abstract,
@@ -208,6 +209,9 @@ export function arxivRecordPaper(record: ArxivRecord): Paper {
     allCategories: record.categories,
     primaryCategory: record.categories[0],
   });
+  const mark = conferenceInText(record.comments, record.categories[0], 'arxiv-comment');
+  if (mark) paper.acceptedConference = mark;
+  return paper;
 }
 
 /**
@@ -219,7 +223,7 @@ export function arxivRecordPaper(record: ArxivRecord): Paper {
  * revision: it is filed with no arrival in any lane, and a lane that had
  * trimmed it does not put it on top of its day-by-day feed.
  */
-export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionToken }: { set: string; from: string; resumptionToken?: string }) {
+export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionToken, conferenceBackfillUntil }: { set: string; from: string; resumptionToken?: string; conferenceBackfillUntil?: string }) {
   const url = new URL(OAI_ENDPOINT);
   url.searchParams.set('verb', 'ListRecords');
   if (resumptionToken) url.searchParams.set('resumptionToken', resumptionToken);
@@ -227,6 +231,7 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
     url.searchParams.set('metadataPrefix', 'arXivRaw');
     url.searchParams.set('set', set);
     url.searchParams.set('from', from);
+    if (conferenceBackfillUntil) url.searchParams.set('until', conferenceBackfillUntil);
   }
   // On the same beat as every export.arxiv.org call. A seat refused, or a
   // ledger that cannot answer, is waited out like arXiv's own 503, until the
@@ -238,6 +243,22 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
   if (response.status === 503) return { stored: 0, listed: 0, resumptionToken: resumptionToken || '', retryAfterSeconds: Number(response.headers.get('retry-after')) || 30 };
   if (!response.ok) throw new PaperStoreError(`OAI_HTTP_${response.status}`, 502);
   const page = parseOaiPage(await response.text());
+  if (conferenceBackfillUntil) {
+    const marks = page.papers.flatMap(record => {
+      const mark = conferenceInText(record.comments, record.categories[0], 'arxiv-comment');
+      return mark ? [{ key: `arxiv:${record.arxivId.toLowerCase()}`, mark }] : [];
+    });
+    const db = database(env);
+    const { results } = await db.prepare(`SELECT w.id, j.value -> 'mark' AS mark, w.paper ->> 'corpusUpdatedAt' AS stamp
+      FROM json_each(?) j JOIN work_keys k ON k.key = j.value ->> 'key' JOIN works w ON w.id = k.work_id
+      WHERE w.paper -> 'acceptedConference' IS NULL`).bind(JSON.stringify(marks)).all<{ id: number; mark: string; stamp: number | null }>();
+    // Recheck the row at write time so a concurrent listing keeps its decision.
+    const answer = results.length && await db.prepare(`UPDATE works AS w SET paper = json_set(w.paper,
+      '$.acceptedConference', json(j.value ->> 'mark'), '$.corpusUpdatedAt', max(CAST(? AS INTEGER), coalesce(w.paper ->> 'corpusUpdatedAt', 0) + 1))
+      FROM json_each(?) j WHERE w.id = j.value ->> 'id' AND w.paper -> 'acceptedConference' IS NULL
+      AND w.paper ->> 'corpusUpdatedAt' IS j.value ->> 'stamp'`).bind(Date.now(), JSON.stringify(results)).run();
+    return { stored: answer ? answer.meta.changes : 0, listed: page.papers.length, resumptionToken: page.resumptionToken, retryAfterSeconds: 0 };
+  }
   const since = daysFromNow(-CORPUS_DAYS);
   const announced = daysFromNow(-LATE_ARRIVAL_DAYS);
   const recent = page.papers.filter(paper => paper.published >= since);
@@ -473,8 +494,9 @@ const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?
 // followed lanes there are, and 400 followed searches spent the whole share
 // before a paper was enriched, so the nightly refresh of followed lanes has a
 // part of 700. Category and notable lanes run before it every night, so they
-// stop at 3,000 and leave it its 700; enrichment runs last and spends what is
-// left.
+// stop at 3,000, leaving 700 under the nightly cap. Enrichment has no part
+// cap. After enrichment, author lookups can spend up to 2,500 of the units
+// remaining under both the nightly share and the feed tier's ceiling.
 type HarvestPart = 'categories' | 'nightly' | 'new';
 const HARVEST_OPENALEX_PARTS: Record<HarvestPart, HarvestAsk> = {
   categories: { part: { subject: 'openalex:harvest:categories', limit: 3_000 } },
@@ -583,7 +605,14 @@ function domainSource(source: string, perPage: number): SourceSpec['fetchPage'] 
     const request = domainSourceRequests(plan, eligible, page, perPage, 'recent').find(candidate => candidate.source === source);
     if (!request) return { items: [], newest: '', full: false };
     const response = await withShortWaits(waits, () => askRoute(DOMAIN_ROUTES[source], request.path, request.params, env));
-    return pageOf(filed(request.read(await response.json()), lane), Math.min(Number(request.params.limit) || perPage, perPage));
+    const papers = request.read(await response.json());
+    if (source === 'openreview') {
+      for (const paper of papers) {
+        if (!paper) continue;
+        paper.acceptedConference = conferenceInText(paper.conference, lane, 'openreview', paper.openReviewVenueId);
+      }
+    }
+    return pageOf(filed(papers, lane), Math.min(Number(request.params.limit) || perPage, perPage));
   };
 }
 
@@ -1126,6 +1155,26 @@ export async function fetchArxivPapers(env: WorkerEnv, arxivIds: string[]) {
 const LOOKUP_TIMEOUT_MS = 2_000;
 
 /**
+ * Where a paper id the app holds is looked up: arXiv for an arXiv id, OpenAlex
+ * for a PubMed id, a DOI or an OpenAlex id. Null for any other id (a
+ * `biorxiv:`, `inspire:` or `crossref:` one, say), which no lookup serves,
+ * and for a DOI the relay's path cannot carry (`doiPathId`): written into the
+ * path as sent, `10.1000/a/../../authors/A1` asked for another record, a `?`
+ * added query parameters, and a SICI DOI's parentheses were refused.
+ */
+export function paperIdLookup(id: string): { arxivId: string } | { openAlexPath: string } | null {
+  const arxivId = text(id).replace(/^arxiv:/i, '').replace(/v\d+$/, '');
+  if (/^(?:\d{4}\.\d{4,5}|[a-z-]+\/\d{7})$/.test(arxivId)) return { arxivId };
+  if (/^pmid:\d{1,12}$/i.test(id)) return { openAlexPath: `/openalex/works/pmid:${id.slice(5)}` };
+  if (/^(?:openalex:)?W\d+$/i.test(id)) return { openAlexPath: `/openalex/works/${id.replace(/^openalex:/i, '')}` };
+  if (/^(?:doi:)?10\.\d{4,9}\/\S+$/i.test(id)) {
+    const path = doiPathId(id.replace(/^doi:/i, ''));
+    return path ? { openAlexPath: `/openalex/works/${path}` } : null;
+  }
+  return null;
+}
+
+/**
  * Papers the app holds ids for but the corpus lacks (a reader's likes),
  * fetched and kept as liked papers whatever their date: one older than the
  * corpus window enters no lane (`recordLanes`).
@@ -1137,14 +1186,12 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   const arxivIds: string[] = [];
   const openAlexPaths: string[] = [];
   for (const id of paperIds) {
-    const arxivId = text(id).replace(/^arxiv:/i, '').replace(/v\d+$/, '');
-    if (/^(?:\d{4}\.\d{4,5}|[a-z-]+\/\d{7})$/.test(arxivId)) arxivIds.push(arxivId);
-    else if (/^pmid:\d{1,12}$/i.test(id)) openAlexPaths.push(`/openalex/works/pmid:${id.slice(5)}`);
-    else if (/^(?:openalex:)?W\d+$/i.test(id)) openAlexPaths.push(`/openalex/works/${id.replace(/^openalex:/i, '')}`);
-    else if (/^(?:doi:)?10\.\d{4,9}\/\S+$/i.test(id)) openAlexPaths.push(`/openalex/works/doi:${id.replace(/^doi:/i, '')}`);
+    const lookup = paperIdLookup(id);
+    if (lookup && 'arxivId' in lookup) arxivIds.push(lookup.arxivId);
+    else if (lookup) openAlexPaths.push(lookup.openAlexPath);
   }
   const lookups: Array<Promise<Harvested[]>> = openAlexPaths.map(async path => {
-    const response = await askRoute(handleOpenAlex, path, {}, env);
+    const response = await askRoute(handleAccountOpenAlex, path, {}, env);
     const paper = mapOpenAlexWork(await response.json<OpenAlexWork>());
     return paper ? [{ paper, lanes: [] }] : [];
   });

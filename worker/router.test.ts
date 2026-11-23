@@ -107,7 +107,11 @@ test('a relayed refusal leaves one log line with the route and status, without t
   let warnings: unknown[][];
   try {
     warnings = await warningsDuring(async () => {
-      response = await worker.fetch(request('/openalex/works/W2741809807?search=my+private+question'), {
+      // A lookup by id is counted against its caller, so it needs one.
+      const lookup = request('/openalex/works/W2741809807?search=my+private+question');
+      lookup.headers.set('cf-connecting-ip', '192.0.2.1');
+      response = await worker.fetch(lookup, {
+        PDF_RATE_LIMIT_SECRET: 'test-only-pdf-rate-limit-key-32-bytes',
         REQUEST_QUOTA_LEDGER: {
           idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
           get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) })) as TestNamespace['get'],

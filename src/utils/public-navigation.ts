@@ -50,6 +50,8 @@ const SHARE_IMAGES: Readonly<Record<string, ShareImage>> = Object.freeze({
 export function getShareImage(kind: string): ShareImage {
   return Object.hasOwn(SHARE_IMAGES, kind) ? SHARE_IMAGES[kind] : DEFAULT_SHARE_IMAGE;
 }
+import { isConferencePath } from './conference-calendar.ts';
+
 export const PUBLIC_ROUTE_PREFIX = '/public';
 export const PUBLIC_ENTITY_TYPES = Object.freeze([
   'author',
@@ -200,11 +202,24 @@ export function getPublicEntityUrl(typeOrEntity: EntityInput | string | undefine
   return path ? getAbsoluteShareUrl(path, input.options || options) : null;
 }
 
+// Crossref's deposit schema (`doi_t`, common5.x.xsd) caps DOIs at 2048
+// characters; ISO 26324 sets no formal limit, and real scholarly DOIs stay well
+// below this ceiling.
+const MAX_DOI_LENGTH = 2048;
+// Modern (`YYMM.NNNNN[vN]`) and legacy (`archive[.subject]/YYMMNNN[vN]`) arXiv
+// ids are under ~35 characters; 64 leaves headroom for multi-digit versions.
+const MAX_ARXIV_ID_LENGTH = 64;
+// Longest valid paper identity is `doi:` (4 ASCII bytes) plus MAX_DOI_LENGTH
+// UTF-16 code units (at most 3 UTF-8 bytes each), base64url-encoded without
+// padding. Rejecting longer keys before decoding avoids allocating large
+// buffers for invalid `/paper/<key>` paths.
+const MAX_PAPER_KEY_LENGTH = Math.ceil((4 + MAX_DOI_LENGTH * 3) * 4 / 3);
+
 export function normalizeDoi(value: unknown) {
   const doi = cleanText(value)
     .replace(/^doi:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//i, '');
-  if (!/^10\.\d{4,9}\/\S+$/i.test(doi)) return '';
+  if (doi.length > MAX_DOI_LENGTH || !/^10\.\d{4,9}\/\S+$/i.test(doi)) return '';
   return doi.toLowerCase();
 }
 
@@ -213,7 +228,10 @@ export function normalizeArxivId(value: unknown) {
     .replace(/^arxiv:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:export\.)?arxiv\.org\/(?:abs|pdf)\//i, '')
     .replace(/\.pdf$/i, '');
-  if (!/^(?:\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\d{7})(?:v\d+)?$/i.test(arxivId)) {
+  if (
+    arxivId.length > MAX_ARXIV_ID_LENGTH
+    || !/^(?:\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\d{7})(?:v\d+)?$/i.test(arxivId)
+  ) {
     return '';
   }
   return arxivId.toLowerCase();
@@ -228,7 +246,7 @@ function normalizeOpenAlexWorkId(value: unknown) {
   const workId = cleanText(value)
     .replace(/^openalex:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:api\.)?openalex\.org\/(?:works\/)?/i, '');
-  if (!/^W\d+$/i.test(workId)) return '';
+  if (!/^W\d{1,20}$/i.test(workId)) return '';
   return workId.toUpperCase();
 }
 
@@ -239,8 +257,8 @@ function normalizeOpenAlexWorkId(value: unknown) {
  */
 export function normalizePmid(value: unknown) {
   const text = cleanText(value);
-  const match = text.match(/^pmid:\s*(\d+)$/i)
-    || text.match(/^(?:https?:\/\/)?(?:www\.)?(?:pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov\/pubmed)\/(\d+)\/?$/i);
+  const match = text.match(/^pmid:\s*(\d{1,20})$/i)
+    || text.match(/^(?:https?:\/\/)?(?:www\.)?(?:pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov\/pubmed)\/(\d{1,20})\/?$/i);
   return match ? match[1] : '';
 }
 
@@ -362,7 +380,9 @@ export function encodePaperKey(typeOrPaper: PaperInput, identifier?: unknown) {
 }
 
 export function decodePaperKey(key: string) {
-  const decoded = decodeBase64Url(cleanText(key));
+  const trimmed = typeof key === 'string' ? key.trim() : '';
+  if (!trimmed || trimmed.length > MAX_PAPER_KEY_LENGTH) return null;
+  const decoded = decodeBase64Url(trimmed);
   if (!decoded) return null;
 
   const separatorIndex = decoded.indexOf(':');
@@ -451,6 +471,20 @@ export function legacyPaperRedirect(location: { pathname: string; search: string
   return { to: { pathname, search: location.search, hash: location.hash }, state: location.state };
 }
 
+/**
+ * Where a hand-written address, `/paper/arxiv:1706.03762`, lives: the canonical
+ * `/paper/<key>` path, or null when `key` is not one. `key` is the route's
+ * decoded `:paperKey`, so `arxiv:1706.03762` and `arxiv%3A1706.03762` are the
+ * same key, and a DOI writes its slash as `%2F` to stay in the one segment:
+ * `/paper/doi:10.48550%2FarXiv.1706.03762`. A minted key is base64url and never
+ * holds a colon, so it is never read as this form. The identity is checked and
+ * spelled by `getPublicPaperPath`, whose result holds no colon: a redirect to it
+ * cannot loop. The query and fragment are the caller's to carry.
+ */
+export function readablePaperPath(key: string) {
+  return key.includes(':') ? getPublicPaperPath(key) : null;
+}
+
 function decodeSegment(segment: string) {
   try {
     return decodeURIComponent(segment);
@@ -475,6 +509,7 @@ function startsWithSegments(path: string, prefix: string[]) {
  * doors (like, save, follow) leaves the new account right there.
  */
 export function isPublicRoutePath(path: string) {
+  if (isConferencePath(path)) return true;
   return [['public'], ['explorer'], ['paper']].some(prefix => startsWithSegments(path, prefix));
 }
 
@@ -483,6 +518,7 @@ export function isPublicRoutePath(path: string) {
  * entity page and a custom feed.
  */
 export function keepsNavbarPath(path: string) {
+  if (isConferencePath(path)) return true;
   return [['paper'], ['public', 'list'], ['explorer'], ['feeds']].some(prefix => startsWithSegments(path, prefix));
 }
 

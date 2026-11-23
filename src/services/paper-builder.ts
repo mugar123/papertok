@@ -1,3 +1,4 @@
+import { givesArxivCategories } from './arxiv-records.ts';
 import { hasUsableAIAbstract } from '../utils/ai-explanation-access.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { isJournalArticleSource, listedDois } from '../utils/publication-status.ts';
@@ -553,10 +554,14 @@ export class PaperBuilder {
     // paper and keeps its `false` (`keepsOwnFalse`) takes none of the
     // article's venue, and keeps its own classification the same way. Beside
     // a row without either, the incoming record's replace the row's.
-    const rowJournalDoi = journalRecordDoiOf(existingPaper);
+    // A cached row can identify the article after OpenAlex has already
+    // retyped the base record under that DOI. Keep the base's classification.
+    const carriedJournalDoi = enrichmentData.sources?.journalRecordDoi ?? '';
+    const rowJournalDoi = journalRecordDoiOf(existingPaper)
+      || (carriedJournalDoi && relistsJournalVersion(existingPaper, carriedJournalDoi) ? carriedJournalDoi : '');
     const incomingJournalDoi = keepsOwnFalse ? ''
       : isJournalRecord(enrichmentData) ? normalizeDoi(enrichmentData.doi)
-        : rowJournalDoi === '' ? enrichmentData.sources?.journalRecordDoi ?? ''
+        : rowJournalDoi === '' ? carriedJournalDoi
           : '';
     const rowLeads = keepsOwnFalse
       || (rowJournalDoi !== '' && !relistsJournalVersion(enrichmentData, rowJournalDoi));
@@ -567,7 +572,7 @@ export class PaperBuilder {
     // categories ("Mutual information" for 2605.02209, which arXiv files under
     // cs.AI); they stay in `concepts`. A record without an arXiv primary, such
     // as the abstract recovery, changes no category.
-    if (enrichmentData.sources?.primary === 'arxiv' && enrichmentData.primaryCategory) {
+    if (givesArxivCategories(enrichmentData)) {
       merged.primaryCategory = enrichmentData.primaryCategory;
       merged.categories = enrichmentData.categories;
       merged.allCategories = enrichmentData.allCategories || enrichmentData.categories;

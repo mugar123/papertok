@@ -24,6 +24,13 @@ export interface QuotaRequest {
   // subject with its own limit, checked and counted in the same transaction
   // as the subject and the day, and given back with them.
   part?: QuotaPart;
+  // A second part, checked, counted and given back like `part`: a reader's
+  // OpenAlex miss names its address's minute as one and its day as the other.
+  secondPart?: QuotaPart;
+  // The subjects this request is counted apart from (`reserve`), or whose
+  // rest of the day is reported (`peek`). A release or a reading that names
+  // the same request ignores it.
+  apartFrom?: QuotaRest;
   // `reserve` only: this reservation is a slot of an upstream beat
   // (`upstream-pace.ts`), and is accepted only with a send time.
   pace?: QuotaPace;
@@ -47,6 +54,17 @@ export interface QuotaPart {
   limit: number;
 }
 
+// The rest of the day: everything the named subjects did not spend. A
+// reservation counted apart from them is refused when that rest, with its own
+// amount, would pass `percent` of the ceiling, whatever the subjects have
+// spent or not yet. Every spender of the OpenAlex day but the paper harvest
+// is counted this way, apart from the harvest's subjects, so together they
+// cannot take the part of the day the harvest runs on (provider-runtime.ts).
+export interface QuotaRest {
+  percent: number;
+  subjects: string[];
+}
+
 export interface QuotaTally {
   used: Record<string, number>;
   refused: Record<string, number>;
@@ -67,6 +85,8 @@ export interface QuotaReading {
   remaining?: number;
   observed?: QuotaObservation;
   tally?: QuotaTally;
+  // `peek` with `apartFrom`: the units spent by everything but its subjects.
+  rest?: number;
   // A paced reservation's send time, on the ledger's clock, and the latest
   // moment its call may still go out. A caller that cannot send by `sendBy`
   // must not send at all.
@@ -85,6 +105,7 @@ const MAX_EXPLICIT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 // every name in one value, so the number of names is bounded here too.
 const TALLY_NAME = /^[a-z]{1,16}\.[a-z]{1,16}$/;
 const MAX_TALLY_NAMES = 16;
+const MAX_APART_SUBJECTS = 4;
 const PACE_SENDS_KEY = 'pace:sends';
 // How late after its send time, or after the answer left the ledger when that
 // time had come, a paced call may still go out: the answer's way back, or a
@@ -128,6 +149,16 @@ function optionalTally(value: unknown) {
 function optionalRemaining(value: unknown) {
   if (value === undefined) return undefined;
   return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= MAX_LIMIT ? value as number : null;
+}
+
+function optionalRest(value: unknown) {
+  if (value === undefined) return undefined;
+  const { percent, subjectKeys } = (value ?? {}) as { percent?: unknown; subjectKeys?: unknown };
+  if (percent === undefined || !optionalPercent(percent) || !Array.isArray(subjectKeys)
+    || subjectKeys.length === 0 || subjectKeys.length > MAX_APART_SUBJECTS) return null;
+  const keys = (subjectKeys as unknown[]).map(safeSubjectKey);
+  // A key named twice would be taken off the day twice.
+  return keys.every(Boolean) && new Set(keys).size === keys.length ? { percent: percent as number, subjectKeys: keys } : null;
 }
 
 function optionalPace(value: unknown): QuotaPace | undefined | null {
@@ -210,6 +241,10 @@ export class RequestQuotaLedger {
     const hasPart = payload?.partKey !== undefined || payload?.partLimit !== undefined;
     const partKey = hasPart ? safeSubjectKey(payload?.partKey) : '';
     const partLimit = hasPart ? positiveInteger(payload?.partLimit) : 0;
+    const hasSecondPart = payload?.secondPartKey !== undefined || payload?.secondPartLimit !== undefined;
+    const secondPartKey = hasSecondPart ? safeSubjectKey(payload?.secondPartKey) : '';
+    const secondPartLimit = hasSecondPart ? positiveInteger(payload?.secondPartLimit) : 0;
+    const apartFrom = optionalRest(payload?.apartFrom);
     const pace = optionalPace(payload?.pace);
     if (!LEDGER_ACTIONS.has(action) || !subjectKey || !subjectLimit || !globalLimit || !amount
       || !percent || tallyName === null || reportedRemaining === null || pace === null
@@ -218,24 +253,41 @@ export class RequestQuotaLedger {
       || (expiresAt !== undefined && (!Number.isSafeInteger(expiresAt)
         || Number(expiresAt) <= Date.now() || Number(expiresAt) > Date.now() + MAX_EXPLICIT_RETENTION_MS))
       || (action === 'observe' && reportedRemaining === undefined)
-      || (hasPart && (!partKey || !partLimit))) {
+      || (hasPart && (!partKey || !partLimit)) || (hasSecondPart && (!secondPartKey || !secondPartLimit))
+      || apartFrom === null) {
       return json({ code: 'INVALID_REQUEST' }, 400);
     }
+
+    // The deletion is scheduled before anything is written, never after: a
+    // counter derived from an address or an account must not be stored in an
+    // object that has no alarm. If scheduling fails, this throws with nothing
+    // written, and each caller does what it does when the ledger cannot be
+    // reached. An alarm on an object the transaction then leaves empty clears
+    // nothing.
+    const alarm = await this.state.storage.getAlarm();
+    const cleanupAt = expiresAt === undefined ? Date.now() + RETENTION_MS : Number(expiresAt);
+    if (alarm === null || cleanupAt < alarm) await this.state.storage.setAlarm(cleanupAt);
 
     const result = await this.state.storage.transaction(async transaction => {
       const subjectStorageKey = `subject:${subjectKey}`;
       const partStorageKey = `subject:${partKey}`;
-      const [subjectValue, globalValue, observedValue, tallyValue, partValue, sendsValue] = await Promise.all([
+      const secondPartStorageKey = `subject:${secondPartKey}`;
+      const [subjectValue, globalValue, observedValue, tallyValue, partValue, secondPartValue, apartValues, sendsValue] = await Promise.all([
         transaction.get(subjectStorageKey),
         transaction.get('global'),
         transaction.get('observed'),
         transaction.get('tally'),
         partKey ? transaction.get(partStorageKey) : undefined,
+        secondPartKey ? transaction.get(secondPartStorageKey) : undefined,
+        // Read only where the rest is checked or reported.
+        Promise.all(((action === 'reserve' || action === 'peek') && apartFrom ? apartFrom.subjectKeys : []).map(key => transaction.get(`subject:${key}`))),
         pace ? transaction.get(PACE_SENDS_KEY) : undefined,
       ]);
       const subjectUsage = Math.max(0, Number(subjectValue) || 0);
       const globalUsage = Math.max(0, Number(globalValue) || 0);
       const partUsage = Math.max(0, Number(partValue) || 0);
+      const secondPartUsage = Math.max(0, Number(secondPartValue) || 0);
+      const rest = Math.max(0, apartValues.reduce<number>((units, value) => units - Math.max(0, Number(value) || 0), globalUsage));
       const observed = storedObservation(observedValue);
       const tally = storedTally(tallyValue);
 
@@ -251,6 +303,7 @@ export class RequestQuotaLedger {
           remaining: Math.max(0, subjectLimit - subjectUsage),
           ...(observed ? { observed } : {}),
           ...(tallyValue === undefined ? {} : { tally }),
+          ...(apartFrom ? { rest } : {}),
         };
       }
 
@@ -275,9 +328,10 @@ export class RequestQuotaLedger {
         if (tallyName) addToTally(tally.used, tallyName, -amount);
         await Promise.all([
           transaction.put(subjectStorageKey, releasedSubjectUsage),
-          transaction.put('global', releasedGlobalUsage),
+          globalAmount > 0 ? transaction.put('global', releasedGlobalUsage) : undefined,
           tallyName ? transaction.put('tally', tally) : undefined,
           partKey ? transaction.put(partStorageKey, Math.max(0, partUsage - amount)) : undefined,
+          secondPartKey ? transaction.put(secondPartStorageKey, Math.max(0, secondPartUsage - amount)) : undefined,
         ]);
         return {
           released: true,
@@ -294,11 +348,16 @@ export class RequestQuotaLedger {
       // the whole day's usage counts against it, whoever spent it.
       const ceiling = observed ? Math.min(globalLimit, observed.ceiling) : globalLimit;
       const limit = Math.floor(ceiling * percent / 100);
+      // The rest of the day refuses as the day's share does: to the request,
+      // the day is closed.
+      const restHasRoom = !apartFrom || rest + globalAmount <= Math.floor(ceiling * apartFrom.percent / 100);
       const scope = subjectUsage + amount > subjectLimit
         ? 'user'
         : partKey && partUsage + amount > partLimit
           ? 'part'
-          : globalAmount > 0 && globalUsage + globalAmount > limit ? 'global' : '';
+          : secondPartKey && secondPartUsage + amount > secondPartLimit
+            ? 'second-part'
+            : globalAmount > 0 && (globalUsage + globalAmount > limit || !restHasRoom) ? 'global' : '';
       // Only the day's share refusing is tallied: a subject's refusal (for
       // OpenAlex, the minute's ceiling) is a burst rather than a closed tier,
       // and counting it would add a write here exactly when the object is
@@ -335,9 +394,11 @@ export class RequestQuotaLedger {
       if (tallyName) addToTally(tally.used, tallyName, amount);
       await Promise.all([
         transaction.put(subjectStorageKey, nextSubjectUsage),
-        transaction.put('global', nextGlobalUsage),
+        // A caller-only reservation counts nothing for the object as a whole.
+        globalAmount > 0 ? transaction.put('global', nextGlobalUsage) : undefined,
         tallyName ? transaction.put('tally', tally) : undefined,
         partKey ? transaction.put(partStorageKey, partUsage + amount) : undefined,
+        secondPartKey ? transaction.put(secondPartStorageKey, secondPartUsage + amount) : undefined,
         paced ? transaction.put(PACE_SENDS_KEY, sends) : undefined,
       ]);
       return {
@@ -348,10 +409,6 @@ export class RequestQuotaLedger {
         ...paced,
       };
     });
-
-    const alarm = await this.state.storage.getAlarm();
-    const cleanupAt = expiresAt === undefined ? Date.now() + RETENTION_MS : Number(expiresAt);
-    if (alarm === null || cleanupAt < alarm) await this.state.storage.setAlarm(cleanupAt);
     return json(result);
   }
 
@@ -383,6 +440,12 @@ async function sha256(value: unknown) {
 // only when it creates the object, and treats it as best effort.
 const LEDGER_LOCATION_HINT: DurableObjectLocationHint = 'weur';
 
+export function isRequestQuotaLedgerConfigured(
+  namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null,
+): namespace is NonNullable<WorkerEnv['REQUEST_QUOTA_LEDGER']> {
+  return Boolean(namespace?.idFromName && namespace?.get);
+}
+
 async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, action: string, {
   periodKey,
   subject,
@@ -395,13 +458,17 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
   tally,
   remaining,
   part,
+  secondPart,
+  apartFrom,
   pace,
 }: QuotaRequest): Promise<QuotaReading> {
-  if (!namespace?.idFromName || !namespace?.get) {
+  if (!isRequestQuotaLedgerConfigured(namespace)) {
     return { accepted: false, code: 'QUOTA_LEDGER_NOT_CONFIGURED' };
   }
   const subjectKey = await sha256(subject);
   const partKey = part ? await sha256(part.subject) : undefined;
+  const secondPartKey = secondPart ? await sha256(secondPart.subject) : undefined;
+  const apartKeys = apartFrom && await Promise.all(apartFrom.subjects.map(sha256));
   const id = namespace.idFromName(String(periodKey).slice(0, 160));
   const response = await namespace.get(id, { locationHint: LEDGER_LOCATION_HINT }).fetch(`https://papertok.internal/quota/${action}`, {
     method: 'POST',
@@ -421,6 +488,9 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
       remaining,
       partKey,
       partLimit: part?.limit,
+      secondPartKey,
+      secondPartLimit: secondPart?.limit,
+      apartFrom: apartFrom && { percent: apartFrom.percent, subjectKeys: apartKeys },
       pace,
     }),
   });

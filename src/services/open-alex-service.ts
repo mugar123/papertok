@@ -137,6 +137,47 @@ export function isOpenAlexEnrichmentId(id: unknown): boolean {
     || /^(?:openalex:|https:\/\/openalex\.org\/)?W\d+$/i.test(value);
 }
 
+// Reuse semantic/citation signals across sessions so a temporary outage does
+// not erase recommendation quality for papers the user has already encountered.
+function cachedEnrichment(id: string) {
+  if (!CACHE.has(id)) {
+    const persisted = readOpenAlexPersistent<Enrichment>(`enrichment:${id}`, ENRICHMENT_CACHE_TTL_MS);
+    if (persisted && !persisted.stale) CACHE.set(id, persisted.data);
+  }
+  return CACHE.get(id);
+}
+
+// One work's enrichment, cached under every id the feed may look it up by,
+// and returned keyed by those ids.
+function rememberEnrichment(work: OpenAlexWork, mapped = mapOpenAlexEnrichmentWork(work)) {
+  const remembered: Record<string, Enrichment> = {};
+  if (!mapped) return remembered;
+  const { arxivId, openAlexId, enrichment } = mapped;
+  const remember = (id: string) => {
+    CACHE.set(id, enrichment);
+    writeOpenAlexPersistent(`enrichment:${id}`, enrichment);
+    remembered[id] = enrichment;
+  };
+
+  if (arxivId) remember(arxivId);
+  // OpenAlex answers with the DOI lowercased and prefixed; the feed
+  // looks the paper up by the same id it asked with, so both sides
+  // are normalized the same way.
+  const workDoi = String(work.doi || work.ids?.doi || '')
+    .trim().toLowerCase().replace(/^https?:\/\/(?:dx\.)?doi\.org\//, '');
+  if (workDoi) remember(`doi:${workDoi}`);
+  remember(`openalex:${openAlexId}`);
+  return remembered;
+}
+
+/**
+ * Whether `enrichPapersBatch` would answer this arXiv id from this browser's
+ * cache, without a request.
+ */
+export function hasCachedEnrichment(arxivId: string) {
+  return Boolean(cachedEnrichment(arxivId.replace(/^arxiv:/i, '').replace(/v\d+$/, '')));
+}
+
 /**
  * A work missing from the result may be one OpenAlex does not have, or one
  * whose request failed. `onRequestFailed` tells them apart: it is called once
@@ -157,14 +198,9 @@ export async function enrichPapersBatch(arxivIds: string[], options: EnrichmentO
     
   const result: Record<string, Enrichment> = {};
   
-  // Reuse semantic/citation signals across sessions so a temporary outage does
-  // not erase recommendation quality for papers the user has already encountered.
   validIds.forEach(id => {
-    if (!CACHE.has(id)) {
-      const persisted = readOpenAlexPersistent<Enrichment>(`enrichment:${id}`, ENRICHMENT_CACHE_TTL_MS);
-      if (persisted && !persisted.stale) CACHE.set(id, persisted.data);
-    }
-    if (CACHE.has(id)) result[id] = CACHE.get(id)!;
+    const cached = cachedEnrichment(id);
+    if (cached) result[id] = cached;
   });
 
   const toFetch = validIds.filter(id => !CACHE.has(id));
@@ -218,31 +254,7 @@ export async function enrichPapersBatch(arxivIds: string[], options: EnrichmentO
       if (response && response.ok) {
         const data = await response.json() as OpenAlexPage<OpenAlexWork>;
         if (data && data.results) {
-          data.results.forEach(work => {
-             const mapped = mapOpenAlexEnrichmentWork(work);
-             if (!mapped) return;
-             const { arxivId, openAlexId, enrichment } = mapped;
-
-             if (arxivId) {
-               CACHE.set(arxivId, enrichment);
-               writeOpenAlexPersistent(`enrichment:${arxivId}`, enrichment);
-               result[arxivId] = enrichment;
-             }
-             // OpenAlex answers with the DOI lowercased and prefixed; the feed
-             // looks the paper up by the same id it asked with, so both sides
-             // are normalized the same way.
-             const workDoi = String(work.doi || work.ids?.doi || '')
-               .trim().toLowerCase().replace(/^https?:\/\/(?:dx\.)?doi\.org\//, '');
-             if (workDoi) {
-               CACHE.set(`doi:${workDoi}`, enrichment);
-               writeOpenAlexPersistent(`enrichment:doi:${workDoi}`, enrichment);
-               result[`doi:${workDoi}`] = enrichment;
-             }
-
-             CACHE.set(`openalex:${openAlexId}`, enrichment);
-             writeOpenAlexPersistent(`enrichment:openalex:${openAlexId}`, enrichment);
-             result[`openalex:${openAlexId}`] = enrichment;
-          });
+          data.results.forEach(work => Object.assign(result, rememberEnrichment(work)));
         } else {
           fail();
         }
@@ -1838,10 +1850,11 @@ export function slimAuthorsPage(data: OpenAlexPage<OpenAlexAuthor>) {
 }
 
 /**
- * One work fetched from OpenAlex by its arXiv id, as a full paper — abstract
- * included, which the enrichment path deliberately leaves out. This is the
- * public paper page's fallback when arXiv itself refuses to answer: arXiv
- * rate-limits by IP in bursts, while OpenAlex indexes the same preprints.
+ * One work fetched from OpenAlex by its arXiv id, as a full paper and as the
+ * enrichment `enrichPapersBatch` reads from a work. The public paper page asks
+ * for it beside arXiv: it is the page's fallback when arXiv is slow or refuses
+ * to answer (arXiv rate-limits by IP in bursts, while OpenAlex indexes the same
+ * preprints), and the enrichment merged onto arXiv's record when arXiv answers.
  */
 export async function fetchPaperByArxivIdViaOpenAlex(arxivId: unknown, { timeoutMs = 8000 } = {}) {
   const clean = String(arxivId || '').replace(/^arxiv:/i, '').replace(/v\d+$/i, '').trim();
@@ -1856,7 +1869,13 @@ export async function fetchPaperByArxivIdViaOpenAlex(arxivId: unknown, { timeout
     if (!response?.ok) return null;
     const data = await response.json() as OpenAlexPage<OpenAlexWork>;
     const work = data?.results?.[0];
-    return work ? formatOpenAlexWorkAsPaper(work) : null;
+    if (!work) return null;
+    const mapped = mapOpenAlexEnrichmentWork(work);
+    // Cached like `enrichPapersBatch`'s answers, so the feed and the next
+    // visit do not ask for it again; only a work OpenAlex files under this
+    // arXiv id, so the feed's own choice among several is not replaced.
+    if (mapped?.arxivId === clean) rememberEnrichment(work, mapped);
+    return { paper: formatOpenAlexWorkAsPaper(work), enrichment: mapped?.enrichment ?? null };
   } catch (error) {
     console.warn('OpenAlex arXiv fallback failed', error);
     return null;

@@ -140,7 +140,7 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   annotation_origin: new Set(['user', 'ai']),
   app_error_kind: new Set(['render_crash', 'chunk_load_failed', 'feed_load_failed']),
   feed_load_type: new Set(['initial', 'refresh', 'load_more']),
-  feed_load_attempt: new Set(['original', 'automatic_retry', 'continuation']),
+  feed_load_attempt: new Set(['original', 'automatic_retry', 'manual_retry', 'continuation']),
   feed_load_result: new Set(['success', 'empty', 'error', 'continued', 'superseded']),
   feed_failure_reason: new Set(['timeout', 'network', 'session', 'auth', 'rate_limited', 'rejected', 'server', 'invalid_response', 'empty', 'unexpected']),
   // The codes /store/papers answers with (worker/router.ts, worker/paper-store.ts,
