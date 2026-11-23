@@ -1126,6 +1126,20 @@ export async function fetchArxivPapers(env: WorkerEnv, arxivIds: string[]) {
 const LOOKUP_TIMEOUT_MS = 2_000;
 
 /**
+ * Where a paper id the app holds is looked up: arXiv for an arXiv id, OpenAlex
+ * for a PubMed id, a DOI or an OpenAlex id. Null for any other id (a
+ * `biorxiv:`, `inspire:` or `crossref:` one, say), which no lookup serves.
+ */
+export function paperIdLookup(id: string): { arxivId: string } | { openAlexPath: string } | null {
+  const arxivId = text(id).replace(/^arxiv:/i, '').replace(/v\d+$/, '');
+  if (/^(?:\d{4}\.\d{4,5}|[a-z-]+\/\d{7})$/.test(arxivId)) return { arxivId };
+  if (/^pmid:\d{1,12}$/i.test(id)) return { openAlexPath: `/openalex/works/pmid:${id.slice(5)}` };
+  if (/^(?:openalex:)?W\d+$/i.test(id)) return { openAlexPath: `/openalex/works/${id.replace(/^openalex:/i, '')}` };
+  if (/^(?:doi:)?10\.\d{4,9}\/\S+$/i.test(id)) return { openAlexPath: `/openalex/works/doi:${id.replace(/^doi:/i, '')}` };
+  return null;
+}
+
+/**
  * Papers the app holds ids for but the corpus lacks (a reader's likes),
  * fetched and kept as liked papers whatever their date: one older than the
  * corpus window enters no lane (`recordLanes`).
@@ -1137,11 +1151,9 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   const arxivIds: string[] = [];
   const openAlexPaths: string[] = [];
   for (const id of paperIds) {
-    const arxivId = text(id).replace(/^arxiv:/i, '').replace(/v\d+$/, '');
-    if (/^(?:\d{4}\.\d{4,5}|[a-z-]+\/\d{7})$/.test(arxivId)) arxivIds.push(arxivId);
-    else if (/^pmid:\d{1,12}$/i.test(id)) openAlexPaths.push(`/openalex/works/pmid:${id.slice(5)}`);
-    else if (/^(?:openalex:)?W\d+$/i.test(id)) openAlexPaths.push(`/openalex/works/${id.replace(/^openalex:/i, '')}`);
-    else if (/^(?:doi:)?10\.\d{4,9}\/\S+$/i.test(id)) openAlexPaths.push(`/openalex/works/doi:${id.replace(/^doi:/i, '')}`);
+    const lookup = paperIdLookup(id);
+    if (lookup && 'arxivId' in lookup) arxivIds.push(lookup.arxivId);
+    else if (lookup) openAlexPaths.push(lookup.openAlexPath);
   }
   const lookups: Array<Promise<Harvested[]>> = openAlexPaths.map(async path => {
     const response = await askRoute(handleOpenAlex, path, {}, env);
