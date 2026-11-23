@@ -104,7 +104,26 @@
 
 .conference-dates li { margin-block: var(--space-2); }
 .conference-dates span { display: block; }
-.conference-dates svg { vertical-align: -0.125em; }
+.conference-dates svg {
+  display: inline-block;
+  vertical-align: -0.125em;
+}
+
+.conference-public-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.conference-public-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 1.75rem;
+  text-decoration: underline;
+}
 
 .conference-hero {
   padding-inline: clamp(1rem, 4vw, 3rem);

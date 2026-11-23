@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { ArrowLeft, ArrowUpRight, CalendarBlank, MapPin } from '@phosphor-icons/react';
 import { Link, useParams } from 'react-router-dom';
-import { Button } from '../ui/button.tsx';
+import { buttonVariants } from '../ui/button-variants.ts';
+import PrivacyPopover from '../public/privacy-popover.tsx';
+import { useAuth } from '../../context/auth-context.tsx';
 import { conferenceEditions, conferenceFields, findConferenceEdition } from '../../data/conferences.ts';
 import type { ConferenceEdition } from '../../data/conferences.ts';
-import { groupConferences } from '../../utils/conference-calendar.ts';
 import { useConferenceStatus } from '../../hooks/use-conference-papers.ts';
+import { groupConferences, localCalendarDate } from '../../utils/conference-calendar.ts';
 import './conference-page.css';
 import './conference-papers-page.css';
 
@@ -18,12 +20,12 @@ function formatDates(start: string, end: string | null) {
 }
 
 function Dates({ edition }: { edition: ConferenceEdition }) {
-  if (edition.sourceUrl || edition.placeText) {
+  if (edition.dates.length <= 1) {
     const date = edition.dates[0];
     return (
       <ul className="conference-dates">
         <li><CalendarBlank aria-hidden="true" /> {edition.dateText ?? (date ? formatDates(date.start, date.end) : 'Dates to be announced')}</li>
-        <li><MapPin aria-hidden="true" /> {edition.placeText ?? (edition.online ? 'Online' : 'Location to be announced')}</li>
+        <li><MapPin aria-hidden="true" /> {edition.placeText ?? date?.city ?? (edition.online ? 'Online' : 'Location to be announced')}</li>
       </ul>
     );
   }
@@ -60,17 +62,20 @@ function EditionGroup({ title, editions }: { title: string; editions: readonly C
   );
 }
 
+const usesCcf = conferenceEditions.some(edition => edition.source === 'ccf');
+
 function Credits() {
   return (
     <footer className="conference-credits">
-      <p>Calendar sources include <a href="https://github.com/ccfddl/ccf-deadlines">CCF Deadlines</a> (<a href="/licenses/ccf-deadlines.txt">MIT license</a>) and <a href="https://github.com/databio/conferences">databio/conferences</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>). PaperTok selects entries and formats dates and locations.</p>
+      {usesCcf && <p><a href="https://github.com/ccfddl/ccf-deadlines">CCF Deadlines</a> (<a href="/licenses/ccf-deadlines.txt">MIT license</a>).</p>}
+      <p><a href="https://github.com/databio/conferences">databio/conferences</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>). PaperTok selects entries and formats dates and locations.</p>
     </footer>
   );
 }
 
 function Calendar() {
   const [field, setField] = useState('all');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localCalendarDate(new Date());
   const editions = conferenceEditions.filter(edition => field === 'all' || edition.field === field);
   const { upcoming, undated, past } = groupConferences(editions, today);
   return (
@@ -100,11 +105,18 @@ function Calendar() {
 }
 
 export default function ConferencePage() {
+  const { user, loading } = useAuth();
   const { editionId } = useParams();
   const edition = findConferenceEdition(editionId);
   const status = useConferenceStatus(edition?.id);
   return (
     <main className="conference-page">
+      {!user && !loading && (
+        <nav className="conference-public-nav" aria-label="PaperTok">
+          <Link to="/"><ArrowLeft aria-hidden="true" /> Back to PaperTok</Link>
+          <PrivacyPopover />
+        </nav>
+      )}
       {editionId === undefined ? <Calendar /> : (
         <>
           <Link className="conference-back" to="/conferences"><ArrowLeft aria-hidden="true" /> Conference calendar</Link>
@@ -124,12 +136,12 @@ export default function ConferencePage() {
               <section className="conference-details">
                 <h2>Dates and location</h2>
                 <Dates edition={edition} />
-                <Button variant="outline" render={<a href={edition.url} />}>
+                {edition.url && <a className={buttonVariants({ variant: 'outline' })} href={edition.url}>
                   Official website <ArrowUpRight aria-hidden="true" />
-                </Button>
+                </a>}
                 <p className="conference-source">
                   <a href={edition.sourceUrl ?? edition.url}>
-                    {edition.source === 'ccf' ? 'CCF Deadlines' : edition.source === 'databio' ? 'databio/conferences' : 'Organizer’s date and location information'}
+                    {edition.source === 'ccf' ? 'CCF Deadlines' : edition.source === 'databio' ? 'databio/conferences' : 'Dates and location source'}
                   </a>
                   {edition.checkedOn && <> · Checked <time dateTime={edition.checkedOn}>{dateFormat.format(new Date(edition.checkedOn))}</time></>}
                 </p>

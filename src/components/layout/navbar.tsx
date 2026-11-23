@@ -329,7 +329,7 @@ function useSearchFieldResize(fieldRef: RefObject<HTMLElement | null>, onSearchP
 function ConferenceLink({ compact = false }: { compact?: boolean }) {
   return (
     <NavLink to="/conferences" className={`navbar-icon-btn navbar-conferences${compact ? ' navbar-conferences--compact' : ''}`} aria-label="Conference calendar" title="Conference calendar">
-      <CalendarBlank size={19} aria-hidden="true" />
+      {({ isActive }) => <CalendarBlank size={19} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />}
     </NavLink>
   );
 }

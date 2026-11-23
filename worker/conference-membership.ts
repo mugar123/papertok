@@ -1,6 +1,8 @@
 import type { OpenReviewNote } from '../src/services/open-review-service.ts';
 import { isOpenReviewSubmission } from './open-review-api.ts';
 
+type ConferenceTrack = 'oral' | 'spotlight' | 'poster';
+
 export const conferenceSources = new Map<string, { venueId: string; label: string; decisionsOn?: string }>([
   ['neurips-2026', { venueId: 'NeurIPS.cc/2026/Conference', label: 'NeurIPS 2026' }],
   ['iclr-2026', { venueId: 'ICLR.cc/2026/Conference', label: 'ICLR 2026' }],
@@ -22,11 +24,11 @@ export function conferenceMembership(editionId: string, note: OpenReviewNote) {
   const prefix = source.label.toLowerCase() + ' ';
   const lower = venueText?.toLowerCase();
   const suffix = lower?.startsWith(prefix) ? lower.slice(prefix.length) : null;
-  const track = suffix === 'oral' || suffix === 'spotlight' || suffix === 'poster' ? suffix : null;
+  const track: ConferenceTrack | null = suffix === 'oral' || suffix === 'spotlight' || suffix === 'poster' ? suffix : null;
   return { editionId, forumId: note.forum, venueId, venueText, track };
 }
 
-export async function conferenceSortKey(editionId: string, paperId: string, track: 'oral' | 'spotlight' | 'poster' | null) {
+export async function conferenceSortKey(editionId: string, paperId: string, track: ConferenceTrack | null) {
   const rank = track === 'oral' ? '0' : track === 'spotlight' ? '1' : track === 'poster' ? '2' : '3';
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(editionId + ':' + paperId));
   return rank + Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
