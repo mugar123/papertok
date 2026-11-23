@@ -46,7 +46,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useSyncExternalStore, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense, Fragment } from 'react';
+import { useSyncExternalStore, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -118,7 +118,8 @@ import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import PaperMenu from './paper-menu.tsx';
 import type { ReaderCard, ReaderMenu } from './paper-menu.tsx';
 import { paperActions, shareMethod } from './paper-actions.ts';
-import { followReasonLabels } from '../../utils/follow-reasons.ts';
+import { followedOnCard } from '../../utils/follow-reasons.ts';
+import { feedReason } from '../../utils/feed-reason.ts';
 import { AboutFollows } from './about-follows.tsx';
 import './paper-card.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
@@ -556,17 +557,22 @@ const PaperCard = memo(function PaperCard({
   // (hooks/use-stable-navigate.ts says what it cost).
   const navigate = useStableNavigate();
   
-  const hasFollowedAuthor = useMemo(() => {
-    if (!paper?.authors?.length || !followedByType.author?.length) return false;
-    return paper.authors.some(author => isFollowing({
+  const followedAuthor = useMemo(() => {
+    if (!paper?.authors?.length || !followedByType.author?.length) return null;
+    return paper.authors.find(item => isFollowing({
       type: 'author',
-      id: (author as PaperAuthor)?.id || (author as PaperAuthor)?.name || author as string,
-      name: (author as PaperAuthor)?.name || author as string,
-    }));
+      id: (item as PaperAuthor)?.id || (item as PaperAuthor)?.name || item as string,
+      name: (item as PaperAuthor)?.name || item as string,
+    })) ?? null;
   }, [followedByType.author, isFollowing, paper]);
-  const followReasons = useMemo(
-    () => followReasonLabels(paper?._followedEntityMatches, hasFollowedAuthor, isFollowing),
-    [paper?._followedEntityMatches, hasFollowedAuthor, isFollowing],
+  const followed = useMemo(
+    () => followedOnCard(
+      paper?._followedEntityMatches,
+      followedAuthor,
+      isFollowing,
+      match => followedByType[match.type]?.find(entity => entity.canonicalId === match.canonicalId)?.displayName,
+    ),
+    [paper?._followedEntityMatches, followedAuthor, isFollowing, followedByType],
   );
 
   const lastTap = useRef(0);
@@ -1302,6 +1308,12 @@ const PaperCard = memo(function PaperCard({
   };
 
   const { label: categoryLabel, topic: primaryTopic, sourceLabel: classificationSource } = useMemo(() => getPaperClassification(paper), [paper]);
+  // Re-ranking mutates the score in place. Keep the reason for this paper,
+  // follow and surface so an unrelated render cannot rewrap the kicker.
+  const reason = useMemo(
+    () => feedReason(paper, followed, analyticsSurface, categoryLabel),
+    [paper, followed, analyticsSurface, categoryLabel],
+  );
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
@@ -2047,17 +2059,17 @@ const PaperCard = memo(function PaperCard({
           {/* Each item brings the dot in front of it. A paper can have no
               year (a PubMed record printed next year), and a dot after the
               field then stood beside an empty date. */}
-          {followReasons.map(({ type, label }, index) => (
-            <Fragment key={type}>
-              {(categoryLabel || index > 0) && <span className="pc-meta-dot">·</span>}
-              <span className="pc-followed-badge">
-                {type === 'author' && <UserCheck size={12} />} {label}
+          {reason && (
+            <>
+              {categoryLabel && <span className="pc-meta-dot">·</span>}
+              <span className="pc-feed-reason">
+                {reason.kind === 'follow' && reason.followType === 'author' && <UserCheck size={12} aria-hidden="true" />} {reason.text}
               </span>
-            </Fragment>
-          ))}
+            </>
+          )}
           {paper.year ? (
             <>
-              {(categoryLabel || followReasons.length > 0) && <span className="pc-meta-dot">·</span>}
+              {(categoryLabel || reason) && <span className="pc-meta-dot">·</span>}
               <span className="pc-date">{paper.year}</span>
             </>
           ) : null}
@@ -2067,7 +2079,7 @@ const PaperCard = memo(function PaperCard({
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
                   enriquecimiento se pasa del techo montan tarde juntos. */}
-              {(categoryLabel || followReasons.length > 0 || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+              {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"
