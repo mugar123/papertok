@@ -322,10 +322,14 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   Following and custom feeds, "You follow …" elsewhere). A notable card needs
   at least 100 citations and a known notable lane for "Highly cited in [field]".
   "Similar to papers you liked" (saved, liked or saved, engaged with) needs
-  a cosine of at least 0.5 and must outweigh each of the card's own signals.
-  Area preference and affinity do not compete. A remaining For You card in a
-  selected area reads "In your area". Custom feeds, Most recent and notable
-  cards below 100 citations show only a matching follow.
+  a cosine of at least 0.65 to the closest example and must outweigh each of
+  the card's own signals. Area preference and affinity do not compete.
+  A remaining For You card reads "In your area" when the reader picked its
+  primary category or a leaf that includes its OpenAlex primary topic.
+  Otherwise, "Also in [category]" names the first picked category the card was
+  fetched for, then the first picked secondary category if needed. Only picks
+  with a taxonomy label qualify. Custom feeds, Most recent and notable cards
+  below 100 citations show only a matching follow.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 

@@ -127,6 +127,7 @@ export interface PaperRecommendationScore {
   // from its lane in the corpus (`_followedEntityMatches`) and get no boost.
   followedEntityMatches: Record<Exclude<PaperFollowMatch['type'], 'journal'>, boolean>;
   isExploration: boolean;
+  preferenceMatch?: { categoryId: string; primary: boolean };
   // Interactions behind the positive IDs sent for this card's page. Omitted
   // when the client scores without a plan or the request supplied no kinds.
   exampleKinds?: ReadonlyArray<'liked' | 'saved' | 'read'>;

@@ -36,7 +36,8 @@ test('only a feed that placed the card gives a causal follow reason', () => {
 });
 
 test('a highly cited card names its notable leaf even if its own classification differs', () => {
-  const card = { ...paper, primaryCategory: 'cs.CV', _notable: true, citationCount: 100, _fetchedFor: ['cs.LG', 'cs.AI'] };
+  const card = scored({ ...paper, primaryCategory: 'cs.CV', _notable: true, citationCount: 100, _fetchedFor: ['cs.LG', 'cs.AI'] },
+    { userPreferences: ['cs.CV'] });
   assert.deepEqual(feedReason(card, null, 'feed'), { kind: 'classic', text: 'Highly cited in Machine Learning' });
   assert.equal(feedReason({ ...card, citationCount: 99 }, null, 'feed'), null);
   assert.equal(feedReason({ ...card, citationCount: undefined }, null, 'feed'), null);
@@ -52,7 +53,7 @@ test('a notable card without a known notable leaf falls through', () => {
 });
 
 test('similarity names only the interactions behind the request', () => {
-  const close = { ...paper, _semanticScore: 0.8 };
+  const close = { ...paper, _semanticScore: 0.675 };
   function label(kinds: Paper['_semanticExampleKinds']) {
     return feedReason(scored({ ...close, _semanticExampleKinds: kinds }, { hasFeedPlan: true, userPreferences: ['cs.LG'] }), null, 'feed')?.text;
   }
@@ -70,9 +71,9 @@ test('no similarity label without a plan, or with a weak, outweighed or graph ma
   const close = { ...paper, _semanticScore: 0.8, _semanticExampleKinds: ['liked'] as const };
   assert.equal(feedReason(scored(close, { ...inArea, hasFeedPlan: false }), null, 'feed')?.kind, 'area');
   assert.equal(feedReason(scored({ ...close, _semanticScore: 0.1 }, inArea), null, 'feed')?.kind, 'area');
-  const weighted = scored({ ...close, _semanticScore: 0.2 }, { ...inArea, weights: { maxCorpusSimilarity: 200 } });
+  const weighted = scored({ ...close, _semanticScore: 0.45 }, { ...inArea, weights: { maxCorpusSimilarity: 200 } });
   assert.equal(feedReason(weighted, null, 'feed')?.kind, 'area');
-  const outweighed = scored({ ...close, authors: ['Ada Lovelace'], _semanticScore: 0.3 }, { ...inArea, followedAuthors: ['Ada Lovelace'] });
+  const outweighed = scored({ ...close, authors: ['Ada Lovelace'] }, { ...inArea, followedAuthors: ['Ada Lovelace'], weights: { maxCorpusSimilarity: 50 } });
   assert.equal(feedReason(outweighed, null, 'feed')?.kind, 'area');
   assert.equal(feedReason(scored({ ...close, _isGraphCandidate: true }, inArea), null, 'feed')?.kind, 'area');
 });
@@ -81,4 +82,26 @@ test('only a scored card of a chosen area has the area reason', () => {
   assert.deepEqual(feedReason(scored(paper, { userPreferences: ['cs.LG'] }), null, 'feed'), { kind: 'area', text: 'In your area' });
   assert.equal(feedReason(scored(paper, { userPreferences: ['math.NT'] }), null, 'feed'), null);
   assert.equal(feedReason(paper, null, 'feed'), null);
+  assert.equal(feedReason({ _debugScore: { preference: 100 } }, null, 'feed'), null);
+});
+
+test('a cross-listed paper names the first picked lane, then the first picked secondary category', () => {
+  const card = { ...paper, primaryCategory: 'hep-th', categories: ['hep-th', 'cs.RO', 'cs.LG'] };
+  const picks = { userPreferences: ['cs.LG', 'cs.RO', 'cs.unknown'] };
+  const reason = (_fetchedFor: string[]) => feedReason(scored({ ...card, _fetchedFor }, picks), null, 'feed');
+  assert.deepEqual(reason(['cs.CV', 'cs.unknown', 'cs.LG', 'cs.RO']), { kind: 'area', text: 'Also in Machine Learning' });
+  assert.deepEqual(reason(['cs.CV', 'cs.unknown']), { kind: 'area', text: 'Also in Robotics' });
+});
+
+test('an OpenAlex primary topic in a picked leaf counts as the reader’s area', () => {
+  const card = scored({ primaryTopic: { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' }, _fetchedFor: ['bio.gen'] },
+    { userPreferences: ['bio.gen', 'bio.mol'] });
+  assert.deepEqual(feedReason(card, null, 'feed'), { kind: 'area', text: 'In your area' });
+});
+
+test('a picked category without a taxonomy label gives no reason', () => {
+  const picks = { userPreferences: ['cs.unknown'] };
+  const card = { primaryCategory: 'hep-th', categories: ['hep-th', 'cs.unknown'], _fetchedFor: ['cs.unknown'] };
+  assert.equal(feedReason(scored(card, picks), null, 'feed'), null);
+  assert.equal(feedReason(scored({ primaryCategory: 'cs.unknown' }, picks), null, 'feed'), null);
 });

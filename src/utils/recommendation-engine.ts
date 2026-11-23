@@ -3,7 +3,7 @@ import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { areaKeyForCategory, areaKeyForPaper, leavesForOpenAlexTopic } from './area-accent.ts';
-import { getAllLeafCategories } from '../data/category-taxonomy.ts';
+import { getAllLeafCategories, getKnownCategoryLabel } from '../data/category-taxonomy.ts';
 import { isDormantCategory, selectedAreaSubareas } from './interest-memory.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
 
@@ -363,6 +363,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const chosenAsPrimary = [primaryCategory, ...leavesForOpenAlexTopic(paper.primaryTopic)].filter(picked);
   const chosenDirectly = [...chosenAsPrimary, ...(paper._fetchedFor || []).filter(picked)];
   const chosenAsRelated = allCategories.filter(picked);
+  const categoryId = chosenDirectly.find(getKnownCategoryLabel) ?? chosenAsRelated.find(getKnownCategoryLabel);
   const matched = chosenDirectly.length > 0 ? chosenDirectly : chosenAsRelated;
   // An established pick fades with the reader's interactions. An added pick
   // the app is still learning fades with its progress, from the whole weight
@@ -487,6 +488,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     temporalPreference: context.temporalPreference,
     explicitNow: context.now,
     exampleKinds,
+    preferenceMatch: categoryId ? { categoryId, primary: chosenAsPrimary.includes(categoryId) } : undefined,
 
     stableParts,
     stableTotal: Object.values(stableParts).reduce((sum, value) => sum + value, 0),
@@ -586,6 +588,7 @@ export function scorePaperForRecommendation(paper: Partial<Paper>, context: Reco
     authorBoost: stable.authorBoost,
     followedEntityMatches: stable.followedEntityMatches,
     isExploration: stable.isExploration,
+    ...(stable.preferenceMatch && { preferenceMatch: stable.preferenceMatch }),
     ...(stable.exampleKinds?.length ? { exampleKinds: stable.exampleKinds } : {}),
   }, parts);
 

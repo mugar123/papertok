@@ -1,23 +1,22 @@
 import type { Paper, PaperFollowMatch, PaperRecommendationScore } from '../models/paper.ts';
 
-import { getCategoryArea, getCategoryLabel } from '../data/category-taxonomy.ts';
+import { getCategoryArea, getCategoryLabel, getKnownCategoryLabel } from '../data/category-taxonomy.ts';
 
 export type FeedReason =
   | { kind: 'follow'; followType: PaperFollowMatch['type']; text: string }
   | { kind: 'classic' | 'similar' | 'area'; text: string };
 
-// A cosine of 0.5 on the Worker's semantic scale, before the client's ranking weights.
-const SIMILAR_MIN = (0.5 - 0.4) / 0.4;
+// On 2026-11-23, pairwise cosine among 75 stored CS papers reached 0.62 at the 99th percentile.
+// With four examples, 28 of 64 cards cleared 0.5. The pairs inspected at 0.66–0.77 shared a topic.
+const SIMILAR_MIN = (0.65 - 0.4) / 0.4;
 
 // The least citations a notable card needs to be called highly cited. The
 // Worker's notable lanes are each leaf's 100 most cited papers of a year, and
 // in a thin leaf or a recent year the last of them can have one or two.
 const HIGHLY_CITED_MIN = 100;
 
-// The card's own signals, which similarity has to outweigh. `preference` and
-// `affinity` score the card's area, the same for every card of it: they are
-// what "In your area" says. Named rather than read off the score, whose lazy
-// `explanation` an enumeration would build (recommendation-engine.ts).
+// Similarity competes with the card's own signals. Preference and affinity score
+// its area. Listing the parts avoids evaluating the score's lazy explanation.
 const OWN_PARTS = [
   'recency', 'classicBoost', 'semantic', 'learnedAuthor', 'sessionInterest', 'citations',
   'graphBoost', 'personalBoost', 'followBoost', 'diversityBoost',
@@ -56,6 +55,10 @@ export function feedReason(
     && OWN_PARTS.every(part => (score[part] ?? 0) < similarity)) {
     return { kind: 'similar', text: `Similar to papers you ${examplesText(score.exampleKinds)}` };
   }
-  if ((score.preference ?? 0) > 0) return { kind: 'area', text: 'In your area' };
+  if ((score.preference ?? 0) > 0 && score.preferenceMatch) {
+    const { categoryId, primary } = score.preferenceMatch;
+    const label = getKnownCategoryLabel(categoryId);
+    if (label) return { kind: 'area', text: primary ? 'In your area' : `Also in ${label}` };
+  }
   return null;
 }
