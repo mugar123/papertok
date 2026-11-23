@@ -231,6 +231,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     if (!accountCurrent(requestUid)) throw new EmailNotificationServiceError('EMAIL_ACCOUNT_CHANGED', 401);
   }, [accountCurrent]);
 
+  // Ends the notice "Your weekly email is on" while it waits for the reader's
+  // answer: once the server confirms the email is off, it says what is not so.
+  const endStartedNotice = useRef<(() => void) | null>(null);
+
   // Shows a server answer. An identical answer keeps the same object, so the
   // sync effect below does not run again for it.
   const showServerPreferences = useCallback((uid: string, answer: NotificationPreferences) => {
@@ -238,6 +242,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     const current = shown.current;
     const normalized = (Object.keys(next) as (keyof NotificationPreferences)[]).some(field => next[field] !== current[field]) ? next : current;
     shown.current = normalized;
+    if (!normalized.enabled) {
+      endStartedNotice.current?.();
+      endStartedNotice.current = null;
+    }
     setPreferences(normalized);
     setPreferencesFrom(uid);
     return normalized;
@@ -431,8 +439,9 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
 
   // What the reader is told once a yes from the welcome has an answer. A
   // `declined` says nothing: the reader turned the email off themselves.
-  // The notice of a started email waits for the reader's answer, and carries
-  // the way to stop it: on a shared device the person who creates the account
+  // The notice of a started email waits for the reader's answer, or for the
+  // server to confirm the email is off (endStartedNotice), and carries the way
+  // to stop it: on a shared device the person who creates the account
   // may not be the visitor who said yes, and was never asked. An overlay that
   // opens meanwhile, such as the privacy notice a new account can be owed, only
   // holds it back (toastStandingNotice).
@@ -444,8 +453,11 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
         description: optInFailureReason(result.failed, { accountHasEmail: Boolean(auth.currentUser?.email) }),
         action: { label: 'Open Settings', onClick: () => { void navigateRef.current('/settings/notifications'); } },
       });
-    } else if (result.outcome !== 'declined') {
-      toastStandingNotice(uid, 'Your weekly email is on', {
+    } else if (result.outcome !== 'declined' && shown.current.enabled) {
+      // Not shown when a later decision, such as an Off queued behind the
+      // opt-in, has already been answered: the email is off by then.
+      endStartedNotice.current?.();
+      endStartedNotice.current = toastStandingNotice(uid, 'Your weekly email is on', {
         description: `It goes to ${result.email} on Mondays, when there are new papers ${covers}. You can also turn it off in Settings.`,
         action: { label: 'Turn off', onClick: () => { turnOffFromNotice(uid); } },
       });

@@ -113,10 +113,12 @@ export function toastForAccount(uid: string, title: Parameters<typeof toast>[0],
  * it is raised meanwhile, and it comes back once the last overlay has left.
  * The reader's own close, Escape, its action or an account change end it.
  * For a choice the app made for the reader and they may want to undo, such as
- * the weekly email a yes on the welcome started.
+ * the weekly email a yes on the welcome started. Returns the way to end it
+ * from the app, for when what it says stops being true: on screen or held
+ * back, it is put away and does not return.
  */
-export function toastStandingNotice(uid: string, title: string, { description, action }: { description?: string; action: { label: string; onClick: () => void } }) {
-  if (uid !== signedIn) return;
+export function toastStandingNotice(uid: string, title: string, { description, action }: { description?: string; action: { label: string; onClick: () => void } }): () => void {
+  if (uid !== signedIn) return () => {};
   standingCount += 1;
   const key = `standing-notice-${standingCount}`;
   let showings = 0;
@@ -153,6 +155,12 @@ export function toastStandingNotice(uid: string, title: string, { description, a
   };
   standing.set(key, notice);
   notice.show();
+  return () => {
+    if (!standing.delete(key) || notice.shown === null) return;
+    const id = notice.shown;
+    notice.shown = null;
+    toast.dismiss(id);
+  };
 }
 
 /** Sets the standing notices on screen aside as an overlay opens; they are shown again once no overlay is open. */

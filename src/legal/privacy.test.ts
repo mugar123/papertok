@@ -259,9 +259,9 @@ test('the page says a deleted subscription can stay in Cloudflare\'s storage his
 });
 
 // utils/guest-interests.ts: `emailDigestConsent` travels with a yes, and `WELCOME_DIGEST_YES_MAX_AGE_MS` bounds it.
-test('the page says the browser keeps the welcome answer about the weekly email with its wording version, and that a yes more than a day old is not used', () => {
+test('the page says the browser keeps the welcome answer about the weekly email with its wording version, and that a yes is used only for 24 hours', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
   assert.match(storage, /This browser saves your welcome interests, area priorities and feed mix, and your answer about the weekly email with the version of the welcome's wording you saw, until they are saved to a new account, an account with existing interests loads, or you sign out or switch accounts/);
-  assert.match(storage, /A yes to the weekly email more than a day old is not used/);
+  assert.match(storage, /A yes to the weekly email is used only for 24 hours after you give it/);
 });

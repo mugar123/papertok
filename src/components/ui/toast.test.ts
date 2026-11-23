@@ -512,7 +512,7 @@ const standingNotice = () => toast.getToasts().find(shown => 'title' in shown &&
 function raiseEmailNotice() {
   switchAccount();
   let pressed = 0;
-  toastStandingNotice(`reader-${readers}`, EMAIL_ON, { description: 'It goes to reader@example.com on Mondays.', action: { label: 'Turn off', onClick: () => { pressed += 1; } } });
+  const end = toastStandingNotice(`reader-${readers}`, EMAIL_ON, { description: 'It goes to reader@example.com on Mondays.', action: { label: 'Turn off', onClick: () => { pressed += 1; } } });
   // Sonner calls the action and then takes the toast away.
   const press = () => {
     const shown = standingNotice();
@@ -520,7 +520,7 @@ function raiseEmailNotice() {
     shown.action.onClick({ defaultPrevented: false } as never);
     toast.dismiss(shown.id);
   };
-  return { press, pressed: () => pressed };
+  return { press, pressed: () => pressed, end };
 }
 
 test('a notice that waits for the reader\'s answer stays until closed, and an overlay only puts it away while it is open', () => {
@@ -598,4 +598,23 @@ test('a notice is never shown to another account, on screen or held back by an o
   switchAccount();
   toastStandingNotice(before, EMAIL_ON, { action: { label: 'Turn off', onClick: () => {} } });
   assert.ok(!standingNotice(), 'a notice for an account no longer signed in was shown');
+});
+
+test('the app can end a notice whose news stopped being true, on screen or held back by an overlay', () => {
+  const onScreenNotice = raiseEmailNotice();
+  onScreenNotice.end();
+  assert.ok(!standingNotice(), 'the ended notice is still on screen');
+  openOverlay()();
+  assert.ok(!standingNotice(), 'the ended notice came back');
+
+  const heldBack = raiseEmailNotice();
+  const close = openOverlay();
+  heldBack.end();
+  close();
+  assert.ok(!standingNotice(), 'a notice ended while an overlay held it back was shown');
+  // Ending it twice, or for an account that never saw it, does nothing.
+  heldBack.end();
+  switchAccount();
+  toastStandingNotice('nobody-signed-in', EMAIL_ON, { action: { label: 'Turn off', onClick: () => {} } })();
+  assert.ok(!standingNotice());
 });

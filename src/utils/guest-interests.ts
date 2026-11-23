@@ -9,8 +9,8 @@ import { institutionDomainOf } from './institution-domain.ts';
 import { DIGEST_CONSENT_FIRST_FOLLOW, DIGEST_CONSENT_FROM_SIGNUP } from './digest-consent.ts';
 
 /**
- * How long a yes to the weekly email stays usable in this browser. An older
- * one is not used: whoever creates an account here later may not be the
+ * How long a yes to the weekly email stays usable in this browser: less than
+ * 24 hours from when it was given. From then on it is not used: whoever creates an account here later may not be the
  * visitor who answered, and they can turn the email on in Settings.
  */
 const WELCOME_DIGEST_YES_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -139,8 +139,8 @@ export function guestSeedCategoriesForAreas(areas: readonly string[], perArea = 
  * `null` when the welcome has never been answered on this device. Otherwise
  * `{ areas, topics, dismissed, readingLevel?, emailDigest?, institutionEmail? }`: `dismissed`
  * marks an answer with no areas, which seeds nothing. The yes to the weekly
- * email and its consent version are read only from an answer saved in the last
- * 24 hours (`WELCOME_DIGEST_YES_MAX_AGE_MS`); this is the one place that
+ * email and its consent version are read only from an answer saved less than
+ * 24 hours ago (`WELCOME_DIGEST_YES_MAX_AGE_MS`); this is the one place that
  * decides whether a stored yes still counts.
  */
 export function readGuestInterests(storage?: GuestStorage | null, now = Date.now()) {
@@ -160,7 +160,7 @@ export function readGuestInterests(storage?: GuestStorage | null, now = Date.now
     // The consent version travels only with a yes, and only a version this app
     // knows: a yes saved under the earlier welcome text has none.
     const age = typeof parsed.updatedAt === 'number' ? now - parsed.updatedAt : Number.NaN;
-    const yes = parsed.emailDigest === true && age >= 0 && age <= WELCOME_DIGEST_YES_MAX_AGE_MS;
+    const yes = parsed.emailDigest === true && age >= 0 && age < WELCOME_DIGEST_YES_MAX_AGE_MS;
     const email = yes ? { emailDigest: true } : {};
     const emailConsent = yes && parsed.emailDigestConsent === DIGEST_CONSENT_FROM_SIGNUP
       ? { emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP } : {};

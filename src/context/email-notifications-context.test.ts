@@ -157,6 +157,10 @@ test('an Off saved while the welcome yes is in flight is sent after it, and the 
   assert.deepEqual(reader.decisions(), ['POST /notifications/opt-in', 'PUT /notifications/preferences enabled:false']);
   assert.equal(reader.server.enabled, false);
   assert.equal(reader.settings().preferences.enabled, false);
+  // The opt-in was answered as created, but the email is off: no notice says it is on.
+  // (Shown for an instant or not at all, depending on which answer lands first; a toast takes a moment to leave.)
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+  await waitFor(() => assert.ok(!screen.queryByText('Your weekly email is on'), 'a notice says the email is on after the Off was confirmed'), { timeout: 5_000 });
 });
 
 test('saving with the switch off is sent even when the server already answered Off, and retires a yes still waiting from the welcome', async (t) => {
@@ -186,4 +190,20 @@ test('closing the started-email notice ends it: a dialog opened afterwards does 
   assert.ok(!screen.queryByText('Your weekly email is on'), 'the closed notice came back');
   assert.deepEqual(reader.decisions(), ['POST /notifications/opt-in']);
   assert.equal(reader.settings().preferences.enabled, true);
+});
+
+test('the started-email notice goes once the server confirms an unsubscribe made in Settings, and no dialog brings it back', async (t) => {
+  const reader = await startProvider(t, { enabled: false });
+  act(() => { reader.settings().startWelcomeDigest({ uid: 'reader', interests: ['cs.LG'] }); });
+  assert.ok(await screen.findByText('Your weekly email is on'));
+
+  await act(async () => { await reader.settings().savePreferences({ ...reader.settings().preferences, enabled: false }); });
+
+  await waitFor(() => assert.ok(!screen.queryByText('Your weekly email is on'), 'the notice still says the email is on'), { timeout: 5_000 });
+  let closeOverlay: (() => void) | undefined;
+  act(() => { closeOverlay = reader.openOverlay(); });
+  act(() => { closeOverlay?.(); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+  assert.ok(!screen.queryByText('Your weekly email is on'), 'the notice came back');
+  assert.equal(reader.server.enabled, false);
 });

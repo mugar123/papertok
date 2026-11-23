@@ -238,7 +238,7 @@ test('saving an answer read back from an earlier yes does not stamp the new vers
 
 // A yes kept in the browser is valid for a day (Pablo, 2026-11-21): whoever
 // creates an account here later may not be the visitor who answered.
-test('a yes to the weekly email is used for 24 hours after it was given, and the rest of the answer stays', () => {
+test('a yes to the weekly email is used for less than 24 hours after it was given, and the rest of the answer stays', () => {
   const HOUR = 60 * 60 * 1000;
   const givenAt = Date.UTC(2026, 10, 25, 9);
   const stored = (updatedAt?: unknown) => fakeStorage({
@@ -248,8 +248,10 @@ test('a yes to the weekly email is used for 24 hours after it was given, and the
   const withoutYes = { areas: ['ai'], topics: ['cs.LG'], dismissed: false };
 
   assert.deepEqual(readGuestInterests(stored(givenAt), givenAt), withYes);
-  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt + 24 * HOUR), withYes);
-  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt + 24 * HOUR + 1), withoutYes, 'a yes more than a day old was used');
+  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt + 24 * HOUR - 1), withYes);
+  // The limit itself is outside: at exactly 24 hours the yes is no longer used.
+  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt + 24 * HOUR), withoutYes, 'a yes exactly a day old was used');
+  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt + 24 * HOUR + 1), withoutYes);
   // A clock set back, an answer from before answers were dated, a malformed date.
   assert.deepEqual(readGuestInterests(stored(givenAt), givenAt - 1), withoutYes);
   assert.deepEqual(readGuestInterests(stored(), givenAt), withoutYes);
