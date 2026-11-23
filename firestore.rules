@@ -6,6 +6,22 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
+    function authorMetricAccountActive(userId) {
+      let account = /databases/$(database)/documents/users/$(userId);
+      return exists(account) && !get(account).data.get('authorMetricsDeleting', false);
+    }
+
+    function authorMetricConsentAllowsSave(userId) {
+      let consent = /databases/$(database)/documents/users/$(userId)/authorMetricConsent/saves;
+      return !exists(consent) || get(consent).data.enabled == true;
+    }
+
+    function authorMetricCollectionActive() {
+      let config = get(/databases/$(database)/documents/authorMetricConfig/saves).data;
+      return config.enabled == true && config.launchedAt is timestamp
+        && request.time >= config.launchedAt.date() + duration.value(8 - config.launchedAt.dayOfWeek(), 'd');
+    }
+
     function validString(value, maximum) {
       return value is string && value.size() <= maximum;
     }
@@ -58,6 +74,8 @@ service cloud.firestore {
       return [
         'onboardingComplete',
         'preferences',
+        'interestMix',
+        'areaPreferences',
         'selectedCategories',
         // Subareas the reader removed from their interests; the feed keeps them out.
         'deselectedPreferences',
@@ -71,6 +89,36 @@ service cloud.firestore {
         // (src/context/EmailNotificationsContext.jsx). A bool, then deleted.
         'emailDigestOptIn'
       ];
+    }
+
+    function validAreaPreference(value) {
+      return value is map
+        && value.keys().hasOnly(['priority', 'level'])
+        && value.get('priority', 'essential') in ['essential', 'curiosity']
+        && value.get('level', 'university') in ['beginner', 'university', 'researcher'];
+    }
+
+    function validAreaPreferences(value) {
+      // Canonical area IDs from src/data/category-taxonomy.ts.
+      return value is map
+        && value.keys().hasOnly([
+          'physics', 'cs', 'ai', 'math', 'stat', 'econ', 'q-fin', 'eess',
+          'mech', 'civil', 'chemeng', 'med', 'bio', 'chem'
+        ])
+        && validAreaPreference(value.get('physics', {}))
+        && validAreaPreference(value.get('cs', {}))
+        && validAreaPreference(value.get('ai', {}))
+        && validAreaPreference(value.get('math', {}))
+        && validAreaPreference(value.get('stat', {}))
+        && validAreaPreference(value.get('econ', {}))
+        && validAreaPreference(value.get('q-fin', {}))
+        && validAreaPreference(value.get('eess', {}))
+        && validAreaPreference(value.get('mech', {}))
+        && validAreaPreference(value.get('civil', {}))
+        && validAreaPreference(value.get('chemeng', {}))
+        && validAreaPreference(value.get('med', {}))
+        && validAreaPreference(value.get('bio', {}))
+        && validAreaPreference(value.get('chem', {}));
     }
 
     // Fields an early version of the app wrote into users/{uid} and nothing has
@@ -87,11 +135,12 @@ service cloud.firestore {
 
     // Fields the Worker writes with the service identity after verifying a
     // proof the client cannot show these rules: `institution` is the
-    // university a verified address resolved to (worker/institution-link.js).
+    // university a verified address resolved to (worker/institution-link.js),
+    // and `orcid` the ORCID iD an ORCID sign-in proved (worker/orcid.ts).
     // Tolerated in a merge so the client's own writes keep working once the
     // field exists; never writable, or anyone could award themselves one.
     function serviceUserKeys() {
-      return ['institution'];
+      return ['institution', 'orcid', 'authorMetricsDeleting'];
     }
 
     function frozenUserKeys() {
@@ -129,16 +178,28 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /authorMetricConfig/{id} {
+      allow read, write: if false;
+    }
+
+    match /authorMetricAliases/{id} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
-      allow read, delete: if ownsUserTree(userId);
+      allow read: if ownsUserTree(userId);
+      allow delete: if ownsUserTree(userId) && !resource.data.get('authorMetricsDeleting', false);
       allow create, update: if ownsUserTree(userId)
         && request.resource.data.keys().hasOnly(userProfileKeys().concat(frozenUserKeys()))
         && frozenUserFieldsUntouched()
+        && (resource == null || !resource.data.get('authorMetricsDeleting', false))
         && (!('onboardingComplete' in request.resource.data)
           || request.resource.data.onboardingComplete is bool)
         && (!('preferences' in request.resource.data)
           || request.resource.data.preferences is list
             && request.resource.data.preferences.size() <= 100)
+        && request.resource.data.get('interestMix', 'balanced') in ['mostly-work', 'balanced', 'half-and-half']
+        && validAreaPreferences(request.resource.data.get('areaPreferences', {}))
         && (!('selectedCategories' in request.resource.data)
           || request.resource.data.selectedCategories is list
             && request.resource.data.selectedCategories.size() <= 100)
@@ -290,6 +351,34 @@ service cloud.firestore {
           && request.resource.data.seenIds.size() <= 500;
       }
 
+      match /authorMetricConsent/saves {
+        allow get: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && authorMetricAccountActive(userId)
+          && request.resource.data.keys().hasOnly(['enabled', 'changedAt'])
+          && request.resource.data.enabled is bool
+          && request.resource.data.changedAt == request.time;
+      }
+
+      match /authorMetricWeeks/{id} {
+        allow read, write: if false;
+      }
+
+      match /authorMetricReceipts/{receipt} {
+        allow delete: if ownsUserTree(userId);
+        allow create: if ownsUserTree(userId)
+          && request.auth.token.email_verified == true
+          && authorMetricAccountActive(userId)
+          && authorMetricConsentAllowsSave(userId)
+          && authorMetricCollectionActive()
+          && receipt.matches('[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}')
+          && request.resource.data.keys().hasOnly(['paperId', 'savedAt', 'expiresAt'])
+          && validNonEmptyString(request.resource.data.paperId, 300)
+          && request.resource.data.savedAt == request.time
+          && request.resource.data.expiresAt > request.time + duration.value(2, 'm')
+          && request.resource.data.expiresAt <= request.time + duration.value(10, 'm');
+      }
+
       // The newest privacy policy version whose change notice this account was
       // shown (src/services/privacy-notice-service.ts), so it does not return
       // on another device. A record of what was on screen, not a consent. Its
@@ -403,6 +492,10 @@ service cloud.firestore {
             'summary', 'abstractSource', 'doi', 'landingPageUrl', 'savedAt'
           ])
           && validString(request.resource.data.title, 1000)
+          && (!('savedAt' in request.resource.data)
+            || validString(request.resource.data.savedAt, 300)
+            || (resource != null && request.resource.data.savedAt == resource.data.get('savedAt', null))
+            || request.resource.data.savedAt == request.time)
           && (!('authors' in request.resource.data)
             || request.resource.data.authors is list && request.resource.data.authors.size() <= 20)
           // The classification the saved card showed (PAP-60).
@@ -563,6 +656,31 @@ service cloud.firestore {
           && validNonEmptyString(request.resource.data.title, 1000)
           && validString(request.resource.data.pdfUrl, 2000)
           && request.resource.data.pdfUrl.matches('^https://.+')
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      // The account's decisions about the works OpenAlex attributes to its
+      // ORCID iD (src/services/orcid-work-decisions-service.ts): two lists of
+      // work identifiers, those it added to its publications and those it said
+      // are not its own, and `connectedAt`, the connection they were made for.
+      // Fetched by id only. Every write must name the connection the account
+      // holds now, users/{uid}.orcid.connectedAt as the Worker wrote it, so a
+      // write cannot land after a Disconnect has deleted the document, nor
+      // carry decisions from a tab still showing an earlier connection into
+      // the next one. The Worker deletes it on Disconnect, on a new connection
+      // and with the account, past these rules. The rest of users/{uid}/orcid,
+      // the pending ORCID sign-in, stays closed by the catch-all below.
+      match /orcid/works {
+        allow get: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly(['connectedAt', 'mine', 'notMine', 'updatedAt'])
+          && request.resource.data.connectedAt is string
+          && request.resource.data.connectedAt
+            == get(/databases/$(database)/documents/users/$(userId)).data.get('orcid', {}).get('connectedAt', null)
+          && request.resource.data.mine is list
+          && request.resource.data.mine.size() <= 1000
+          && request.resource.data.notMine is list
+          && request.resource.data.notMine.size() <= 1000
           && request.resource.data.updatedAt == request.time;
       }
 

@@ -74,7 +74,7 @@ export function areaKeyForOpenAlexField(field: string | number | { id?: string }
   return (area && CATEGORIES[area]) ? area : null;
 }
 
-function areaKeyForOpenAlexTopic(topic: Partial<Paper>['primaryTopic']) {
+export function areaKeyForOpenAlexTopic(topic: Partial<Paper>['primaryTopic']) {
   const id = openAlexId(topic?.subfield);
   const area = id === null ? null : OPENALEX_SUBFIELD_AREAS[id];
   if (area && CATEGORIES[area]) return area;
@@ -122,9 +122,14 @@ export function openAlexNotableFilterForLeaf(leaf: string) {
 }
 
 /** The leaves whose topic list holds this OpenAlex topic, given its ID or URL. */
-export function leavesForOpenAlexTopic(topic: string | { id?: string } | null | undefined) {
+export function leavesForOpenAlexTopic(topic: string | { id?: string } | null | undefined, includeNotable = false) {
   const id = openAlexId(topic);
-  return id ? Object.keys(OPENALEX_LEAF_TOPICS).filter(leaf => OPENALEX_LEAF_TOPICS[leaf].includes(id)) : [];
+  if (!id) return [];
+  const leaves = Object.keys(OPENALEX_LEAF_TOPICS).filter(leaf => OPENALEX_LEAF_TOPICS[leaf].includes(id));
+  if (includeNotable) {
+    leaves.push(...Object.keys(OPENALEX_NOTABLE_LEAF_TOPICS).filter(leaf => OPENALEX_NOTABLE_LEAF_TOPICS[leaf].includes(id)));
+  }
+  return [...new Set(leaves)];
 }
 
 /**

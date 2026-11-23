@@ -10,3 +10,10 @@ export function interestsSaveRefusal(count: number) {
   if (count > USER_PREFERENCES_MAX) return `At most ${USER_PREFERENCES_MAX} interests: drop ${count - USER_PREFERENCES_MAX}.`;
   return null;
 }
+
+export async function saveSelectedInterests(selected: ReadonlySet<string>, updatePreferences: (ids: string[]) => Promise<void>) {
+  const refusal = interestsSaveRefusal(selected.size);
+  if (refusal) return refusal;
+  await updatePreferences([...selected]);
+  return null;
+}

@@ -20,6 +20,8 @@ export function mapEuropePmcResult(result: EuropePmcRecord): (Partial<Paper> & {
     pmid,
     pmcid: record.pmcid || undefined,
     abstract: record.abstract,
+    ...(record.studyType && { studyType: record.studyType }),
+    ...(record.trialRegistration && { trialRegistration: record.trialRegistration }),
     biomedicalTerms: record.terms,
     concepts: record.terms.map((name, index) => ({
       id: `epmc:${pmid}:${index}`,

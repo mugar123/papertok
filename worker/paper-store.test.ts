@@ -1383,6 +1383,13 @@ test('interest groups take turns on the page by weight, and a paper two groups r
   assert.deepEqual(ids([ranks(), ranks(1), ranks(11, 12, 13)], [3, 5, 1]), [1, 11, 12, 13], 'a group without papers left gives up its turns');
 });
 
+test('a 90/10 mix gives a sparse interest its turn and fills the rest of the page', () => {
+  const essential = Array.from({ length: 15 }, (_, index) => ({ workId: index + 1, lanes: [] }));
+  const curiosity = [{ workId: 101, lanes: [] }];
+  const page = interleaveByWeight([essential, curiosity], [9, 1]).slice(0, 15);
+  assert.deepEqual(page.map(candidate => candidate.workId), [1, 2, 3, 4, 5, 101, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+});
+
 // A reader of quantum physics, who liked a physics paper, and of general
 // economics, who has liked nothing there yet. The newest physics preprint is
 // the least like the liked paper, and the oldest economics preprint is a copy
@@ -1525,6 +1532,49 @@ test('a group without candidates leaves the page to the other groups, which fill
   assert.equal(served.physics.length + served.economics.length, 15);
 });
 
+// Pablo's ruling of 2026-11-13: a thin leaf beside busy ones in a group
+// without likes is not buried under their newer papers.
+const leafPreprint = (id: string, category: string, hoursAgo: number) => ({
+  ...arxivRecord, id, arxivId: id, title: `A ${category} preprint, ${id}`, allCategories: [category], categories: [category], primaryCategory: category,
+  published: new Date(NOW - hoursAgo * 3_600_000).toISOString(),
+});
+
+test('a group without likes takes its categories in turns, each newest first, and near copies of a rejected paper last within theirs', async () => {
+  const store = corpus();
+  const learning = [1, 2, 3, 4, 5, 6].map(hours => leafPreprint(`2610.7000${hours}`, 'cs.LG', hours));
+  const language = [1.5, 2.5, 3.5].map((hours, index) => leafPreprint(`2610.7100${index + 1}`, 'cs.CL', hours));
+  const neural = [240, 480].map((hours, index) => leafPreprint(`2609.7200${index + 1}`, 'cs.NE', hours));
+  const rejected = leafPreprint('2609.79999', 'cs.RO', 900);
+  await ingestPapers(store.env, [...learning, ...language, ...neural, rejected].map(paper => ({ paper, lanes: [] })), { now: NOW });
+  const embed = (id: string) => store.db.prepare('INSERT INTO work_vectors (work_id, embedding) SELECT work_id, ? FROM work_keys WHERE key = ?')
+    .run(Buffer.from(quantize([1, 0, 0]).buffer), `id:${id.toLowerCase()}`);
+  embed(rejected.id);
+  embed(learning[0].id);
+  const [lg1, lg2, lg3, lg4, lg5, lg6] = learning.map(paper => paper.id);
+  const [cl1, cl2, cl3] = language.map(paper => paper.id);
+  const [ne1, ne2] = neural.map(paper => paper.id);
+  const categories = ['cs.LG', 'cs.CL', 'cs.NE'];
+  const served = async (body: Parameters<typeof parseFeedRequest>[0]) => (await readFeedPage(store.env, parseFeedRequest({ pageSize: 15, ...body }), { now: NOW })).map(paper => paper.id);
+  const groups = [{ categories, exampleCategories: categories, positiveIds: [], weight: 1 }];
+  assert.deepEqual(await served({ groups }), [lg1, cl1, ne1, lg2, cl2, ne2, lg3, cl3, lg4, lg5, lg6]);
+  assert.deepEqual(await served({ groups, negativeIds: [rejected.id] }), [lg2, cl1, ne1, lg3, cl2, ne2, lg4, cl3, lg5, lg6, lg1]);
+  const newestFirst = [lg1, cl1, lg2, cl2, lg3, cl3, lg4, lg5, lg6, ne1, ne2];
+  assert.deepEqual(await served({ categories }), newestFirst, 'a request without groups stays newest first');
+  assert.deepEqual(await served({ groups, order: 'daily' }), newestFirst, 'and so does a daily page');
+});
+
+test("a paper found only in an area's journal lane keeps the place its date gives it among a group's categories taking turns", async () => {
+  const store = corpus();
+  const learning = [1, 2, 30, 31].map((hours, index) => leafPreprint(`2610.7300${index + 1}`, 'cs.LG', hours));
+  const neural = leafPreprint('2609.74001', 'cs.NE', 240);
+  // Published on 21 October, 27 hours before NOW.
+  const article = mapOpenAlexWork({ ...physicsWork, id: 'https://openalex.org/W8300001', doi: 'https://doi.org/10.1000/ai.1', title: 'A journal article of the ai area', publication_date: '2026-10-21' })!;
+  await ingestPapers(store.env, [...[...learning, neural].map(paper => ({ paper, lanes: [] })), { paper: article, lanes: ['area:ai'] }], { now: NOW });
+  const categories = ['cs.LG', 'cs.NE'];
+  const page = await readFeedPage(store.env, parseFeedRequest({ groups: [{ categories, exampleCategories: categories, positiveIds: [], weight: 1 }] }), { now: NOW });
+  assert.deepEqual(page.map(paper => paper.id), [learning[0].id, neural.id, article.id, learning[1].id, learning[2].id, learning[3].id]);
+});
+
 test("a later page with the same interest groups reads the first page's order, and one with another weight ranks again", async () => {
   const { env, db, liked } = await physicsAndEconomics();
   const stored = new Map<string, KeptRanking>();
@@ -1536,6 +1586,48 @@ test("a later page with the same interest groups reads the first page's order, a
   assert.equal(second.length, 4);
   assert.deepEqual(second.filter(id => first.includes(id)), []);
   assert.deepEqual(await readFeedPage(env, request(1, [1, 3]), { now: NOW, cache }), [], 'another weight is another order');
+});
+
+// The `rankedBy` the Worker before the groups' ranking (945538f9) kept for the
+// first pages of the requests below. It digests the request, not the papers,
+// so it is the same on any corpus, and not whether the page asks for notable
+// papers, so a page's is the same with and without them.
+const RANKED_BY_BEFORE_GROUPS_RANKING = {
+  exact: '79efdc8a4436f0ffaa14575867ac1c2e647279ccdfda0b78f338677a9e64fc6b',
+  withoutGroups: '039851e02169c778da48705374eaa4dfa6ad3029b238316d6eaa961ba7372005',
+  withoutGroupsNotable: '039851e02169c778da48705374eaa4dfa6ad3029b238316d6eaa961ba7372005',
+  withoutGroupsDailyNotable: '21820a38a11bf894d9d03a66db4706efe81eb51a1802667726acbeb8d838bea2',
+  daily: 'bca8648302b158fc9b2323501d95dd3008e10282c56e4988fca589b25a08c818',
+  dailyNotable: 'bca8648302b158fc9b2323501d95dd3008e10282c56e4988fca589b25a08c818',
+  groups: '1a1dfa177d67c2b4f446a96ab2ed9223f19fe6ac9c80e44ee2401abc610abba7',
+};
+
+test("after the groups' ranking is deployed, a page of groups that is not daily or asks for notable papers ranks again, and a custom feed, a page without groups and a daily page without notable papers go on with the order the Worker before kept", async () => {
+  const categories = ['quant-ph', 'econ.GN'];
+  const served: Record<string, number> = {};
+  for (const name of ['exact', 'withoutGroups', 'withoutGroupsNotable', 'withoutGroupsDailyNotable', 'daily', 'dailyNotable', 'groups'] as const) {
+    const { env, db, liked } = await physicsAndEconomics();
+    const body = {
+      exact: { categories, exact: true },
+      withoutGroups: { categories },
+      // One group of every category ranks its notable papers by every like, as before.
+      withoutGroupsNotable: { categories, seen: feedSeenFilter([]), notable: 3 },
+      withoutGroupsDailyNotable: { categories, order: 'daily', seen: feedSeenFilter([]), notable: 3 },
+      daily: { groups: interestGroups([liked]), order: 'daily' },
+      // The Worker before ranked its notable papers by every like, not by group.
+      dailyNotable: { groups: interestGroups([liked]), order: 'daily', seen: feedSeenFilter([]), notable: 3 },
+      groups: { groups: interestGroups([liked]) },
+    }[name];
+    const stored = new Map<string, KeptRanking>();
+    const cache: RankingCache = { get: async key => stored.get(key) ?? null, put: async (key, ranking) => { stored.set(key, ranking); } };
+    const request = (page: number) => parseFeedRequest({ ...body, positiveIds: [liked], page, pageSize: 4 });
+    await readFeedPage(env, request(0), { now: NOW, cache });
+    // The first page's order as the Worker before kept it.
+    for (const ranking of stored.values()) ranking.rankedBy = RANKED_BY_BEFORE_GROUPS_RANKING[name];
+    db.exec('DELETE FROM work_lanes');
+    served[name] = (await readFeedPage(env, request(1), { now: NOW, cache })).length;
+  }
+  assert.deepEqual(served, { exact: 4, withoutGroups: 4, withoutGroupsNotable: 4, withoutGroupsDailyNotable: 4, daily: 4, dailyNotable: 0, groups: 0 });
 });
 
 test('seen aliases are excluded before pagination, including provisional rankings and cache misses', async () => {
@@ -2011,10 +2103,10 @@ test("with twelve categories asked, a notable lane holding more than its listing
 // The leaves are asked in this order, not in name order.
 const LEAVES = ['cs.LG', 'cs.CV'];
 const WINDOW_YEARS = Array.from({ length: 10 }, (_, index) => 2025 - index);
-async function notableLeavesCorpus() {
+async function notableLeavesCorpus(leaves = LEAVES) {
   const store = corpus();
   await ingestPapers(store.env, recentPapers(60), { now: NOW });
-  const listed = LEAVES.flatMap((leaf, leafIndex) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => ({
+  const listed = leaves.flatMap((leaf, leafIndex) => WINDOW_YEARS.flatMap(year => [0, 1].map(rank => ({
     paper: notableWork(`W${year}${leafIndex + 1}${rank}`, `Highly cited study ${rank} of ${year} in ${leaf}`, `${year}-0${3 + rank}-01`, 5000, true),
     lanes: [`notable:${leaf}`],
   }))));
@@ -2063,8 +2155,9 @@ test('a fresh load that excludes the notable cards shown before continues the ye
   assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
 });
 
-// The app asks for the reader's established interests in its ranking of them
-// (selected ones and the affinities it learned), then the ones added since.
+// The app asks for the reader's established interests area by area, each in
+// its ranking of them (selected ones and the affinities it learned), then the
+// ones added since.
 test('the notable leaves take their turns in the order the request asks them in', async () => {
   const { env } = await notableLeavesCorpus();
   for (const categories of [LEAVES, [...LEAVES].reverse()]) {
@@ -2117,8 +2210,9 @@ test('with a like, the notable cards follow the closest papers, whatever their y
   assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), closest.map(id => `openalex:${id}`));
 });
 
-// A page with likes ranks its notable papers by closeness, not by the years in
-// turns, so it leaves out the liked, rejected and excluded ones on its own path.
+// A group with likes ranks its notable papers by closeness, not by the years
+// in turns, so it leaves out the liked, rejected and excluded ones on its own
+// path.
 test('with a like, a notable paper the reader liked or rejected, or the app excludes, is not offered, and the next closest ones are', async () => {
   const { env, db } = await notableLeavesCorpus();
   const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
@@ -2174,6 +2268,531 @@ test('with a like, the diversity pass orders near copies of the notable papers a
   insert.run(idOf('openalex:W201610'), vector([0.85, 0, 0, 0.527, 0, 0]));
   const answer = await readFeedPage(env, parseFeedRequest({ categories: LEAVES, positiveIds: ['2610.00059'], pageSize: 15, seen: feedSeenFilter([]), notable: 5 }), { now: NOW });
   assert.deepEqual(answer.filter(paper => paper._notable).slice(0, 4).map(paper => paper.id), ['openalex:W202510', 'openalex:W201610', 'openalex:W202420', 'openalex:W201911']);
+});
+
+// Pablo's ruling of 2026-11-13: with a like, the notable cards follow the
+// interest groups, as the page does.
+test("with a like, each interest group ranks its own notable papers by its own likes, a group without likes takes its years in turns, and the groups take turns by weight", async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  // cs.LG's notable papers closest to the like first; cs.CV's 2025 paper is
+  // closer still, but cs.CV's group has no like to rank it by.
+  [['W201811', 0.8], ['W202410', 0.65], ['W201610', 0.5]].forEach(([id, share], index) => {
+    const values = [Number(share), 0, 0, 0, 0, 0];
+    values[index + 1] = Math.sqrt(1 - Number(share) ** 2);
+    insert.run(idOf(`openalex:${id}`), vector(values));
+  });
+  insert.run(idOf('openalex:W202520'), vector([0.95, 0, 0, 0, 0, 0.312]));
+  const notable = async (weights: number[]) => (await readFeedPage(env, parseFeedRequest({
+    groups: [
+      { categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: ['2610.00059'], weight: weights[0] },
+      { categories: ['cs.CV'], exampleCategories: ['cs.CV'], positiveIds: [], weight: weights[1] },
+    ],
+    pageSize: 15, seen: feedSeenFilter([]), notable: 5,
+  }), { now: NOW })).filter(paper => paper._notable).map(paper => paper.id);
+  assert.deepEqual(await notable([1, 1]), ['W201811', 'W202521', 'W202410', 'W202421', 'W201610'].map(id => `openalex:${id}`));
+  assert.deepEqual(await notable([2, 1]), ['W201811', 'W202521', 'W202410', 'W201610', 'W202421'].map(id => `openalex:${id}`));
+});
+
+test("each liked group's notable papers are ranked by that group's likes alone, not by another group's", async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  insert.run(idOf('2610.00059'), vector([1, 0, 0, 0, 0, 0]));
+  insert.run(idOf('2610.00058'), vector([0, 0, 0, 0, 0, 1]));
+  // cs.LG's 2024 paper is closer to cs.CV's like (0.85) than its 2018 paper
+  // is to cs.LG's (0.8), and cs.CV's 2024 paper is close to cs.LG's like
+  // alone (0.9): ranked by every like, each would lead its group.
+  insert.run(idOf('openalex:W201811'), vector([0.8, 0.6, 0, 0, 0, 0]));
+  insert.run(idOf('openalex:W202410'), vector([0.5, 0, 0.166, 0, 0, 0.85]));
+  insert.run(idOf('openalex:W202420'), vector([0.9, 0, 0, 0.436, 0, 0]));
+  const answer = await readFeedPage(env, parseFeedRequest({
+    groups: [
+      { categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: ['2610.00059'], weight: 1 },
+      { categories: ['cs.CV'], exampleCategories: ['cs.CV'], positiveIds: ['2610.00058'], weight: 1 },
+    ],
+    pageSize: 15, seen: feedSeenFilter([]), notable: 5,
+  }), { now: NOW });
+  // cs.LG's by its like, then the ones without a vector newest first; cs.CV's
+  // like is near none of cs.CV's papers, so they go newest first. The groups
+  // take turns.
+  assert.deepEqual(answer.filter(paper => paper._notable).map(paper => paper.id), ['W201811', 'W202521', 'W202410', 'W202520', 'W202511'].map(id => `openalex:${id}`));
+});
+
+// The cards a fresh load excludes count as turns already passed for a group
+// without likes too, though the group beside it leaves them out before ranking.
+test('a fresh load continues the years in turns of a group without likes beside a group with likes', async () => {
+  const { env, db } = await notableLeavesCorpus();
+  const idOf = (paperId: string) => rows(db, `SELECT id FROM works WHERE paper ->> '$.id' = '${paperId}'`)[0].id as number;
+  db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)').run(idOf('2610.00059'), Buffer.from(quantize([1, 0, 0, 0, 0, 0]).buffer));
+  const shown: string[] = [];
+  const excludedIds: string[] = [];
+  const years: Array<Array<number | null | undefined>> = [];
+  for (let load = 0; load < 3; load += 1) {
+    const answer = await readFeedPage(env, parseFeedRequest({
+      groups: [
+        { categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: ['2610.00059'], weight: 1 },
+        { categories: ['cs.CV'], exampleCategories: ['cs.CV'], positiveIds: [], weight: 1 },
+      ],
+      pageSize: 15, seen: feedSeenFilter(shown), excludedIds, notable: 4,
+    }), { now: NOW });
+    const cards = answer.filter(paper => paper._notable);
+    // Two cards a load from each group: cs.CV's are the ones without likes.
+    years.push(cards.filter(paper => paper._fetchedFor?.includes('cs.CV')).map(paper => paper.year));
+    shown.push(...answer.map(paper => paper.id));
+    excludedIds.push(...cards.map(paper => paper.id));
+  }
+  assert.deepEqual(years, [[2025, 2024], [2023, 2022], [2021, 2020]]);
+});
+
+// cs.LG's and economics' notable papers (`notableLeavesCorpus`), a group for
+// each, and a liked paper with a vector for each group. The notable papers
+// have no vector, so a group with likes ranks its own newest first.
+const AREA_LEAVES = ['cs.LG', 'econ.GN'];
+const AREA_LIKES = ['2610.00059', '2610.00058'];
+async function notableAreasCorpus() {
+  const { env, db } = await notableLeavesCorpus(AREA_LEAVES);
+  const embed = db.prepare("INSERT INTO work_vectors (work_id, embedding) SELECT id, ? FROM works WHERE paper ->> '$.id' = ?");
+  AREA_LIKES.forEach((id, index) => embed.run(Buffer.from(quantize(index === 0 ? [1, 0] : [0, 1]).buffer), id));
+  return env;
+}
+const areaGroups = (positiveIds: string[][], weights = [1, 1]) => AREA_LEAVES.map((category, index) => (
+  { categories: [category], exampleCategories: [category], positiveIds: positiveIds[index], weight: weights[index] }
+));
+
+// A page of fifteen has one notable place: the app asks for its card and two
+// spares, shows the first it gets and, on the next fresh load, holds the cards
+// it showed in the seen filter and names them in `excludedIds`. A card the
+// reader liked comes among its group's likes, and one they rejected in
+// `negativeIds`. The answer: the category and year of the card each load shows.
+async function notablePlaceByLoad(
+  loads: number,
+  { likes = AREA_LIKES.map(id => [id]), weights = [1, 1], shownAs = 'excludedIds' }: { likes?: string[][]; weights?: number[]; shownAs?: 'excludedIds' | 'positiveIds' | 'negativeIds' | 'seen' } = {},
+) {
+  const env = await notableAreasCorpus();
+  const shown: Array<{ id: string; category: string }> = [];
+  const places: Array<[category: string, year: number | null | undefined]> = [];
+  for (let load = 0; load < loads; load += 1) {
+    const named = shown.map(card => card.id);
+    const liked = AREA_LEAVES.map(category => (shownAs === 'positiveIds' ? shown.filter(card => card.category === category).map(card => card.id) : []));
+    const answer = await readFeedPage(env, parseFeedRequest({
+      groups: areaGroups(likes.map((ids, index) => [...ids, ...liked[index]]), weights),
+      ...(shownAs === 'excludedIds' ? { excludedIds: named } : {}),
+      ...(shownAs === 'negativeIds' ? { negativeIds: named } : {}),
+      pageSize: 15, seen: feedSeenFilter(named), skipsSeen: true, notable: 3,
+    }), { now: NOW });
+    const [card] = answer.filter(paper => paper._notable);
+    assert.equal(card._fetchedFor?.length, 1, `load ${load}: the card names its category`);
+    shown.push({ id: card.id, category: card._fetchedFor[0] });
+    places.push([card._fetchedFor[0], card.year]);
+  }
+  return places;
+}
+
+// The verifier's finding on PR #520 (2026-11-15): each group left out the
+// papers the request names before the groups took their turns, so every fresh
+// load gave its notable place to the first group again.
+test('successive fresh loads give their notable place to the interest groups in turns, whether the app excludes the cards shown, the reader liked or rejected them, or the filter alone holds them', async () => {
+  const categories: Record<string, string[]> = {};
+  for (const shownAs of ['excludedIds', 'positiveIds', 'negativeIds', 'seen'] as const) {
+    categories[shownAs] = (await notablePlaceByLoad(4, { shownAs })).map(([category]) => category);
+  }
+  const inTurns = ['cs.LG', 'econ.GN', 'cs.LG', 'econ.GN'];
+  assert.deepEqual(categories, { excludedIds: inTurns, positiveIds: inTurns, negativeIds: inTurns, seen: inTurns });
+});
+
+test("over successive fresh loads the notable place follows the groups' weights, a group of twice the weight taking two loads in three", async () => {
+  const categories = async (weights: number[]) => (await notablePlaceByLoad(6, { weights })).map(([category]) => category);
+  assert.deepEqual(await categories([2, 1]), ['cs.LG', 'econ.GN', 'cs.LG', 'cs.LG', 'econ.GN', 'cs.LG']);
+  assert.deepEqual(await categories([1, 2]), ['econ.GN', 'cs.LG', 'econ.GN', 'econ.GN', 'cs.LG', 'econ.GN']);
+});
+
+test('over successive fresh loads a group without likes takes the notable place in its turn, with its years in turns, beside a group with likes', async () => {
+  // cs.LG's group ranks by its like, newest first on a tie: 2025's two papers, then 2024's.
+  assert.deepEqual(await notablePlaceByLoad(6, { likes: [[AREA_LIKES[0]], []] }),
+    [['cs.LG', 2025], ['econ.GN', 2025], ['cs.LG', 2025], ['econ.GN', 2024], ['cs.LG', 2024], ['econ.GN', 2023]]);
+  // The group without likes first.
+  assert.deepEqual(await notablePlaceByLoad(4, { likes: [[], [AREA_LIKES[1]]] }),
+    [['cs.LG', 2025], ['econ.GN', 2025], ['cs.LG', 2024], ['econ.GN', 2025]]);
+});
+
+test("a group gives up one of its first turns for each of its own notable papers the request names, none for another group's, and a paper two groups hold costs one turn", async () => {
+  const env = await notableAreasCorpus();
+  const notableOf = async (excludedIds: string[]) => (await readFeedPage(env, parseFeedRequest({
+    groups: areaGroups(AREA_LIKES.map(id => [id])), excludedIds, pageSize: 15, seen: feedSeenFilter([]), notable: 5,
+  }), { now: NOW })).filter(paper => paper._notable).map(paper => paper._fetchedFor);
+  // The app showed cs.LG's two newest and none of economics'.
+  assert.deepEqual(await notableOf(['openalex:W202511', 'openalex:W202510']), [['econ.GN'], ['econ.GN'], ['cs.LG'], ['econ.GN'], ['cs.LG']]);
+  // The newest paper of both lanes: cs.LG's first turn showed it, so economics' group comes next.
+  await ingestPapers(env, [
+    { paper: notableWork('W2025909', 'Highly cited study of 2025 in both areas', '2025-06-01', 5000, true), lanes: AREA_LEAVES.map(leaf => `notable:${leaf}`) },
+  ], { now: NOW, keepUntil: LISTED_UNTIL });
+  assert.deepEqual(await notableOf(['openalex:W2025909']), [['econ.GN'], ['cs.LG'], ['econ.GN'], ['cs.LG'], ['econ.GN']]);
+});
+
+// Notable papers that the categories of two groups list (the verifier's P2 on
+// PR #520, 2026-11-16). Each group has a liked paper along its own axis; the
+// notable papers of each lane have no vector, so a group ranks its own newest
+// first. A shared paper is the newest of both its lanes, the first one newest,
+// and its vector leans toward the like of the group named `rankedFirstBy` and
+// away from the other's: that group ranks it first, the other last. So a
+// shared card is that group's paper, and each other group's best paper is one
+// of its own. Only `ownLeaves` have notable papers of their own.
+const SHARED_LEAVES = ['cs.LG', 'econ.GN', 'math.ST'];
+const SHARED_LIKES = ['2610.00059', '2610.00058', '2610.00057'];
+const sharedVector = (axes: Record<number, number>) => quantize(Array.from({ length: 12 }, (_, axis) => axes[axis] ?? 0));
+const sharedPaperId = (index: number) => `openalex:W20259${index}`;
+
+async function sharedNotableCorpus(leaves: string[], shared: Array<{ groups: [number, number]; rankedFirstBy: number }>, ownLeaves = leaves) {
+  const { env, db } = await notableLeavesCorpus(ownLeaves);
+  const embed = db.prepare("INSERT INTO work_vectors (work_id, embedding) SELECT id, ? FROM works WHERE paper ->> '$.id' = ?");
+  leaves.forEach((_, index) => embed.run(Buffer.from(sharedVector({ [index]: 1 }).buffer), SHARED_LIKES[index]));
+  await ingestPapers(env, shared.map(({ groups }, index) => ({
+    paper: notableWork(`W20259${index}`, `Highly cited study ${index} of two areas`, `2025-${String(9 - index).padStart(2, '0')}-01`, 5000, true),
+    lanes: groups.map(group => `notable:${leaves[group]}`),
+  })), { now: NOW, keepUntil: LISTED_UNTIL });
+  shared.forEach(({ groups, rankedFirstBy }, index) => {
+    const other = groups.find(group => group !== rankedFirstBy)!;
+    embed.run(Buffer.from(sharedVector({ [rankedFirstBy]: 0.3, [other]: -0.5, [leaves.length + index]: 1 }).buffer), sharedPaperId(index));
+  });
+  // Whose paper each card is: a shared one is the group's that ranks it first.
+  const groupOf = new Map(shared.map(({ rankedFirstBy }, index) => [sharedPaperId(index), leaves[rankedFirstBy]]));
+  return { env, groupOf: (card: { id: string; _fetchedFor?: string[] }) => groupOf.get(card.id) ?? card._fetchedFor?.join('+') };
+}
+
+// A group for each leaf, with its like unless `withoutLikes` lists the leaf.
+const sharedGroups = (leaves: string[], weights: number[], withoutLikes: string[] = []) => leaves.map((category, index) => (
+  { categories: [category], exampleCategories: [category], positiveIds: withoutLikes.includes(category) ? [] : [SHARED_LIKES[index]], weight: weights[index] }
+));
+
+// Successive fresh loads with one notable place each: the app shows the first
+// notable card, then holds the cards shown in the seen filter and names them in
+// `excludedIds`, the latest first. `groups` can differ from load to load. The
+// answer: the card each load shows.
+async function notableCardByLoad(env: Parameters<typeof readFeedPage>[0], loads: number, groups: unknown[] | ((load: number) => unknown[])) {
+  const cards: Array<{ id: string; _fetchedFor?: string[] }> = [];
+  for (let load = 0; load < loads; load += 1) {
+    const shown = cards.map(card => card.id);
+    const answer = await readFeedPage(env, parseFeedRequest({
+      groups: typeof groups === 'function' ? groups(load) : groups,
+      excludedIds: [...shown].reverse(), pageSize: 15, seen: feedSeenFilter(shown), skipsSeen: true, notable: 3,
+    }), { now: NOW });
+    const [card] = answer.filter(paper => paper._notable);
+    assert.ok(card, `load ${load} has a notable card`);
+    assert.ok(!shown.includes(card.id), `load ${load} shows a card not shown before`);
+    cards.push(card);
+  }
+  return cards;
+}
+
+// Whose paper each fresh load shows.
+async function groupByLoad({ env, groupOf }: Awaited<ReturnType<typeof sharedNotableCorpus>>, loads: number, leaves: string[], weights: number[]) {
+  return (await notableCardByLoad(env, loads, sharedGroups(leaves, weights))).map(groupOf);
+}
+
+test("a notable paper two groups hold, shown in the turn of the group that ranks it first, leaves the next fresh load to the other group's own paper", async () => {
+  const leaves = SHARED_LEAVES.slice(0, 2);
+  const corpus = await sharedNotableCorpus(leaves, [{ groups: [0, 1], rankedFirstBy: 1 }]);
+  assert.deepEqual(await groupByLoad(corpus, 8, leaves, [1, 1]),
+    ['cs.LG', 'econ.GN', 'cs.LG', 'econ.GN', 'cs.LG', 'econ.GN', 'cs.LG', 'econ.GN']);
+});
+
+test('four notable papers two groups hold keep two groups of equal weight in turns over successive fresh loads', async () => {
+  const leaves = SHARED_LEAVES.slice(0, 2);
+  const corpus = await sharedNotableCorpus(leaves, [0, 1, 2, 3].map(() => ({ groups: [0, 1] as [number, number], rankedFirstBy: 1 })));
+  assert.deepEqual(await groupByLoad(corpus, 10, leaves, [1, 1]),
+    ['cs.LG', 'econ.GN', 'cs.LG', 'econ.GN', 'cs.LG', 'econ.GN', 'cs.LG', 'econ.GN', 'cs.LG', 'econ.GN']);
+});
+
+test('with notable papers two groups hold, a group of twice the weight still takes two fresh loads in three', async () => {
+  const leaves = SHARED_LEAVES.slice(0, 2);
+  const corpus = await sharedNotableCorpus(leaves, [0, 1].map(() => ({ groups: [0, 1] as [number, number], rankedFirstBy: 1 })));
+  assert.deepEqual(await groupByLoad(corpus, 9, leaves, [2, 1]),
+    ['cs.LG', 'econ.GN', 'cs.LG', 'cs.LG', 'econ.GN', 'cs.LG', 'cs.LG', 'econ.GN', 'cs.LG']);
+});
+
+test('three groups of equal weight keep their turns over successive fresh loads when each pair of them shares a notable paper', async () => {
+  const corpus = await sharedNotableCorpus(SHARED_LEAVES, [
+    { groups: [0, 1], rankedFirstBy: 1 },
+    { groups: [1, 2], rankedFirstBy: 2 },
+    { groups: [0, 2], rankedFirstBy: 2 },
+  ]);
+  assert.deepEqual(await groupByLoad(corpus, 9, SHARED_LEAVES, [1, 1, 1]),
+    ['cs.LG', 'econ.GN', 'math.ST', 'cs.LG', 'econ.GN', 'math.ST', 'cs.LG', 'econ.GN', 'math.ST']);
+});
+
+// Pablo's decision of 2026-11-17: such a paper is the group's whose ranking
+// places it highest for its length. Given to the group asking for the first
+// category by id, papers that only the other group's likes ranked high sat
+// behind every notable paper of that group and were not shown in 12 loads
+// (PR #520's review, 2026-11-17).
+test("notable papers of both groups' categories that economics' likes rank first and cs.LG's last come on economics' turns", async () => {
+  const leaves = SHARED_LEAVES.slice(0, 2);
+  const { env } = await sharedNotableCorpus(leaves, [0, 1, 2, 3].map(() => ({ groups: [0, 1] as [number, number], rankedFirstBy: 1 })));
+  assert.deepEqual((await notableCardByLoad(env, 8, sharedGroups(leaves, [1, 1]))).map(card => card.id),
+    ['W202511', 'W202590', 'W202510', 'W202591', 'W202411', 'W202592', 'W202410', 'W202593'].map(id => `openalex:${id}`));
+});
+
+test("a group whose every notable paper another group's category lists too takes its turns while its likes rank those papers higher", async () => {
+  const leaves = ['cs.LG', 'q-fin.GN'];
+  // Finance has no notable paper of its own; its likes rank first the four that cs.LG's likes rank last.
+  const corpus = await sharedNotableCorpus(leaves, [0, 1, 2, 3].map(() => ({ groups: [0, 1] as [number, number], rankedFirstBy: 1 })), ['cs.LG']);
+  assert.deepEqual((await notableCardByLoad(corpus.env, 10, sharedGroups(leaves, [1, 1]))).map(corpus.groupOf),
+    ['cs.LG', 'q-fin.GN', 'cs.LG', 'q-fin.GN', 'cs.LG', 'q-fin.GN', 'cs.LG', 'q-fin.GN', 'cs.LG', 'cs.LG']);
+});
+
+// Notable papers at chosen cosines to cs.LG's and economics' likes
+// (SHARED_LIKES, each along an axis of its own; PR #520's review, 2026-11-17).
+// `own` gives the cosine of each of a leaf's papers to that leaf's like; paper
+// i is of 2025 - i % 10, and the higher index is the newer within a year.
+// `shared` gives each paper of both lanes its cosine to each like. The rest of
+// a vector lies along the paper's own axis, so no two papers are near copies.
+// A card's label: A or B and the index for a paper of cs.LG or economics alone,
+// S and the index for a shared one.
+async function cosineNotableCorpus(own: [number[], number[]], shared: Array<{ cosines: number[]; date: string }>) {
+  const { env, db } = corpus();
+  await ingestPapers(env, recentPapers(60), { now: NOW });
+  const papers = [
+    ...own.flatMap((cosines, leaf) => cosines.map((cosine, index) => ({
+      id: `W7${leaf}${String(index).padStart(2, '0')}`, label: `${'AB'[leaf]}${index}`, date: `${2025 - (index % 10)}-0${1 + Math.floor(index / 10)}-15`,
+      leaves: [SHARED_LEAVES[leaf]], cosines: leaf ? [0, cosine] : [cosine, 0],
+    }))),
+    ...shared.map(({ cosines, date }, index) => ({ id: `W80${index}`, label: `S${index}`, date, leaves: SHARED_LEAVES.slice(0, 2), cosines })),
+  ];
+  await ingestPapers(env, papers.map(({ id, label, date, leaves }) => (
+    { paper: notableWork(id, `Highly cited study ${label}`, date, 5000, true), lanes: leaves.map(leaf => `notable:${leaf}`) }
+  )), { now: NOW, keepUntil: LISTED_UNTIL });
+  const embed = db.prepare("INSERT INTO work_vectors (work_id, embedding) SELECT id, ? FROM works WHERE paper ->> '$.id' = ?");
+  const vector = (axes: Record<number, number>) => Buffer.from(quantize(Array.from({ length: 64 }, (_, axis) => axes[axis] ?? 0)).buffer);
+  SHARED_LIKES.slice(0, 2).forEach((id, axis) => embed.run(vector({ [axis]: 1 }), id));
+  papers.forEach(({ id, cosines: [csLG, economics] }, index) => (
+    embed.run(vector({ 0: csLG, 1: economics, [2 + index]: Math.sqrt(1 - csLG ** 2 - economics ** 2) }), `openalex:${id}`)
+  ));
+  const labels = new Map(papers.map(({ id, label }) => [`openalex:${id}`, label]));
+  return { env, label: (card: { id: string }) => labels.get(card.id) };
+}
+
+// Pablo's decision of 2026-11-17 places a paper for the ranking's length. cs.LG
+// ranks 34 papers, economics 14. S0 is 8th of both (7/34 against 7/14):
+// cs.LG's. S1 is economics' first: economics'. S2 is closer to cs.LG's like
+// (0.61 against 0.47) but 15th of 34 there and 3rd of 14 for economics:
+// economics'. S3 is 11th of 34 for cs.LG and 6th of 14 for economics: cs.LG's,
+// though economics places it lower. Each group ranks the papers the request
+// names too: ranked without them, S3 came on economics' turn at load 12 and
+// counted for cs.LG once named, so economics showed loads 20 to 22.
+test("a notable paper two groups hold counts for the group whose ranking places it highest for the ranking's length, before and after a load names it", async () => {
+  const { env, label } = await cosineNotableCorpus(
+    [Array.from({ length: 30 }, (_, index) => 0.84 - 0.02 * index), Array.from({ length: 10 }, (_, index) => 0.5 - 0.06 * index)],
+    [[0.71, 0.29], [0.31, 0.83], [0.61, 0.47], [0.67, 0.33]].map((cosines, index) => ({ cosines, date: `2024-10-1${index}` })),
+  );
+  // cs.LG: A0 to A6, S0, A7, A8, S3, A9; economics: S1, B0, S2, B1 to B9.
+  assert.deepEqual((await notableCardByLoad(env, 24, sharedGroups(SHARED_LEAVES.slice(0, 2), [1, 1]))).map(label), [
+    'A0', 'S1', 'A1', 'B0', 'A2', 'S2', 'A3', 'B1', 'A4', 'B2', 'A5', 'B3',
+    'A6', 'B4', 'S0', 'B5', 'A7', 'B6', 'A8', 'B7', 'S3', 'B8', 'A9', 'B9',
+  ]);
+});
+
+// A group without likes ranks by its years in turns: its place for a paper
+// says how soon its turns reach the paper's year, not how close it is to a like.
+test('a notable paper of a group with likes and a group without goes to the one whose ranking places it higher for its length, however close it is to the like', async () => {
+  // Economics, without likes, has 2025's newest paper first, then S0, the
+  // newest of 2024: its 2nd of 22. S0 is cs.LG's last of 12: economics',
+  // though only cs.LG's like scores it (cosine 0.1). S1, the newest of 2016,
+  // is economics' 10th and cs.LG's 2nd: cs.LG's.
+  const { env, label } = await cosineNotableCorpus(
+    [Array.from({ length: 10 }, (_, index) => 0.84 - 0.03 * index), Array.from({ length: 20 }, () => 0)],
+    [{ cosines: [0.1, 0], date: '2024-10-10' }, { cosines: [0.825, 0], date: '2016-10-11' }],
+  );
+  // cs.LG: A0, S1, A1, A2; economics: B10 (2025), S0 (2024), B12 (2023), B13.
+  assert.deepEqual((await notableCardByLoad(env, 8, sharedGroups(SHARED_LEAVES.slice(0, 2), [1, 1], ['econ.GN']))).map(label),
+    ['A0', 'B10', 'S1', 'S0', 'A1', 'B12', 'A2', 'B13']);
+});
+
+// Pablo's decision of 2026-11-18: a group without likes finds each paper's
+// group with its categories in id order. cs.LG's like ranks S0, a paper of
+// cs.LG and econ.EM, 2nd of 11 (1/11). Economics, without likes, ranks it 1st
+// of 7 with econ.EM first (0/7), the id order, and 2nd with econ.GN first
+// (1/7). When the order asked decided, S0 was cs.LG's while economics asked
+// for econ.GN first: a swap after S0 was shown gave cs.LG the next three
+// cards, and a swap on every load gave economics two in a row.
+test("a notable paper that a group without likes shares stays with one group however the app orders that group's categories, which order only its cards", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, recentPapers(60), { now: NOW });
+  // cs.LG's papers by cosine to its like; economics' all of 2025, S0 the newest of econ.EM.
+  const papers = [
+    ...Array.from({ length: 10 }, (_, index) => ({ label: `A${index}`, leaves: ['cs.LG'], date: `${2025 - index}-05-01`, cosine: 0.84 - 0.03 * index })),
+    ...['econ.GN', 'econ.EM'].flatMap((leaf, leafIndex) => [0, 1, 2].map(index => ({ label: `${'GE'[leafIndex]}${index}`, leaves: [leaf], date: `2025-0${3 - index}-0${1 + leafIndex}`, cosine: 0 }))),
+    { label: 'S0', leaves: ['cs.LG', 'econ.EM'], date: '2025-06-01', cosine: 0.83 },
+  ].map((paper, index) => ({ ...paper, id: `W90${String(index).padStart(2, '0')}` }));
+  await ingestPapers(env, papers.map(({ id, label, date, leaves }) => (
+    { paper: notableWork(id, `Highly cited study ${label}`, date, 5000, true), lanes: leaves.map(leaf => `notable:${leaf}`) }
+  )), { now: NOW, keepUntil: LISTED_UNTIL });
+  const embed = db.prepare("INSERT INTO work_vectors (work_id, embedding) SELECT id, ? FROM works WHERE paper ->> '$.id' = ?");
+  const vector = (axes: Record<number, number>) => Buffer.from(quantize(Array.from({ length: 32 }, (_, axis) => axes[axis] ?? 0)).buffer);
+  embed.run(vector({ 0: 1 }), SHARED_LIKES[0]);
+  papers.forEach(({ id, cosine }, index) => embed.run(vector({ 0: cosine, [1 + index]: Math.sqrt(1 - cosine ** 2) }), `openalex:${id}`));
+  const labels = new Map(papers.map(({ id, label }) => [`openalex:${id}`, label]));
+  const groups = (economics: string[]) => [
+    { categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: [SHARED_LIKES[0]], weight: 1 },
+    { categories: economics, exampleCategories: economics, positiveIds: [], weight: 1 },
+  ];
+  const asked = ['econ.GN', 'econ.EM'];
+  const swapped = ['econ.EM', 'econ.GN'];
+  const cards = async (economicsAt: (load: number) => string[]) => (await notableCardByLoad(env, 8, load => groups(economicsAt(load))))
+    .map(card => labels.get(card.id));
+  // Economics shows its cards in the order asked: G0, S0, G1, E0; swapped: S0, G0, E0, G1.
+  assert.deepEqual(await cards(() => asked), ['A0', 'G0', 'A1', 'S0', 'A2', 'G1', 'A3', 'E0']);
+  assert.deepEqual(await cards(load => (load < 4 ? asked : swapped)), ['A0', 'G0', 'A1', 'S0', 'A2', 'E0', 'A3', 'G1'], 'swapped once after S0 was shown');
+  assert.deepEqual(await cards(load => (load % 2 ? swapped : asked)), ['A0', 'S0', 'A1', 'G0', 'A2', 'E0', 'A3', 'G1'], 'swapped on every load');
+});
+
+test("a notable paper of both groups' categories that the request names, though no load showed it, takes a turn of the group that ranks it higher", async () => {
+  const leaves = SHARED_LEAVES.slice(0, 2);
+  const { env } = await sharedNotableCorpus(leaves, [{ groups: [0, 1], rankedFirstBy: 1 }]);
+  const notableOf = async (body: object) => (await readFeedPage(env, parseFeedRequest({ pageSize: 15, seen: feedSeenFilter([]), notable: 5, ...body }), { now: NOW }))
+    .filter(paper => paper._notable).map(paper => paper._fetchedFor);
+  // Economics' first turn is the named paper's, so cs.LG takes two places running.
+  const economicsFirstTurnPassed = [['cs.LG'], ['cs.LG'], ['econ.GN'], ['cs.LG'], ['econ.GN']];
+  assert.deepEqual(await notableOf({ groups: sharedGroups(leaves, [1, 1]), excludedIds: [sharedPaperId(0)] }), economicsFirstTurnPassed);
+  // Liked in economics, in Lists say, it is one of economics' likes, which rank it first.
+  const [csLG, economics] = sharedGroups(leaves, [1, 1]);
+  assert.deepEqual(await notableOf({ groups: [csLG, { ...economics, positiveIds: [...economics.positiveIds, sharedPaperId(0)] }] }), economicsFirstTurnPassed);
+});
+
+test("listing the groups in another order leaves each notable paper of both groups' categories with the same group, a tie included", async () => {
+  const leaves = SHARED_LEAVES.slice(0, 2);
+  const { env } = await sharedNotableCorpus(leaves, [0, 1, 2, 3].map(() => ({ groups: [0, 1] as [number, number], rankedFirstBy: 1 })));
+  // Listed first, economics takes the first turn, and still shows the papers its likes rank first.
+  assert.deepEqual((await notableCardByLoad(env, 8, sharedGroups(leaves, [1, 1]).reverse())).map(card => card.id),
+    ['W202590', 'W202511', 'W202591', 'W202510', 'W202592', 'W202411', 'W202593', 'W202410'].map(id => `openalex:${id}`));
+  // Both groups rank the newest paper of both lanes first: it is cs.LG's,
+  // which asks for the first of its categories by id, in either order.
+  const areas = await notableAreasCorpus();
+  await ingestPapers(areas, [
+    { paper: notableWork('W2025909', 'Highly cited study of 2025 in both areas', '2025-06-01', 5000, true), lanes: AREA_LEAVES.map(leaf => `notable:${leaf}`) },
+  ], { now: NOW, keepUntil: LISTED_UNTIL });
+  const notableOf = async (groups: unknown[]) => (await readFeedPage(areas, parseFeedRequest({
+    groups, excludedIds: ['openalex:W2025909'], pageSize: 15, seen: feedSeenFilter([]), notable: 5,
+  }), { now: NOW })).filter(paper => paper._notable).map(paper => paper._fetchedFor);
+  assert.deepEqual(await notableOf(areaGroups(AREA_LIKES.map(id => [id]))), [['econ.GN'], ['cs.LG'], ['econ.GN'], ['cs.LG'], ['econ.GN']]);
+  assert.deepEqual(await notableOf(areaGroups(AREA_LIKES.map(id => [id])).reverse()), [['econ.GN'], ['econ.GN'], ['cs.LG'], ['econ.GN'], ['cs.LG']]);
+});
+
+// Notable papers without a vector: a group with likes scores them all alike,
+// so it orders them by date, and the papers of one date tie. `papers` gives
+// each its label, categories and date. Each group's like lies along an axis of
+// its own (SHARED_LIKES).
+async function tiedNotableCorpus(papers: Array<{ label: string; leaves: string[]; date: string }>) {
+  const { env, db } = corpus();
+  await ingestPapers(env, recentPapers(60), { now: NOW });
+  const ids = papers.map((_, index) => `W96${String(index).padStart(2, '0')}`);
+  await ingestPapers(env, papers.map(({ label, leaves, date }, index) => (
+    { paper: notableWork(ids[index], `Highly cited study ${label}`, date, 5000, true), lanes: leaves.map(leaf => `notable:${leaf}`) }
+  )), { now: NOW, keepUntil: LISTED_UNTIL });
+  const embed = db.prepare("INSERT INTO work_vectors (work_id, embedding) SELECT id, ? FROM works WHERE paper ->> '$.id' = ?");
+  SHARED_LIKES.forEach((id, axis) => embed.run(Buffer.from(sharedVector({ [axis]: 1 }).buffer), id));
+  const labels = new Map(papers.map(({ label }, index) => [`openalex:${ids[index]}`, label]));
+  return { env, label: (card: { id: string }) => labels.get(card.id)! };
+}
+
+// The verifier's finding on 8af91906 (PR #520, 2026-11-18). Computer science
+// asks for cs.LG and cs.CV, economics for econ.GN, each with a like, of equal
+// weight. S, of cs.CV and econ.GN, is economics' newest paper and ties with L0,
+// cs.LG's newest, in computer science. When a group with likes found each
+// paper's group with the papers in the order the request asks its categories
+// in, S was economics' with cs.LG asked first (2nd of 4 against 1st of 3) and
+// computer science's with cs.CV first (1st of 4, a tie that cs.CV wins over
+// econ.GN). Swapping the two after S was shown on economics' turn charged it to
+// computer science: L0, S, E0, E1 instead of L0, S, C1, E0. Computer science
+// now ranks L0 and S in work id order, a hash of the paper id, which puts S
+// 2nd in either order, so S is economics'.
+test("a notable paper two groups hold stays with one group when the app swaps the order of a group's categories, though it ties with that group's other papers", async () => {
+  const { env, label } = await tiedNotableCorpus([
+    { label: 'L0', leaves: ['cs.LG'], date: '2025-06-01' },
+    { label: 'L1', leaves: ['cs.LG'], date: '2025-03-01' },
+    { label: 'C1', leaves: ['cs.CV'], date: '2025-04-01' },
+    { label: 'S', leaves: ['cs.CV', 'econ.GN'], date: '2025-06-01' },
+    { label: 'E0', leaves: ['econ.GN'], date: '2025-05-01' },
+    { label: 'E1', leaves: ['econ.GN'], date: '2025-02-01' },
+  ]);
+  const groups = (computing: string[]) => [
+    { categories: computing, exampleCategories: computing, positiveIds: [SHARED_LIKES[0]], weight: 1 },
+    { categories: ['econ.GN'], exampleCategories: ['econ.GN'], positiveIds: [SHARED_LIKES[1]], weight: 1 },
+  ];
+  const asked = ['cs.LG', 'cs.CV'];
+  const swapped = ['cs.CV', 'cs.LG'];
+  const cards = async (computingAt: (load: number) => string[]) => (await notableCardByLoad(env, 6, load => groups(computingAt(load)))).map(label);
+  const inOneOrder = await cards(() => asked);
+  assert.deepEqual(await cards(load => (load < 2 ? asked : swapped)), inOneOrder, 'swapped after two loads');
+  assert.deepEqual(inOneOrder, ['L0', 'S', 'C1', 'E0', 'L1', 'E1']);
+  assert.deepEqual(await cards(load => (load < 2 ? swapped : asked)), await cards(() => swapped), 'swapped back after two loads');
+});
+
+// Every order in which the request can list three groups of equal weight and
+// each group's categories: computer science's two, economics' two, and
+// statistics' one. Each category has a notable paper of 2025-06-01 and eight
+// older ones; four papers of that date are listed by two groups' categories
+// and two by all three. Each group has a like, and no notable paper has a
+// vector, so a group ranks its papers of that date alike and only the tie
+// decides each shared paper's group. With equal weights and no group running
+// out, the fresh loads give the notable place to the groups in the order
+// listed, so each load's card is the group's whose turn it is. Every order
+// gives each shared paper the same group, whatever order `excludedIds` lists
+// the cards in, and every other card comes on its own group's turn.
+test("every order of the groups and of each group's categories leaves each notable paper that two or three groups hold with the same group, ties included", async () => {
+  const tie = '2025-06-01';
+  const areas: Record<string, string[]> = { computing: ['cs.LG', 'cs.CV'], economics: ['econ.GN', 'econ.EM'], statistics: ['math.ST'] };
+  const shared = [
+    { label: 'S0', leaves: ['cs.LG', 'econ.GN'] },
+    { label: 'S1', leaves: ['cs.CV', 'econ.EM'] },
+    { label: 'S2', leaves: ['cs.CV', 'math.ST'] },
+    { label: 'S3', leaves: ['econ.GN', 'math.ST'] },
+    { label: 'T0', leaves: ['cs.LG', 'econ.EM', 'math.ST'] },
+    { label: 'T1', leaves: ['cs.CV', 'econ.GN', 'math.ST'] },
+  ];
+  const { env, label } = await tiedNotableCorpus([
+    ...Object.values(areas).flat().flatMap((leaf, leafIndex) => [
+      { label: `${leaf} 0`, leaves: [leaf], date: tie },
+      ...Array.from({ length: 8 }, (_, rank) => ({ label: `${leaf} ${rank + 1}`, leaves: [leaf], date: `${2024 - rank}-0${1 + leafIndex}-01` })),
+    ]),
+    ...shared.map(paper => ({ ...paper, date: tie })),
+  ]);
+  const likeOf: Record<string, string> = { computing: SHARED_LIKES[0], economics: SHARED_LIKES[1], statistics: SHARED_LIKES[2] };
+  const orders = <T>(items: T[]): T[][] => (items.length <= 1 ? [items]
+    : items.flatMap((item, index) => orders([...items.slice(0, index), ...items.slice(index + 1)]).map(rest => [item, ...rest])));
+  const owners: Array<Record<string, string>> = [];
+  let walk = 0;
+  for (const groupOrder of orders(Object.keys(areas))) {
+    for (const computing of orders(areas.computing)) {
+      for (const economics of orders(areas.economics)) {
+        const categoriesOf: Record<string, string[]> = { computing, economics, statistics: areas.statistics };
+        const groups = groupOrder.map(name => ({ categories: categoriesOf[name], exampleCategories: categoriesOf[name], positiveIds: [likeOf[name]], weight: 1 }));
+        const shown: string[] = [];
+        const owner: Record<string, string> = {};
+        // Until every shared paper is shown: at most 7 papers of the tied date a group.
+        for (let load = 0; load < 21 && Object.keys(owner).length < shared.length; load += 1) {
+          const answer = await readFeedPage(env, parseFeedRequest({
+            groups, excludedIds: walk % 2 ? [...shown] : [...shown].reverse(), pageSize: 15, seen: feedSeenFilter(shown), skipsSeen: true, notable: 3,
+          }), { now: NOW });
+          const [card] = answer.filter(paper => paper._notable);
+          const turn = groupOrder[load % groupOrder.length];
+          const name = label(card);
+          if (shared.some(paper => paper.label === name)) owner[name] = turn;
+          else assert.ok(areas[turn].includes(name.split(' ')[0]), `${groupOrder}, ${computing}, ${economics}: load ${load} shows ${name} on ${turn}'s turn`);
+          shown.push(card.id);
+        }
+        owners.push(owner);
+        walk += 1;
+      }
+    }
+  }
+  assert.equal(owners.length, 24);
+  assert.deepEqual(Object.keys(owners[0]).sort(), shared.map(paper => paper.label));
+  for (const owner of owners) assert.deepEqual(owner, owners[0]);
 });
 
 // A rejection says nothing about the years the reader wants: "Not interested"
@@ -3140,10 +3759,12 @@ test('a first page serves the papers, scores and kept order it did before the he
     ids: [
       '2610.01454', '2610.00013', '2610.01462', '2610.01478', '2610.00268', '2610.01482', '2610.01430', '2610.00424',
       '2610.01466', '2610.01450', '2610.00073', '2610.01410', '2610.01654', '2610.00037', '2610.01402',
-      // The notable cards.
-      '2610.01713', '2610.01755', '2610.01740',
+      // The notable cards. Since 2026-11-13 only the cs.LG group's likes rank
+      // cs.LG's notable lane; ranked by all three likes, they were 01713,
+      // 01755 and 01740, and the digest 70caa410…
+      '2610.01713', '2610.01740', '2610.01752',
     ],
-    digest: '70caa410ab647533619e96048ccae4516c6fe79eec95bb9e2396ffa801ea6f45',
+    digest: '1c5484289b126c8740bc3e40385fe7f8d7375cec467572cfdc57f781fd1d48a0',
   });
 });
 
@@ -3276,7 +3897,10 @@ const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value
 
 // Pages of 30 through the diversity pool's 500 ranks and two far past it,
 // and exploration's own: pages of 2 within its first 30 ranks. The digests are
-// what 65a9b5c5 served, reading every candidate's vector.
+// what 65a9b5c5 served, reading every candidate's vector, but for the pages of
+// groups: since 2026-11-13 a group without likes takes its categories in
+// turns (before, 4ccc5914… and 2fc3b6bd…), and the ranks a page decides are
+// still the ones a read of every vector gives (below).
 test('pages without likes serve what a read of every vector did, across lanes, interest groups, orders and pages', async () => {
   const { env, rejections } = coldPageCorpus();
   const groups = [
@@ -3296,8 +3920,8 @@ test('pages without likes serve what a read of every vector did, across lanes, i
   assert.deepEqual(Object.fromEntries(Object.entries(served).map(([name, pages]) => [name, sha(pages)])), {
     rejections: '3d86ed5c8b122616d27fdc80e15f136f5e3bca7c7842805e6d7f1904140b15c3',
     byRelevance: 'a12ef1b863a294127f79295311f2df64c2c0b29dc6a4e23fb6c527e013b1c0f8',
-    groups: '4ccc59148db408ad5a5e2c3592c3cbab441e630ffa35b92d2fd7e04a4331cc2e',
-    noSignal: '2fc3b6bde0726b46d0a6c38e1f544993cd079582037b89d66ebbc57461c73f22',
+    groups: '1a7cbb1e8ae01c0438666ff27c83214434dfb8fe37f2bc2d198d029bc339dd4a',
+    noSignal: 'a143f974c9052330cf1b7876b6b2d418210898db046e724955ee09391dca8c8f',
     exploration: '7eced58ca13cfc196f5570b9b9c2274980a925d40acb32deb197ebc0998302fe',
   });
 });

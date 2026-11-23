@@ -68,10 +68,13 @@ custom_domain = true
 # 5174/5175 are here because Vite increments the port when 5173 is taken, and a
 # missing origin only shows up as a blocked POST after a successful preflight.
 ALLOWED_ORIGINS = "https://papertok.app,https://www.papertok.app,https://papertok-ten.vercel.app,https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175,http://localhost:4175,http://127.0.0.1:4175"
-# NaN Builders answers every AI route since 2026-10-06, when the Gemini
-# allowance ran out (key: the NAN_API_KEY secret). "gemini" switches all of
-# them back to the Gemini models below.
-AI_PROVIDER = "nan"
+# Claude answers every AI route since 2026-11-19, when the NaN Builders key
+# expired (key: the ANTHROPIC_API_KEY secret; until it is set the routes answer
+# AI_NOT_CONFIGURED). "nan" and "gemini" switch all of them back to those providers.
+AI_PROVIDER = "anthropic"
+# Claude Opus 5.5, used by every route while AI_PROVIDER is "anthropic".
+# "claude-sonnet-5-5" and "claude-haiku-5-5" are cheaper (worker/README.md has the prices).
+ANTHROPIC_MODEL = "claude-opus-5-5"
 # NaN's DeepSeek V4 Flash, used by every route while AI_PROVIDER is "nan".
 NAN_MODEL = "deepseek-v4-flash"
 AI_MODEL = "gemini-3.5-flash"
@@ -99,6 +102,10 @@ FIREBASE_PROJECT_ID = "papertok-168df"
 PUBLIC_LIST_USER_DAILY_LIMIT = "60"
 PUBLIC_LIST_GLOBAL_DAILY_LIMIT = "2000"
 WORKER_PUBLIC_URL = "https://api.papertok.app"
+# The ORCID registry the /orcid routes sign in with: "production" (orcid.org)
+# or "sandbox" (sandbox.orcid.org, for testing with a sandbox client). The
+# client id and secret are wrangler secrets and must belong to this registry.
+ORCID_ENVIRONMENT = "production"
 EMAIL_DAILY_SEND_LIMIT = "100"
 # Where a reader's digest subscription is the record: "kv" (phase 1 of the deploy, the
 # object only hears every cancellation) or "object" (phase 2). Order and rollback:

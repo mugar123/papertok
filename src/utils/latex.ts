@@ -14,7 +14,7 @@ const HTML_ENTITIES: Record<string, string> = {
   '&times;': '×',
 };
 
-const SCIENTIFIC_MARKUP_TAG = /<\/?(?:[a-z][\w.-]*:)?[a-z][\w.-]*(?:\s[^<>]*?)?\s*\/?>/gi;
+const SCIENTIFIC_MARKUP_TAG = /<\/?(?:[a-z][\w.-]*:)?[a-z][\w.-]*(?:\s[^<>]*)?\/?>/gi;
 
 function decodeHtmlEntity(entity: string) {
   const normalizedEntity = entity.toLowerCase();
@@ -49,19 +49,29 @@ function decodeHtmlEntities(text: string) {
  * the `<tex-math>` that explained them; and the preamble is LaTeX rather than
  * markup, so no pass here ever looked at it.
  */
-const XML_COMMENT = /<!--[\s\S]*?-->/g;
-const XML_PROCESSING_INSTRUCTION = /<\?[\s\S]*?\?>/g;
-// ADS escapes the markers (`&lt;![CDATA[ … ]]&gt;`). Entities are decoded
-// last, so an escaped marker used to slip past every pass here and only then
-// turn into the `<![CDATA[` the card printed.
-const CDATA_SECTION = /(?:<|&lt;)!\[CDATA\[([\s\S]*?)\]\](?:>|&gt;)/gi;
-// Dropping both markers keeps the section's content and also survives the
-// truncated abstract that arrives cut mid-section, with its opener orphaned.
+// Search for each closer once. If it is missing, later openers cannot close either.
+function replaceSections(text: string, opener: RegExp, closer: RegExp, replace: (body: string) => string) {
+  let output = '';
+  let cursor = 0;
+  opener.lastIndex = 0;
+  let start;
+  while ((start = opener.exec(text)) !== null) {
+    closer.lastIndex = opener.lastIndex;
+    const end = closer.exec(text);
+    if (!end) break;
+    output += text.slice(cursor, start.index) + replace(text.slice(opener.lastIndex, end.index));
+    cursor = closer.lastIndex;
+    opener.lastIndex = cursor;
+  }
+  return output + text.slice(cursor);
+}
+
 const CDATA_MARKER = /(?:<|&lt;)!\[CDATA\[|\]\](?:>|&gt;)/gi;
 const NAMESPACE = '(?:[a-z][\\w.-]*:)?';
-const ALTERNATIVES = new RegExp(`<${NAMESPACE}alternatives(?:\\s[^<>]*)?>([\\s\\S]*?)</${NAMESPACE}alternatives\\s*>`, 'gi');
-const TEX_MATH = new RegExp(`<${NAMESPACE}tex-math(?:\\s[^<>]*)?>([\\s\\S]*?)</${NAMESPACE}tex-math\\s*>`, 'i');
-const STANDALONE_DOCUMENT = /\\documentclass[\s\S]*?\\begin\{document\}([\s\S]*?)\\end\{document\}/g;
+const ALTERNATIVES_OPEN = new RegExp(`<${NAMESPACE}alternatives(?:\\s[^<>]*)?>`, 'gi');
+const ALTERNATIVES_CLOSE = new RegExp(`</${NAMESPACE}alternatives\\s*>`, 'gi');
+const TEX_OPEN = new RegExp(`<${NAMESPACE}tex-math(?:\\s[^<>]*)?>`, 'i');
+const TEX_CLOSE = new RegExp(`</${NAMESPACE}tex-math\\s*>`, 'gi');
 // ADS rewrites some `_{…}` and `^{…}` inside the TeX as HTML
 // (`{T}_{{{{{c}}}}}<SUP>0</SUP>`).
 const HTML_SCRIPT = /<(sub|sup)>([^<]*)<\/\1>/gi;
@@ -81,7 +91,14 @@ function closeDocument(content: string) {
 
 /** `text` with each `<alternatives>` reduced to its `<tex-math>` spelling, when it has one. */
 function preferTexAlternatives(text: string) {
-  return text.replace(ALTERNATIVES, (block, body) => TEX_MATH.exec(body)?.[1] ?? body);
+  return replaceSections(text, ALTERNATIVES_OPEN, ALTERNATIVES_CLOSE, (body) => {
+    const start = TEX_OPEN.exec(body);
+    if (!start) return body;
+    const from = start.index + start[0].length;
+    TEX_CLOSE.lastIndex = from;
+    const end = TEX_CLOSE.exec(body);
+    return end ? body.slice(from, end.index) : body;
+  });
 }
 
 function translateScripts(formula: string) {
@@ -146,17 +163,21 @@ function flattenFormula(expression: string) {
 function unwrapStandaloneDocuments(text: string) {
   let output = '';
   let cursor = 0;
-  let match;
-
-  STANDALONE_DOCUMENT.lastIndex = 0;
-  while ((match = STANDALONE_DOCUMENT.exec(text)) !== null) {
-    let head = output + text.slice(cursor, match.index);
-    const formula = translateScripts(stripOuterDollars(match[1].trim()).trim());
+  while (cursor < text.length) {
+    const start = text.indexOf('\\documentclass', cursor);
+    if (start === -1) break;
+    const begin = text.indexOf('\\begin{document}', start + '\\documentclass'.length);
+    if (begin === -1) break;
+    const from = begin + '\\begin{document}'.length;
+    const end = text.indexOf('\\end{document}', from);
+    if (end === -1) break;
+    let head = output + text.slice(cursor, start);
+    const formula = translateScripts(stripOuterDollars(text.slice(from, end).trim()).trim());
     const twin = flattenFormula(formula);
     const twinStart = twin ? gluedTwinStart(head, twin) : -1;
     if (twinStart !== -1) head = head.slice(0, twinStart);
     output = `${head}\\(${formula}\\)`;
-    cursor = match.index + match[0].length;
+    cursor = end + '\\end{document}'.length;
   }
 
   return output + text.slice(cursor);
@@ -168,11 +189,10 @@ export function normalizeScientificMarkup(text: unknown) {
   // `<alternatives>` is resolved while its tags still stand, which is what
   // makes the choice independent of the order the publisher wrote the two
   // spellings in — both orders occur in the wild.
-  const chosen = preferTexAlternatives(String(text)
-    .replace(XML_COMMENT, '')
-    .replace(XML_PROCESSING_INSTRUCTION, '')
-    .replace(CDATA_SECTION, (section, content) => closeDocument(content))
-    .replace(CDATA_MARKER, ''));
+  const uncommented = replaceSections(String(text), /<!--/g, /-->/g, () => '');
+  const content = replaceSections(uncommented, /<\?/g, /\?>/g, () => '');
+  const sections = replaceSections(content, /(?:<|&lt;)!\[CDATA\[/gi, /\]\](?:>|&gt;)/gi, closeDocument);
+  const chosen = preferTexAlternatives(sections.replace(CDATA_MARKER, ''));
 
   return decodeHtmlEntities(unwrapStandaloneDocuments(chosen)
     .replace(/<br\s*\/?>/gi, ' ')

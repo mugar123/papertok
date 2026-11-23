@@ -7,7 +7,7 @@ import type { UpstreamError } from './provider-runtime.ts';
 import type { OpenAireProduct } from '../src/services/open-aire-records.ts';
 import type { KeywordReading } from './keyword-lanes.ts';
 
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { ARXIV_FEED_AREAS, arxivPaper, isArxivCategory } from '../src/services/arxiv-records.ts';
 import { pubmedCategoryQuery, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
@@ -68,6 +68,7 @@ export interface ArxivRecord {
 
 const XML = new XMLParser({
   ignoreAttributes: false,
+  ignorePiTags: true,
   attributeNamePrefix: '@_',
   removeNSPrefix: true,
   parseTagValue: false,
@@ -161,12 +162,24 @@ interface AtomEntry {
 
 /** Papers of an arXiv API Atom feed (a search or an `id_list` lookup). */
 export function parseArxivAtom(xml: string) {
-  const entries: AtomEntry[] = XML.parse(xml)?.feed?.entry || [];
+  if (XMLValidator.validate(xml) !== true) throw new Error('Invalid arXiv XML');
+  // A final processing instruction makes the parser retain stray text after a self-closing feed.
+  const document = XML.parse(xml + '<?end?>');
+  const { feed } = document;
+  if (Object.keys(document).length !== 1 || feed === undefined || Array.isArray(feed)) {
+    throw new Error('Expected a single arXiv feed');
+  }
+  if (text(typeof feed === 'string' ? feed : feed['#text'])) {
+    throw new Error('Unexpected text in arXiv feed');
+  }
+  const entries: AtomEntry[] = feed.entry ?? [];
   return entries.flatMap((entry): ArxivRecord[] => {
+    const id = entry.id && typeof entry.id === 'object' && '#text' in entry.id ? entry.id['#text'] : entry.id;
+    if (text(id).includes('/api/errors#')) throw new Error('arXiv API error');
     const primary = text(entry.primary_category?.['@_term']);
     const categories = [...new Set([primary, ...(entry.category || []).map(category => text(category?.['@_term']))].filter(Boolean))];
     const paper = {
-      arxivId: versionless(entry.id),
+      arxivId: versionless(id),
       title: text(entry.title),
       abstract: text(entry.summary),
       authors: (entry.author || []).map(author => text(author?.name)).filter(Boolean),
@@ -915,14 +928,18 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   // one), so the refresh still comes for both. One never enriched still gets
   // its first enrichment, which also asks Crossref its type. The listing does
   // not renew a paper without an abstract either (the placeholder is shorter
-  // than the 40 characters of `isPlausibleAbstract`): the refresh is what asks
-  // for its abstract again, at about one OpenAlex refresh call per 50 such
-  // papers every 14 days. Nor does it renew a paper with a PubMed id: the
-  // listing leaves out only what OpenAlex marks retracted, and the refresh is
-  // what reads PubMed's `Retracted Publication` type from Europe PMC. Nearly
-  // every paper of the 26 medicine and biology notable lanes has one, about
-  // 26,000 papers: about 260 OpenAlex refresh calls and 650 Crossref type
-  // calls a week, with their iCite and Europe PMC calls.
+  // than the 40 characters of `isPlausibleAbstract`): the refresh asks for its
+  // abstract again, at about one OpenAlex refresh call per 50 such papers
+  // every 14 days, and, while the paper is young, the abstract retries
+  // (`ABSTRACT_RETRY_DAYS`, paper-enrichment.ts) also ask. Nor does it renew a
+  // paper with a PubMed id: the listing leaves out only what OpenAlex marks
+  // retracted, and the refresh is what reads PubMed's `Retracted Publication`
+  // type from Europe PMC. Nearly every paper of the 26 medicine and biology
+  // notable lanes has one, about 26,000 papers: about 260 OpenAlex refresh
+  // calls and 650 Crossref type calls a week, with their iCite and Europe PMC
+  // calls. `enrich_misses = 0` also passes over a row whose enrichment is
+  // uncounted (-1, `UNCOUNTED` in paper-enrichment.ts), so the listing does
+  // not put off its refresh.
   if (spec.renewsEnrichment) {
     await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
       AND LENGTH(COALESCE(paper ->> '$.abstract', '')) >= 40 AND paper ->> '$.pmid' IS NULL

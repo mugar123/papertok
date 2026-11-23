@@ -10,7 +10,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
+import { privacyNoticeStatus } from '../utils/nudges.ts';
+import { PRIVACY_NOTICE_BASELINE_VERSION, PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_CHANGE_EVIDENCE, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from './privacy-policy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -59,6 +60,7 @@ test('every section of the Spanish policy survives the translation', () => {
     'What is public and what is not',
     'University email verification',
     'Zotero',
+    'ORCID',
     'Email updates',
     'Analytics',
     'Scientific sources and AI features',
@@ -145,7 +147,26 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.match(PRIVACY_POLICY_VERSION, /^\d{4}-\d{2}-\d{2}(\.\d+)?$/);
   const day = new Date(`${PRIVACY_POLICY_VERSION.slice(0, 10)}T00:00:00Z`);
   const dated = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(day);
-  assert.equal(dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
+  const revision = PRIVACY_POLICY_VERSION.split('.')[1];
+  assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
+});
+
+test('readers who saw an earlier 20 November notice are owed the read-aloud update', () => {
+  assert.equal(PRIVACY_POLICY_VERSION, '2026-11-20.10');
+  for (const seen of ['2026-11-20', '2026-11-20.2', '2026-11-20.4', '2026-11-20.5', '2026-11-20.6', '2026-11-20.7', '2026-11-20.8', '2026-11-20.9']) {
+    assert.equal(privacyNoticeStatus({
+      user: { uid: 'reader', metadata: { creationTime: '2026-11-01T00:00:00Z' } },
+      signedIn: true,
+      version: PRIVACY_POLICY_VERSION,
+      effectiveAt: PRIVACY_POLICY_EFFECTIVE_AT,
+      baseline: PRIVACY_NOTICE_BASELINE_VERSION,
+      account: { uid: 'reader', version: seen },
+      storage: null,
+    }), 'owed', seen);
+  }
+  const notice = PRIVACY_POLICY_CHANGE.join(' ');
+  assert.match(notice, /paragraph is sent to ElevenLabs, or to Cartesia/i);
+  assert.match(notice, /read aloud, not which paper/i);
 });
 
 test('the effective time is an ISO UTC instant no later than the day of the announced version', () => {

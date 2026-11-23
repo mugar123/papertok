@@ -10,10 +10,13 @@ import {
   getRewritablePdfUrl,
   lastKnownAIUses,
   PaperRewriteError,
+  noteAIUsesLeft,
   rememberAIUses,
   rewriteCacheKey,
   rewriteKeeping,
   rewritePaper,
+  beginAIUsesRead,
+  subscribeAIUses,
   toRewriteError,
 } from './paper-rewrite-service.ts';
 import { WorkerApiAuthError } from './worker-api-client.ts';
@@ -293,4 +296,82 @@ test('each account keeps its own remembered count, and an account change forgets
   clearRewriteCache();
   assert.equal(lastKnownAIUses('uid-c'), null);
   assert.equal(lastKnownAIUses('uid-d'), null);
+});
+
+const RESET_AT = '2026-11-21T00:00:00.000Z';
+
+test('a refund is shown even when another read already added the reset time to the count', () => {
+  clearRewriteCache();
+  rememberAIUses('uid-e', { remainingUses: 1, dailyLimit: 10 });
+  const staleRead = beginAIUsesRead('uid-e');
+  noteAIUsesLeft('uid-e', 0);
+  const refundRead = beginAIUsesRead('uid-e');
+
+  // The read that started before the use cannot give the use back.
+  staleRead({ remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  assert.equal(lastKnownAIUses('uid-e')?.remainingUses, 0);
+
+  // The read that started after the failed use confirms the refund.
+  refundRead({ remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  assert.equal(lastKnownAIUses('uid-e')?.remainingUses, 1);
+});
+
+test('a read that started before a use cannot undo it, whichever order the reads answer in', () => {
+  clearRewriteCache();
+  rememberAIUses('uid-f', { remainingUses: 1, dailyLimit: 10 });
+  const staleRead = beginAIUsesRead('uid-f');
+  noteAIUsesLeft('uid-f', 0);
+  const refundRead = beginAIUsesRead('uid-f');
+  refundRead({ remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  staleRead({ remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  noteAIUsesLeft('uid-f', 0);
+  staleRead({ remainingUses: 1, dailyLimit: 10, unlimited: false, resetAt: RESET_AT });
+  assert.equal(lastKnownAIUses('uid-f')?.remainingUses, 0);
+});
+
+test('a use reported by an explanation reaches everything that shows the count', () => {
+  clearRewriteCache();
+  rememberAIUses('uid-g', { remainingUses: 10, dailyLimit: 10, resetAt: RESET_AT });
+  let notified = 0;
+  const stop = subscribeAIUses(() => { notified += 1; });
+  noteAIUsesLeft('uid-g', 9);
+  stop();
+  assert.deepEqual(lastKnownAIUses('uid-g'), { remainingUses: 9, dailyLimit: 10, resetAt: RESET_AT });
+  assert.equal(notified, 1);
+});
+
+for (const resetAt of [undefined, RESET_AT]) {
+  for (const staleBalance of [0, 1]) {
+    for (const refundFirst of [false, true]) {
+      test(`overlapping quota reads: prior reset ${Boolean(resetAt)}, delayed balance ${staleBalance}, refund first ${refundFirst}`, () => {
+        const uid = 'overlapping-reads';
+        clearRewriteCache();
+        rememberAIUses(uid, { remainingUses: 1, dailyLimit: 10, resetAt });
+        const staleRead = beginAIUsesRead(uid);
+        noteAIUsesLeft(uid, 0);
+        const refundRead = beginAIUsesRead(uid);
+        const refunded = { remainingUses: 1, dailyLimit: 10, resetAt: RESET_AT };
+        const delayed = { ...refunded, remainingUses: staleBalance };
+        if (refundFirst) {
+          refundRead(refunded);
+          staleRead(delayed);
+        } else {
+          staleRead(delayed);
+          assert.deepEqual(lastKnownAIUses(uid), { ...refunded, remainingUses: 0 });
+          refundRead(refunded);
+        }
+        assert.deepEqual(lastKnownAIUses(uid), refunded);
+      });
+    }
+  }
+}
+
+test('a read adding reset metadata at the reserved balance leaves a pending refund valid', () => {
+  const uid = 'pending-refund';
+  noteAIUsesLeft(uid, 0);
+  const openingRead = beginAIUsesRead(uid);
+  const refundRead = beginAIUsesRead(uid);
+  openingRead({ remainingUses: 0, dailyLimit: 10, resetAt: RESET_AT });
+  refundRead({ remainingUses: 1, dailyLimit: 10, resetAt: RESET_AT });
+  assert.equal(lastKnownAIUses(uid)?.remainingUses, 1);
 });

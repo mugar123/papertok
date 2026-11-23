@@ -40,8 +40,10 @@ import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
 import { getPublicPaperPath, isPublicRoutePath, keepsNavbarPath, legacyPaperRedirect } from './utils/public-navigation.ts'
 import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
-// Loaded eagerly: it removes the OAuth verifier from the address before routing or analytics read it.
+// Loaded eagerly: they remove the one-time OAuth values (Zotero's verifier,
+// ORCID's code and state) from the address before routing or analytics read it.
 import './services/zotero-service.ts'
+import './services/orcid-connection-service.ts'
 import './app.css'
 
 // Only what the first paint of the feed needs loads eagerly. Everything below
@@ -63,6 +65,8 @@ import './app.css'
 
 const InstitutionVerification = lazyWithPreload(() => import('./components/institution/institution-verification.tsx'))
 const ZoteroCallback = lazyWithPreload(() => import('./components/zotero/zotero-callback.tsx'))
+const OrcidCallback = lazyWithPreload(() => import('./components/orcid/orcid-callback.tsx'))
+const ProfilePage = lazyWithPreload(() => import('./components/profile/profile-page.tsx'))
 const OnboardingFlow = lazyWithPreload(() => import('./components/onboarding/onboarding-flow.tsx'))
 const ListsPage = lazyWithPreload(() => import('./components/lists/lists-page.tsx'))
 const PDFViewer = lazyWithPreload(() => import('./components/pdf/pdf-viewer.tsx'))
@@ -172,7 +176,7 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/recent', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/feeds']
+  const navbarRoutes = ['/feed', '/lists', '/profile', '/recent', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/feeds']
   // The paper, list and entity pages keep the app chrome for a signed-in
   // user — reaching a paper from a list, a list from someone's shared link,
   // or an author from a card, must not feel like leaving the app. Measured
@@ -309,10 +313,8 @@ function AppContent() {
     return () => clearTimeout(timer)
   }, [sessionUid])
 
-  // Not held for the idle prefetch above: a reader opened in the first seconds
-  // would still grow its uses pill late. One small request per session.
   useEffect(() => {
-    if (sessionUid) primeAIUses(sessionUid)
+    if (sessionUid) return primeAIUses(sessionUid)
   }, [sessionUid])
 
   // The href stays for assistive technology; the click is handled here rather
@@ -373,6 +375,7 @@ function AppContent() {
           <Route path="/" element={<Navigate to={authLoading || user ? '/feed' : '/onboarding'} replace />} />
           <Route path="/institution/verify" element={<InstitutionVerification />} />
           <Route path="/zotero/callback" element={<ZoteroCallback />} />
+          <Route path="/orcid/callback" element={<OrcidCallback />} />
           <Route path="/login" element={<LoginRedirect />} />
           {/* Signed out, the onboarding is the welcome, and it ends in a
               sign-up: there is no guest feed. Signed in, it is the account's
@@ -475,9 +478,18 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
-          {/* The profile page was removed with following people. Its address
-              lands on the lists, where the likes and saves it showed live. */}
-          <Route path="/profile" element={<Navigate to="/lists" replace />} />
+          {/* The account's own page, seen only by the account: its ORCID
+              connection and the publications of its ORCID record. */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <ProfilePage key={user?.uid} />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
           {/* One route per settings page; the bare address opens the first. */}
           <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
           <Route

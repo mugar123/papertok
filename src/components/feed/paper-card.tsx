@@ -45,7 +45,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense, Fragment } from 'react';
+import { useSyncExternalStore, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -133,14 +133,17 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
+import { rewriteUseHint } from './rewrite-use-hint.ts';
+import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
 import type { StatusTagKey } from '../../utils/paper-status.ts';
+import { trialRegistrationUrl, type StudyType } from '../../models/paper-evidence.ts';
 import { hasUsableAIAbstract } from '../../utils/ai-explanation-access.ts';
 import { sourceAttribution } from '../../utils/source-attribution.ts';
 import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feed-abstract-wait.ts';
+import { missingAbstractNotice } from '../../utils/missing-abstract.ts';
 import { buildPaperTopicTags, getPaperClassification } from '../../utils/paper-topic-tags.ts';
 
 /**
@@ -149,6 +152,13 @@ import { buildPaperTopicTags, getPaperClassification } from '../../utils/paper-t
  * A 420ms collapse keeps resetting this, so the reading lands once — after it.
  */
 const ABSTRACT_SETTLE_MS = 180;
+
+const STUDY_TYPE_LABELS: Record<StudyType, string> = {
+  'randomized-controlled-trial': 'Randomized controlled trial',
+  'systematic-review': 'Systematic review',
+  'meta-analysis': 'Meta-analysis',
+  'practice-guideline': 'Practice guideline',
+};
 // The abstract's open and resize. paper-card.css reads it as --abstract-motion.
 const ABSTRACT_MOTION_MS = 300;
 // The abstract ⇄ map swap: the slide and the slot's height (`.pc-slot--morphing`
@@ -533,8 +543,9 @@ const PaperCard = memo(function PaperCard({
   // played over a card that had already stopped moving.
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
-  const { institution, user } = useAuth();
-  const { language } = useLanguage();
+  const { institution, user, readingPreferences, interestSettings } = useAuth();
+  const { language, locale } = useLanguage();
+  const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(user?.uid));
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
   // (hooks/use-stable-navigate.ts says what it cost).
@@ -937,6 +948,7 @@ const PaperCard = memo(function PaperCard({
    */
   const abstractText = hasUsableAIAbstract(paper.abstract) ? paper.abstract : null;
   const abstractAttribution = sourceAttribution(paper);
+  const missingAbstract = missingAbstractNotice(paper);
   // The words, or the state that says there are none, cross on these.
   const abstractSwap = {
     initial: { opacity: 0 },
@@ -1634,6 +1646,17 @@ const PaperCard = memo(function PaperCard({
     openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
   } : paper, [paper, resolvedOpenCopy]);
   const canRequestRewrite = canRewritePaper(readablePaper);
+  const rewriteHint = canRequestRewrite && !publicMode && user && isCardVisible
+    ? rewriteUseHint({
+      paper: readablePaper,
+      interestSettings,
+      globalLevel: readingPreferences.aiExplanationLevel,
+      isCached: level => Boolean(getCachedRewrite(readablePaper, level)),
+      quota: navigator.onLine ? quota : null,
+      locale,
+    })
+    : '';
+
   // Never the library link: it only opens for readers at that institution.
   const bestAvailableUrl = safeExternalUrl(resolvedOpenCopy?.pdfUrl)
     || safeExternalUrl(resolvedOpenCopy?.landingPageUrl)
@@ -1722,6 +1745,42 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-action-label--short">{actionPush.from === 'record' ? recordActionLabel.split(' ')[0] : 'Checking'}</span>
         </span>
       )}
+    </Button>
+  );
+  // The publisher's page of a paper with no abstract to show, as a control of
+  // the action row. The sentence that names it is in the abstract's panel,
+  // the first row of the card to give way: under a four-line title on a phone
+  // on its side that panel is 0px tall, and no touch reaches a link in it.
+  // This row keeps its height and its place (paper-card.css), so the link is
+  // here at every size and nothing measures the panel to decide where it
+  // goes. It is a link drawn as the row's outline button. Beside "Read in
+  // plain words", and where the row has no room for its word, it shows the
+  // glyph alone (paper-card.css), so its name is set here: the full label
+  // and the new tab at every width, which contains the word a phone shows
+  // (WCAG 2.5.3). Beside "Read in plain words" it is always the glyph, and
+  // the same words are its `title`, so a pointer resting on it reads where
+  // it goes, as on the reader's link to the original. Beside Source alone it
+  // shows its word, except in a phone's row too narrow for it, so it has no
+  // `title`: with the word showing, a title only repeats the name as its
+  // description. While the feed still asks a source for the abstract, the
+  // link holds its place in the row unseen (`--pending`): the row then has
+  // the shape it keeps when the wait ends with none, and no control moves
+  // under the reader's finger at that moment.
+  const publisher = !abstractText ? missingAbstract.publisher : null;
+  const publisherName = publisher ? `${publisher.label} (opens in a new tab)` : '';
+  const publisherAction = publisher && (
+    <Button
+      variant="outline"
+      className={`pc-action-publisher${abstractLoading ? ' pc-action-publisher--pending' : ''}`}
+      role="link"
+      render={<a href={publisher.url} target="_blank" rel="noopener noreferrer" />}
+      aria-label={publisherName}
+      title={canRequestRewrite ? publisherName : undefined}
+      onClick={swallowClick}
+    >
+      <ArrowSquareOut size={16} aria-hidden="true" />
+      <span className="pc-action-label">{publisher.label}</span>
+      <span className="pc-action-label--short">{publisher.short}</span>
     </Button>
   );
   const projectLabel = project
@@ -1861,6 +1920,9 @@ const PaperCard = memo(function PaperCard({
     readerListeners.current.forEach(onChange => onChange());
   });
 
+  const trialUrl = trialRegistrationUrl(paper.trialRegistration);
+  const studyTypeLabel = paper.studyType && STUDY_TYPE_LABELS[paper.studyType];
+
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
@@ -1929,13 +1991,17 @@ const PaperCard = memo(function PaperCard({
         <div className="pc-body">
         {/* The head: lead, kicker, title and authors, parted from the abstract
             by the authors' rule. The field's glyph lives in it (paper-card.css,
-            `.pc-watermark`), standing on that rule. */}
+            `.pc-watermark`), standing on that rule. The rows have a box of
+            their own, which scrolls on a card with the publisher's page when
+            they are taller than the room the action row leaves them; the
+            glyph stays outside it, so that box does not clip it. */}
         <div className="pc-head">
         {watermark && (
           <span ref={watermarkRef} className="pc-watermark" aria-hidden="true">
             <watermark.Icon size={220} weight={watermark.weight} viewBox={watermark.ink} />
           </span>
         )}
+        <div className="pc-head-rows">
         <div className="pc-lead" aria-hidden="true">
           {figures[0] && (
             <img
@@ -2002,6 +2068,22 @@ const PaperCard = memo(function PaperCard({
                 </span>
               )}
             </>
+          )}
+          {(studyTypeLabel || trialUrl) && (
+            <div className="pc-evidence">
+              {studyTypeLabel && <span>{studyTypeLabel}</span>}
+              {trialUrl && (
+                <a
+                  href={trialUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${paper.trialRegistration} on ClinicalTrials.gov (opens in a new tab)`}
+                  onClick={event => event.stopPropagation()}
+                >
+                  {paper.trialRegistration}
+                </a>
+              )}
+            </div>
           )}
         </div>
 
@@ -2111,6 +2193,7 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
         </div>
+        </div>
 
         <div ref={slotRef} className={`pc-slot${abstractText ? '' : ' pc-slot--no-abstract'}`}>
         <div ref={slotTrackRef} className="pc-slot-track">
@@ -2192,7 +2275,7 @@ const PaperCard = memo(function PaperCard({
             ) : abstractLoading ? (
               // The feed is still asking a source for the missing abstract.
               // Saying so means the words that arrive replace a stated wait,
-              // not a "No abstract available" the reader has already read.
+              // not a "No abstract to show" the reader has already read.
               <motion.div
                 key={abstractKey}
                 ref={attachAbstractBody}
@@ -2210,7 +2293,9 @@ const PaperCard = memo(function PaperCard({
             ) : (
               // No abstract in the record: the shared empty state, centred in
               // the abstract's place like every other one, not set as the first
-              // line of an article (drop cap and all).
+              // line of an article (drop cap and all). Words only: the
+              // publisher's page the sentence names is `publisherAction`, in
+              // the action row, because this panel can be 0px tall.
               <motion.div
                 key={abstractKey}
                 ref={attachAbstractBody}
@@ -2220,9 +2305,9 @@ const PaperCard = memo(function PaperCard({
                 <EmptyState
                   as="p"
                   art={<Petri pose="blankPage" className="pc-abstract-empty-petri" />}
-                  title={'No abstract available'}
+                  title={missingAbstract.title}
                 >
-                  {"This paper's record has no abstract."}
+                  {missingAbstract.body}
                 </EmptyState>
               </motion.div>
             )}
@@ -2264,15 +2349,17 @@ const PaperCard = memo(function PaperCard({
         <span className="visually-hidden" role="status">{abstractStatus}</span>
 
         {/* Two reading actions first, then the utilities behind a rule: what to
-            read is the decision, sharing and related work are afterthoughts. */}
+            read is the decision, sharing and related work are afterthoughts.
+            On a card with no abstract the publisher's page comes last. */}
         <div className="pc-action-bar">
-          <div className="pc-action-primary">
+          <div className={`pc-action-primary${publisherAction && canRequestRewrite ? ' pc-action-primary--three' : ''}`}>
             {readAction}
 
             {canRequestRewrite && (
               <Button
                 variant="brand"
-                aria-describedby={publicMode ? rewriteHintId : undefined}
+                className="pc-action-simple"
+                aria-describedby={publicMode || rewriteHint ? rewriteHintId : undefined}
                 onClick={(event) => {
                   event.stopPropagation();
                   if (publicMode) {
@@ -2307,7 +2394,11 @@ const PaperCard = memo(function PaperCard({
                 {'Needs a free account'}
               </span>
             )}
+            {publisherAction}
           </div>
+          {canRequestRewrite && !publicMode && (
+            <small id={rewriteHintId} className="pc-rewrite-hint" role="status">{rewriteHint}</small>
+          )}
 
         </div>
         </div>

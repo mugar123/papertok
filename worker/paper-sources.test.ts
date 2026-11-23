@@ -288,7 +288,8 @@ function relay(t: import('node:test').TestContext, answer: (url: URL) => unknown
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     urls.push(url);
-    return Response.json(answer(url));
+    const body = answer(url);
+    return body instanceof Response ? body : Response.json(body);
   });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
   t.after(() => {
@@ -300,6 +301,17 @@ function relay(t: import('node:test').TestContext, answer: (url: URL) => unknown
   return { urls, env };
 }
 const filtersOf = (url: URL) => url.searchParams.get('filter')!.split(',');
+
+test('an Atom error entry leaves the arXiv corpus lane unharvested', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 3, 0, 0, 3) });
+  const xml = readFileSync(new URL('./test-support/arxiv-error.xml', import.meta.url), 'utf8');
+  const { urls, env } = relay(t, () => new Response(xml));
+  const { db, binding } = testD1();
+  const job = { source: 'arxiv-search', lane: 'author-name:Example' } as const;
+  await assert.rejects(harvestLane({ ...env, PAPER_STORE: binding }, job), /arXiv API error/);
+  assert.deepEqual(db.prepare('SELECT harvested_through FROM lane_state WHERE source = ? AND lane = ?').all(job.source, job.lane), []);
+  assert.equal(urls.length, 1);
+});
 // What a keyword lane's request searches titles and abstracts for.
 const keywordSearchOf = (url: URL) => filtersOf(url).find(filter => filter.startsWith('title_and_abstract.search:'));
 
@@ -329,6 +341,21 @@ test('the working-paper series lane asks OpenAlex for the series in the window a
     assert.equal(areaLabelForPaper(paper), 'Economics', paper.id);
     assert.deepEqual([paper.primaryCategory, ...(paper.categories || [])].filter(category => getCategoryArea(category!)), []);
   }
+});
+
+test('a work whose DOI no link can carry leaves the rest of its page to the lane', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  // Synthetic: the middle work has no landing page of its own and a lone
+  // surrogate in its DOI, which no URL can encode.
+  const { env } = relay(t, () => ({ results: [
+    seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, null),
+    { ...seriesWork('W7222541626', '10.65864/jochq5qfxv\uD800', 'report', CESIFO, null), primary_location: { is_published: true, source: { id: `https://openalex.org/${CESIFO.id}`, display_name: CESIFO.display_name, type: 'journal' } } },
+    seriesWork('W7220380262', '10.3386/w35873', 'report', NBER, null),
+  ] }));
+  const { items } = await SOURCES['openalex-series'].fetchPage(env, { lane: 'series:working-papers', page: 1, since: '', waits: { seconds: 0 } });
+  assert.deepEqual(items.map(({ paper }) => paper.id), ['openalex:W7221947410', 'openalex:W7222541626', 'openalex:W7220380262']);
+  // It keeps the link OpenAlex gave, as before.
+  assert.equal(items[1].paper.landingPageUrl, 'https://doi.org/10.65864/jochq5qfxv\uD800');
 });
 
 test("every series the lane names is on the review rule's list, so its journal articles carry the Working paper tag", () => {

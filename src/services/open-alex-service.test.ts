@@ -27,10 +27,15 @@ import {
   fetchRecentImpactWorks,
   fetchPaperByWorkId,
   fetchPapersByDois,
+  fetchPapersByOpenAlexIds,
   getAuthorProfileExact,
   getAuthorsByEntity,
   getLocalTopicEntity,
   getWorksByEntity,
+  CITING_WORKS_MAX_CITED,
+  getWorksByOrcid,
+  getWorksCiting,
+  twelveMonthsBefore,
   isOpenAlexEnrichmentId,
   normalizeRecentImpactEntityId,
   peekEntity,
@@ -1789,4 +1794,218 @@ test('the ids of a failed enrichment request are reported, and not those OpenAle
   } finally {
     openAlexClient.fetchImpl = realFetch;
   }
+});
+
+test('a long DOI list is asked in chunks whose filter the relay forwards whole', async t => {
+  const asked: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    asked.push(new URL(url).searchParams.get('filter')!);
+    return Response.json({ meta: { count: 0 }, results: [] });
+  });
+  // 45 DOIs of 60 characters: 40 of them would make a 2,443-character filter,
+  // over the 2,000 the Worker's relay forwards.
+  const dois = Array.from({ length: 45 }, (_, index) => `10.1000/${String(index).padStart(52, 'x')}`);
+  await fetchPapersByDois(dois);
+
+  assert.ok(asked.length > 1);
+  for (const filter of asked) assert.ok(filter.length <= 2000, `a ${filter.length}-character filter`);
+  assert.deepEqual(asked.flatMap(filter => filter.replace(/^doi:/, '').split('|')), dois);
+});
+
+test('a DOI holding # or & reaches OpenAlex whole, and one holding a filter separator is not asked for', async t => {
+  const asked: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    asked.push(new URL(url).searchParams.get('filter')!);
+    return Response.json({ meta: { count: 0 }, results: [] });
+  });
+  await fetchPapersByDois(['10.1000/a#b', '10.1000/c&d=e', '10.1000/f|g', '10.1000/h,i']);
+  assert.deepEqual(asked, ['doi:10.1000/a#b|10.1000/c&d=e']);
+});
+
+// A synthetic OpenAlex work with what formatOpenAlexWorkAsPaper reads.
+const lookupWork = (id: number, doi: string | null, title: string) => ({
+  id: `https://openalex.org/W${id}`, doi: doi ? `https://doi.org/${doi}` : null, title, display_name: title,
+  type: 'article', publication_year: 2020, publication_date: '2020-01-01', authorships: [], primary_location: null,
+});
+
+test('a chunk OpenAlex does not answer is reported, and the chunks that answered are kept', async t => {
+  // 45 DOIs make a chunk of 40 and one of 5; the second is refused.
+  const dois = Array.from({ length: 45 }, (_, index) => `10.1000/${index}`);
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    const asked = new URL(url).searchParams.get('filter')!.replace(/^doi:/, '').split('|');
+    if (asked.length < 40) return new Response('busy', { status: 503 });
+    return Response.json({ meta: { count: 1 }, results: [lookupWork(1, asked[0], 'From the first chunk')] });
+  });
+  const failed: string[][] = [];
+  const papers = await fetchPapersByDois(dois, { onRequestFailed: ids => failed.push(ids) });
+  assert.deepEqual(papers.map(paper => paper.title), ['From the first chunk']);
+  assert.deepEqual(failed, [dois.slice(40)]);
+
+  // With nobody to tell, the failure is only logged.
+  const error = console.error;
+  console.error = () => {};
+  try {
+    assert.deepEqual(await fetchPapersByDois(['10.1000/44']), []);
+  } finally {
+    console.error = error;
+  }
+});
+
+test('works are looked up by their OpenAlex ids, and anything else given as an id is not asked for', async t => {
+  const asked: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    asked.push(new URL(url).searchParams.get('filter')!);
+    return Response.json({ meta: { count: 1 }, results: [lookupWork(7, null, 'A work with no DOI')] });
+  });
+  const papers = await fetchPapersByOpenAlexIds(['W7', 'W8', 'W7', '10.1000/x', 'https://openalex.org/W9']);
+  assert.deepEqual(asked, ['openalex:W7|W8']);
+  assert.deepEqual(papers.map(paper => [paper.id, paper.title]), [['W7', 'A work with no DOI']]);
+  assert.deepEqual(await fetchPapersByOpenAlexIds([]), []);
+  assert.equal(asked.length, 1, 'no ids, no request');
+});
+
+test('the works attributed to an ORCID iD are read newest first, a page at a time, up to 200', async t => {
+  const asked: URLSearchParams[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    const params = new URL(url).searchParams;
+    asked.push(params);
+    const page = Number(params.get('page'));
+    return Response.json({ meta: { count: 260 }, results: Array.from({ length: 50 }, (_, index) => lookupWork(page * 100 + index, null, `Work ${page}.${index}`)) });
+  });
+  const result = await getWorksByOrcid('0000-0002-1825-0097');
+  assert.deepEqual(asked.map(params => params.get('page')), ['1', '2', '3', '4']);
+  for (const params of asked) {
+    assert.equal(params.get('filter'), 'author.orcid:0000-0002-1825-0097');
+    assert.equal(params.get('sort'), 'publication_date:desc');
+    assert.equal(params.get('per-page'), '50');
+  }
+  assert.equal(result.papers.length, 200);
+  assert.equal(result.total, 260);
+  assert.equal(result.complete, true);
+});
+
+test('the attributed works stop at a short page, reject when the first page fails, and keep what came when a later one fails', async t => {
+  let failFrom = Infinity;
+  const pages: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    const page = Number(new URL(url).searchParams.get('page'));
+    pages.push(String(page));
+    if (page >= failFrom) return new Response('busy', { status: 503 });
+    const size = page === 1 ? 50 : 3;
+    return Response.json({ meta: { count: 53 }, results: Array.from({ length: size }, (_, index) => lookupWork(page * 100 + index, null, `Work ${page}.${index}`)) });
+  });
+  const whole = await getWorksByOrcid('0000-0002-1825-0097');
+  assert.deepEqual(pages, ['1', '2']);
+  assert.deepEqual([whole.papers.length, whole.total, whole.complete], [53, 53, true]);
+
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    failFrom = 2;
+    const partial = await getWorksByOrcid('0000-0002-1825-0097');
+    assert.deepEqual([partial.papers.length, partial.total, partial.complete], [50, 53, false]);
+    failFrom = 1;
+    await assert.rejects(getWorksByOrcid('0000-0002-1825-0097'));
+  } finally {
+    console.warn = warn;
+  }
+});
+
+// Requests to anything not stubbed fail the test instead of reaching OpenAlex.
+function guardNetwork(t: import('node:test').TestContext) {
+  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) => {
+    throw new Error(`Unstubbed request: ${String(url)}`);
+  });
+}
+
+const authored = (id: number, orcid: string | null, observed: string[] = []) => ({
+  author: {
+    id: `https://openalex.org/A${id}`, display_name: `Author ${id}`, orcid: orcid ? `https://orcid.org/${orcid}` : null,
+    observed_orcids: observed.map(value => `https://orcid.org/${value}`),
+  },
+});
+
+test('the works of an ORCID iD name the author ids that carry the iD on them', async t => {
+  guardNetwork(t);
+  t.mock.method(openAlexClient, 'fetch', async () => Response.json({ meta: { count: 2 }, results: [
+    { ...lookupWork(1, null, 'One'), authorships: [authored(10, '0000-0002-1825-0097'), authored(11, '0000-0001-5109-3700')] },
+    { ...lookupWork(2, null, 'Two'), authorships: [authored(12, '0000-0002-1825-0097'), authored(13, null)] },
+  ] }));
+  const result = await getWorksByOrcid('0000-0002-1825-0097');
+  assert.deepEqual(result.authorIds, ['A10', 'A12']);
+});
+
+test('an ORCID iD OpenAlex observed for an author, not set as theirs, still names that author as the reader', async t => {
+  guardNetwork(t);
+  t.mock.method(openAlexClient, 'fetch', async () => Response.json({ meta: { count: 1 }, results: [
+    { ...lookupWork(1, null, 'One'), authorships: [
+      authored(10, '0000-0002-1825-0097'),
+      authored(14, null, ['0000-0001-5109-3700', '0000-0002-1825-0097']),
+      authored(15, null, ['0000-0001-5109-3700']),
+    ] },
+  ] }));
+  assert.deepEqual((await getWorksByOrcid('0000-0002-1825-0097')).authorIds, ['A10', 'A14']);
+});
+
+test('twelve months before a day is the same calendar day a year earlier, in local time', () => {
+  assert.equal(twelveMonthsBefore(new Date(2026, 10, 19, 23, 30)), '2025-11-19');
+  assert.equal(twelveMonthsBefore(new Date(2026, 0, 1, 0, 5)), '2025-01-01');
+});
+
+test('the papers citing the reader\'s works come from one request, newest first, with their references and ORCID iDs', async t => {
+  guardNetwork(t);
+  const asked: URLSearchParams[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    asked.push(new URL(url).searchParams);
+    return Response.json({ meta: { count: 31 }, results: [{
+      ...lookupWork(500, '10.1000/citing', 'A citing paper'),
+      authorships: [authored(20, '0000-0001-5109-3700'), authored(21, null)],
+      referenced_works: ['https://openalex.org/W9', 'https://openalex.org/W1'],
+    }] });
+  });
+  const ids = ['W1', 'W2', 'W1', '10.1000/not-an-id', ...Array.from({ length: 60 }, (_, index) => `W${100 + index}`)];
+  const result = await getWorksCiting(ids, '2025-11-19');
+
+  assert.equal(asked.length, 1);
+  const [params] = asked;
+  const cited = ['W1', 'W2', ...Array.from({ length: CITING_WORKS_MAX_CITED - 2 }, (_, index) => `W${100 + index}`)];
+  assert.equal(params.get('filter'), `cites:${cited.join('|')},from_publication_date:2025-11-19`);
+  assert.equal(params.get('sort'), 'publication_date:desc');
+  assert.equal(params.get('per-page'), '20');
+  const select = params.get('select')!.split(',');
+  for (const field of ['id', 'title', 'publication_date', 'authorships', 'referenced_works']) assert.ok(select.includes(field), field);
+
+  assert.equal(result.total, 31);
+  assert.deepEqual(result.works.map(work => [work.paper.id, work.paper.title, work.references, work.orcids]), [
+    ['W500', 'A citing paper', ['W9', 'W1'], ['0000-0001-5109-3700']],
+  ]);
+});
+
+test('a citing paper lists the ORCID iDs OpenAlex observed for its authors as well as the ones set', async t => {
+  guardNetwork(t);
+  t.mock.method(openAlexClient, 'fetch', async () => Response.json({ meta: { count: 1 }, results: [{
+    ...lookupWork(500, '10.1000/citing', 'A citing paper'),
+    authorships: [authored(20, '0000-0001-5109-3700'), authored(21, null, ['0000-0002-1825-0097']), authored(22, null)],
+  }] }));
+  const result = await getWorksCiting(['W1'], '2025-11-19');
+  assert.deepEqual(result.works[0].orcids, ['0000-0001-5109-3700', '0000-0002-1825-0097']);
+});
+
+test('the papers citing the reader\'s works are asked once, with no retry, and the failure reaches the page', async t => {
+  guardNetwork(t);
+  let calls = 0;
+  // Below the client's retry loop, so a retry would be counted; its pause is skipped.
+  t.mock.method(openAlexClient, 'fetchOnce', async () => {
+    calls += 1;
+    return new Response('busy', { status: 503 });
+  });
+  t.mock.method(openAlexClient, 'sleep', async () => {});
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    await assert.rejects(getWorksCiting(['W1'], '2025-11-19'));
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(calls, 1);
 });

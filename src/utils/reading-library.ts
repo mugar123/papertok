@@ -3,6 +3,7 @@ declare const document: { createElement(tag: 'a'): CitationDownload; body: { app
 
 import type { Paper } from '../models/paper.ts';
 import { storedAbstractSource, storedClassification } from '../models/paper.ts';
+import { storedPaperEvidence } from '../models/paper-evidence.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 
 function authorName(author: Paper['authors'][number] | undefined) {
@@ -44,6 +45,7 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     title: typeof paper.title === 'string' ? paper.title : '',
     authors: (paper.authors || []).slice(0, STORED_AUTHOR_CAP),
     ...storedClassification(paper),
+    ...storedPaperEvidence(paper),
     published: paper.published || paper.publicationDate || '',
     year: paper.year || (paper.published ? new Date(paper.published).getFullYear() : null),
     summary,
@@ -51,6 +53,8 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     arxivId: paper.arxivId || '',
     doi: paper.doi || '',
     journal: paper.journal || paper.venue || '',
+    venueId: paper.venueId || '',
+    sourceName: paper.venueId && paper.sourceName || '',
     pdfUrl: paper.pdfUrl || paper.openAccessPdfUrl || '',
     landingPageUrl: paper.landingPageUrl || paper.url || '',
     // A list shows the retraction the card showed (ENG-84). Only a retraction

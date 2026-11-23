@@ -16,7 +16,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so readers who were shown the first notice still hear of it.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-17';
+export const PRIVACY_POLICY_VERSION = '2026-11-20.10';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -91,19 +91,56 @@ export const PRIVACY_POLICY_VERSION = '2026-11-17';
  * instant follows the rule above for a text that ships with its own pull
  * request.
  *
- * Version 2026-11-17 adds Voice in the reader (ENG-119): the paragraph text
+ * Version 2026-11-20 adds ORCID: the iD and the record's name kept while a
+ * reader has ORCID connected, the access token that is not stored, and My
+ * profile, shown only to the reader, whose works the browser loads from
+ * ORCID's public API, with the works OpenAlex links to the iD and the
+ * identifiers of those the reader marks as theirs or not. It ships with the
+ * pull request that adds the ORCID routes and My profile, and this instant
+ * follows the rule above for such a text: it stands at the end of the day
+ * the merge is planned for. If the merge falls after it, move the page's
+ * "Last updated" date, PRIVACY_POLICY_VERSION and this instant to the merge
+ * day before merging, and lower it to the deployment's success time once it
+ * is live.
+ *
+ * Version 2026-11-20.2 adds the reading level, broad areas of interest and
+ * optional role linked to an account in survey analytics (#526). Since the
+ * first 20 November version, My profile also lists citing papers and frequent
+ * coauthors (#527). The survey text ships with this PR, so its provisional
+ * cutoff is the last whole second of the planned merge day. If the merge slips
+ * past the cutoff, move the date, version and cutoff to the merge day.
+ * Set the cutoff to the deployment's success time once the text is live.
+ *
+ * Version 2026-11-20.4 adds weekly save contributions from verified-email
+ * accounts, the default-on setting and how readers can exclude future saves.
+ * The text ships with #531. Use the end of the planned merge day until the
+ * deployment succeeds, then use its success time. If the merge slips to a
+ * later UTC day, update the page date, version and cutoff before merging.
+ *
+ * Version 2026-11-20.5 adds Anthropic and its processing regions. The same
+ * provisional cutoff applies until the page ships with #532.
+ *
+ * Version 2026-11-20.6 describes the browser's week-one return mark and the
+ * existing PostHog events used to measure returns. Version 2026-11-20.7 adds
+ * account and browser storage of interest priorities, mix and area levels,
+ * including guest choices awaiting sign-in. One notice covers all changes since
+ * the first 20 November version because recording it settles earlier notices.
+ * Version 2026-11-20.8 adds the optional ORCID citation lookup for weekly emails.
+ * Version 2026-11-20.9 adds the session sample for activity before a profile loads.
+ *
+ * Version 2026-11-20.10 adds Voice in the reader (ENG-119): the paragraph text
  * sent to ElevenLabs, which keeps it in its request history, or to Cartesia
  * when ElevenLabs cannot answer; the audio PaperTok stores in R2 and plays to
  * every listener of the same paragraph; and the usage event that records only
  * that a paper was read aloud. Asier authorized both providers and what they
- * receive on 2026-11-17. The text ships with the read-aloud pull request, so
- * this instant follows the rule above: it stands after that merge, at the
+ * receive on 2026-11-17, first as version 2026-11-17. The text ships with
+ * the read-aloud pull request, so this instant follows the rule above: it stands after that merge, at the
  * last moment the version's day allows. If the merge falls after it, move the
  * page's "Last updated" date, PRIVACY_POLICY_VERSION and this instant to the
  * merge day before merging; once Vercel reports the merge live, lower this
  * instant to that success time.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-17T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
 
 /**
  * The version every account counts as already shown, whatever this browser or
@@ -134,7 +171,7 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since 15 November: Voice in the reader, who receives the
+  // The changes since version 2026-11-20.9: Voice in the reader, who receives the
   // paragraph text, the stored audio and the usage event.
   lead: 'When you listen to a paper',
   clauses: [

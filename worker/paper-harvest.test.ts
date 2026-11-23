@@ -249,6 +249,25 @@ test('an enriched batch is usable before the next batch starts, without embeddin
   assert.equal(new Set(texts).size, 501);
 });
 
+test("a run's abstract retries go on past a batch that read only editorials, to the article after them", async t => {
+  const asked = providers(t);
+  const { env, db } = corpus();
+  const day = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
+  const listed = (n: number, type: string, daysAgo: number) => mapOpenAlexWork({
+    id: `https://openalex.org/W46${String(n).padStart(8, '0')}`, title: `A work OpenAlex lists without an abstract (${n})`, type, publication_date: day(daysAgo),
+  })!;
+  // A batch of editorials, which are asked for no abstract, newer than an
+  // article. All were enriched yesterday at 01:00 UTC, and each has passed an
+  // age since (2 and 4 days), so the retries read the editorials first.
+  await ingestPapers(env, [...Array.from({ length: 500 }, (_, n) => listed(n, 'editorial', 2)), listed(500, 'article', 4)].map(work => ({ paper: work, lanes: ['econ.gen'] })));
+  db.prepare('UPDATE works SET enriched_at = ?').run(`${day(1)}T01:00:00.000Z`);
+  const { step, steps } = workflowStep({ skipLanes: true });
+  t.mock.method(console, 'error', () => {});
+  await runPaperHarvest(env, dailyRun(), step);
+  assert.deepEqual(steps.filter(name => name.startsWith('enrich ')), ['enrich 0', 'enrich 1', 'enrich 2']);
+  assert.deepEqual(asked.map(url => url.searchParams.get('filter')).filter(filter => filter?.startsWith('openalex:')), ['openalex:W4600000500']);
+});
+
 test("runs for new follows stop at 300 of the followed lanes' OpenAlex units, and the nightly refresh still has its 700", async t => {
   const asked = providers(t);
   const { env, db } = corpus();

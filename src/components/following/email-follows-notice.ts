@@ -8,8 +8,14 @@ import { hasDigestFollows } from '../../services/email-notification-service.ts';
  * that, not that they follow nothing. A reader with chosen categories is
  * told the email is filled from them instead.
  */
-export function emailFollowsNotice(follows: readonly Partial<FollowEntity>[], digestPending: boolean, hasInterests = false) {
+export function emailFollowsNotice(follows: readonly Partial<FollowEntity>[], digestPending: boolean, hasInterests = false, hasCitationSource = false) {
   if (hasDigestFollows(follows)) return null;
+  if (hasCitationSource) {
+    return {
+      heading: 'Cited your work',
+      body: 'Turn on email updates to receive new papers that cite your work, based on your connected ORCID iD.',
+    };
+  }
   // ENG-163: the reader's chosen categories fill the email until then. A yes
   // from the welcome still waits for the first follow, as the welcome said.
   if (hasInterests && !digestPending) {

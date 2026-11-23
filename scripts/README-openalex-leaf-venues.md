@@ -63,8 +63,8 @@ lane asks for must be one the review rule calls reviewed
 The lane asks with the sample's type and topic or author filter, the live
 window and `is_retracted:false`. It does not ask `has_abstract:true`
 (Pablo, 2026-10-23: it drops most closed Elsevier, Springer and University of
-Chicago Press articles), so a card without an abstract says "No abstract
-available". It does not ask `primary_location.source.is_core:true`: the
+Chicago Press articles), so a card without an abstract shows the no-abstract
+empty state. It does not ask `primary_location.source.is_core:true`: the
 sources are named, and six of them are not core in OpenAlex: the three
 conferences the lanes ask for (ICPP, SPLASH and PIMRC), npj Soft Matter,
 Natural Language Processing and ACM Transactions on Information Systems. The
@@ -166,10 +166,15 @@ The lanes' papers also cost enrichment calls (`worker/paper-enrichment.ts`),
 which spend what the lanes leave of the nightly run's 3,700 units. Every 14
 days the refresh asks OpenAlex again for a stored paper's counts, 50 papers a
 call: the lanes' about 275 new articles a day, kept 90 days, come to about 33
-calls a night. Each enrichment of an OpenAlex record, refreshes included, asks
-Crossref for its DOI's type, 20 DOIs a call: about 96 calls a night, and about
-1,080 for the about 21,700 articles of the lanes' first night, which the
-embedding passes also take.
+calls a night, plus the abstract retries, counted for at most 300 OpenAlex
+calls a harvest run: one run a night, and another 300 for a second full run
+started on the same UTC day. The count is an estimate made before the calls:
+DOIs long enough to split a filter, and a 429 that OpenAlex answers with a
+short wait, add calls it does not count (worker/README.md step 5). Each first
+enrichment and refresh of an OpenAlex record asks Crossref for its DOI's
+type, 20 DOIs a call: about 96 calls a night, and about 1,080 for the about
+21,700 articles of the lanes' first night, which the embedding passes also
+take.
 
 ## Notable sample
 

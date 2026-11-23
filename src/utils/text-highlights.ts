@@ -43,6 +43,22 @@ export function normalizeHighlightQuote(quote: unknown) {
   return normalizeSavedLatexText(quote);
 }
 
+// A second normalization can escape the remaining percent signs in a saved
+// quote. Map those extra backslashes back to zero width in the paragraph.
+function percentSearchSpace(text: string) {
+  const offsets = [0];
+  let value = '';
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '%' && text[index - 1] !== '\\') {
+      value += '\\';
+      offsets.push(index);
+    }
+    value += text[index];
+    offsets.push(index + 1);
+  }
+  return { value, offsets };
+}
+
 /**
  * Which of two ranges covering the same characters paints them.
  *
@@ -100,6 +116,8 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
   if (!space.current) return [];
 
   const ranges: HighlightRange[] = [];
+  let savedPercents;
+  let currentPercents;
   for (const highlight of highlights) {
     const quote = normalizeHighlightQuote(highlight?.quote);
     const source = highlight?.source || 'ai';
@@ -139,12 +157,32 @@ export function resolveHighlightRanges(text: unknown, highlights: HighlightInput
     // cut brackets, because a quote that starts or ends on a brace can also
     // match a wrapper's brace earlier in the paragraph.
     const words = paintedQuote(quote);
-    const paints = (text: string) => (start: number, end: number) => space.current.slice(start, end).trim() === text;
-    const found = findFree(space.text, quote, space.toCurrent, paints(normalizeLatexText(quote)))
-      ?? findFree(space.text, quote, space.toCurrent, paints(quote))
-      ?? findFree(space.text, quote, space.toCurrent, paints(words))
-      ?? findFree(space.text, quote, space.toCurrent)
-      ?? (space.text === space.current ? null : findFree(space.current, quote));
+    const search = (
+      saved: string, current: string, needle: string,
+      savedOffset: (offset: number) => number, currentOffset: (offset: number) => number,
+      comparable: (value: string) => string,
+    ) => {
+      const paints = (value: string) => (start: number, end: number) =>
+        comparable(space.current.slice(start, end).trim()) === comparable(value);
+      return findFree(saved, needle, savedOffset, paints(normalizeLatexText(quote)))
+        ?? findFree(saved, needle, savedOffset, paints(quote))
+        ?? findFree(saved, needle, savedOffset, paints(words))
+        ?? findFree(saved, needle, savedOffset)
+        ?? (space.text === space.current ? null : findFree(current, needle, currentOffset));
+    };
+    let found = search(space.text, space.current, quote, space.toCurrent, offset => offset, value => value);
+    if (!found && quote.includes('%')) {
+      const escapePercents = (value: string) => value.replace(/(?<!\\)%/g, '\\%');
+      savedPercents ??= percentSearchSpace(space.text);
+      currentPercents ??= space.current === space.text ? savedPercents : percentSearchSpace(space.current);
+      const savedOffsets = savedPercents.offsets;
+      const currentOffsets = currentPercents.offsets;
+      found = search(savedPercents.value, currentPercents.value, escapePercents(quote),
+        offset => space.toCurrent(savedOffsets[offset]), offset => currentOffsets[offset], escapePercents);
+      // A quote clipped between the backslash and percent must leave the
+      // whole escape in the following prose run so it still paints as one sign.
+      if (found && space.current.startsWith('\\%', found.end - 1)) found.end -= 1;
+    }
     if (!found) continue;
     const { start, end } = found;
 

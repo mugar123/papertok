@@ -1,6 +1,6 @@
 import type { KeyboardEvent, ReactNode, Ref } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import type { AIUses, RewriteSection, ClientRewriteMeta } from '../../services/paper-rewrite-service.ts';
+import type { RewriteSection, ClientRewriteMeta } from '../../services/paper-rewrite-service.ts';
 import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import type { ReadingLevel } from '../../utils/user-settings.ts';
 interface PaperReaderProps {
@@ -11,7 +11,7 @@ interface PaperReaderProps {
   initialLevel?: ReadingLevel;
 }
 export type ReaderCopy = typeof COPY.en;
-import { useCallback, useEffect, useEffectEvent, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useId, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowClockwise,
@@ -26,13 +26,14 @@ import {
 } from '@phosphor-icons/react';
 import {
   canRewritePaper,
-  fetchRemainingAIUses,
+  refreshAIUses,
   getCachedRewrite,
   lastKnownAIUses,
   PAPER_REWRITE_LEVELS,
   PaperRewriteError,
   rewriteCacheKey,
-  rememberAIUses,
+  noteAIUsesLeft,
+  subscribeAIUses,
   rewritePaper,
 } from '../../services/paper-rewrite-service.ts';
 import type { HighlightColor } from '../../services/user-highlight-service.ts';
@@ -47,6 +48,7 @@ import {
 import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.ts';
 import { HIGHLIGHT_MIN_QUOTE_LENGTH, buildRangeAnchor, buildSelectionAnchor } from '../../utils/text-highlights.ts';
 import { useAuth } from '../../context/auth-context.tsx';
+import { resolveReadingLevel } from '../../utils/area-preferences.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
 import { documentVisibility } from '../pdf/viewer-outcome.ts';
@@ -91,7 +93,7 @@ const COPY = {
     level: 'Level',
     writing: 'Rewriting the paper',
     writingHint: 'Sections appear as they are written.',
-    cached: 'Saved version',
+    cached: 'Free to reopen',
     cachedTitle: 'A rewrite made earlier, reused: no AI use was spent.',
     adaptationTag: 'AI adaptation',
     original: 'View the original paper',
@@ -370,7 +372,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
 }
 
 export default function PaperReader({ paper, onClose, originRect = null, closeRef = null, initialLevel }: PaperReaderProps) {
-  const { user, readingPreferences } = useAuth();
+  const { user, readingPreferences, interestSettings } = useAuth();
   const uid = user?.uid;
   const { trackEvent, consent } = useAnalyticsConsent();
   const prefersReducedMotion = useReducedMotion();
@@ -381,7 +383,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // own copy of it.
   const paragraphHintId = useId();
 
-  const [level, setLevel] = useState(() => initialLevel ?? readingPreferences?.aiExplanationLevel ?? 'university');
+  const [level, setLevel] = useState(() => resolveReadingLevel(paper, interestSettings, initialLevel, readingPreferences.aiExplanationLevel));
   const [sections, setSections] = useState<Array<RewriteSection & { reveal?: boolean }>>([]);
   const [meta, setMeta] = useState<ClientRewriteMeta | null>(null);
   const [status, setStatus] = useState('idle');
@@ -395,7 +397,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * itself and then keeps it up to date from whatever the stream reports.
    */
   const [seededQuota] = useState(() => lastKnownAIUses(uid));
-  const [quota, setQuota] = useState<AIUses | null>(seededQuota);
+  const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(uid));
   const [stage, setStage] = useState('source');
   const abortRef = useRef<AbortController | null>(null);
   // The reader's own scroll container, so a touch selection outside it (e.g.
@@ -517,9 +519,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
           // The reservation has already happened by the time this arrives, so it
           // is the freshest count there is — fresher than what the reader asked
           // for when it opened.
-          if (typeof nextMeta.remainingUses === 'number') {
-            setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses: nextMeta.remainingUses! }));
-          }
+          if (uid && typeof nextMeta.remainingUses === 'number') noteAIUsesLeft(uid, nextMeta.remainingUses);
         },
         // `reveal` is what separates a section that was just written from one
         // that was already there. Only the fresh one gets the wipe; a cached
@@ -567,7 +567,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       // can show the refund rather than a use the reader never actually spent.
       // Without a request, as when the saved summary could not be read, there
       // is nothing to refund.
-      if (requested) void fetchRemainingAIUses({ signal: controller.signal }).then(fresh => { if (fresh) setQuota(fresh); });
+      if (requested && uid) void refreshAIUses(uid, controller.signal);
     }
   }, [paper, trackEvent, uid]);
 
@@ -674,21 +674,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   useEffect(() => {
     if (!uid) return undefined;
     const controller = new AbortController();
-    void fetchRemainingAIUses({ signal: controller.signal }).then(fresh => {
-      // Only over the seed: a rewrite that started while this was in flight
-      // already reported a newer number on its `meta` line.
-      if (fresh) setQuota(current => (current === null || current === seededQuota ? fresh : current));
-    });
+    void refreshAIUses(uid, controller.signal);
     return () => controller.abort();
-  }, [seededQuota, uid]);
-
-  useEffect(() => {
-    if (uid && quota) rememberAIUses(uid, quota);
-  }, [quota, uid]);
-
-  const noteQuota = useCallback((remainingUses: number) => {
-    setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses }));
-  }, []);
+  }, [uid]);
 
   const touch = useMemo(() => {
     try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
@@ -700,7 +688,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     paperId,
     level,
     language: 'en',
-    onQuota: noteQuota,
     trackEvent,
   });
 
@@ -1174,7 +1161,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             {(usesQuota || sections.length > 0 || paper?.year || journal) && (
               <div className="rd-doc-tags">
                 {usesQuota && (
-                  <span className="rd-tag rd-tag--ai rd-uses">
+                  <span className="rd-tag rd-tag--ai rd-uses" role="status">
                     <Sparkle size={12} aria-hidden="true" />
                     <UsesCount left={usesQuota.left} limit={usesQuota.limit} copy={copy} />
                   </span>

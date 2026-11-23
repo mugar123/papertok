@@ -1,9 +1,11 @@
 import type { Paper } from '../models/paper.ts';
 import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 
+import { studyTypeFromIds, trialRegistrationFromAbstract } from '../models/paper-evidence.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 import { usableOpenAlexAbstract } from './open-alex-abstract.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
+import { safeDoiUrl } from './external-url.ts';
 import { normalizePmid } from './public-navigation.ts';
 import { isListedWorkingPaperSeries, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from './publication-status.ts';
 
@@ -26,6 +28,7 @@ export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
   'ids',
   'title',
   'type',
+  'study_designs',
   'publication_date',
   'publication_year',
   'authorships',
@@ -75,6 +78,7 @@ export const OPENALEX_ENRICHMENT_SELECT = [
   'locations',
   'primary_location',
   'type',
+  'study_designs',
   // `openAlexPublicationStatus` reads it. With PubMed's and Europe PMC's
   // `Retracted Publication` type, it is how a paper another source listed is
   // found to be retracted.
@@ -95,6 +99,18 @@ export const OPENALEX_ENRICHMENT_SELECT = [
 ].join(',');
 
 export type OpenAlexEnrichment = Partial<Paper> & { related_works?: string[] };
+
+function openAlexEvidence(work: OpenAlexWork, abstract: string | undefined) {
+  const designs = Array.isArray(work.study_designs) ? work.study_designs : [];
+  const studyType = studyTypeFromIds(designs.flatMap(design => typeof design?.id === 'string'
+    ? [design.id.replace(/^https:\/\/openalex\.org\/study-designs\//, '')]
+    : []));
+  const trialRegistration = trialRegistrationFromAbstract(abstract);
+  return {
+    ...(studyType && { studyType }),
+    ...(trialRegistration && { trialRegistration }),
+  };
+}
 
 /**
  * How many of a work's authorships travel into the enrichment. The select has
@@ -194,12 +210,14 @@ export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlex
     }))
     : undefined;
 
+  const abstract = usableOpenAlexAbstract(work);
   return {
     openAlexId,
     arxivId,
     enrichment: {
       ...(authors ? { authors } : {}),
-      abstract: usableOpenAlexAbstract(work),
+      abstract,
+      ...openAlexEvidence(work, abstract),
       concepts: semanticTopics,
       topics: work.topics || [],
       primaryTopic: work.primary_topic || null,
@@ -252,7 +270,10 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
   // reads only an explicit `false` as a paywall.
   const isOpenAccess = typeof work.open_access?.is_oa === 'boolean' ? work.open_access.is_oa : undefined;
   const pdfUrl = work.open_access?.oa_url || null;
-  const landingPageUrl = work.primary_location?.landing_page_url || work.doi || null;
+  // `work.doi` is the resolver followed by the DOI's raw characters, not a valid
+  // URL: a browser drops a final `#` from it. Encode the bare DOI instead, and
+  // keep the raw link only for a DOI the encoder refuses (`10.1000.10/123`).
+  const landingPageUrl = work.primary_location?.landing_page_url || safeDoiUrl(doi) || work.doi || null;
 
   const sourceName = work.primary_location?.source?.display_name || UNNAMED_SOURCE;
 
@@ -270,6 +291,7 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
     pmid: normalizePmid(work.ids?.pmid) || undefined,
     title: work.title || 'Untitled',
     abstract,
+    ...openAlexEvidence(work, abstract),
     authors,
     institutions,
     publishedDate: work.publication_date,
@@ -297,7 +319,7 @@ export function mapOpenAlexWork(work: OpenAlexWork | null | undefined, provider 
 }
 
 /** A work as the paper the public paper page and the Explorer show, built through `PaperBuilder`. */
-export function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
+export function formatOpenAlexWorkAsPaper(work: OpenAlexWork, includeTopics = false): Paper {
   // OpenAlex dates a work as a calendar day. The year is read from that text:
   // as a Date it is midnight UTC, still the previous year west of Greenwich on
   // 1 January, which is where OpenAlex files a work known only by its year.
@@ -315,12 +337,14 @@ export function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     }])).values()];
   const categories = usableOpenAlexConcepts(work.concepts).map(c => c.display_name);
   const openAlexId = work.id!.split('/').pop()!;
+  const abstract = usableOpenAlexAbstract(work);
   
   return PaperBuilder.create({
     id: openAlexId,
     sources: { primary: 'openalex', enrichedBy: [] },
     title: work.title || 'No Title',
-    abstract: usableOpenAlexAbstract(work),
+    abstract,
+    ...openAlexEvidence(work, abstract),
     authors,
     institutions,
     year: Number(published.slice(0, 4)) || undefined,
@@ -350,5 +374,6 @@ export function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     // same paper in the feed, which arrives with an arXiv category, rendered in
     // its own. `areaAccentForPaper` reads it when there is no arXiv id to go on.
     primaryTopic: work.primary_topic || null,
+    topics: includeTopics ? work.topics : undefined,
   });
 }

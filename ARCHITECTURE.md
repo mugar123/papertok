@@ -47,8 +47,6 @@ flowchart TD
 
 - [index.html](index.html) contains a startup recovery screen with inline styles.
   Its initial markup keeps recovery content hidden over the page background.
-  The guard reveals loading feedback after 500 ms if React has not mounted;
-  errors appear immediately, and retry is offered on failure or a long wait.
   If the inline guard itself cannot run, CSS reveals the native fallback after
   one second so the page does not remain blank.
   With JavaScript disabled, the document shows instructions and a native reload link.
@@ -56,11 +54,11 @@ flowchart TD
   script before the generated stylesheet links, so a stalled stylesheet cannot
   delay the watchdog. Only resources marked as part of the initial app graph
   report resource-load failures; blocked optional scripts do not. The guard
-  reports startup errors or a wait longer than 15 seconds, and removes
-  the screen when React adds content to the root. Reload preserves the current
+  offers a reload immediately on failure or after 15 seconds of waiting. It
+  removes the screen when React adds content to the root. Reload preserves the current
   address; the guard does not clear storage or send telemetry. Render failures
   after startup remain owned by [GlobalErrorBoundary](src/global-error-boundary.tsx).
-- [PrivacyProvider](src/context/privacy-context.tsx) owns the privacy controls and
+- [PrivacyProvider](src/context/privacy-context.tsx) owns usage analytics consent,
   coordinates account identity before reporting effects, and renders the application independently of the optional
   [analytics effects](src/context/analytics-context.tsx). A blocked reporting
   module or SDK leaves the application available. Consent is persisted without
@@ -68,6 +66,8 @@ flowchart TD
   [Module load recovery](src/utils/module-load-recovery.ts) lets optional import
   failures settle before deciding whether an essential chunk failure needs the
   existing bounded reload. Analytics event fields and consent rules are unchanged.
+- The [Worker](worker/README.md#author-save-collection) records private author save contributions
+  according to the account's preference in Settings → Privacy.
 - [app.tsx](src/app.tsx) owns routes and provider composition.
   [AuthContext](src/context/auth-context.tsx) owns frontend identity and profile
   lifecycle. User data reaches Firestore through the browser SDK and REST
@@ -123,6 +123,59 @@ flowchart TD
   its separate credentials. Other external integrations also have direct
   browser callers; this diagram shows the main application boundaries, not
   every outbound request.
+
+## Feed engagement
+
+For twenty-card For You summaries, filter `feed_engagement` to events where
+`cards` is set. A separate sample with only `before_profile_load = true`
+counts a signed-in reader liking, saving or recording a read on any screen
+before their interaction profile loads. The browser sends at most one per
+PostHog session. Browsers without shared storage or Web Locks skip the sample.
+
+## Week-1 retention
+
+Pablo must paste this query into a PostHog SQL insight and save it as a table.
+Each person belongs to the UTC week (Monday through Sunday) of their first
+observed `activation` across the available event history. A person returns
+if an `acquisition_view` occurs at least 168 hours and less than 336 hours
+after that activation. Both events use PostHog's resolved person identity.
+
+The table covers the eight most recent calendar weeks for which even the last
+activation has had 336 hours to return. An empty cohort has zero counts and
+a blank percentage. The total divides all returning people by all activated
+people across the eight weeks. The browser's local return flag is independent
+of this calculation.
+
+```sql
+WITH people AS (
+    SELECT person_id,
+           minIf(timestamp, event = 'activation') AS activated_at,
+           groupArrayIf(timestamp, event = 'acquisition_view') AS visits
+    FROM events
+    WHERE event = 'activation'
+       OR (event = 'acquisition_view' AND timestamp >= now() - INTERVAL 11 WEEK)
+    GROUP BY person_id
+    HAVING countIf(event = 'activation') > 0
+), weeks AS (
+    SELECT subtractWeeks(toMonday(toTimeZone(now(), 'UTC')),
+                         arrayJoin([3, 4, 5, 6, 7, 8, 9, 10])) AS week_start
+), counts AS (
+    SELECT toMonday(toTimeZone(activated_at, 'UTC')) AS cohort,
+           count() AS activated,
+           countIf(arrayExists(t -> t >= activated_at + INTERVAL 168 HOUR
+                                AND t < activated_at + INTERVAL 336 HOUR, visits)) AS returned
+    FROM people
+    GROUP BY cohort
+)
+SELECT arrayJoin([toString(w.week_start), 'Total']) AS cohort_week,
+       sum(coalesce(c.activated, 0)) AS activated_people,
+       sum(coalesce(c.returned, 0)) AS returning_people,
+       round(100.0 * returning_people / nullIf(activated_people, 0), 2) AS retention_pct
+FROM weeks AS w
+LEFT JOIN counts AS c ON c.cohort = w.week_start
+GROUP BY cohort_week
+ORDER BY cohort_week
+```
 
 ## Papers from retrieval to display
 

@@ -11,12 +11,15 @@ interface StoredProfile {
   onboardingComplete?: boolean;
   preferences?: string[];
   selectedCategories?: string[];
+  interestMix?: unknown;
+  areaPreferences?: unknown;
   deselectedPreferences?: unknown;
   addedPreferences?: unknown;
   followedAuthors?: string[];
   readingPreferences?: Parameters<typeof normalizeReadingPreferences>[0];
   emailDigestOptIn?: boolean;
   institution?: Parameters<typeof normalizeInstitution>[0];
+  orcid?: unknown;
 }
 export interface AuthContextValue {
   user: AppUser | null;
@@ -24,6 +27,7 @@ export interface AuthContextValue {
   error: string | null;
   onboardingComplete: boolean;
   userPreferences: string[] | null;
+  interestSettings: InterestSettings;
   // Subareas this account removed from its interests; always empty for a guest.
   deselectedPreferences: string[];
   // Subareas this account added to its interests after onboarding; always
@@ -35,6 +39,8 @@ export interface AuthContextValue {
   profileLoadError: string | null;
   signInProviders: string[];
   institution: ReturnType<typeof normalizeInstitution>;
+  /** The ORCID iD an ORCID sign-in proved for this account, or null. */
+  orcid: OrcidConnection | null;
   /** A redirect sign-in came back without a session: the sign-in dialog opens again. */
   reopenSignIn: boolean;
   /** `surface` names the place that asked, for analytics (auth-identity-service.ts). */
@@ -44,10 +50,12 @@ export interface AuthContextValue {
   linkInstitution: typeof linkInstitutionAccount;
   completeInstitutionVerification: typeof completeInstitutionVerificationAccount;
   unlinkInstitution: () => Promise<void>;
+  completeOrcidConnection: (code: string, state: string) => Promise<OrcidConnection>;
+  disconnectOrcid: () => Promise<void>;
   signOut: () => Promise<void>;
-  completeOnboarding: (preferences: string[]) => Promise<void>;
+  completeOnboarding: (preferences: string[], settings: InterestSettings) => Promise<void>;
   settleEmailDigestOptIn: () => Promise<void>;
-  updatePreferences: (preferences: string[]) => Promise<void>;
+  updatePreferences: (preferences: string[], settings: InterestSettings) => Promise<void>;
   setUserPreferences: Dispatch<SetStateAction<string[] | null>>;
   toggleFollowAuthor: (authorName: string) => Promise<void>;
   updateReadingPreferences: (updates: Partial<ReadingPreferences>) => Promise<ReadingPreferences>;
@@ -55,7 +63,7 @@ export interface AuthContextValue {
 }
 
 /* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthContext } from './contexts.ts';
 import { auth, db } from '../services/firebase.ts';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
@@ -79,6 +87,12 @@ import {
   normalizeInstitution,
   unlinkInstitution as unlinkInstitutionAccount,
 } from '../services/institution-service.ts';
+import type { OrcidConnection } from '../services/orcid-connection-service.ts';
+import {
+  completeOrcid,
+  disconnectOrcid as disconnectOrcidAccount,
+  normalizeOrcidConnection,
+} from '../services/orcid-connection-service.ts';
 import {
   DEFAULT_READING_PREFERENCES,
   normalizeReadingPreferences,
@@ -94,7 +108,8 @@ import { clearRewriteCache } from '../services/paper-rewrite-service.ts';
 import { forgetAccountToasts } from '../components/ui/toast.ts';
 import { accountLooksOnboarded } from '../utils/account-onboarding.ts';
 import { nextAdded, nextDeselected } from '../utils/interest-memory.ts';
-import { readGuestInterests } from '../utils/guest-interests.ts';
+import { clearGuestInterests, readGuestInterests } from '../utils/guest-interests.ts';
+import { areasForInterests, normalizeInterestSettings, type InterestSettings } from '../utils/area-preferences.ts';
 import { toggleFollowedAuthor } from '../utils/followed-authors.ts';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
@@ -111,6 +126,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState<string | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [userPreferences, setUserPreferences] = useState<string[] | null>(null);
+  const [interestSettings, setInterestSettings] = useState<InterestSettings>({});
+  const previousUid = useRef<string | null>(null);
   const [deselectedPreferences, setDeselectedPreferences] = useState<string[]>([]);
   const [addedPreferences, setAddedPreferences] = useState<string[]>([]);
   const [followedAuthors, setFollowedAuthors] = useState<string[]>([]);
@@ -129,6 +146,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // The university a verified address resolved to, written by the Worker
   // (institution-link.js) and read here with the rest of the user document.
   const [institution, setInstitution] = useState<ReturnType<typeof normalizeInstitution>>(null);
+  // The ORCID iD the Worker wrote after an ORCID sign-in (worker/orcid.ts),
+  // read with the rest of the user document like the institution.
+  const [orcid, setOrcid] = useState<OrcidConnection | null>(null);
   const [profileReloadKey, setProfileReloadKey] = useState(0);
   const [reopenSignIn, setReopenSignIn] = useState(false);
 
@@ -170,12 +190,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
     let disposed = false;
     const handleAuthChange = async (currentUser: User | null) => {
       const changeId = ++authChangeId;
+      const uid = currentUser?.uid ?? null;
+      if (previousUid.current && previousUid.current !== uid) clearGuestInterests();
+      previousUid.current = uid;
       // Here rather than in signOut: another tab can end this session too.
       clearRewriteCache();
       forgetAccountToasts(currentUser?.uid ?? null);
       setLoading(true);
       setProfileLoadError(null);
       setUser(currentUser);
+      setInterestSettings({});
       setFollowedAuthors([]);
       setDeselectedPreferences([]);
       setAddedPreferences([]);
@@ -183,6 +207,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setEmailDigestPending(false);
       setSignInProviders(providerIdsOf(currentUser));
       setInstitution(null);
+      setOrcid(null);
       pendingInstitutionVerification({ currentUser: () => currentUser });
 
       if (currentUser) {
@@ -190,9 +215,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const storedOnboarding = openAccountSession(currentUser.uid);
         if (storedOnboarding?.complete) {
           setOnboardingComplete(true);
-          if (storedOnboarding.preferences.length > 0) {
-            setUserPreferences(storedOnboarding.preferences);
-          }
+          setUserPreferences(storedOnboarding.preferences);
+          setInterestSettings(normalizeInterestSettings(storedOnboarding));
         } else {
           setOnboardingComplete(false);
           setUserPreferences(null);
@@ -205,7 +229,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
           const onboarded = accountLooksOnboarded(data);
           setOnboardingComplete(onboarded);
           const preferences = data.preferences || data.selectedCategories || null;
+          const settings = normalizeInterestSettings(data);
           setUserPreferences(preferences);
+          setInterestSettings(settings);
           setFollowedAuthors(data.followedAuthors || []);
           // Anything but a list of strings counts as none.
           setDeselectedPreferences(Array.isArray(data.deselectedPreferences) ? data.deselectedPreferences.filter((id): id is string => typeof id === 'string') : []);
@@ -213,10 +239,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
           setReadingPreferences(normalizeReadingPreferences(data.readingPreferences));
           setEmailDigestPending(data.emailDigestOptIn === true);
           setInstitution(normalizeInstitution(data.institution));
+          setOrcid(normalizeOrcidConnection(data.orcid));
           // An account that already chose its interests is the authority on
           // them. A guest pick left waiting on this device would only ever
           // seed the NEXT new account here with someone else's areas.
-          if (onboarded) adoptOnboardedProfile(currentUser.uid, Array.isArray(preferences) ? preferences : []);
+          if (onboarded) adoptOnboardedProfile(currentUser.uid, Array.isArray(preferences) ? preferences : [], settings);
           return true;
         };
 
@@ -226,7 +253,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         );
         if (!isCurrent()) return;
 
-        const hydratedFromCache = cached.status === 'fulfilled' && applyProfile(cached.value);
+        const hydratedFromCache = cached.status === 'fulfilled'
+          && !cached.value.metadata.hasPendingWrites && applyProfile(cached.value);
         if (hydratedFromCache) setLoading(false);
 
         // The server is the authority on whether the document exists. A
@@ -235,6 +263,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const applyRemote = (snapshot: DocumentSnapshot<StoredProfile>) => {
           if (!applyProfile(snapshot)) {
             setOnboardingComplete(false);
+            setUserPreferences(null);
+            setInterestSettings({});
             saveStoredOnboarding(currentUser.uid, { complete: false, preferences: [] });
           }
         };
@@ -252,7 +282,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
             attempts: 1,
             ms: PROFILE_NETWORK_TIMEOUT_MS,
             label: 'account profile',
-            isAnswer: documentIsAuthoritative,
+            isAnswer: snapshot => !snapshot.metadata.hasPendingWrites && documentIsAuthoritative(snapshot),
             onLateResult: (snapshot) => {
               if (!isCurrent()) return;
               setProfileLoadError(null);
@@ -360,6 +390,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (auth.currentUser?.uid === userId) setInstitution(null);
   }, [user?.uid]);
 
+  // The same for ORCID: the Worker writes the field, and its answer is
+  // applied only while the account that asked is still signed in.
+  const completeOrcidConnection = useCallback(async (code: string, state: string) => {
+    const userId = user?.uid;
+    const connection = await completeOrcid(code, state);
+    if (auth.currentUser?.uid === userId) setOrcid(connection);
+    return connection;
+  }, [user?.uid]);
+
+  const disconnectOrcid = useCallback(async () => {
+    const userId = user?.uid;
+    await disconnectOrcidAccount();
+    if (auth.currentUser?.uid === userId) setOrcid(null);
+  }, [user?.uid]);
+
   // `user?.uid` rather than `user`: Firebase re-emits `currentUser` on token
   // refresh with the same uid but a new object reference, and that must not
   // recreate a function whose only reactive read is the id.
@@ -381,7 +426,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // unmounted page, left no local memory either, and the next reload asked
   // the same questions again. The
   // failure reaches handleFinish's catch, on screen, with the pick intact.
-  const completeOnboarding = useCallback(async (preferences: string[]) => {
+  const completeOnboarding = useCallback(async (preferences: string[], settings: InterestSettings) => {
     const guestAnswer = readGuestInterests();
     const guestLevel = guestAnswer?.readingLevel;
     // Only an explicit yes reaches the account.
@@ -391,6 +436,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       : null;
 
     const userId = user?.uid;
+    const savedSettings = normalizeInterestSettings(settings, areasForInterests(preferences));
     if (userId) {
       // Throws unless the write is fulfilled in time: the flag and the
       // preferences below stay unflipped.
@@ -398,10 +444,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setDoc(doc(db, 'users', userId), {
           onboardingComplete: true,
           ...(guestReading ? { readingPreferences: guestReading } : {}),
-          preferences
+          preferences,
+          ...savedSettings,
         }, { merge: true }),
         PROFILE_NETWORK_TIMEOUT_MS,
       );
+      if (auth.currentUser?.uid !== userId) throw new Error('The account changed while onboarding was saving.');
       if (guestReading) setReadingPreferences(guestReading);
       // The email opt-in is its own write, after the onboarding's and never
       // awaited by it: the frontend and the Firestore rules deploy separately,
@@ -422,32 +470,37 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
       // The interests a guest picked before signing up have now reached the
       // profile (the onboarding pre-selects from them); the bridge is done.
-      adoptOnboardedProfile(userId, preferences);
+      adoptOnboardedProfile(userId, preferences, savedSettings);
     }
     setUserPreferences(preferences);
+    setInterestSettings(savedSettings);
     setOnboardingComplete(true);
   }, [readingPreferences, user?.uid]);
 
-  const updatePreferences = useCallback(async (newPreferences: string[]) => {
-    setUserPreferences(newPreferences);
-
+  const updatePreferences = useCallback(async (newPreferences: string[], settings: InterestSettings) => {
+    const savedSettings = normalizeInterestSettings(settings, areasForInterests(newPreferences));
     const userId = user?.uid;
     if (userId) {
-      // Set with the preferences, so a second edit before the write settles
-      // still starts from every result of the first edit. Onboarding writes
-      // no added list: its picks start established.
       const deselected = nextDeselected(userPreferences ?? [], newPreferences, deselectedPreferences);
       const added = nextAdded(userPreferences ?? [], newPreferences, addedPreferences, deselectedPreferences);
-      setDeselectedPreferences(deselected);
-      setAddedPreferences(added);
-      await setDoc(doc(db, 'users', userId), {
+      const patch = {
         preferences: newPreferences,
         deselectedPreferences: deselected,
-        addedPreferences: added
-      }, { merge: true });
-      saveStoredOnboarding(userId, { complete: true, preferences: newPreferences });
+        addedPreferences: added,
+        ...savedSettings,
+        ...(interestSettings.areaPreferences && !savedSettings.areaPreferences ? { areaPreferences: {} } : {}),
+      };
+      // Replace the whole map so clearing an area's level removes it.
+      await setDoc(doc(db, 'users', userId), patch, { mergeFields: Object.keys(patch) });
+      if (auth.currentUser?.uid !== userId) return;
+      // An unconfirmed edit must not seed a list that will keep its plan.
+      setDeselectedPreferences(deselected);
+      setAddedPreferences(added);
+      saveStoredOnboarding(userId, { complete: true, preferences: newPreferences, ...savedSettings });
     }
-  }, [addedPreferences, deselectedPreferences, user?.uid, userPreferences]);
+    setUserPreferences(newPreferences);
+    setInterestSettings(savedSettings);
+  }, [addedPreferences, deselectedPreferences, interestSettings, user?.uid, userPreferences]);
 
   // Needs the previous list itself, not just its owner's id: the new array is
   // written to Firestore in this same call,
@@ -506,6 +559,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     error,
     onboardingComplete,
     userPreferences,
+    interestSettings,
     deselectedPreferences,
     addedPreferences,
     followedAuthors,
@@ -514,6 +568,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     profileLoadError,
     signInProviders,
     institution,
+    orcid,
     reopenSignIn,
     signInWithGoogle,
     signInWithGitHub,
@@ -521,6 +576,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     linkInstitution,
     completeInstitutionVerification,
     unlinkInstitution,
+    completeOrcidConnection,
+    disconnectOrcid,
     signOut,
     completeOnboarding,
     settleEmailDigestOptIn,
@@ -530,8 +587,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     updateReadingPreferences,
     retryProfileLoad,
   }), [
-    addedPreferences, completeOnboarding, completeInstitutionVerification, deselectedPreferences, emailDigestPending, error, followedAuthors, institution, linkInstitution,
-    linkSignInMethod, loading, onboardingComplete, profileLoadError, readingPreferences,
+    addedPreferences, completeOnboarding, completeInstitutionVerification, completeOrcidConnection, deselectedPreferences, disconnectOrcid, emailDigestPending, error, followedAuthors, institution, linkInstitution,
+    interestSettings, linkSignInMethod, loading, onboardingComplete, orcid, profileLoadError, readingPreferences,
     reopenSignIn, retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, unlinkInstitution, updatePreferences,
     updateReadingPreferences, user, userPreferences,

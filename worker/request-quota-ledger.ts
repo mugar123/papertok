@@ -80,6 +80,7 @@ const LEDGER_ACTIONS = new Set<unknown>(['reserve', 'release', 'peek', 'observe'
 const MAX_SUBJECT_KEY_LENGTH = 96;
 export const MAX_LIMIT = 1_000_000;
 const RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
+const MAX_EXPLICIT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 // A tally name comes from the Worker, never from a reader, but the object keeps
 // every name in one value, so the number of names is bounded here too.
 const TALLY_NAME = /^[a-z]{1,16}\.[a-z]{1,16}$/;
@@ -215,7 +216,7 @@ export class RequestQuotaLedger {
       || (pace && action !== 'reserve')
       || (payload?.globalAmount !== undefined && payload.globalAmount !== 0 && !globalAmount)
       || (expiresAt !== undefined && (!Number.isSafeInteger(expiresAt)
-        || Number(expiresAt) <= Date.now() || Number(expiresAt) > Date.now() + RETENTION_MS))
+        || Number(expiresAt) <= Date.now() || Number(expiresAt) > Date.now() + MAX_EXPLICIT_RETENTION_MS))
       || (action === 'observe' && reportedRemaining === undefined)
       || (hasPart && (!partKey || !partLimit))) {
       return json({ code: 'INVALID_REQUEST' }, 400);

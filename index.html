@@ -149,12 +149,12 @@
       #startup-status[data-state="failed"] .startup-thinking,
       #startup-status:not([data-state="failed"]) .startup-upset { display: none; }
       /* Preserve the native fallback if the inline guard itself cannot run. */
-      #startup-status[data-state="pending"] > * {
+      #startup-status[data-state="unmonitored"] > * {
         visibility: hidden;
         animation: startup-unmonitored 0s 1s forwards;
       }
       @keyframes startup-unmonitored { to { visibility: visible; } }
-      #startup-status[data-state="loading"] #startup-retry { visibility: hidden; }
+      #startup-status[data-state="pending"] > * { visibility: hidden; }
       #startup-status h1 {
         max-width: 18ch;
         margin: 0 0 12px;
@@ -194,7 +194,7 @@
         #startup-retry:active { scale: none; }
       }
     </style>
-    <section id="startup-status" role="status" aria-live="polite" aria-atomic="true" data-state="pending">
+    <section id="startup-status" role="status" aria-live="polite" aria-atomic="true" data-state="unmonitored">
       <svg class="startup-petri" viewBox="14 22 128 124" aria-hidden="true" focusable="false">
         <defs>
           <pattern id="startup-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="1.4" height="4" fill="currentColor"/></pattern>
@@ -226,7 +226,7 @@
       <noscript>
         <style>
           #startup-title, #startup-message { display: none; }
-          #startup-status[data-state="pending"] > * { visibility: visible; animation: none; }
+          #startup-status[data-state="unmonitored"] > * { visibility: visible; animation: none; }
         </style>
         <h1>JavaScript is turned off</h1>
         <p>Enable JavaScript in your browser, then reload this page.</p>

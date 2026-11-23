@@ -22,7 +22,8 @@ import {
   setAnalyticsConsent,
   startAnalyticsClient,
   trackAcquisition,
-  trackDay7Return,
+  markWeekOneReturn,
+  trackPmfSurvey,
   trackProductEvent,
 } from './analytics-service.ts';
 
@@ -385,6 +386,34 @@ test('a session after activation says how long ago, in weeks rather than days', 
   assert.equal(await sessionAt(1000 + day), 'day_1');
   assert.equal(await sessionAt(1000 + 9 * day), 'days_7_13');
   assert.equal(await sessionAt(1000 + 400 * day), 'days_60_plus');
+});
+
+test('the survey events say how long ago this browser activated, and nothing when it has not', async t => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const day = 24 * 60 * 60 * 1000;
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ENABLED }) });
+  t.after(() => {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
+  });
+  const events: unknown[] = [];
+  const track = async (eventName: string, params?: Record<string, unknown>) => {
+    events.push([eventName, params]);
+    return true;
+  };
+
+  await trackPmfSurvey('pmf_survey_shown', { app_version: '0.3.0' }, { now: 1000, track });
+  await markActivation({ now: 1000, track: async () => true });
+  await trackPmfSurvey('pmf_survey', { disappointment: 'very', nps: 8, app_version: '0.3.0' }, { now: 1000 + 9 * day, track });
+  // The guard of the account that opened the survey reaches the client untouched.
+  const guard = () => false;
+  let forwarded: unknown;
+  await trackPmfSurvey('pmf_survey', { disappointment: 'dismissed', app_version: '0.3.0' }, { now: 1000, track: async (_name, _params, stillValid) => { forwarded = stillValid; return false; }, stillValid: guard });
+  assert.equal(forwarded, guard);
+  assert.deepEqual(events, [
+    ['pmf_survey_shown', { app_version: '0.3.0' }],
+    ['pmf_survey', { disappointment: 'very', nps: 8, app_version: '0.3.0', activation_age: 'days_7_13' }],
+  ]);
 });
 
 test('tracks acquisition once even when session storage is unavailable', async t => {
@@ -1159,20 +1188,34 @@ test('marks activation only after consent and only once', async () => {
   assert.deepEqual(events, ['activation']);
 });
 
-test('tracks a day-7 return at the boundary and only once', async () => {
-  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ENABLED });
-  const events: unknown[] = [];
-  const track = async (eventName: string) => {
-    events.push(eventName);
-    return true;
-  };
-  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+test('an activation waiting across an opt-out cannot seed a later return', async () => {
+  const storage = memoryStorage();
+  let release!: (accepted: boolean) => void;
+  let maySend: (() => boolean) | undefined;
+  const pending = markActivation({ storage, now: 1000, track: (_name, _params, stillValid) => {
+    maySend = stillValid;
+    return new Promise<boolean>(resolve => { release = resolve; });
+  } });
+  assert.equal(maySend?.(), true);
+  persistAnalyticsConsent(ANALYTICS_CONSENT.DENIED, storage);
+  persistAnalyticsConsent(ANALYTICS_CONSENT.ENABLED, storage);
+  assert.equal(maySend?.(), false);
+  release(true);
+  assert.equal(await pending, false);
+  assert.equal(markWeekOneReturn({ storage, now: 1000 + 168 * 3_600_000 }), false);
+});
 
-  await markActivation({ storage, now: 1000, track });
-  assert.equal(await trackDay7Return({ storage, now: 1000 + sevenDays - 1, track }), false);
-  assert.equal(await trackDay7Return({ storage, now: 1000 + sevenDays, track }), true);
-  assert.equal(await trackDay7Return({ storage, now: 1000 + sevenDays + 1, track }), false);
-  assert.deepEqual(events, ['activation', 'day_7_return']);
+test('marks only the first browser return from hour 168 up to hour 336', async () => {
+  const hour = 3_600_000;
+  for (const [elapsed, expected] of [[168 * hour - 1, false], [168 * hour, true],
+    [336 * hour - 1, true], [336 * hour, false]] as const) {
+    const storage = memoryStorage();
+    assert.equal(markWeekOneReturn({ storage, now: 1000 + elapsed }), false);
+    await markActivation({ storage, now: 1000, track: async () => true });
+    assert.equal(markWeekOneReturn({ storage, now: 1000 + elapsed }), expected);
+    assert.equal(storage.getItem('papertok_analytics_week_one_return'), expected ? 'true' : null);
+    assert.equal(markWeekOneReturn({ storage, now: 1000 + elapsed }), false);
+  }
 });
 
 /**
@@ -1191,18 +1234,12 @@ test('a mark asked for twice while the first send is still waiting leaves once',
     await loaded;
     return true;
   };
-  const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
   const activations = [markActivation({ storage, now: 1000, track }), markActivation({ storage, now: 1000, track })];
   release();
   assert.deepEqual(await Promise.all(activations), [true, false]);
 
-  const returns = [
-    trackDay7Return({ storage, now: 1000 + sevenDays, track }),
-    trackDay7Return({ storage, now: 1000 + sevenDays, track }),
-  ];
-  assert.deepEqual(await Promise.all(returns), [true, false]);
-  assert.deepEqual(events, ['activation', 'day_7_return']);
+  assert.deepEqual(events, ['activation']);
 
   const failing = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ENABLED });
   assert.equal(await markActivation({ storage: failing, now: 1000, track: async () => false }), false);
@@ -1231,6 +1268,7 @@ test('clears consent-scoped activation state when consent is denied', async t =>
     papertok_analytics_activation_at: '1000',
     papertok_analytics_activation_sent: 'true',
     papertok_analytics_day_7_return_sent: 'true',
+    papertok_analytics_week_one_return: 'true',
   });
   let consentCookie = '';
 
@@ -1261,6 +1299,7 @@ test('clears consent-scoped activation state when consent is denied', async t =>
   assert.equal(storage.getItem('papertok_analytics_activation_at'), null);
   assert.equal(storage.getItem('papertok_analytics_activation_sent'), null);
   assert.equal(storage.getItem('papertok_analytics_day_7_return_sent'), null);
+  assert.equal(storage.getItem('papertok_analytics_week_one_return'), null);
 });
 
 test('feed timing fields contain bounded measurements and deployment identifiers, never content', () => {

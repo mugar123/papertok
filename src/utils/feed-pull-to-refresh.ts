@@ -57,11 +57,21 @@ export function pullBandDepth(containerHeight = 0): number {
 export const PULL_BLOCKING_SCROLLERS = '.pc-abstract--open';
 
 /**
+ * Scrollers that keep a drag down only while they are scrolled. The card's
+ * no-abstract state scrolls inside a panel too short for it, and on a card
+ * with the publisher's page the head's rows scroll when the action row
+ * leaves them too little room (paper-card.css). A drag down takes either
+ * back to its top, and from there the drag is the feed's again, as where it
+ * fits and never scrolls.
+ */
+export const PULL_YIELDING_SCROLLERS = '.pc-abstract-empty, .pc-head-rows';
+
+/**
  * Where a pull may begin, or null. `containerTop` and `containerHeight` are
  * the scroller's own, so the band is measured from the bar downwards.
  */
 /** What a touch landed on: an Element in the page, a stand-in in the tests. */
-type PullTarget = { closest?: (selectors: string) => unknown } | null;
+type PullTarget = { closest?: (selectors: string) => { scrollTop?: number } | null } | null;
 
 export function pullStartFrom({ target, scrollTop, clientY, containerTop = 0, containerHeight = 0 }: {
   target: PullTarget;
@@ -70,7 +80,10 @@ export function pullStartFrom({ target, scrollTop, clientY, containerTop = 0, co
   containerTop?: number;
   containerHeight?: number;
 }): number | null {
-  if (typeof target?.closest === 'function' && target.closest(PULL_BLOCKING_SCROLLERS)) return null;
+  if (typeof target?.closest === 'function') {
+    if (target.closest(PULL_BLOCKING_SCROLLERS)) return null;
+    if ((target.closest(PULL_YIELDING_SCROLLERS)?.scrollTop ?? 0) > 0) return null;
+  }
   if (scrollTop === 0) return clientY;
   return clientY - containerTop <= pullBandDepth(containerHeight) ? clientY : null;
 }

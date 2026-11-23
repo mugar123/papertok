@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <title>arXiv query</title>
+  <id>https://arxiv.org/api/example</id>
+  <updated>2026-11-20T00:00:00Z</updated>
+  <opensearch:totalResults>1</opensearch:totalResults>
+  <entry>
+    <id xmlns="http://www.w3.org/2005/Atom" xml:lang="en">http://arxiv.org/api/errors#incorrect_id_format_for_example</id>
+    <title>Error</title>
+    <summary>Invalid identifier in example query</summary>
+    <updated>2026-11-20T00:00:00Z</updated>
+    <link href="http://arxiv.org/api/errors#incorrect_id_format_for_example" rel="alternate" type="text/html"/>
+    <author><name>arXiv api core</name></author>
+  </entry>
+</feed>
