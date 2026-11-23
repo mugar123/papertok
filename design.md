@@ -469,6 +469,28 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   row, the row stops short of the rail. While the feed still asks a source
   for the abstract, the link holds its place in the row unseen, so the row
   keeps its shape when the wait ends with no abstract.
+- **Conference cover** (`conferences/conference-cover.tsx`): generated art, never
+  a photograph or an organizer's logo. It tints the paper with the field ink at
+  8%, carries a 3px field rule on its left edge, and draws the field's own
+  pattern (circuit traces, orbits, a histogram) at 26% of the ink. The series
+  seeds the drawing, so every edition of a series has the same one. The acronym
+  is in the serif and the year in mono, both in the text ink. The cover is
+  decoration: the text beside it names the edition and its field.
+- **Conference card** (`conferences/conference-card.tsx`): a hairline frame with
+  the cover at its left and, beside it, the field in mono, the series as a serif
+  title in the text ink, then the dates and the place in mono and the next deadline as a chip when
+  one is known. The title is the card's one link and covers the card. Cards sit
+  in as many columns as fit, one on a phone, under a mono month label. On the
+  edition page the cover is the left part of the hero (above the text on a
+  phone), beside the name, the dates, the place, the format and the actions.
+- **Conference month** (`conferences/conference-month-view.tsx`): a ruled table of
+  weeks from Sunday. A bar tinted with the field ink spans a conference's days,
+  with the field rule on the day it starts. A week shows up to four rows of bars;
+  a busier week shows three and, under them, a "+N more" link on each day that
+  hides some, which opens a popover listing all of that day's conferences. Each site of an edition has its own bar.
+  Today is the day set on ink. On a phone the month is a grid of days with up to
+  three field marks, one tab stop and arrow keys, and the chosen day's
+  conferences follow as cards.
 - **Settings › Feeds** (`settings/feeds-settings-page.tsx`), reached from
   Discovery: a `New feed` button over the reader's feeds in tab order, as
   ruled rows. Each row has the feed's name in the serif, its ingredients on one

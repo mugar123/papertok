@@ -127,16 +127,20 @@ export function papersToRIS(papers: Partial<Paper>[] = []) {
   }).join('\n\n');
 }
 
-export function downloadCitationFile(papers: Partial<Paper>[], format: string, filename = 'papertok') {
-  const isBibTeX = format === 'bibtex';
-  const content = isBibTeX ? papersToBibTeX(papers) : papersToRIS(papers);
-  const blob = new Blob([content], { type: isBibTeX ? 'application/x-bibtex;charset=utf-8' : 'application/x-research-info-systems;charset=utf-8' });
+export function downloadFile(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `${filename}.${isBibTeX ? 'bib' : 'ris'}`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+export function downloadCitationFile(papers: Partial<Paper>[], format: string, filename = 'papertok') {
+  const isBibTeX = format === 'bibtex';
+  const content = isBibTeX ? papersToBibTeX(papers) : papersToRIS(papers);
+  const blob = new Blob([content], { type: isBibTeX ? 'application/x-bibtex;charset=utf-8' : 'application/x-research-info-systems;charset=utf-8' });
+  downloadFile(blob, `${filename}.${isBibTeX ? 'bib' : 'ris'}`);
 }
