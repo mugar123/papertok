@@ -34,12 +34,6 @@ type Props = {
 
 export default function ConferenceFilterBar({ filters, params, onChange }: Props) {
   const set = (name: string) => (value: string | null) => onChange(withConferenceParam(params, name, value));
-  const active = Object.values(filters).some(value => value !== null);
-  const clear = () => {
-    const next = new URLSearchParams(params);
-    for (const name of Object.keys(filters)) next.delete(name);
-    onChange(next);
-  };
   const months = conferenceMonths(conferenceEditions, filters.month)
     .map(month => [month, formatConferenceMonth(month)] as const);
   return (
@@ -47,8 +41,17 @@ export default function ConferenceFilterBar({ filters, params, onChange }: Props
       <FilterSelect name="field" label="Research field" any="All fields" value={filters.field} options={Object.entries(conferenceFields)} onChange={set('field')} />
       <FilterSelect name="month" label="Month" any="Any month" value={filters.month} options={months} onChange={set('month')} />
       <FilterSelect name="format" label="Format" any="Any format" value={filters.format} options={Object.entries(conferenceFormats)} onChange={set('format')} />
-      {/* Stays in place once pressed, so a keyboard reader's focus does too. */}
-      <Button variant="ghost" disabled={!active} focusableWhenDisabled onClick={clear}>Clear filters</Button>
     </div>
   );
+}
+
+/** Stays in place once pressed, so a keyboard reader's focus does too. */
+export function ClearFilters({ filters, params, onChange }: Props) {
+  const active = Object.values(filters).some(value => value !== null);
+  const clear = () => {
+    const next = new URLSearchParams(params);
+    for (const name of Object.keys(filters)) next.delete(name);
+    onChange(next);
+  };
+  return <Button variant="ghost" size="sm" disabled={!active} focusableWhenDisabled onClick={clear}>Clear filters</Button>;
 }

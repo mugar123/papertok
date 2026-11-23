@@ -38,7 +38,7 @@ function dayAfter(date: string) {
 export function conferenceIcs(edition: ConferenceEdition, now: Date) {
   const stamp = now.toISOString().replace(/[-:]|\.\d{3}/g, '');
   const events = edition.dates.flatMap(({ start, end, city }, index) => {
-    const location = city ?? edition.placeText ?? edition.venue?.name ?? (edition.format === 'online' ? 'Online' : undefined);
+    const location = city ?? edition.placeText ?? edition.venue ?? (edition.format === 'online' ? 'Online' : undefined);
     const summary = edition.dates.length > 1 && city ? `${edition.name} (${city})` : edition.name;
     return [
       'BEGIN:VEVENT',

@@ -20,14 +20,12 @@
 
 .conference-filters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
-  align-items: end;
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--space-2) var(--space-3);
   margin-top: var(--space-5);
 }
 
 .conference-filter { min-width: 0; }
-.conference-filters > button { justify-self: start; }
 
 .conference-filter label {
   display: block;
@@ -58,9 +56,20 @@
 
 .conference-count {
   line-height: 1.35;
-  margin-block: var(--space-4) 0;
   color: var(--text-secondary);
 }
+
+.conference-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  margin-top: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.conference-state > button { flex: none; }
 
 .conference-group { padding-top: var(--space-5); }
 
@@ -226,6 +235,8 @@
   margin-top: var(--space-2);
 }
 
+.conference-note { color: var(--text-secondary); font-size: var(--fs-xs); }
+
 .conference-details { padding-block: var(--space-6); }
 
 .conference-details h2 {
@@ -251,6 +262,8 @@
 .conference-facts dt { color: var(--text-secondary); font-size: var(--fs-sm); }
 .conference-facts dd { margin: 0; font-family: var(--font-mono); font-size: var(--fs-sm); }
 .conference-facts dd span { display: block; }
+.conference-passed { margin-top: var(--space-3); }
+.conference-passed summary { min-height: 1.75rem; color: var(--text-secondary); font-size: var(--fs-sm); cursor: pointer; }
 .conference-source { margin-top: var(--space-4); color: var(--text-secondary); font-size: var(--fs-sm); }
 .conference-source a { text-decoration: underline; }
 
@@ -274,12 +287,21 @@
 .conference-page [data-field="engineering"] { --conference-ink: var(--gradient-mech); }
 .conference-page [data-field="chemistry"] { --conference-ink: var(--gradient-chem); }
 
+/* Under 360px two columns would cut most chosen values. The status line always has them in full. */
+@media (max-width: 359px) {
+  .conference-page .conference-filters { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* iOS zooms into a focused control whose text is under 16px. */
 @media (pointer: coarse) {
   .conference-filter select { font-size: 1rem; }
 }
 
 @media (max-width: 600px) {
+  /* Two to a row, the widest values first: an odd count gives the first its own row. */
+  .conference-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .conference-filter:first-child:nth-last-child(odd) { grid-column: 1 / -1; }
+  .conference-filter select { text-overflow: ellipsis; }
   .conference-hero { grid-template-columns: minmax(0, 1fr); }
   .conference-facts > div { grid-template-columns: minmax(0, 1fr); }
 }

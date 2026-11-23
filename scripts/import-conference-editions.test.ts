@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { convertConferenceEdition } from './import-conference-editions.ts';
+import { convertConferenceDetails, convertConferenceEdition } from './import-conference-editions.ts';
 
 const row = {
   field: 'engineering',
@@ -24,7 +24,7 @@ const row = {
 test('normalizes a verified event without repeating the year or retaining tracking', () => {
   assert.deepEqual(convertConferenceEdition(row, 'engineering'), {
     id: 'example2027', name: 'Example2027', series: 'Example Conference', acronym: 'Example2027', year: 2027, field: 'engineering',
-    dates: [{ start: '2027-03-01', end: null }], placeText: 'Chicago', format: 'hybrid', venue: undefined, deadlines: undefined,
+    dates: [{ start: '2027-03-01', end: null }], placeText: 'Chicago', format: 'hybrid',
     url: 'https://example.org/2027?lang=en', sourceUrl: 'https://example.org/2027',
     checkedOn: '2026-11-23', source: undefined, dateText: undefined,
   });
@@ -82,13 +82,34 @@ test('records a format only when the source says it', () => {
 });
 
 test('keeps venue and deadlines in date order and rejects unusable ones', () => {
-  const venue = { name: 'Coex', url: 'https://example.org/venue' };
-  const deadlines = [{ label: 'Papers due', date: '2026-12-20' }, { label: 'Abstracts due', date: '2026-12-10' }];
-  const converted = convertConferenceEdition({ ...row, venue, deadlines }, 'engineering');
-  assert.deepEqual(converted?.venue, venue);
-  assert.deepEqual(converted?.deadlines, [deadlines[1], deadlines[0]]);
+  const sourceUrl = 'https://example.org/dates';
+  const details = { venue: ' Coex ', checkedOn: '2026-11-23', deadlines: [
+    { label: 'Papers due', date: '2026-12-20', timeText: 'AoE', sourceUrl: sourceUrl + '?trk=ad' },
+    { label: 'Abstracts due', date: '2026-12-10', timeText: null, sourceUrl },
+  ] };
+  assert.deepEqual(convertConferenceDetails(details), { venue: 'Coex', deadlines: [
+    { label: 'Abstracts due', date: '2026-12-10', sourceUrl },
+    { label: 'Papers due', date: '2026-12-20', timeText: 'AoE', sourceUrl },
+  ] });
+  assert.deepEqual(convertConferenceDetails({ venue: null, deadlines: [], checkedOn: '2026-11-23' }), {});
   for (const invalid of [
-    { venue: 'Coex' }, { venue: { name: ' ' } }, { venue: { name: 'Coex', url: 'http://example.org' } },
-    { deadlines: 'soon' }, { deadlines: [null] }, { deadlines: [{ label: 'Papers due', date: 'December' }] },
-  ]) assert.equal(convertConferenceEdition({ ...row, ...invalid }, 'engineering'), null);
+    { venue: ' ' }, { venue: { name: 'Coex' } }, { deadlines: 'soon' }, { deadlines: [null] }, { checkedOn: null },
+    { deadlines: [{ label: 'Papers due', date: 'December', timeText: null, sourceUrl }] },
+    { deadlines: [{ label: 'Papers due', date: '2026-12-20', timeText: null, sourceUrl: 'http://example.org' }] },
+  ]) assert.equal(convertConferenceDetails({ ...details, ...invalid }), null);
+});
+
+test('keeps the hour of a deadline and drops a zone that comes without one', () => {
+  const timeOf = (timeText: string) => convertConferenceDetails({ venue: null, checkedOn: '2026-11-23', deadlines: [{ label: 'Papers due', date: '2026-12-20', timeText, sourceUrl: 'https://example.org' }] })?.deadlines?.[0].timeText;
+  for (const timeText of ['AoE', '11:59 PM ET', '2 p.m. ET', '23.55 GMT', 'midnight PST']) assert.equal(timeOf(timeText), timeText);
+  for (const timeText of ['PT', 'UTC', 'UTC+0', 'UTC-8', 'Eastern Time', 'Europe/Paris']) assert.equal(timeOf(timeText), undefined, timeText);
+});
+
+test('drops the remarks a deadline label ends with and keeps that a date is tentative', () => {
+  const labelOf = (label: string) => convertConferenceDetails({ venue: null, checkedOn: '2026-11-23', deadlines: [{ label, date: '2026-12-20', timeText: null, sourceUrl: 'https://example.org' }] })?.deadlines?.[0].label;
+  assert.equal(labelOf('Papers due (Summer; author rebuttal date tentative; )'), 'Papers due (Summer)');
+  assert.equal(labelOf('Rebuttal period ends (Summer; author rebuttal date tentative; )'), 'Rebuttal period ends (Summer, tentative)');
+  assert.equal(labelOf('Decisions (Fall; decision is final major-revision n)'), 'Decisions (Fall)');
+  assert.equal(labelOf('Papers due (Cycle 1 Deadline)'), 'Papers due (Cycle 1)');
+  assert.equal(labelOf('Abstracts due (preliminary)'), 'Abstracts due (preliminary)');
 });

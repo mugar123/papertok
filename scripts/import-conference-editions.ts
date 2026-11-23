@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ConferenceDeadline, ConferenceEdition, ConferenceFormat, ConferenceVenue } from '../src/data/conferences.ts';
+import type { ConferenceDeadline, ConferenceDetails, ConferenceEdition, ConferenceFormat } from '../src/data/conferences.ts';
 
 const fields = {
   'cs-ai': 'cs',
@@ -34,27 +34,66 @@ function slugOf(value: string) {
   return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-/** The venue, undefined when the row has none, or null when the row's value is not usable. */
-function venueOf(value: unknown): ConferenceVenue | undefined | null {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'object') return null;
-  const { name, url } = value as Record<string, unknown>;
-  if (!text(name)) return null;
-  if (url === undefined || url === null) return { name: name.trim() };
-  return https(url) ? { name: name.trim(), url: withoutTracking(url) } : null;
+/** A label without the remarks a source appends to it, which can be cut short. */
+function deadlineLabel(label: string) {
+  const tentative = /^rebuttal/i.test(label) && /rebuttal date tentative/i.test(label);
+  return label.replace(/\(([^;()]*);[^()]*\)/, tentative ? '($1, tentative)' : '($1)').replace(/\s+deadline\)$/i, ')').trim();
 }
 
-/** The deadlines in date order, undefined when the row has none, or null when one is not usable. */
-function deadlinesOf(value: unknown): ConferenceDeadline[] | undefined | null {
-  if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value)) return null;
-  const deadlines: ConferenceDeadline[] = [];
-  for (const item of value as unknown[]) {
-    const { label, date } = (item ?? {}) as Record<string, unknown>;
-    if (!text(label) || !iso(date)) return null;
-    deadlines.push({ label: label.trim(), date });
+/** An hour, or AoE, which is the end of the day. A bare zone would claim an hour the source does not give. */
+const saysWhen = /\d{1,2}[:.]\d{2}|\d\s*[ap]\.?m\b|\b(?:midnight|noon|AoE)\b/i;
+
+function deadlineOf(value: unknown): ConferenceDeadline | null {
+  const { label, date, timeText, sourceUrl } = (value ?? {}) as Record<string, unknown>;
+  if (!text(label) || !iso(date) || !https(sourceUrl) || !(timeText === null || timeText === undefined || text(timeText))) return null;
+  return { label: deadlineLabel(label), date, ...(text(timeText) && saysWhen.test(timeText) ? { timeText: timeText.trim() } : {}), sourceUrl: withoutTracking(sourceUrl) };
+}
+
+/** A details row, or null when one of its values is not usable. */
+export function convertConferenceDetails(value: unknown): ConferenceDetails | null {
+  if (!value || typeof value !== 'object') return null;
+  const { venue, deadlines, checkedOn } = value as Record<string, unknown>;
+  if (!(venue === null || text(venue)) || !Array.isArray(deadlines) || !iso(checkedOn)) return null;
+  const converted = deadlines.map(deadlineOf);
+  if (!converted.every(deadline => deadline !== null)) return null;
+  const inOrder = converted.sort((a, b) => a.date.localeCompare(b.date));
+  return { ...(text(venue) ? { venue: venue.trim() } : {}), ...(inOrder.length ? { deadlines: inOrder } : {}) };
+}
+
+/** The details of a row, found by what the two files share. */
+function detailsKey(value: unknown) {
+  const { series, edition, url } = (value ?? {}) as Record<string, unknown>;
+  return JSON.stringify([series, edition, url]);
+}
+
+/** Series whose deadlines are left out. */
+const unconfirmedDeadlines: ReadonlySet<string> = new Set([
+  // The year comes from the address of the page, not from its text.
+  'Society for Neuroscience Annual Meeting (Neuroscience 2027)',
+  // The page gives two dates for one deadline.
+  'Gordon Research Conference: Organic Reactions and Processes',
+]);
+
+function readJson(path: string): unknown[] {
+  const input: unknown = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
+  if (!Array.isArray(input)) throw new Error(path + ': expected an array');
+  return input;
+}
+
+function readDetails(dir: string, allowPartial: boolean) {
+  const path = join(dir, 'details.json');
+  const details = new Map<string, ConferenceDetails>();
+  if (!existsSync(path)) {
+    if (!allowPartial) throw new Error('details.json is missing. Pass --partial to write a snapshot without it.');
+    return details;
   }
-  return deadlines.length ? deadlines.sort((a, b) => a.date.localeCompare(b.date)) : undefined;
+  for (const [index, value] of readJson(path).entries()) {
+    const converted = convertConferenceDetails(value);
+    const key = detailsKey(value);
+    if (converted && !details.has(key)) details.set(key, converted);
+    else console.warn('details.json entry ' + (index + 1) + ': ' + (converted ? 'repeated edition' : 'invalid input'));
+  }
+  return details;
 }
 
 const onlineOnly = /^(?:fully\s+)?(?:online|virtual)(?:\s+(?:event|conference|meeting|only|via\s+.+))?$/i;
@@ -96,12 +135,10 @@ export function convertConferenceEdition(value: unknown, inputField: keyof typeo
   if (!value || typeof value !== 'object') return null;
   const row = value as Record<string, unknown>;
   const { series, acronym, edition, startsOn, endsOn, dateText, city, country, placeText: sourcePlace, online, url, sourceUrl, sourceLicense, checkedOn, notes } = row;
-  const venue = venueOf(row.venue);
-  const deadlines = deadlinesOf(row.deadlines);
   if (row.field !== inputField || !text(series) || !text(edition) || !/\b202[67]\b/.test(edition)
     || !https(url) || !https(sourceUrl) || !iso(checkedOn)
     || ![acronym, dateText, city, country, sourcePlace, notes].every(item => item === null || text(item))
-    || !(typeof online === 'boolean' || online === null) || venue === null || deadlines === null) return null;
+    || !(typeof online === 'boolean' || online === null)) return null;
   if ([url, sourceUrl].some(link => new URL(link).pathname === '/Xplore/guesthome.jsp')) return null;
   if (startsOn !== null && (!iso(startsOn) || startsOn < '2026-12-01' || startsOn > '2027-12-31')) return null;
   if (endsOn !== null && (!iso(endsOn) || !iso(startsOn) || endsOn < startsOn)) return null;
@@ -129,7 +166,7 @@ export function convertConferenceEdition(value: unknown, inputField: keyof typeo
     id,
     name,
     series: series.replace(/ \? /g, ' – '), acronym: text(acronym) ? acronym.trim().replace(/ \? /g, ' – ') : undefined, year: Number(year), field: fields[inputField], url: officialUrl, source,
-    sourceUrl: withoutTracking(sourceUrl), checkedOn, format, venue, deadlines,
+    sourceUrl: withoutTracking(sourceUrl), checkedOn, format,
     dateText: text(dateText) && !dateText.includes('?') ? dateText : undefined,
     placeText: placeText || undefined,
     dates: typeof startsOn === 'string' ? [{ start: startsOn, end: typeof endsOn === 'string' ? endsOn : null }] : [],
@@ -141,6 +178,9 @@ function main() {
   if (!dir) throw new Error('Usage: node scripts/import-conference-editions.ts <data-directory> [--partial]');
   const allowPartial = process.argv.includes('--partial');
   const rows: ConferenceEdition[] = [];
+  const details = readDetails(dir, allowPartial);
+  const launchDetails: Record<string, ConferenceDetails> = {};
+  const joined = new Set<string>();
   const launchIds = new Set(['neurips-2026', 'iclr-2026', 'iclr-2027', 'icml-2026', 'colm-2026']);
   for (const field of Object.keys(fields) as (keyof typeof fields)[]) {
     const filename = field + '.json';
@@ -150,11 +190,16 @@ function main() {
       console.log(field + ': missing');
       continue;
     }
-    const input: unknown = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
-    if (!Array.isArray(input)) throw new Error(filename + ': expected an array');
+    const input = readJson(path);
     let imported = 0;
     for (const [index, value] of input.entries()) {
-      const row = convertConferenceEdition(value, field);
+      const converted = convertConferenceEdition(value, field);
+      const key = detailsKey(value);
+      joined.add(key);
+      const { venue, deadlines } = details.get(key) ?? {};
+      const found = converted && { ...(venue ? { venue } : {}), ...(deadlines && !unconfirmedDeadlines.has(converted.series) ? { deadlines } : {}) };
+      const row = converted && { ...converted, ...found };
+      if (found && launchIds.has(converted.id) && Object.keys(found).length) launchDetails[converted.id] = found;
       const sameId = row && rows.find(edition => edition.id === row.id);
       const sameEdition = row && sameId && sameId.dates[0]?.start === row.dates[0]?.start
         && (slugOf(sameId.series) === slugOf(row.series) || sameId.sourceUrl === row.sourceUrl);
@@ -172,6 +217,7 @@ function main() {
     }
     console.log(field + ': imported ' + imported + ' of ' + input.length);
   }
+  for (const key of details.keys()) if (!joined.has(key)) console.warn('details.json: no edition matches ' + key);
   if (!rows.length) throw new Error('No verified editions to import.');
   const nameCounts = new Map<string, number>();
   for (const row of rows) nameCounts.set(row.name, (nameCounts.get(row.name) ?? 0) + 1);
@@ -179,7 +225,7 @@ function main() {
     ? { ...row, name: row.series + ' (' + row.name + ')' }
     : row);
   writeFileSync(new URL('../src/data/conference-editions.ts', import.meta.url),
-    "import type { ConferenceEdition } from './conferences.ts';\n\nexport const importedEditions: readonly ConferenceEdition[] = [\n"
+    "import type { ConferenceDetails, ConferenceEdition } from './conferences.ts';\n\n/** Details of the editions that conferences.ts writes by hand. */\nexport const launchDetails: Readonly<Record<string, ConferenceDetails>> = " + JSON.stringify(launchDetails) + ";\n\nexport const importedEditions: readonly ConferenceEdition[] = [\n"
     + editions.map(row => '  ' + JSON.stringify(row) + ',\n').join('') + '];\n');
 }
 

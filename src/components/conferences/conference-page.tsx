@@ -4,13 +4,13 @@ import { Button } from '../ui/button.tsx';
 import { buttonVariants } from '../ui/button-variants.ts';
 import PrivacyPopover from '../public/privacy-popover.tsx';
 import ConferenceCover from './conference-cover.tsx';
-import ConferenceFilterBar from './conference-filter-bar.tsx';
+import ConferenceFilterBar, { ClearFilters } from './conference-filter-bar.tsx';
 import { filterConferences, filterLabels, readConferenceFilters } from '../../utils/conference-filters.ts';
 import { downloadConferenceIcs } from '../../utils/conference-ics.ts';
-import { conferenceSubtitle, coverSaysName, formatConferenceDates, formatConferenceMonth, nextDeadline } from '../../utils/conference-text.ts';
+import { conferenceSubtitle, coverSaysName, deadlineSources, deadlineToday, formatConferenceDates, formatConferenceMonth, formatDeadline, nextDeadline, usesCcfDeadlines } from '../../utils/conference-text.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { conferenceEditions, conferenceFields, findConferenceEdition } from '../../data/conferences.ts';
-import type { ConferenceEdition } from '../../data/conferences.ts';
+import type { ConferenceDeadline, ConferenceEdition } from '../../data/conferences.ts';
 import { groupConferences, localCalendarDate } from '../../utils/conference-calendar.ts';
 import './conference-page.css';
 
@@ -18,7 +18,7 @@ import './conference-page.css';
 const formatLabels = { 'in-person': 'In person', online: 'Online', hybrid: 'In person + online' } as const;
 
 function placeOf(edition: ConferenceEdition, city?: string) {
-  return city ?? edition.placeText ?? edition.venue?.name ?? (edition.format === 'online' ? 'Online' : 'Location to be announced');
+  return city ?? edition.placeText ?? edition.venue ?? (edition.format === 'online' ? 'Online' : 'Location to be announced');
 }
 
 function Site({ dates, place }: { dates: string; place: string }) {
@@ -42,9 +42,9 @@ function Sites({ edition }: { edition: ConferenceEdition }) {
   );
 }
 
-function ConferenceCard({ edition, today, search }: { edition: ConferenceEdition; today: string; search: string }) {
+function ConferenceCard({ edition, search }: { edition: ConferenceEdition; search: string }) {
   const subtitle = conferenceSubtitle(edition);
-  const deadline = nextDeadline(edition, today);
+  const deadline = nextDeadline(edition, deadlineToday(new Date()));
   return (
     <li className="conference-card" data-field={edition.field}>
       <ConferenceCover edition={edition} />
@@ -64,13 +64,13 @@ function ConferenceCard({ edition, today, search }: { edition: ConferenceEdition
   );
 }
 
-function EditionGroup({ title, editions, today, search }: { title: string; editions: readonly ConferenceEdition[]; today: string; search: string }) {
+function EditionGroup({ title, editions, search }: { title: string; editions: readonly ConferenceEdition[]; search: string }) {
   if (!editions.length) return null;
   return (
     <section className="conference-group">
       <h2>{title}</h2>
       <ul className="conference-list">
-        {editions.map(edition => <ConferenceCard key={edition.id} edition={edition} today={today} search={search} />)}
+        {editions.map(edition => <ConferenceCard key={edition.id} edition={edition} search={search} />)}
       </ul>
     </section>
   );
@@ -78,7 +78,7 @@ function EditionGroup({ title, editions, today, search }: { title: string; editi
 
 /** The sources whose licence asks for a credit, among the editions shown. */
 function Credits({ editions }: { editions: readonly ConferenceEdition[] }) {
-  const ccf = editions.some(edition => edition.source === 'ccf');
+  const ccf = editions.some(usesCcfDeadlines);
   const databio = editions.some(edition => edition.source === 'databio');
   if (!ccf && !databio) return null;
   return (
@@ -94,9 +94,9 @@ function Calendar() {
   const filters = readConferenceFilters(params);
   const today = localCalendarDate(new Date());
   const editions = filterConferences(conferenceEditions, filters);
-  const { upcoming, undated, past } = groupConferences(editions, today);
+  const { upcoming, undated, past } = groupConferences(editions, today, filters.month);
   const search = params.toString();
-  const list = { today, search };
+  const replace = (next: URLSearchParams) => setParams(next, { replace: true });
   // Naming the filters makes the announcement differ when the count does not.
   const count = `${editions.length} ${editions.length === 1 ? 'conference' : 'conferences'}`;
   return (
@@ -105,15 +105,18 @@ function Calendar() {
         <h1>Conference calendar</h1>
         <p>Explore research conferences by field, date and format.</p>
       </header>
-      <ConferenceFilterBar filters={filters} params={params} onChange={next => setParams(next, { replace: true })} />
-      <p role="status" className="conference-count">
-        {[editions.length ? count : 'No conferences', ...filterLabels(filters)].join(' · ')}
-      </p>
+      <ConferenceFilterBar filters={filters} params={params} onChange={replace} />
+      <div className="conference-state">
+        <p role="status" className="conference-count">
+          {[editions.length ? count : 'No conferences', ...filterLabels(filters)].join(' · ')}
+        </p>
+        <ClearFilters filters={filters} params={params} onChange={replace} />
+      </div>
       {[...upcoming].map(([month, rows]) => (
-        <EditionGroup key={month} title={formatConferenceMonth(month)} editions={rows} {...list} />
+        <EditionGroup key={month} title={formatConferenceMonth(month)} editions={rows} search={search} />
       ))}
-      <EditionGroup title="Dates to be announced" editions={undated} {...list} />
-      <EditionGroup title="Past conferences" editions={past} {...list} />
+      <EditionGroup title="Dates to be announced" editions={undated} search={search} />
+      <EditionGroup title="Past conferences" editions={past} search={search} />
       <Credits editions={conferenceEditions} />
     </>
   );
@@ -142,7 +145,39 @@ function Hero({ edition }: { edition: ConferenceEdition }) {
             </a>
           )}
         </div>
+        {edition.dates.length > 0 && <p className="conference-note">.ics download · No account needed</p>}
       </div>
+    </>
+  );
+}
+
+function DeadlineList({ deadlines }: { deadlines: readonly ConferenceDeadline[] }) {
+  return (
+    <dl className="conference-facts">
+      {deadlines.map(deadline => (
+        <div key={deadline.label + deadline.date}><dt>{deadline.label}</dt><dd><time dateTime={deadline.date}>{formatDeadline(deadline)}</time></dd></div>
+      ))}
+    </dl>
+  );
+}
+
+function Deadlines({ deadlines }: { deadlines: readonly ConferenceDeadline[] }) {
+  const today = deadlineToday(new Date());
+  const open = deadlines.filter(deadline => deadline.date >= today);
+  const passed = deadlines.filter(deadline => deadline.date < today);
+  return (
+    <>
+      <h3>Key deadlines</h3>
+      {open.length > 0 && <DeadlineList deadlines={open} />}
+      {passed.length > 0 && (
+        <details className="conference-passed">
+          <summary>{passed.length === 1 ? '1 passed deadline' : `${passed.length} passed deadlines`}</summary>
+          <DeadlineList deadlines={passed} />
+        </details>
+      )}
+      <p className="conference-source">
+        Deadlines from {deadlineSources(deadlines).map(({ url, name }, index) => <span key={url}>{index > 0 && ', '}<a href={url}>{name}</a></span>)}. Confirm them with the organizer.
+      </p>
     </>
   );
 }
@@ -161,19 +196,10 @@ function Overview({ edition }: { edition: ConferenceEdition }) {
           )) : 'To be announced'}</dd>
         </div>
         {dateText && <div><dt>Dates in the organizer’s words</dt><dd>{dateText}</dd></div>}
-        {venue && <div><dt>Venue</dt><dd>{venue.url ? <a href={venue.url}>{venue.name}</a> : venue.name}</dd></div>}
+        {venue && <div><dt>Venue</dt><dd>{venue}</dd></div>}
         {place && <div><dt>Location</dt><dd>{place}</dd></div>}
       </dl>
-      {deadlines && deadlines.length > 0 && (
-        <>
-          <h3>Key deadlines</h3>
-          <dl className="conference-facts">
-            {deadlines.map(({ label, date }) => (
-              <div key={label + date}><dt>{label}</dt><dd><time dateTime={date}>{formatConferenceDates(date, null)}</time></dd></div>
-            ))}
-          </dl>
-        </>
-      )}
+      {deadlines && <Deadlines deadlines={deadlines} />}
     </>
   );
 }

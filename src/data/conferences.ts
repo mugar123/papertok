@@ -1,4 +1,4 @@
-import { importedEditions } from './conference-editions.ts';
+import { importedEditions, launchDetails } from './conference-editions.ts';
 
 export const conferenceFields = {
   cs: 'Computer science & AI',
@@ -15,8 +15,10 @@ export const conferenceFields = {
 export type ConferenceField = keyof typeof conferenceFields;
 type ConferenceSite = { start: string; end: string | null; city?: string };
 export type ConferenceFormat = 'in-person' | 'online' | 'hybrid';
-export type ConferenceVenue = { name: string; url?: string };
-export type ConferenceDeadline = { label: string; date: string };
+/** `timeText` is the hour as the source writes it, with its zone. */
+export type ConferenceDeadline = { label: string; date: string; timeText?: string; sourceUrl: string };
+/** Facts read apart from an edition's row. Each deadline has its own source. */
+export type ConferenceDetails = { venue?: string; deadlines?: readonly ConferenceDeadline[] };
 
 export type ConferenceEdition = {
   id: string;
@@ -33,12 +35,10 @@ export type ConferenceEdition = {
   placeText?: string;
   /** Absent when the source does not say whether one can join online. */
   format?: ConferenceFormat;
-  venue?: ConferenceVenue;
-  deadlines?: readonly ConferenceDeadline[];
   /** A path on PaperTok's own origin: an organizer's server must not see who opens the page. */
   logo?: `/conference-logos/${string}`;
   source?: 'ccf' | 'databio';
-};
+} & ConferenceDetails;
 
 const launchEditions: readonly ConferenceEdition[] = [
   { id: 'neurips-2026', name: 'NeurIPS 2026', acronym: 'NeurIPS', year: 2026, series: 'Conference on Neural Information Processing Systems', field: 'cs', checkedOn: '2026-11-23', url: 'https://neurips.cc/Conferences/2026', sourceUrl: 'https://neurips.cc/Conferences/2026/Visa', dates: [
@@ -52,7 +52,7 @@ const launchEditions: readonly ConferenceEdition[] = [
   { id: 'colm-2026', name: 'COLM 2026', acronym: 'COLM', year: 2026, series: 'Conference on Language Modeling', field: 'cs', checkedOn: '2026-11-23', url: 'https://colm.cc/Conferences/2026/Dates', dates: [{ start: '2026-10-06', end: '2026-10-09', city: 'San Francisco, United States' }] },
 ];
 
-export const conferenceEditions = [...launchEditions, ...importedEditions];
+export const conferenceEditions: readonly ConferenceEdition[] = [...launchEditions.map(edition => ({ ...edition, ...launchDetails[edition.id] })), ...importedEditions];
 
 export function findConferenceEdition(id: string | undefined) {
   return conferenceEditions.find(edition => edition.id === id);

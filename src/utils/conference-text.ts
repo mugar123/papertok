@@ -1,4 +1,5 @@
-import type { ConferenceEdition } from '../data/conferences.ts';
+import type { ConferenceDeadline, ConferenceEdition } from '../data/conferences.ts';
+import { localCalendarDate } from './conference-calendar.ts';
 
 const dateFormat = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
@@ -36,7 +37,39 @@ export function coverSaysName({ name, acronym, year }: Pick<ConferenceEdition, '
   return name === acronym || name === `${acronym} ${year}`;
 }
 
-/** The first deadline that has not passed. */
+const ccfAddress = 'https://github.com/ccfddl/ccf-deadlines';
+
+/** The sources of a set of deadlines, each once, named by host and, when a host has several, by page. */
+export function deadlineSources(deadlines: readonly ConferenceDeadline[]) {
+  const hostOf = (url: string) => new URL(url).hostname.replace(/^www\./, '');
+  const urls = [...new Set(deadlines.map(deadline => deadline.sourceUrl))];
+  return urls.map((url) => {
+    if (url.startsWith(ccfAddress)) return { url, name: 'CCF Deadlines' };
+    const shared = urls.filter(other => hostOf(other) === hostOf(url)).length > 1;
+    const { pathname, search } = new URL(url);
+    return { url, name: hostOf(url) + (shared ? pathname + search : '') };
+  });
+}
+
+/** Whether a fact the page shows comes from CCF Deadlines, whose licence asks for a credit. */
+export function usesCcfDeadlines({ source, deadlines }: Pick<ConferenceEdition, 'source' | 'deadlines'>) {
+  return source === 'ccf' || Boolean(deadlines?.some(deadline => deadline.sourceUrl.startsWith(ccfAddress)));
+}
+
+/** A deadline's date with the hour and time zone its source gives. */
+export function formatDeadline({ date, timeText }: ConferenceDeadline) {
+  return [formatConferenceDates(date, null), timeText].filter(Boolean).join(' · ');
+}
+
+/**
+ * The date in the last time zone where it ends. A deadline counts as open until
+ * then: most are in AoE, and many give no hour.
+ */
+export function deadlineToday(now: Date) {
+  return localCalendarDate(now, 'Etc/GMT+12');
+}
+
+/** The first deadline that has not passed on a `deadlineToday` date. */
 export function nextDeadline({ deadlines }: Pick<ConferenceEdition, 'deadlines'>, today: string) {
   return deadlines?.find(deadline => deadline.date >= today);
 }
