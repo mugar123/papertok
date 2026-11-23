@@ -46,7 +46,7 @@
   --bar: 1.75rem;
 
   position: relative;
-  height: calc(2rem + max(var(--rows), 2) * var(--bar) + var(--space-1));
+  height: calc(2rem + max(var(--rows, 0), 2) * var(--bar) + var(--space-1));
   padding: 0;
   border-top: 1px solid var(--border-default);
   vertical-align: top;
@@ -86,9 +86,9 @@
 .conference-bar {
   position: absolute;
   z-index: 1;
-  top: calc(2rem + var(--lane) * var(--bar));
+  top: calc(2rem + var(--lane, 0) * var(--bar));
   left: 0;
-  width: calc(var(--span) * 100% + (var(--span) - 1) * 1px);
+  width: calc(var(--span, 1) * 100% + (var(--span, 1) - 1) * 1px);
   padding-inline: 2px;
 }
 
