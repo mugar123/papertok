@@ -139,7 +139,11 @@ export const PRIVACY_POLICY_VERSION = '2026-11-25';
  * It also says that the subscription holds the sign-in name, that a
  * subscription or reminder consent deleted from the Durable Object can stay in
  * Cloudflare's 30-day storage history, and that requests to start the email
- * from the welcome are counted per hashed account for up to three days. The
+ * from the welcome are counted per hashed account for up to three days, and
+ * that those request counts are not deleted with the account. It names the
+ * mark a welcome start leaves in the account's Durable Object for good, and
+ * the entry a late write can leave in Workers KV after an unsubscribe or an
+ * account deletion. The
  * summary keeps every point of the 20 and 21 November versions and leads with
  * the welcome change, so it is longer than before (privacy.test.ts holds its
  * limit). The text ships with the web pull request (#570), which merges after
