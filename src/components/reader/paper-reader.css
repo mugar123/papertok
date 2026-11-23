@@ -114,6 +114,13 @@ button.rd-tag {
   .rd-dock-level:hover { background: var(--bg-secondary); }
 }
 
+/* The document's measure and the scroll's inline padding (.rd-doc, .rd-scroll), for the
+   notes beside it (viewer-notes.css); two classes, to outrank the viewer's own on .pdf-stage. */
+.pdf-stage.rd-stage {
+  --ft-measure: 68ch;
+  --stage-pad: var(--space-6);
+}
+
 .rd-stage {
   position: relative;
   flex: 1;
@@ -124,6 +131,31 @@ button.rd-tag {
 
 @media (max-width: 719px) {
   .rd-stage[data-notes-open] .rd-scroll { visibility: hidden; }
+}
+
+@media (max-width: 767px) {
+  /* As wide as its tools, up to the screen; a second row only for tools that do not fit. */
+  /* Its own width, not the half of the stage its centred root leaves it. */
+  .rd-stage .pdf-dock:not(:has(.rd-listen)) {
+    width: max-content;
+    max-width: calc(100vw - 2 * var(--space-4));
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+/* On a phone the level shows its icon; its name stays in the page, hidden, and the
+   trigger's own name says it ("Level: Researcher"). */
+@media (max-width: 439px) {
+  .rd-dock-level { gap: var(--space-1); padding-inline: var(--space-2); }
+  .rd-dock-level [data-slot="select-value"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* ── Scroll region ── */
@@ -362,6 +394,11 @@ button.rd-tag {
   -webkit-box-decoration-break: clone;
   transition: background-color var(--transition-base), box-shadow var(--transition-base);
 }
+
+/* A note's mark opens the notes at its entry when clicked (paper-reader.tsx); a model's
+   proposal is not a note, and a hidden AI note is not there to click. */
+.rd-doc .rd-mark[data-highlight-id]:not([data-proposed], .rd-mark--pending) { cursor: pointer; }
+.rd-doc[data-ai-marks='hidden'] .rd-mark--ai { cursor: auto; }
 
 /* A user's own highlight is the saturated pen; the model's suggestions are
    softer, so the reader can tell them apart at a glance. */

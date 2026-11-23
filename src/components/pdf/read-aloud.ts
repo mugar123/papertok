@@ -70,7 +70,7 @@ export interface ReadAloudChapter {
  * and start a chapter; a display formula is announced once instead of read;
  * figures, tables, citation marks, notes and references are left out.
  */
-export function fullTextListen(doc: FullText, { withAbstract }: { withAbstract: boolean }) {
+export function fullTextListen(doc: Pick<FullText, 'abstract' | 'body'>, { withAbstract }: { withAbstract: boolean }) {
   const queue: SpokenPassage[] = [];
   const chapters: ReadAloudChapter[] = [];
   let heading: string | null = null;

@@ -94,7 +94,7 @@ export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string
     setStatus(await notes.remove(id) ? 'Highlight deleted' : 'Could not delete. Check your connection and try again.');
   };
 
-  return { ...notes, passages, active, status, origin, failed, pick, pickAt, pickBlock, pickPassage, save, ask, quota, canAsk, dismiss, remove };
+  return { ...notes, passages, active, status, origin, failed, pick, pickAt, pickBlock, pickPassage, pickId: setPicked, save, ask, quota, canAsk, dismiss, remove };
 }
 
 export function useTouchSelection(root: HTMLElement | null) {

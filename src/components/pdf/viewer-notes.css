@@ -32,16 +32,22 @@
   .pdf-stage[data-notes-open] .pdf-dock-root { transition: left 240ms var(--ease-drawer), translate 220ms var(--ease-out-expo), opacity 150ms linear; }
 }
 
-/* On wide screens the article and the notes sit together, centred. */
+/* On wide screens the text and the notes sit together, centred. Each stage names its
+   text's measure (--ft-measure) and the scroll's inline padding (--stage-pad): the
+   viewer's article here, the reader's document in paper-reader.css. The edge is a
+   registered length, computed on the stage, so a measure in `ch` is the text's and
+   not re-read in the notes' own font. */
+@property --notes-edge { syntax: '<length>'; inherits: true; initial-value: 0px; }
+.pdf-stage { --stage-pad: var(--space-16); }
 @media (min-width: 1024px) {
-  .pdf-stage { --notes-edge: max(0px, (100vw - var(--notes-w) - var(--ft-measure) - 2 * var(--space-16)) / 2); }
+  .pdf-stage { --notes-edge: max(0px, (100vw - var(--notes-w) - var(--ft-measure) - 2 * var(--stage-pad)) / 2); }
   .pdf-stage[data-notes-open] { padding-right: calc(var(--notes-w) + var(--notes-edge)); }
-  .pdf-stage[data-notes-open] .ft-scroll { padding-left: calc(var(--space-16) + var(--notes-edge)); }
+  .pdf-stage[data-notes-open] :is(.ft-scroll, .rd-scroll) { padding-left: calc(var(--stage-pad) + var(--notes-edge)); }
   .pdf-stage .vn-side { right: var(--notes-edge); }
 }
 @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
-  .pdf-stage .ft-scroll { transition: padding-left 180ms var(--ease-out); }
-  .pdf-stage[data-notes-open] .ft-scroll { transition: padding-left 240ms var(--ease-drawer); }
+  .pdf-stage :is(.ft-scroll, .rd-scroll) { transition: padding-left 180ms var(--ease-out); }
+  .pdf-stage[data-notes-open] :is(.ft-scroll, .rd-scroll) { transition: padding-left 240ms var(--ease-drawer); }
 }
 
 .vn-side {

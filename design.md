@@ -596,9 +596,11 @@ another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
-new tab. The plain-words reader uses the same dock (`pdf/paper-info.tsx`) with
-Contents, the reading level, Annotations, AI highlights and the original
-paper, and without the card's options, which it has no card to take from. Its
+new tab. Both readers use `pdf/reading-dock.tsx` for Notes, Voice, the audio player and
+the original-paper link. The plain-words reader keeps its reading level and AI
+highlights alongside them. Voice reads the completed explanation at the chosen
+level. When opened from a paper card, it also receives the card's options and
+Zotero action; saved-summary history has no card actions. Its
 notes are the full-text reader's notes panel and its selection opens the same
 highlight editor, whose second way out is Explain this to me.
 

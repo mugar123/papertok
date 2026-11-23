@@ -1,5 +1,5 @@
 /* The passage being read in the paper's text. */
-.ft-scroll [data-speaking] {
+:is(.ft-scroll, .rd-scroll) [data-speaking] {
   border-radius: var(--radius-sm);
   outline: 1.5px dashed var(--accent-secondary);
   outline-offset: var(--space-2);
@@ -7,7 +7,7 @@
 
 /* The word the voice is on: a box under the text that slides from word to word
    along a line and jumps to the next line (`data-jump`) instead of sweeping back. */
-.ft-scroll:has(> .rd-word) { position: relative; isolation: isolate; }
+:is(.ft-scroll, .rd-scroll):has(> .rd-word) { position: relative; isolation: isolate; }
 .rd-word {
   position: absolute;
   top: 0;
@@ -32,7 +32,7 @@
   /* A long chapter title is cut short instead of widening the player. */
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
-  /* As wide as the paper's text (measured while the player is open, pdf-viewer.tsx),
+  /* As wide as the paper's text (measured while the player is open, reading-dock.tsx),
      less the bar's own padding and border around the player. */
   width: calc(var(--ft-text-w, 460px) - 2 * var(--space-1) - 2px);
   max-width: calc(100vw - 2 * var(--space-4) - 10px);

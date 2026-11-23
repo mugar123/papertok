@@ -1,5 +1,5 @@
 import './dom-environment.ts';
-import type { ReactNode } from 'react';
+import type { Context, ReactNode } from 'react';
 import type { Paper } from '../../src/models/paper.ts';
 import type { ReadAloudChapter, ReadAloudTimeline, SpokenPassage } from '../../src/components/pdf/read-aloud.ts';
 import { startAppModules } from './app-modules.ts';
@@ -105,4 +105,20 @@ export async function loadWelcomeShell() {
 export async function loadWelcomeProjectSupport() {
   const { modules: [preferences], close } = await loadModules<[{ WelcomeProjectSupport: Component<object> }]>('/src/components/public/guest-welcome-preferences.tsx');
   return { WelcomeProjectSupport: preferences.WelcomeProjectSupport, close };
+}
+
+
+export async function loadReadingDock() {
+  const { modules: [dock, contexts, firebase], close } = await loadModules<[
+    { ReadingDock: Component<{
+      title: string; paper?: Paper; scroll: HTMLElement | null; contents: null;
+      spoken: { queue: SpokenPassage[]; chapters: ReadAloudChapter[] } | null;
+      canListen: boolean; originalUrl: string;
+      notes: { id: string; open: boolean; count: number; onOpenChange: (open: boolean) => void } | null;
+      children?: ReactNode;
+    }> },
+    Record<'AuthContext' | 'AnalyticsContext', Context<unknown>>,
+    import('./firebase-stub.ts').FirebaseStub,
+  ]>('/src/components/pdf/reading-dock.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');
+  return { ...dock, ...contexts, firebase, close };
 }

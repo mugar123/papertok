@@ -1,11 +1,9 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useEffect, useReducer, useRef } from 'react';
-import type { PassageSelection } from './passage-range.ts';
-import { passageFromRange, passageRange } from './passage-range.ts';
 import { HIGHLIGHT_MIN_QUOTE_LENGTH } from '../../utils/text-highlights.ts';
 
-type Passage = { sectionId: string; quote: string; occurrence?: number };
 type Edge = 'start' | 'end';
+const words = (range: Range) => range.toString().replace(/\s+/g, ' ').trim();
 
 function caretAt(x: number, y: number): { node: Node; offset: number } | null {
   const position = document.caretPositionFromPoint?.(x, y);
@@ -17,17 +15,25 @@ function caretAt(x: number, y: number): { node: Node; offset: number } | null {
 /**
  * Two handles flush with the pending passage's edges: a stem the height of the line, with a
  * dot above the first character and below the last. Dragging one moves that end
- * of the passage, a character at a time, within its paragraph; `onMove` gets each step and
- * `onEnd` the passage it settles on (null when it never moved).
+ * of the passage, a character at a time, within its block (`[data-passage]`); `onMove` gets
+ * each step and `onEnd` the range it settles on (null when it never moved). Ranges in and
+ * out, so the viewer and the reader each turn them into their own passage.
  */
-export function PassageHandles({ root, passage, onMove, onEnd }: {
+export function PassageHandles({ root, range, onMove, onEnd }: {
   root: HTMLElement;
-  passage: Passage;
-  onMove: (passage: PassageSelection) => void;
-  onEnd: (passage: PassageSelection | null) => void;
+  /** Read at each render, so the handles follow the text as it scrolls or reflows. */
+  range: () => Range | null;
+  onMove: (range: Range) => void;
+  onEnd: (range: Range | null) => void;
 }) {
   const [, redraw] = useReducer((n: number) => n + 1, 0);
-  const drag = useRef<{ fixed: readonly [Node, number]; dx: number; dy: number; last: PassageSelection | null } | null>(null);
+  const drag = useRef<{ fixed: readonly [Node, number]; dx: number; dy: number; last: Range | null } | null>(null);
+  // Read once more after the first paint: a passage drawn in the same render as the handles
+  // (the reader's provisional marks) is not in the page until then.
+  useEffect(() => {
+    const frame = requestAnimationFrame(redraw);
+    return () => cancelAnimationFrame(frame);
+  }, []);
   useEffect(() => {
     root.addEventListener('scroll', redraw, { passive: true });
     window.addEventListener('resize', redraw);
@@ -37,11 +43,13 @@ export function PassageHandles({ root, passage, onMove, onEnd }: {
     };
   }, [root]);
 
-  const block = root.querySelector<HTMLElement>(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
-  const range = block && passageRange(block, passage.quote, passage.occurrence);
+  const current = range();
+  const start = current?.startContainer;
+  const block = (start instanceof Element ? start : start?.parentElement)?.closest<HTMLElement>('[data-passage]');
   const stage = root.parentElement;
-  if (!block || !range || !stage) return null;
-  const rects = [...range.getClientRects()].filter(rect => rect.width > 0);
+  // A passage across blocks (the reader's, over paragraphs) has no handle to move within one.
+  if (!current || !block || !stage || !block.contains(current.endContainer)) return null;
+  const rects = [...current.getClientRects()].filter(rect => rect.width > 0);
   if (!rects.length) return null;
   const view = root.getBoundingClientRect();
   const origin = stage.getBoundingClientRect();
@@ -58,7 +66,7 @@ export function PassageHandles({ root, passage, onMove, onEnd }: {
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = points[edge];
     // The other end stays put for the whole drag, even when the dragged end crosses it.
-    const fixed = edge === 'start' ? [range.endContainer, range.endOffset] as const : [range.startContainer, range.startOffset] as const;
+    const fixed = edge === 'start' ? [current.endContainer, current.endOffset] as const : [current.startContainer, current.startOffset] as const;
     drag.current = { fixed, dx: point.x - event.clientX, dy: (point.top + point.bottom) / 2 - event.clientY, last: null };
   };
   const move = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -76,10 +84,10 @@ export function PassageHandles({ root, passage, onMove, onEnd }: {
     next.setEnd(caret.node, caret.offset);
     if (next.comparePoint(fixed[0], fixed[1]) >= 0) next.setEnd(fixed[0], fixed[1]);
     else next.setStart(fixed[0], fixed[1]);
-    const picked = passageFromRange(root, next);
-    if (!picked || picked.quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH || picked.quote === passage.quote) return;
-    state.last = picked;
-    onMove(picked);
+    const quote = words(next);
+    if (quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH || quote === words(current)) return;
+    state.last = next;
+    onMove(next);
   };
   const up = () => {
     const state = drag.current;

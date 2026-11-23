@@ -5,13 +5,10 @@ import { lazy, Suspense, useEffect, useEffectEvent, useImperativeHandle, useMemo
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { useFeed } from '../../context/feed-context.tsx';
-import { ArrowSquareOut, CircleNotch, Highlighter, NotePencil, SpeakerHigh, TextAlignLeft, X } from '@phosphor-icons/react';
-import { toast } from 'sonner';
+import { Highlighter, TextAlignLeft, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
-import { Toggle } from '../ui/toggle.ts';
 import { readShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
-import { saveFile } from '../../utils/save-file.ts';
 import './pdf-viewer.css';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
@@ -20,7 +17,7 @@ import type { FullText } from '../../utils/full-text.ts';
 import FullTextArticle from './full-text-article.tsx';
 import { OutlineList, OutlineRail } from './full-text-outline.tsx';
 import { useOutline } from './use-outline.ts';
-import { PaperDock } from './paper-info.tsx';
+import { ReadingDock } from './reading-dock.tsx';
 import ViewerLoading from './viewer-loading.tsx';
 import { NewTabHint } from './new-tab-hint.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -30,22 +27,16 @@ import { documentVisibility, startViewerTracking, viewerOutcome } from './viewer
 import { NotesSidebar, PassageEditor } from './viewer-notes.tsx';
 import { PassageHandles } from './passage-handles.tsx';
 import type { PassageSelection } from './passage-range.ts';
+import { passageAt, passageFromRange, passageRange } from './passage-range.ts';
+import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
+import UsesCount from '../reader/uses-count.tsx';
 import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-viewer-notes.ts';
-import type { ReadAloudChapter, SpokenPassage } from './read-aloud.ts';
-import { fullTextListen, readAloudStart } from './read-aloud.ts';
-import { useReadAloud } from './use-read-aloud.ts';
-import { useSpokenWord } from './use-spoken-word.ts';
-import { useZoteroAction } from './use-zotero-action.ts';
-import { ZoteroMark } from './zotero-mark.tsx';
-import ReadAloudPlayer from './read-aloud-player.tsx';
-import { ReadAloudError } from '../../services/read-aloud-service.ts';
+import { fullTextListen } from './read-aloud.ts';
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
 const PdfPages = lazy(() => import('./pdf-pages.tsx'));
 const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
-const NO_PASSAGES: SpokenPassage[] = [];
-const NO_CHAPTERS: ReadAloudChapter[] = [];
 
 /**
  * A full-screen Base UI Dialog (ui/dialog.jsx). app.tsx mounts the viewer and
@@ -185,8 +176,6 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const { trackEvent, consent } = useAnalyticsConsent();
   const { user, readingPreferences } = useAuth();
   const uid = user?.uid ?? '';
-  const zotero = useZoteroAction(paper, uid, true);
-  const zoteroName = zotero?.sent ? `${zotero.label} (${zotero.hint.charAt(0).toLowerCase()}${zotero.hint.slice(1)})` : zotero?.label;
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
     void trackEvent(name, params, stillValid);
   });
@@ -230,6 +219,20 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // The passage while its handles are dragged; it becomes the pending one when they are let go.
   const [dragged, setDragged] = useState<PassageSelection | null>(null);
   usePaintedPassages(notesOn ? textScroll : null, notes.passages, dragged ?? notes.pending, notes.active);
+  // A note in the panel goes to its passage and marks it, as in the reader; on a phone the
+  // notes cover the text, so they close to show it.
+  const goToNote = (passage: PassageAnnotation) => {
+    const block = textScroll?.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
+    if (!block) return;
+    if (window.matchMedia('(max-width: 719px)').matches) setNotesOpen(false);
+    block.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+    notes.pickId(passage.id);
+  };
+  // Over a highlight, a click opens the notes at it, so the pointer says so. The marks are
+  // painted ranges, not elements, so the stylesheet cannot reach them.
+  const pointAtHighlight = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.currentTarget.style.cursor = passageAt(event.target, notes.passages, event.clientX, event.clientY) ? 'pointer' : '';
+  };
   // A click on a highlight marks it and opens the notes at its entry. The text narrows as
   // the notes open, so the passage is brought back into view; on a phone the notes cover
   // the text, so focus goes to them rather than staying on text that is now hidden.
@@ -245,107 +248,6 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
 
   // Read aloud: the paper's prose in PaperTok's voice, for a signed-in reader of an English text.
   const spoken = useMemo(() => (fullText ? fullTextListen(fullText, { withAbstract: abstractShown }) : null), [fullText, abstractShown]);
-  const readAloud = useReadAloud(spoken?.queue ?? NO_PASSAGES, spoken?.chapters ?? NO_CHAPTERS, {
-    title: paper.title,
-    onFallback: cause => toast(cause instanceof ReadAloudError && (cause.code === 'AI_QUOTA_EXHAUSTED' || cause.code === 'AI_AUDIO_NOT_STORED')
-      ? 'Parts of this paper have no PaperTok audio yet, so this browser’s voice reads them.'
-      : 'PaperTok’s voice is not available right now, so this browser’s voice reads instead.'),
-    onError: () => toast.error('Reading aloud stopped. This browser could not play the voice.'),
-  });
-  const { paragraph: speaking, reset: resetReadAloud } = readAloud;
-  useSpokenWord({ root: textScroll, queue: spoken?.queue ?? NO_PASSAGES, speaking, timings: readAloud.timings, live: readAloud.live, playing: readAloud.playing, position: readAloud.position });
-  const canListen = Boolean(uid) && showsText && Boolean(spoken?.queue.length) && (!fullText?.lang || /^en\b/i.test(fullText.lang));
-  useEffect(() => () => resetReadAloud(), [spoken, showsText, resetReadAloud]);
-  const readAloudButton = useRef<HTMLButtonElement | null>(null);
-  // The closed dock's outline while the player is open, which it grows out of.
-  const [playerFrom, setPlayerFrom] = useState<{ width: number; height: number } | null>(null);
-  const playerOpen = playerFrom !== null && canListen;
-  // The player is as wide as the text column, which narrows when the notes open (read-aloud-player.css).
-  useEffect(() => {
-    const article = textScroll?.querySelector<HTMLElement>('.ft-article');
-    const stage = textScroll?.closest<HTMLElement>('.pdf-stage');
-    if (!playerOpen || !article || !stage) return undefined;
-    const measure = () => {
-      const style = getComputedStyle(article);
-      stage.style.setProperty('--ft-text-w', `${article.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)}px`);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(article);
-    return () => {
-      observer.disconnect();
-      stage.style.removeProperty('--ft-text-w');
-    };
-  }, [playerOpen, textScroll]);
-  const followsVoice = useRef(true);
-  useEffect(() => {
-    if (!textScroll) return undefined;
-    const controller = new AbortController();
-    const release = () => { followsVoice.current = false; };
-    for (const type of ['wheel', 'touchmove', 'keydown']) textScroll.addEventListener(type, release, { signal: controller.signal, passive: true });
-    return () => controller.abort();
-  }, [textScroll]);
-  const spokenPassage = speaking === null ? null : spoken?.queue[speaking]?.passage ?? null;
-  useEffect(() => {
-    if (!textScroll || !spokenPassage) return undefined;
-    const block = textScroll.querySelector<HTMLElement>(`[data-passage="${CSS.escape(spokenPassage)}"]`);
-    if (!block) return undefined;
-    block.setAttribute('data-speaking', '');
-    if (followsVoice.current) {
-      // Centred in what the top bar and the player leave visible, or from its start when it does not fit.
-      const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const view = textScroll.getBoundingClientRect();
-      const top = Math.max(view.top, textScroll.closest('.pdf-viewer')?.querySelector('.pdf-topbar')?.getBoundingClientRect().bottom ?? view.top);
-      const bottom = Math.min(view.bottom, textScroll.parentElement?.querySelector('.pdf-dock')?.getBoundingClientRect().top ?? view.bottom);
-      const room = bottom - top;
-      const rect = block.getBoundingClientRect();
-      const offset = rect.height < room ? (room - rect.height) / 2 : 16;
-      textScroll.scrollTo({ top: textScroll.scrollTop + rect.top - top - offset, behavior: still ? 'auto' : 'smooth' });
-    }
-    return () => block.removeAttribute('data-speaking');
-  }, [spokenPassage, textScroll]);
-  const savingAudio = useRef(false);
-  const downloadAudio = () => {
-    if (savingAudio.current) return;
-    savingAudio.current = true;
-    readAloud.audioFile()
-      .then(file => saveFile(file, paper.title, 'mp3'), () => toast.error('Could not save the audio.'))
-      .finally(() => { savingAudio.current = false; });
-  };
-  const playPause = () => {
-    if (readAloud.playing) {
-      readAloud.pause();
-      return;
-    }
-    followsVoice.current = true;
-    if (speaking === null) void trackEvent('read_aloud_start', { surface: 'reader' });
-    let visible = null;
-    if (readingPreferences.readAloudFromPosition && textScroll && spoken) {
-      const { top, bottom } = textScroll.getBoundingClientRect();
-      const onScreen = new Set([...textScroll.querySelectorAll<HTMLElement>('[data-passage]')]
-        .filter((block) => {
-          const rect = block.getBoundingClientRect();
-          return rect.bottom > top && rect.top < bottom;
-        })
-        .map(block => block.dataset.passage));
-      const first = spoken.queue.findIndex(item => onScreen.has(item.passage));
-      if (first !== -1) visible = { first, last: spoken.queue.findLastIndex(item => onScreen.has(item.passage)) };
-    }
-    readAloud.play(readAloudStart(speaking, visible));
-  };
-  const openPlayer = () => {
-    const bar = readAloudButton.current?.closest<HTMLElement>('.pdf-dock');
-    if (bar) {
-      const padding = Number.parseFloat(getComputedStyle(bar).paddingLeft) || 0;
-      setPlayerFrom({ width: bar.clientWidth - 2 * padding, height: bar.getBoundingClientRect().height });
-    }
-    if (!readAloud.playing) playPause();
-  };
-  const closePlayer = () => {
-    readAloud.pause();
-    setPlayerFrom(null);
-    requestAnimationFrame(() => readAloudButton.current?.focus());
-  };
 
   return (
     <Dialog
@@ -401,18 +303,17 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             )}
 
             {fullText && showsText && (
-              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
+              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onMouseMove={notesOn && !coarsePointer ? pointAtHighlight : undefined} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
                 const block = event.target as HTMLElement;
                 if (event.key !== 'Enter' || !block.matches('[data-passage]')) return;
                 event.preventDefault();
                 notes.pickBlock(block);
               } : undefined}>
-                <span className="rd-word" aria-hidden="true" hidden />
                 <FullTextArticle doc={fullText} paper={paper} showAbstract={abstractShown} passageHint={notesOn ? 'viewer-passage-hint' : undefined} />
               </div>
             )}
             {fullText && showsText && <OutlineRail {...outline} />}
-            {notesOn && <NotesSidebar id="viewer-notes" open={notesOpen} passages={notes.passages} active={notes.active} withAi thinking={notes.busy === 'asking' ? { at: 0, label: 'Reading the passage…' } : null} onRemove={(id) => { void notes.remove(id); }} onClose={() => setNotesOpen(false)} />}
+            {notesOn && <NotesSidebar id="viewer-notes" open={notesOpen} passages={notes.passages} active={notes.active} withAi thinking={notes.busy === 'asking' ? { at: 0, label: 'Reading the passage…' } : null} onGoTo={goToNote} onRemove={(id) => { void notes.remove(id); }} onClose={() => setNotesOpen(false)} />}
             {notesOn && notes.pending?.anchor && (
               <PassageEditor
                 sheet={coarsePointer}
@@ -427,7 +328,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                 ask={{
                   price: notes.quota?.unlimited ? null
                     : notes.quota?.dailyLimit
-                      ? <><span aria-hidden="true">{`${notes.quota.remainingUses}/${notes.quota.dailyLimit}`}</span><span className="visually-hidden">{`${notes.quota.remainingUses} of ${notes.quota.dailyLimit} AI uses left today`}</span></>
+                      ? <UsesCount left={notes.quota.remainingUses} limit={notes.quota.dailyLimit} />
                       : notes.canAsk ? '1 use' : 'no uses',
                   disabled: !notes.canAsk,
                   title: notes.canAsk ? undefined : 'Today’s AI uses have run out.',
@@ -442,10 +343,15 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {notesOn && !coarsePointer && textScroll && notes.pending && (
               <PassageHandles
                 root={textScroll}
-                passage={dragged ?? notes.pending}
-                onMove={setDragged}
-                onEnd={(passage) => {
+                range={() => {
+                  const shown = dragged ?? notes.pending;
+                  const block = shown && textScroll.querySelector(`[data-passage="${CSS.escape(shown.sectionId)}"]`);
+                  return block && shown ? passageRange(block, shown.quote, shown.occurrence) : null;
+                }}
+                onMove={(range) => setDragged(passageFromRange(textScroll, range))}
+                onEnd={(range) => {
                   setDragged(null);
+                  const passage = range && passageFromRange(textScroll, range);
                   if (passage) notes.pickPassage(passage, notes.origin);
                 }}
               />
@@ -467,69 +373,16 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
 
             {/* The tools are the loaded paper's: none of them shows while it is asked for. */}
             {fullText !== undefined && (
-            <PaperDock
-              scroll={showsText ? textScroll : null}
-              pinned={playerOpen}
-              menu={playerOpen ? undefined : { paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText
+            <ReadingDock
+              title={paper.title} paper={paper} scroll={showsText ? textScroll : null}
+              spoken={spoken} canListen={Boolean(uid) && showsText && Boolean(spoken?.queue.length) && (!fullText?.lang || /^en\b/i.test(fullText.lang))}
+              notes={notesOn ? { id: 'viewer-notes', open: notesOpen, count: notes.passages.length, onOpenChange: setNotesOpen } : null}
+              originalUrl={dockUrl}
+              menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText
                 ? [{ id: 'view', label: 'Show text', hint: 'The paper as text you can annotate and listen to', Icon: TextAlignLeft, onSelect: () => setView('text') }]
                 : [] }}
-              contents={!playerOpen && showsText && outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}
-            >
-                {playerOpen ? (
-                  <ReadAloudPlayer
-                    timeline={readAloud.timeline}
-                    prepared={readAloud.prepared}
-                    position={readAloud.position}
-                    playing={readAloud.playing}
-                    onPlayPause={playPause}
-                    onSeek={readAloud.seek}
-                    onClose={closePlayer}
-                    onDownload={downloadAudio}
-                    openedFrom={playerFrom}
-                  />
-                ) : (
-                <>
-                {notesOn && (
-                  <Toggle className="pdf-dock-toggle pdf-dock-notes" pressed={notesOpen} onPressedChange={setNotesOpen} aria-label="Notes" aria-controls="viewer-notes" title={notesOpen ? 'Hide notes' : 'Show notes'}>
-                    <NotePencil size={18} aria-hidden="true" />
-                    {/* One text run, so the count sits on the label's baseline: two flex
-                        items in different fonts are centred by box, not by baseline. */}
-                    <span>
-                      <span className="pdf-dock-label">Notes</span>
-                      {notes.passages.length > 0 && <span className="pdf-dock-count">{notes.passages.length}</span>}
-                    </span>
-                  </Toggle>
-                )}
-                {canListen && (
-                  <Toggle ref={readAloudButton} className="pdf-dock-toggle" pressed={readAloud.playing} onPressedChange={openPlayer} aria-label="Voice, read the paper aloud" title="Read the paper aloud">
-                    <SpeakerHigh size={18} aria-hidden="true" />
-                    <span className="pdf-dock-label">Voice</span>
-                  </Toggle>
-                )}
-                {zotero && (
-                  <Button
-                    variant="ghost"
-                    className="pdf-dock-toggle pdf-dock-zotero"
-                    onClick={zotero.onSelect}
-                    disabled={zotero.busy}
-                    focusableWhenDisabled
-                    aria-busy={zotero.busy || undefined}
-                    aria-label={zoteroName}
-                    title={zoteroName}
-                    data-sent={zotero.sent ? '' : undefined}
-                  >
-                    {zotero.busy ? <CircleNotch size={18} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ZoteroMark size={18} />}
-                    <span className="pdf-dock-label">Zotero</span>
-                  </Button>
-                )}
-                {dockUrl && (
-                  <Button variant="ghost" size="icon" aria-label={'Open in a new tab'} title={'Open in a new tab'} render={<a href={dockUrl} target="_blank" rel="noopener noreferrer" />}>
-                    <ArrowSquareOut size={18} aria-hidden="true" />
-                  </Button>
-                )}
-                </>
-                )}
-            </PaperDock>
+              contents={showsText && outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}
+            />
             )}
 
             {/* Over the iframe, which takes its place while it loads unseen. */}

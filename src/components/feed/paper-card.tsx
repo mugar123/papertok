@@ -2626,6 +2626,7 @@ const PaperCard = memo(function PaperCard({
           <PaperReader
             key={user?.uid}
             paper={readablePaper}
+            card={{ paper, menu: readerMenu }}
             originRect={readerOrigin}
             closeRef={readerCloseRef}
             onClose={() => setShowReader(false)}
