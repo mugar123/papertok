@@ -2,11 +2,12 @@ import type { Paper, PaperAuthor, PaperFollowMatch } from '../models/paper.ts';
 import { isDigestFollow, type FollowEntity } from '../utils/following.ts';
 type NotificationPaper = Partial<Paper>;
 export interface NotificationPreferences { enabled?: boolean; maxPapers?: number; frequency?: string; language?: string; email?: string; lastSentAt?: string | null; lastTestAt?: string | null }
-interface NotificationSaveOptions { sync?: boolean; interests?: readonly string[] }
+/** `uid` binds the request to the account that asked for it (see `workerRequestUser`). */
+interface NotificationSaveOptions { sync?: boolean; interests?: readonly string[]; uid?: string }
 interface EmailHealth { configured?: boolean; available?: boolean; provider?: string; senderMode?: string; permissionLimited?: boolean; code?: string }
 
 import { auth } from './firebase.ts';
-import { authenticatedWorkerFetch, trustedWorkerUrl } from './worker-api-client.ts';
+import { authenticatedWorkerFetch, trustedWorkerUrl, WorkerApiAuthError } from './worker-api-client.ts';
 import { areaKeyForPaper } from '../utils/area-accent.ts';
 import { getFollowDisplayName } from '../utils/follow-display-name.ts';
 import {
@@ -89,33 +90,52 @@ export function serializeUpdateForNotifications(paper: NotificationPaper = {}) {
   };
 }
 
-async function authenticatedRequest<T extends object>(path: string, options: RequestInit = {}) {
+async function authenticatedRequest<T extends object>(path: string, options: RequestInit = {}, uid?: string) {
   if (!auth.currentUser) throw new EmailNotificationServiceError('EMAIL_AUTH_REQUIRED', 401);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 25_000);
   try {
     const response = await authenticatedWorkerFetch(`${apiBase()}${path}`, {
       ...options,
-      signal: controller.signal,
+      signal: options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
       headers: {
         ...(options.body ? { 'content-type': 'application/json' } : {}),
         ...options.headers,
       },
-    });
+    }, undefined, uid);
     const payload = await response.json().catch(() => ({})) as T & { code?: string };
     if (!response.ok) throw new EmailNotificationServiceError(payload.code || 'EMAIL_UNAVAILABLE', response.status);
     return payload;
   } catch (error) {
     if (error instanceof EmailNotificationServiceError) throw error;
+    if (error instanceof WorkerApiAuthError && error.code === 'WORKER_ACCOUNT_CHANGED') throw new EmailNotificationServiceError('EMAIL_ACCOUNT_CHANGED', 401);
     throw new EmailNotificationServiceError((error as { name?: string } | null)?.name === 'AbortError' ? 'EMAIL_TIMEOUT' : 'EMAIL_UNAVAILABLE');
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
-export async function getEmailNotificationPreferences() {
-  const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences');
+export async function getEmailNotificationPreferences(uid?: string) {
+  const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences', {}, uid);
   return payload.preferences;
+}
+
+interface ReactivationConsent { enabled: boolean; revision: number }
+
+export function getReactivationConsent(uid: string, signal: AbortSignal) {
+  return authenticatedRequest<ReactivationConsent>('/notifications/reactivation', { signal }, uid);
+}
+
+export function saveReactivationConsent(uid: string, enabled: boolean, revision: number | undefined, signal: AbortSignal) {
+  return authenticatedRequest<ReactivationConsent>('/notifications/reactivation', {
+    method: 'PUT',
+    body: JSON.stringify(enabled ? { enabled, revision } : { enabled }),
+    signal,
+  }, uid);
+}
+
+export async function recordDigestVisit(uid: string, revision: number, signal: AbortSignal) {
+  await authenticatedRequest('/notifications/visit', { method: 'POST', body: JSON.stringify({ revision }), signal }, uid);
 }
 
 export async function getEmailNotificationHealth() {
@@ -159,6 +179,20 @@ export function hasDigestFollows(follows: readonly Partial<FollowEntity>[]) {
 
 const isJournalMatch = (match: PaperFollowMatch | string) => typeof match !== 'string' && match.type === 'journal';
 
+/** The follows and preview papers of a request body, as a save and an opt-in both send them. */
+function digestItemsPayload(follows: Partial<FollowEntity>[], previewItems: NotificationPaper[]) {
+  return {
+    follows: follows.filter(isDigestFollow).slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
+    // A paper that matches journals only is not in the digest. Any other
+    // match keeps it, a legacy string match included: the Worker drops that
+    // match (`sanitizeFollow`) and keeps the paper, as before journals.
+    previewItems: previewItems
+      .filter(paper => !paper._followedEntityMatches?.length || !paper._followedEntityMatches.every(isJournalMatch))
+      .slice(0, 20)
+      .map(paper => serializeUpdateForNotifications(paper)),
+  };
+}
+
 /**
  * The body of a preferences save. The digest is weekly for everyone; the
  * frequency is still sent, always as weekly, because this frontend can be live
@@ -182,14 +216,7 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
     // English only: a preference saved as 'es' before the interface went
     // English-only must not keep the emails in Spanish.
     language: 'en',
-    follows: follows.filter(isDigestFollow).slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
-    // A paper that matches journals only is not in the digest. Any other
-    // match keeps it, a legacy string match included: the Worker drops that
-    // match (`sanitizeFollow`) and keeps the paper, as before journals.
-    previewItems: previewItems
-      .filter(paper => !paper._followedEntityMatches?.length || !paper._followedEntityMatches.every(isJournalMatch))
-      .slice(0, 20)
-      .map(paper => serializeUpdateForNotifications(paper)),
+    ...digestItemsPayload(follows, previewItems),
     ...(interests ? { interests: [...new Set(interests)].sort() } : {}),
   };
 }
@@ -198,10 +225,37 @@ export async function saveEmailNotificationPreferences(preferences: Notification
   const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences', {
     method: 'PUT',
     body: JSON.stringify(buildNotificationPreferencesPayload(preferences, follows, previewItems, options)),
-  });
+  }, options.uid);
   return payload.preferences;
 }
 
-export async function sendEmailNotificationTest() {
-  return authenticatedRequest<{ ok: boolean; providerId: string | null; paperCount: number; followCount: number; preferences: Required<NotificationPreferences> }>('/notifications/test', { method: 'POST' });
+export async function sendEmailNotificationTest(uid?: string) {
+  return authenticatedRequest<{ ok: boolean; providerId: string | null; paperCount: number; followCount: number; preferences: Required<NotificationPreferences> }>('/notifications/test', { method: 'POST' }, uid);
+}
+
+export type DigestOptInOutcome = 'created' | 'on' | 'declined';
+
+/**
+ * Hands the Worker a yes to the weekly email given on the welcome screen
+ * (`POST /notifications/opt-in`). `consent` is the version of the welcome's
+ * wording the yes was given under (utils/digest-consent.ts). The Worker starts
+ * the subscription only for an account that has never decided about the email:
+ * `created` when it did, `on` when the email was already on, `declined` when
+ * the reader had turned it off or decided before. A yes given under the
+ * first-follow wording sends the follows and previews as a save does.
+ */
+export async function startEmailDigestOptIn({ consent, interests, follows, previewItems }: {
+  consent: string;
+  interests: readonly string[];
+  follows?: Partial<FollowEntity>[];
+  previewItems?: NotificationPaper[];
+}, uid: string) {
+  return authenticatedRequest<{ outcome: DigestOptInOutcome; preferences: Required<NotificationPreferences> }>('/notifications/opt-in', {
+    method: 'POST',
+    body: JSON.stringify({
+      consent,
+      ...(follows ? digestItemsPayload(follows, previewItems ?? []) : {}),
+      interests: [...new Set(interests)].sort(),
+    }),
+  }, uid);
 }

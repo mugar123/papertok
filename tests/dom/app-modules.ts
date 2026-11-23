@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import type { PropsWithChildren, ReactNode } from 'react';
-import { createServer, createServerModuleRunner } from 'vite';
+import { createServer, createServerModuleRunner, type Plugin } from 'vite';
 import type { FirebaseStub } from './firebase-stub.ts';
 
 /**
@@ -20,7 +20,8 @@ const FIREBASE_STUB = fileURLToPath(new URL('./firebase-stub.ts', import.meta.ur
 const FIRESTORE_STUB = fileURLToPath(new URL('./firestore-stub.ts', import.meta.url)).replaceAll('\\', '/');
 const WORKER_ORIGIN = 'https://api.papertok.app';
 
-export async function startAppModules({ stubFirestore = false } = {}) {
+/** `plugins` lets a loader stand in for one more module the tests cannot run (see `email-notifications-provider.ts`). */
+export async function startAppModules({ plugins = [], stubFirestore = false }: { plugins?: Plugin[]; stubFirestore?: boolean } = {}) {
   const server = await createServer({
     root,
     configFile: false,
@@ -31,6 +32,7 @@ export async function startAppModules({ stubFirestore = false } = {}) {
     envDir: false,
     optimizeDeps: { noDiscovery: true },
     define: { 'import.meta.env.VITE_PAPER_API_BASE_URL': JSON.stringify(WORKER_ORIGIN) },
+    plugins,
     resolve: { alias: [
       { find: /^(?:.*\/)?firebase\.ts$/, replacement: FIREBASE_STUB },
       ...(stubFirestore ? [{ find: /^firebase\/firestore$/, replacement: FIRESTORE_STUB }] : []),

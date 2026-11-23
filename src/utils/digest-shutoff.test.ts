@@ -1,19 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { digestInterestsToSend, digestProfileInterests, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
+import { digestInterestsToSend, digestLeafIds, digestProfileInterests, requestAccountCurrent, digestShutoffDue, digestShutoffNoticeShown, digestSyncAllowed } from './digest-shutoff.ts';
 
+const SERVER = { fromCache: false, hasPendingWrites: false };
 const base = { enabled: true, followsConfirmed: true, interestsConfirmed: true, digestCovered: false, attempted: false };
 
 test('the live profile gives the digest its chosen leaf categories, confirmed only when the server sent them', () => {
-  const fromServer = digestProfileInterests({ preferences: ['cs.LG', 'not-a-category', 'cs.AI', 'cs.LG'] }, false);
+  const fromServer = digestProfileInterests({ preferences: ['cs.LG', 'not-a-category', 'cs.AI', 'cs.LG'] }, SERVER);
   assert.deepEqual(fromServer, { interests: ['cs.AI', 'cs.LG'], confirmed: true });
-  assert.deepEqual(digestProfileInterests({ selectedCategories: ['cs.AI'] }, false).interests, ['cs.AI']);
-  assert.equal(digestProfileInterests({ preferences: ['cs.LG'] }, true).confirmed, false);
+  assert.deepEqual(digestProfileInterests({ selectedCategories: ['cs.AI'] }, SERVER).interests, ['cs.AI']);
+  assert.equal(digestProfileInterests({ preferences: ['cs.LG'] }, { fromCache: true, hasPendingWrites: false }).confirmed, false);
 });
 
 test('a profile the server says holds no categories is a confirmed none', () => {
-  assert.deepEqual(digestProfileInterests(undefined, false), { interests: [], confirmed: true });
-  assert.deepEqual(digestProfileInterests({ preferences: 'cs.LG' }, false), { interests: [], confirmed: true });
+  assert.deepEqual(digestProfileInterests(undefined, SERVER), { interests: [], confirmed: true });
+  assert.deepEqual(digestProfileInterests({ preferences: 'cs.LG' }, SERVER), { interests: [], confirmed: true });
 });
 
 test('only categories from the server\'s copy of the profile are sent to the digest', () => {
@@ -57,4 +58,25 @@ test('the turned-off notice belongs to the account that was shut off, and ends o
   assert.equal(digestShutoffNoticeShown({ ...shown, userId: null }), false);
   assert.equal(digestShutoffNoticeShown({ ...shown, enabled: true }), false);
   assert.equal(digestShutoffNoticeShown({ ...shown, digestCovered: true }), false);
+});
+
+test('a profile snapshot that still holds an unacknowledged write is not the server\'s copy', () => {
+  // The emulator reports fromCache: false with hasPendingWrites: true for a write made a moment ago.
+  assert.equal(digestProfileInterests({ preferences: ['cs.LG'] }, { fromCache: false, hasPendingWrites: true }).confirmed, false);
+  assert.equal(digestProfileInterests({ preferences: ['cs.LG'] }, SERVER).confirmed, true);
+});
+
+test('the welcome hands the digest only the leaf topics of what was chosen, once each and in a fixed order', () => {
+  assert.deepEqual(digestLeafIds(['stat.ML', 'cs', 'cs.LG', 'stat.ML', 7, 'not-a-category']), ['cs.LG', 'stat.ML']);
+  assert.deepEqual(digestLeafIds(undefined), []);
+});
+
+test('an answer is kept only for the account that is both shown and signed in', () => {
+  assert.equal(requestAccountCurrent({ requestUid: 'a', shownUid: 'a', signedInUid: 'a' }), true);
+  // Firebase switched to B before React did: the shown account is still A.
+  assert.equal(requestAccountCurrent({ requestUid: 'a', shownUid: 'a', signedInUid: 'b' }), false);
+  // React moved on to B while A's answer was in flight.
+  assert.equal(requestAccountCurrent({ requestUid: 'a', shownUid: 'b', signedInUid: 'b' }), false);
+  assert.equal(requestAccountCurrent({ requestUid: 'a', shownUid: 'a', signedInUid: null }), false);
+  assert.equal(requestAccountCurrent({ requestUid: null, shownUid: null, signedInUid: null }), false);
 });

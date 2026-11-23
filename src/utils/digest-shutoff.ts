@@ -2,18 +2,24 @@ import { getAllLeafCategories } from '../data/category-taxonomy.ts';
 
 const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
 
-/**
- * The chosen categories a profile snapshot gives the digest: its leaf ids,
- * once each and sorted, read the way the account profile reads them. They are
- * confirmed only when the snapshot is the server's copy, never the device's
- * cache; a server copy with no categories, or no profile, is a confirmed none.
- */
-export function digestProfileInterests(profile: { preferences?: unknown; selectedCategories?: unknown } | undefined, fromCache: boolean) {
-  const chosen = profile?.preferences || profile?.selectedCategories;
-  const interests = Array.isArray(chosen)
+/** The topics the digest gets from a list of chosen categories: its leaf ids, once each and sorted. */
+export function digestLeafIds(chosen: unknown) {
+  return Array.isArray(chosen)
     ? [...new Set(chosen.filter((id): id is string => typeof id === 'string' && LEAF_IDS.has(id)))].sort()
     : [];
-  return { interests, confirmed: !fromCache };
+}
+
+/**
+ * The chosen categories a profile snapshot gives the digest (`digestLeafIds`),
+ * read the way the account profile reads them. They are
+ * confirmed only when the snapshot is the server's copy, never the device's
+ * cache and never one that still holds a write the server has not acknowledged
+ * (Firestore's `fromCache` and `hasPendingWrites`); a server copy with no
+ * categories, or no profile, is a confirmed none.
+ */
+export function digestProfileInterests(profile: { preferences?: unknown; selectedCategories?: unknown } | undefined, snapshot: { fromCache: boolean; hasPendingWrites: boolean }) {
+  const interests = digestLeafIds(profile?.preferences || profile?.selectedCategories);
+  return { interests, confirmed: !snapshot.fromCache && !snapshot.hasPendingWrites };
 }
 
 export interface DigestShutoffState {
@@ -81,4 +87,18 @@ export function digestShutoffNoticeShown({ turnedOffFor, userId, enabled, digest
   digestCovered: boolean;
 }) {
   return userId !== null && turnedOffFor === userId && !enabled && !digestCovered;
+}
+
+/**
+ * Whether an answer still belongs to the account shown and signed in. React
+ * learns of an account change after Firebase does, and analytics identifies the
+ * new account in between: a response for the previous account must be dropped
+ * against both, or it could be reported under the next account's identity.
+ */
+export function requestAccountCurrent({ requestUid, shownUid, signedInUid }: {
+  requestUid: string | null;
+  shownUid: string | null;
+  signedInUid: string | null | undefined;
+}) {
+  return requestUid !== null && requestUid === shownUid && requestUid === signedInUid;
 }

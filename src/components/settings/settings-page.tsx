@@ -650,9 +650,22 @@ function ReadingPage() {
 }
 
 function NotificationsPage() {
-  const { preferences, health, loading } = useEmailNotifications();
+  const { preferences, health, loading, refreshPreferences } = useEmailNotifications();
   const [isOpen, setIsOpen] = useState(false);
   const status = emailStatus(preferences, health, loading);
+
+  // Another tab or device may have turned the email on or off since this tab
+  // read it: read again on arriving here and whenever the tab comes back into
+  // view. A read that fails leaves the last state on screen.
+  useEffect(() => {
+    const keepShown = () => {};
+    refreshPreferences().catch(keepShown);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshPreferences({ background: true }).catch(keepShown);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [refreshPreferences]);
 
   return (
     <>

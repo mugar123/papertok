@@ -559,7 +559,14 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   in at the top, clear of the thumb. An error toast (`toastError` in
   `ui/toast.ts`) stays until it is closed, with a close button; Escape anywhere
   puts it away unless a dialog, menu or field already used the key. Toasts that
-  leave on their own, such as an Undo, are not affected by Escape. The search
+  leave on their own, such as an Undo, are not affected by Escape. A standing
+  notice (`toastStandingNotice`) also stays until the reader closes it, presses
+  Escape or presses its action. It is for a choice the app made for the reader
+  that they may want to undo, such as the weekly email a yes on the welcome
+  started ("Turn off"). An overlay does not end it: it is put away while the
+  overlay is open and comes back once it has left. The app ends it itself when
+  what it says stops being true, as when the server confirms that email is off.
+  The search
   palette and the Follows list say a refused Follow, Unfollow or Undo in their
   own line instead: on a phone they fill the screen, and a toast would cover
   their first row outside their focus trap, where Escape closes them. A

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { animate, cubicBezier, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'framer-motion';
 import { ArrowUpRight, BookOpen, Check, Cursor, FileText, Flask, Folder, GithubLogo, GraduationCap, LockSimple, LockSimpleOpen, Star } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.ts';
+import { WELCOME_DIGEST_CHOICE } from '../../utils/digest-consent.ts';
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
@@ -92,15 +93,15 @@ export function DigestPreview({ still, stamp }: { still: boolean; stamp?: ReactN
 }
 
 // The digest is opt-in: off until the visitor turns it on. A yes travels with
-// the other answers and is saved on the account at onboarding; the
-// subscription itself starts with the account's first follow, because the
-// digest is built from follows (EmailNotificationsContext).
+// the other answers until the account is created, and the subscription starts
+// then, on the topics the visitor chose (EmailNotificationsContext). The text
+// is the version of the promise a yes is stamped with (utils/digest-consent.ts).
 export function WelcomeInboxChoice({ subscribed, onChange }: { subscribed: boolean; onChange: (subscribed: boolean) => void }) {
   return <div className="gw-preferences gw-inbox">
     <label className="gw-digest-optin" data-checked={subscribed ? '' : undefined}>
       <span className="gw-digest-optin-text">
-        <strong id="gw-digest-optin-title">Email me the weekly digest</strong>
-        <span id="gw-digest-optin-desc">Starts with your first follow. Unsubscribe anytime.</span>
+        <strong id="gw-digest-optin-title">{WELCOME_DIGEST_CHOICE.title}</strong>
+        <span id="gw-digest-optin-desc">{WELCOME_DIGEST_CHOICE.description}</span>
       </span>
       <Switch
         className="data-checked:border-[var(--accent-success)] data-checked:bg-[var(--accent-success)]"

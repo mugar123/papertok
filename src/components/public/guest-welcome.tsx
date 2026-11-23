@@ -31,6 +31,7 @@ import { DigestPreview, LibraryPreview, WelcomeReadingChoice, WelcomeInboxChoice
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from './welcome-shell.tsx';
 import PrivacyPopover from './privacy-popover.tsx';
 import Stars from './stars.tsx';
+import { DIGEST_CONSENT_FROM_SIGNUP } from '../../utils/digest-consent.ts';
 import './guest-welcome.css';
 
 // The first thing a visitor sees: a page, not a sheet over a feed they have
@@ -382,7 +383,7 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   const finish = () => {
     if (selected.size === 0) return;
     const areas = normalizeGuestAreas(Array.from(selected));
-    saveGuestInterests({ areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas), readingLevel, emailDigest, institutionEmail, ...interestSettings });
+    saveGuestInterests({ areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas), readingLevel, emailDigest, ...(emailDigest ? { emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP } : {}), institutionEmail, ...interestSettings });
     onSignIn?.();
   };
 

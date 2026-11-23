@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
+import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { CATEGORIES } from '../../data/categories.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -16,6 +17,7 @@ import { LibraryPreview } from '../public/guest-welcome-preferences.tsx';
 import { GUEST_SEED_PER_AREA, guestSeedCategoriesForAreas, guestSeedSizeForAreas, readGuestInterests } from '../../utils/guest-interests.ts';
 import { USER_PREFERENCES_MAX } from '../../utils/account-onboarding.ts';
 import { normalizeInterestSettings } from '../../utils/area-preferences.ts';
+import { digestLeafIds } from '../../utils/digest-shutoff.ts';
 import { Button } from '../ui/button.tsx';
 import { toastError } from '../ui/toast.ts';
 import Petri from './petri.tsx';
@@ -91,6 +93,7 @@ export default function OnboardingFlow() {
   const [saving, setSaving] = useState(Boolean(guestSeed));
   const [profileError, setProfileError] = useState<string | null>(null);
   const { completeOnboarding, onboardingComplete, institution, linkInstitution, signOut } = useAuth();
+  const { startWelcomeDigest } = useEmailNotifications();
   const { language } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -192,7 +195,11 @@ export default function OnboardingFlow() {
     setSaving(true);
     setProfileError(null);
     try {
-      await completeOnboarding(preferences, interestSettings);
+      const { welcomeDigest } = await completeOnboarding(preferences, interestSettings);
+      // A yes to the weekly email given on the welcome starts it now, on the
+      // topics just saved. The provider that sends it sits above the routes,
+      // so leaving this screen does not cancel it.
+      if (welcomeDigest) startWelcomeDigest({ uid: welcomeDigest.uid, interests: digestLeafIds(preferences) });
       void trackEvent('tutorial_complete', { language });
       void markActivation();
       if (guestAnswer?.institutionEmail) void verifyGuestUniversity(guestAnswer.institutionEmail);

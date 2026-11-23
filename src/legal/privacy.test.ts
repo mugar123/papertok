@@ -228,3 +228,65 @@ test('the page lists the notice key among what the browser keeps and what remove
   assert.match(changes, /Once the announcement is shown, your account remembers that version however you close it/);
   assert.doesNotMatch(changes, /Hide for now/);
 });
+
+// worker/email-notifications.ts `startDigestOptIn` and the welcome hand-off in
+// context/email-notifications-context.tsx; `emailDigestOptIn` in context/auth-context.tsx.
+test('the page says a welcome yes starts the weekly email when the account is created, and that a yes under the earlier wording waits in the profile', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /If you say yes to the weekly email on the welcome screen, it starts as soon as you finish creating your account/);
+  assert.match(html, /Your browser sends that yes to PaperTok's server with the subjects you chose and the version of the welcome's wording you saw/);
+  assert.match(html, /If it cannot reach the server, it tries again up to three times over the next few minutes/);
+  assert.match(html, /If you said yes while the welcome said the email would start with your first follow, PaperTok keeps that yes in your account profile in <strong>Google Firestore<\/strong>\. When you first follow an author, topic, institution or project, your browser asks PaperTok's server to start the email, which it does unless you have already turned email updates on or off yourself/);
+  // legacyFlagSettles (utils/digest-opt-in.ts): any answer, or a refusal no retry changes.
+  assert.match(html, /The saved yes is deleted once the email starts, PaperTok finds it cannot start, or you save your email settings yourself/);
+  // No per-account record of the yes is kept in the browser any more.
+  assert.doesNotMatch(html, /which wording of the welcome's weekly email choice you said yes to, or that this yes no longer applies/);
+});
+
+// worker/email-subscription-store.ts: `version`, `cancelledAt` and the cleanup journal outlive the record.
+test('the page says a count of changes to the email subscription stays after unsubscribing, and for 30 days, or at most 60, after account deletion, up top too', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /Unsubscribing deletes the subscription\. So that a yes you gave earlier, or a request still on its way, can never turn the email back on, the Durable Object of your account then keeps, under your account identifier and without your address or preferences, a count of the changes made to your email subscription and the number of the change that last ended it/);
+  assert.match(html, /Until PaperTok confirms it has deleted the subscription's other email records, the object also keeps their identifiers/);
+  assert.match(html, /After you delete your account, the count stays for 30 days and is then deleted, with everything else the object holds; deleting an account that never had the email leaves one for those 30 days too/);
+  const summary = html.match(/<section class="lp-short".*?<\/section>/)?.[0] ?? '';
+  assert.match(summary, /A count of the changes made to your email subscription, without your address, stays for 30 more days, or at most 60 if deleting your other email records keeps failing, and a deleted email subscription can remain in Cloudflare's storage history for up to 30 days \(see Email updates\)/);
+  const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(kept, /The count of the changes made to your email subscription, which holds neither your address nor your preferences, stays for 30 more days, or at most 60 if deleting your other email records keeps failing, and an email subscription or reminder consent deleted from your account's Durable Object can remain in Cloudflare's 30-day storage history/);
+});
+
+// worker/email-subscription-store.ts: `resident` outlives the record. worker/email-notifications.ts: an index
+// put can land after INDEX_WRITE_DEADLINE_MS, and after a later unsubscribe or account purge.
+// worker/account-deletion.ts does not reach RequestQuotaLedger, whose subjects expire on their own.
+test('the page says how long the mark of a welcome start and a late index write stay, what stays in a browser that never signs in, and that the request counts outlive the account', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /If the email was started from the welcome screen, the object also keeps a mark that it was\./);
+  // Nothing on the page says that these stay without a limit.
+  assert.doesNotMatch(html, /The mark stays as well|stays until that link is used|The count stays after you delete your account|also stays, and (a deleted|an) email subscription/);
+  assert.match(html, /leaves one for those 30 days too\. If deleting the subscription's other email records is still failing then, the object waits for it, for at most 30 more days\. The mark is kept and deleted with the count\./);
+  assert.match(html, /In the rare case that Cloudflare's storage answers late while the email is being started, its settings saved or an email sent, an entry with your account identifier and the unsubscribe identifier, without your address, can be written to <strong>Cloudflare Workers KV<\/strong> after you have unsubscribed or deleted your account\. It starts no email\. If the email was started from the welcome screen, the entry the schedule reads is removed at its next run\. The entry of the unsubscribe link expires 120 days after it was written\./);
+  const kept = html.match(/<h2>How long it is kept<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(kept, /The mark that the email was started from the welcome screen is kept and deleted with the count\. An entry that links an unsubscribe identifier to your account identifier, which a late write can leave in Cloudflare Workers KV, expires 120 days after it was written\./);
+  assert.match(html, /In a browser that never signs in, these answers stay until you clear this site's data; a yes older than 24 hours stays with them but is not used\./);
+  assert.match(kept, /The request counts Cloudflare keeps under hashed account identifiers, to limit test emails, requests to start the email and citation lookups, are not deleted with the account either: they expire on their own within three days, or at the end of their week for citation lookups \(see Email updates\)\./);
+});
+
+// wrangler.toml lists EmailSubscriptionStore under new_sqlite_classes: Cloudflare keeps 30 days of
+// point-in-time history for that storage. The record holds `displayName` (worker/email-notifications.ts).
+test('the page says a deleted subscription can stay in Cloudflare\'s storage history for 30 days, that the subscription holds the sign-in name, and that welcome requests are counted', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /Cloudflare keeps a 30-day point-in-time history of the Durable Object's storage\. A subscription deleted from it, with its address, name, subjects and follows, and reminder consent with its address, can therefore remain in that history for up to 30 more days after you unsubscribe, withdraw the consent or delete your account; PaperTok never reads or restores that history/);
+  assert.match(html, /PaperTok stores your email address, the name your sign-in gives \(the email greets you with it\), your sending preferences/);
+  // RequestQuotaLedger is a SQLite-backed Durable Object too (wrangler.toml).
+  assert.match(html, /The same history covers the request counts Cloudflare keeps in Durable Objects under hashed identifiers/);
+  // OPT_IN_ACCOUNT_HOURLY_LIMIT in worker/email-notifications.ts; the ledger keeps a subject for three days.
+  assert.match(html, /To limit test emails, and to allow at most ten requests an hour to start the email from the welcome, Cloudflare counts them under a hashed account identifier that it keeps for up to three days/);
+});
+
+// utils/guest-interests.ts: `emailDigestConsent` travels with a yes, and `WELCOME_DIGEST_YES_MAX_AGE_MS` bounds it.
+test('the page says the browser keeps the welcome answer about the weekly email with its wording version, and that a yes is used only for 24 hours', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  const storage = html.match(/<h2>Storage in your browser<\/h2>.*?<h2>/)?.[0] ?? '';
+  assert.match(storage, /This browser saves your welcome interests, area priorities and feed mix, and your answer about the weekly email with the version of the welcome's wording you saw, until they are saved to a new account, an account with existing interests loads, or you sign out or switch accounts/);
+  assert.match(storage, /A yes to the weekly email is used only for 24 hours after you give it/);
+});

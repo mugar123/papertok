@@ -1,11 +1,19 @@
 type GuestStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown; institutionEmail?: unknown } & InterestSettings;
+type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown; emailDigestConsent?: unknown; institutionEmail?: unknown } & InterestSettings;
 
 import { CATEGORIES } from '../data/categories.ts';
 import { normalizeInterestSettings, type InterestSettings } from './area-preferences.ts';
 import { normalizeReadingPreferences } from './user-settings.ts';
 import { institutionDomainOf } from './institution-domain.ts';
+import { DIGEST_CONSENT_FIRST_FOLLOW, DIGEST_CONSENT_FROM_SIGNUP } from './digest-consent.ts';
+
+/**
+ * How long a yes to the weekly email stays usable in this browser: less than
+ * 24 hours from when it was given. From then on it is not used: whoever creates an account here later may not be the
+ * visitor who answered, and they can turn the email on in Settings.
+ */
+const WELCOME_DIGEST_YES_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * What a visitor told us they care about, before they had an account.
@@ -130,9 +138,12 @@ export function guestSeedCategoriesForAreas(areas: readonly string[], perArea = 
 /**
  * `null` when the welcome has never been answered on this device. Otherwise
  * `{ areas, topics, dismissed, readingLevel?, emailDigest?, institutionEmail? }`: `dismissed`
- * marks an answer with no areas, which seeds nothing.
+ * marks an answer with no areas, which seeds nothing. The yes to the weekly
+ * email and its consent version are read only from an answer saved less than
+ * 24 hours ago (`WELCOME_DIGEST_YES_MAX_AGE_MS`); this is the one place that
+ * decides whether a stored yes still counts.
  */
-export function readGuestInterests(storage?: GuestStorage | null) {
+export function readGuestInterests(storage?: GuestStorage | null, now = Date.now()) {
   const target = getStorage(storage);
   if (!target) return null;
 
@@ -146,13 +157,29 @@ export function readGuestInterests(storage?: GuestStorage | null) {
       ? { readingLevel: parsed.readingLevel } : {};
     // Present only as an explicit yes: email is opt-in, so anything else —
     // an old answer, a no, a malformed value — reads as no.
-    const email = parsed.emailDigest === true ? { emailDigest: true } : {};
+    // The consent version travels only with a yes, and only a version this app
+    // knows: a yes saved under the earlier welcome text has none.
+    const age = typeof parsed.updatedAt === 'number' ? now - parsed.updatedAt : Number.NaN;
+    const yes = parsed.emailDigest === true && age >= 0 && age < WELCOME_DIGEST_YES_MAX_AGE_MS;
+    const email = yes ? { emailDigest: true } : {};
+    const emailConsent = yes && parsed.emailDigestConsent === DIGEST_CONSENT_FROM_SIGNUP
+      ? { emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP } : {};
     const institution = institutionDomainOf(parsed.institutionEmail)
       ? { institutionEmail: String(parsed.institutionEmail).trim().toLowerCase() } : {};
-    return { areas, topics, dismissed, ...reading, ...email, ...institution, ...normalizeInterestSettings(parsed, areas) };
+    return { areas, topics, dismissed, ...reading, ...email, ...emailConsent, ...institution, ...normalizeInterestSettings(parsed, areas) };
   } catch {
     return null;
   }
+}
+
+/**
+ * Which welcome wording a guest answer's yes to the weekly email was given
+ * under: `null` without a yes, the from-sign-up wording for a yes stamped with
+ * it, and the earlier first-follow wording for any other yes.
+ */
+export function guestDigestConsent(answer: { emailDigest?: boolean; emailDigestConsent?: string } | null | undefined) {
+  if (answer?.emailDigest !== true) return null;
+  return answer.emailDigestConsent === DIGEST_CONSENT_FROM_SIGNUP ? DIGEST_CONSENT_FROM_SIGNUP : DIGEST_CONSENT_FIRST_FOLLOW;
 }
 
 /**
@@ -180,6 +207,8 @@ export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | unde
         ...normalizeInterestSettings(Array.isArray(answer) ? null : answer, normalized),
         ...((answer as GuestAnswer | null | undefined)?.readingLevel ? { readingLevel: normalizeReadingPreferences({ aiExplanationLevel: (answer as GuestAnswer).readingLevel }).aiExplanationLevel } : {}),
         ...((answer as GuestAnswer | null | undefined)?.emailDigest === true ? { emailDigest: true } : {}),
+        ...((answer as GuestAnswer | null | undefined)?.emailDigest === true && (answer as GuestAnswer).emailDigestConsent === DIGEST_CONSENT_FROM_SIGNUP
+          ? { emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP } : {}),
         ...(institutionDomainOf((answer as GuestAnswer | null | undefined)?.institutionEmail)
           ? { institutionEmail: String((answer as GuestAnswer).institutionEmail).trim().toLowerCase() } : {}),
         dismissedAt: null,

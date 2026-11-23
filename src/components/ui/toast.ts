@@ -11,6 +11,12 @@ let accountToasts = new Set<string | number>();
 /** Errors and refusal lines waiting for the overlays opened after their action started to leave. */
 let held: Array<{ overlaysAtStart: number; show: () => void }> = [];
 let heldCount = 0;
+/**
+ * The notices still waiting for the reader's answer (`toastStandingNotice`):
+ * `shown` is the id of the toast on screen, or null while an overlay holds it back.
+ */
+const standing = new Map<string, { shown: string | null; show: () => void }>();
+let standingCount = 0;
 
 /** When an action whose error can come late started (`actionStart`). */
 export type ActionStart = { overlays: number; account: number };
@@ -99,6 +105,74 @@ export function toastForAccount(uid: string, title: Parameters<typeof toast>[0],
 }
 
 /**
+ * A notice about what account `uid` holds that waits for the reader's answer:
+ * it stays until they close it or press its action, like an error, and it is
+ * never shown once `uid` is no longer signed in. Unlike an error, an overlay
+ * does not end it. While a dialog, alert dialog, drawer or sheet is open the
+ * notice would sit outside its focus trap, so it is put away, or held back if
+ * it is raised meanwhile, and it comes back once the last overlay has left.
+ * The reader's own close, Escape, its action or an account change end it.
+ * For a choice the app made for the reader and they may want to undo, such as
+ * the weekly email a yes on the welcome started. Returns the way to end it
+ * from the app, for when what it says stops being true: on screen or held
+ * back, it is put away and does not return.
+ */
+export function toastStandingNotice(uid: string, title: string, { description, action }: { description?: string; action: { label: string; onClick: () => void } }): () => void {
+  if (uid !== signedIn) return () => {};
+  standingCount += 1;
+  const key = `standing-notice-${standingCount}`;
+  let showings = 0;
+  const notice = {
+    shown: null as string | null,
+    show: () => {
+      if (uid !== signedIn || !standing.has(key)) return;
+      if (openOverlays() > 0) {
+        held.push({ overlaysAtStart: 0, show: notice.show });
+        return;
+      }
+      showings += 1;
+      const id = `${key}:${showings}`;
+      notice.shown = id;
+      accountToasts.add(toast(title, {
+        id,
+        description,
+        duration: Infinity,
+        closeButton: true,
+        action: {
+          label: action.label,
+          onClick: () => {
+            standing.delete(key);
+            action.onClick();
+          },
+        },
+        // The reader's own close. A showing an overlay put away is no longer
+        // `shown`, so its dismissal does not end the notice.
+        onDismiss: () => {
+          if (notice.shown === id) standing.delete(key);
+        },
+      }));
+    },
+  };
+  standing.set(key, notice);
+  notice.show();
+  return () => {
+    if (!standing.delete(key) || notice.shown === null) return;
+    const id = notice.shown;
+    notice.shown = null;
+    toast.dismiss(id);
+  };
+}
+
+/** Sets the standing notices on screen aside as an overlay opens; they are shown again once no overlay is open. */
+function setStandingNoticesAside() {
+  for (const notice of standing.values()) {
+    if (notice.shown === null) continue;
+    notice.shown = null;
+    held.push({ overlaysAtStart: 0, show: notice.show });
+  }
+}
+
+/**
  * Called with whoever auth says is signed in, `uid` or null, each time it
  * says so. When the account changed, by signing out or in, here or in another
  * tab, the errors of what the account before did are not this reader's, and
@@ -115,6 +189,7 @@ export function forgetAccountToasts(uid: string | null) {
   signedIn = uid;
   account += 1;
   held = [];
+  standing.clear();
   const forAccount = accountToasts;
   accountToasts = new Set();
   for (const shown of toast.getToasts()) {
@@ -140,6 +215,10 @@ function dismissToastsOnEscape(doc: Document, event: Pick<KeyboardEvent, 'key' |
   if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
   const focused = doc.activeElement;
   if (focused !== doc.body && !doc.querySelector('[data-sonner-toaster]')?.contains(focused)) returnFocusFromToasts(doc);
+  // Escape is the reader's own answer to a standing notice on screen.
+  for (const [key, notice] of standing) {
+    if (notice.shown !== null) standing.delete(key);
+  }
   dismissPersistentToasts();
 }
 
@@ -198,6 +277,7 @@ export function trackModalOverlay(portal: HTMLElement | null) {
   if (!portal) return undefined;
   returnFocusFromToasts(portal.ownerDocument);
   overlayPortals.add(portal);
+  setStandingNoticesAside();
   dismissPersistentToasts();
   return () => {
     overlayPortals.delete(portal);

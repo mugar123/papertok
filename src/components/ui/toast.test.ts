@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toast } from 'sonner';
-import { actionStart, forgetAccountToasts, trackModalOverlay, listenForToastEscape, toastError, toastForAccount } from './toast.ts';
+import { actionStart, forgetAccountToasts, trackModalOverlay, listenForToastEscape, toastError, toastForAccount, toastStandingNotice } from './toast.ts';
 
 // Sonner announces the dismissal of one toast on the next frame; Node has no frames.
 globalThis.requestAnimationFrame ??= (callback) => Number(setTimeout(() => callback(0), 0));
@@ -498,4 +498,123 @@ test('once the Toaster stops listening, Escape leaves the toast', () => {
   press('Escape');
   assert.ok(onScreen(id), 'the toast is still on screen');
   toast.dismiss();
+});
+
+/**
+ * A standing notice waits for the reader's answer (`toastStandingNotice`): the
+ * weekly email a yes on the welcome started says so with a "Turn off". An
+ * overlay must not end it, as it ends an error: a new account can be shown
+ * the privacy notice a moment after it, and whoever creates an account on a
+ * shared device was never asked about the email.
+ */
+const EMAIL_ON = 'Your weekly email is on';
+const standingNotice = () => toast.getToasts().find(shown => 'title' in shown && shown.title === EMAIL_ON);
+function raiseEmailNotice() {
+  switchAccount();
+  let pressed = 0;
+  const end = toastStandingNotice(`reader-${readers}`, EMAIL_ON, { description: 'It goes to reader@example.com on Mondays.', action: { label: 'Turn off', onClick: () => { pressed += 1; } } });
+  // Sonner calls the action and then takes the toast away.
+  const press = () => {
+    const shown = standingNotice();
+    assert.ok(shown && 'action' in shown && shown.action && typeof shown.action === 'object' && 'onClick' in shown.action, 'the notice has no action to press');
+    shown.action.onClick({ defaultPrevented: false } as never);
+    toast.dismiss(shown.id);
+  };
+  return { press, pressed: () => pressed, end };
+}
+
+test('a notice that waits for the reader\'s answer stays until closed, and an overlay only puts it away while it is open', () => {
+  raiseEmailNotice();
+  const shown = standingNotice();
+  assert.ok(shown && 'duration' in shown, 'the notice is on screen');
+  assert.deepEqual([shown.duration, shown.closeButton], [Infinity, true]);
+
+  const closeDialog = openOverlay();
+  assert.ok(!standingNotice(), 'the notice sat over the dialog, outside its focus trap');
+  const closeSheet = openOverlay();
+  closeDialog();
+  assert.ok(!standingNotice(), 'the notice came back with an overlay still open');
+  closeSheet();
+  assert.ok(standingNotice(), 'the overlays ended the notice');
+  toast.dismiss();
+});
+
+test('a notice raised while an overlay is open waits for it to leave', () => {
+  const close = openOverlay();
+  raiseEmailNotice();
+  assert.ok(!standingNotice(), 'the notice was drawn over the overlay');
+  close();
+  assert.ok(standingNotice(), 'the notice never appeared');
+  toast.dismiss();
+});
+
+test('pressing the notice\'s action answers it: it runs once and no later overlay brings the notice back', () => {
+  const notice = raiseEmailNotice();
+  notice.press();
+  assert.equal(notice.pressed(), 1);
+  openOverlay()();
+  assert.ok(!standingNotice(), 'the answered notice came back');
+  assert.equal(notice.pressed(), 1);
+});
+
+test('an action pressed after the notice came back from an overlay still answers it', () => {
+  const notice = raiseEmailNotice();
+  openOverlay()();
+  notice.press();
+  assert.equal(notice.pressed(), 1);
+  openOverlay()();
+  assert.ok(!standingNotice());
+});
+
+test('Escape answers a notice on screen, and leaves one an overlay holds back', () => {
+  const { press, stop } = page();
+  raiseEmailNotice();
+  press('Escape');
+  assert.ok(!standingNotice(), 'Escape left the notice on screen');
+  openOverlay()();
+  assert.ok(!standingNotice(), 'the notice came back after Escape');
+
+  raiseEmailNotice();
+  const close = openOverlay();
+  press('Escape');
+  close();
+  assert.ok(standingNotice(), 'an Escape pressed for the overlay ended a notice the reader could not see');
+  stop();
+  toast.dismiss();
+});
+
+test('a notice is never shown to another account, on screen or held back by an overlay', () => {
+  raiseEmailNotice();
+  switchAccount();
+  assert.ok(!standingNotice(), 'the next reader sees the previous reader\'s notice');
+
+  raiseEmailNotice();
+  const close = openOverlay();
+  switchAccount();
+  close();
+  assert.ok(!standingNotice(), 'the notice held back was shown to the next reader');
+
+  const before = `reader-${readers}`;
+  switchAccount();
+  toastStandingNotice(before, EMAIL_ON, { action: { label: 'Turn off', onClick: () => {} } });
+  assert.ok(!standingNotice(), 'a notice for an account no longer signed in was shown');
+});
+
+test('the app can end a notice whose news stopped being true, on screen or held back by an overlay', () => {
+  const onScreenNotice = raiseEmailNotice();
+  onScreenNotice.end();
+  assert.ok(!standingNotice(), 'the ended notice is still on screen');
+  openOverlay()();
+  assert.ok(!standingNotice(), 'the ended notice came back');
+
+  const heldBack = raiseEmailNotice();
+  const close = openOverlay();
+  heldBack.end();
+  close();
+  assert.ok(!standingNotice(), 'a notice ended while an overlay held it back was shown');
+  // Ending it twice, or for an account that never saw it, does nothing.
+  heldBack.end();
+  switchAccount();
+  toastStandingNotice('nobody-signed-in', EMAIL_ON, { action: { label: 'Turn off', onClick: () => {} } })();
+  assert.ok(!standingNotice());
 });

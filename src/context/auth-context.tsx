@@ -2,7 +2,7 @@ import type { Dispatch, PropsWithChildren, SetStateAction } from 'react';
 import type { User } from 'firebase/auth';
 import type { DocumentReference, DocumentSnapshot } from 'firebase/firestore';
 
-export type AppUser = Pick<User, 'uid' | 'displayName' | 'email' | 'photoURL'> & {
+export type AppUser = Pick<User, 'uid' | 'displayName' | 'email' | 'emailVerified' | 'photoURL'> & {
   providerData: Array<Pick<User['providerData'][number], 'providerId'> & Partial<Pick<User['providerData'][number], 'email' | 'displayName'>>>;
   metadata?: Pick<User['metadata'], 'creationTime'>;
 };
@@ -53,7 +53,8 @@ export interface AuthContextValue {
   completeOrcidConnection: (code: string, state: string) => Promise<OrcidConnection>;
   disconnectOrcid: () => Promise<void>;
   signOut: () => Promise<void>;
-  completeOnboarding: (preferences: string[], settings: InterestSettings) => Promise<void>;
+  /** `welcomeDigest` names the account whose yes to the weekly email, given on the welcome, is now to be sent to the server. */
+  completeOnboarding: (preferences: string[], settings: InterestSettings) => Promise<{ welcomeDigest: { uid: string } | null }>;
   settleEmailDigestOptIn: () => Promise<void>;
   updatePreferences: (preferences: string[], settings: InterestSettings) => Promise<void>;
   setUserPreferences: Dispatch<SetStateAction<string[] | null>>;
@@ -109,7 +110,8 @@ import { forgetTranslationLanguage } from '../utils/paper-translation.ts';
 import { forgetAccountToasts } from '../components/ui/toast.ts';
 import { accountLooksOnboarded } from '../utils/account-onboarding.ts';
 import { nextAdded, nextDeselected } from '../utils/interest-memory.ts';
-import { clearGuestInterests, readGuestInterests } from '../utils/guest-interests.ts';
+import { clearGuestInterests, guestDigestConsent, readGuestInterests } from '../utils/guest-interests.ts';
+import { DIGEST_CONSENT_FIRST_FOLLOW, DIGEST_CONSENT_FROM_SIGNUP } from '../utils/digest-consent.ts';
 import { areasForInterests, normalizeInterestSettings, type InterestSettings } from '../utils/area-preferences.ts';
 import { toggleFollowedAuthor } from '../utils/followed-authors.ts';
 
@@ -133,10 +135,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [addedPreferences, setAddedPreferences] = useState<string[]>([]);
   const [followedAuthors, setFollowedAuthors] = useState<string[]>([]);
   const [readingPreferences, setReadingPreferences] = useState<ReadingPreferences>(DEFAULT_READING_PREFERENCES);
-  // A yes to the email digest given in the guest welcome, saved on the
-  // account at onboarding and waiting for the first follow: the digest is
-  // built from follows, so EmailNotificationsContext turns the subscription
-  // on then and settles this flag.
+  // A yes to the email digest given under the earlier welcome text ("Starts
+  // with your first follow"), saved on the account at onboarding and waiting
+  // for that follow: EmailNotificationsContext then asks the server to start
+  // the subscription and settles this flag. A yes given under the text that
+  // promises the email from sign-up never sets it (completeOnboarding).
   const [emailDigestPending, setEmailDigestPending] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   // Which doors this account has (F5). Kept in state rather than read from
@@ -434,8 +437,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const completeOnboarding = useCallback(async (preferences: string[], settings: InterestSettings) => {
     const guestAnswer = readGuestInterests();
     const guestLevel = guestAnswer?.readingLevel;
-    // Only an explicit yes reaches the account.
-    const guestEmailDigest = guestAnswer?.emailDigest === true;
+    // Only an explicit yes, given in the last day, reaches the account.
+    const digestConsent = guestDigestConsent(guestAnswer);
     const guestReading = guestLevel
       ? normalizeReadingPreferences({ ...readingPreferences, aiExplanationLevel: guestLevel })
       : null;
@@ -461,7 +464,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       // and a refusal here (rules that do not know the field yet, a stalled
       // connection) must cost the reader the opt-in, not the account. They can
       // still turn email on in Settings.
-      if (guestEmailDigest) {
+      // That write is only for a yes given under the earlier welcome text,
+      // which waits in the profile for the first follow. A yes given under the
+      // text that promises the email from sign-up is written nowhere: it is
+      // handed back to the caller, who sends it to the server once.
+      if (digestConsent === DIGEST_CONSENT_FIRST_FOLLOW) {
         void settleWithin(
           setDoc(doc(db, 'users', userId), { emailDigestOptIn: true }, { merge: true }),
           PROFILE_NETWORK_TIMEOUT_MS,
@@ -480,6 +487,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setUserPreferences(preferences);
     setInterestSettings(savedSettings);
     setOnboardingComplete(true);
+    return { welcomeDigest: userId && digestConsent === DIGEST_CONSENT_FROM_SIGNUP ? { uid: userId } : null };
   }, [readingPreferences, user?.uid]);
 
   const updatePreferences = useCallback(async (newPreferences: string[], settings: InterestSettings) => {

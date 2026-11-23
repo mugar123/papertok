@@ -6,6 +6,7 @@ import {
   GUEST_SEED_PER_AREA,
   GUEST_SEED_MAX,
   clearGuestInterests,
+  guestDigestConsent,
   guestSeedCategoriesForAreas,
   guestSeedSizeForAreas,
   normalizeGuestAreas,
@@ -14,6 +15,7 @@ import {
   saveGuestInterests,
 } from './guest-interests.ts';
 import { getDomainSourcePlan } from '../services/domain-source-records.ts';
+import { DIGEST_CONSENT_FIRST_FOLLOW, DIGEST_CONSENT_FROM_SIGNUP } from './digest-consent.ts';
 
 function fakeStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
@@ -203,4 +205,86 @@ test('Artificial Intelligence picked alone seeds AI topics that reach the AI sou
   const plan = getDomainSourcePlan(seed);
   assert.ok(plan.huggingFace.includes('cs.AI'));
   assert.ok(plan.openReview.includes('cs.AI'));
+});
+
+// A yes saved under the earlier welcome text ("Starts with your first follow")
+// has no consent version, and keeps that promise when the account is created
+// later: only the from-sign-up text stamps one.
+test('the consent version travels only with a yes given under the from-sign-up welcome text', () => {
+  const storage = fakeStorage();
+  saveGuestInterests({ areas: ['cs'], emailDigest: true, emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP }, storage);
+  assert.equal(readGuestInterests(storage)!.emailDigest, true);
+  assert.equal(readGuestInterests(storage)!.emailDigestConsent, DIGEST_CONSENT_FROM_SIGNUP);
+
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: true, updatedAt: Date.now() }));
+  assert.equal(readGuestInterests(storage)!.emailDigest, true, 'an earlier yes is still a yes');
+  assert.equal('emailDigestConsent' in readGuestInterests(storage)!, false, 'but carries no version');
+
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: true, emailDigestConsent: 'topics-from-signup-99', updatedAt: Date.now() }));
+  assert.equal(readGuestInterests(storage)!.emailDigest, true);
+  assert.equal('emailDigestConsent' in readGuestInterests(storage)!, false, 'an unknown version is no version');
+
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: false, emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP }));
+  assert.equal('emailDigestConsent' in readGuestInterests(storage)!, false, 'a no carries no consent');
+});
+
+test('saving an answer read back from an earlier yes does not stamp the new version on it', () => {
+  const storage = fakeStorage();
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: true, updatedAt: Date.now() }));
+  saveGuestInterests(readGuestInterests(storage), storage);
+  assert.equal(readGuestInterests(storage)!.emailDigest, true);
+  assert.equal('emailDigestConsent' in readGuestInterests(storage)!, false);
+});
+
+// A yes kept in the browser is valid for a day (Pablo, 2026-11-21): whoever
+// creates an account here later may not be the visitor who answered.
+test('a yes to the weekly email is used for less than 24 hours after it was given, and the rest of the answer stays', () => {
+  const HOUR = 60 * 60 * 1000;
+  const givenAt = Date.UTC(2026, 10, 25, 9);
+  const stored = (updatedAt?: unknown) => fakeStorage({
+    [GUEST_INTERESTS_STORAGE_KEY]: JSON.stringify({ areas: ['ai'], topics: ['cs.LG'], emailDigest: true, emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP, ...(updatedAt === undefined ? {} : { updatedAt }) }),
+  });
+  const withYes = { areas: ['ai'], topics: ['cs.LG'], dismissed: false, emailDigest: true, emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP };
+  const withoutYes = { areas: ['ai'], topics: ['cs.LG'], dismissed: false };
+
+  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt), withYes);
+  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt + 24 * HOUR - 1), withYes);
+  // The limit itself is outside: at exactly 24 hours the yes is no longer used.
+  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt + 24 * HOUR), withoutYes, 'a yes exactly a day old was used');
+  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt + 24 * HOUR + 1), withoutYes);
+  // A clock set back, an answer from before answers were dated, a malformed date.
+  assert.deepEqual(readGuestInterests(stored(givenAt), givenAt - 1), withoutYes);
+  assert.deepEqual(readGuestInterests(stored(), givenAt), withoutYes);
+  assert.deepEqual(readGuestInterests(stored('2026-11-25'), givenAt), withoutYes);
+});
+
+test('a yes saved now is read back, dated by the save', () => {
+  const storage = fakeStorage();
+  saveGuestInterests({ areas: ['cs'], emailDigest: true, emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP }, storage);
+  assert.equal(readGuestInterests(storage)!.emailDigest, true);
+  assert.equal('emailDigest' in readGuestInterests(storage, Date.now() + 25 * 60 * 60 * 1000)!, false);
+});
+
+test('a yes names the welcome wording it was given under, and no yes names none', () => {
+  assert.equal(guestDigestConsent({ emailDigest: true, emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP }), DIGEST_CONSENT_FROM_SIGNUP);
+  // Saved under the earlier text, which stamped nothing.
+  assert.equal(guestDigestConsent({ emailDigest: true }), DIGEST_CONSENT_FIRST_FOLLOW);
+  assert.equal(guestDigestConsent({ emailDigest: true, emailDigestConsent: 'topics-from-signup-99' }), DIGEST_CONSENT_FIRST_FOLLOW);
+  assert.equal(guestDigestConsent({}), null);
+  assert.equal(guestDigestConsent({ emailDigestConsent: DIGEST_CONSENT_FROM_SIGNUP }), null);
+  assert.equal(guestDigestConsent(null), null);
+});
+
+test('a browser whose storage cannot even be reached reads as never answered', (t) => {
+  // Safari with site data blocked throws from the `localStorage` getter itself.
+  const hadWindow = 'window' in globalThis;
+  const original = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = Object.defineProperty({}, 'localStorage', { get() { throw new DOMException('The operation is insecure.', 'SecurityError'); } });
+  t.after(() => {
+    if (hadWindow) (globalThis as { window?: unknown }).window = original;
+    else delete (globalThis as { window?: unknown }).window;
+  });
+
+  assert.equal(readGuestInterests(), null);
+  assert.deepEqual(saveGuestInterests({ areas: ['cs'], emailDigest: true }), ['cs']);
 });
