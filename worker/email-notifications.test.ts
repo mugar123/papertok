@@ -7651,45 +7651,56 @@ function optInPost(body: unknown) {
   });
 }
 
-// A KV that has stopped answering one request's index writes: the puts of the
-// reader's schedule key and link index made in the same turn as the first of
-// them wait until `release`, which resolves once they have landed. `held`
-// resolves once they wait. Puts made afterwards, such as those of a later Off
-// or On, go through. With `failLink`, the first link put fails at once instead.
-function heldIndexPuts(kv: ReturnType<typeof createMemoryKv>, { failLink = false } = {}) {
+// A KV that has stopped answering one index write: the next put of the reader's
+// link index, or of their schedule key, waits until `release`, which resolves
+// once it has landed. `held` resolves once it waits. Every other put goes
+// through, those of a later Off or On included.
+type HungIndex = 'link' | 'schedule';
+const HUNG_INDEXES: HungIndex[] = ['link', 'schedule'];
+function heldIndexPut(kv: ReturnType<typeof createMemoryKv>, hung: HungIndex) {
   const put = kv.put.bind(kv);
-  let holding = true;
-  let linkFails = failLink;
-  let waiting: () => void = () => {};
+  let waiting: (() => void) | undefined;
   let open: () => void = () => {};
+  let landing: Promise<void> | undefined;
   const held = new Promise<void>((resolve) => { waiting = resolve; });
   const released = new Promise<void>((resolve) => { open = resolve; });
-  const landings: Array<Promise<void>> = [];
   kv.put = async (key: string, value: string) => {
-    const link = key.startsWith('notification:unsubscribe:');
-    if (link && linkFails) {
-      linkFails = false;
-      throw new Error('KV put failed');
-    }
-    if (!holding || (!link && key !== SYNC_READER_KEY)) return put(key, value);
-    waiting();
-    // Only this turn's puts: the request that made them makes no other.
-    queueMicrotask(() => { holding = false; });
-    const landing = released.then(() => put(key, value));
-    landings.push(landing);
+    const kind: HungIndex | undefined = key.startsWith('notification:unsubscribe:') ? 'link' : key === SYNC_READER_KEY ? 'schedule' : undefined;
+    if (kind !== hung || !waiting) return put(key, value);
+    const announce = waiting;
+    waiting = undefined;
+    announce();
+    landing = released.then(() => put(key, value));
     return landing;
   };
   return {
     held,
     release: async () => {
       open();
-      await Promise.all(landings);
+      await landing;
     },
     restore: () => { kv.put = put; },
   };
 }
 
-// The first put of the reader's schedule key fails, as when KV is briefly down.
+// The first put of one of the reader's indexes fails, as when KV is briefly
+// down; `attempted` lists the keys every put was made for.
+function failingIndexPut(kv: ReturnType<typeof createMemoryKv>, failing: HungIndex) {
+  const put = kv.put.bind(kv);
+  const attempted: string[] = [];
+  let failed = false;
+  kv.put = async (key: string, value: string) => {
+    attempted.push(key);
+    if (!failed && (failing === 'link' ? key.startsWith('notification:unsubscribe:') : key === SYNC_READER_KEY)) {
+      failed = true;
+      throw new Error('KV put failed');
+    }
+    await put(key, value);
+  };
+  return { attempted, restore: () => { kv.put = put; } };
+}
+
+// The first put of the reader's schedule key fails.
 function failingSchedulePut(kv: ReturnType<typeof createMemoryKv>) {
   const put = kv.put.bind(kv);
   let failed = false;
@@ -7869,97 +7880,107 @@ for (const phase of DEPLOY_PHASES) {
     });
   }
 
-  // Round 3 of the outside verifier (ENG-215): KV stops answering the welcome
-  // yes's index writes. Nothing of the reader's waits behind them, so an Off
-  // and a new On in Settings are handled at once, and the puts that land
-  // afterwards replace nothing of the new subscription.
-  test(`${phase}: a switch-off and a new subscribe in Settings are handled while the welcome yes's index writes hang, and the writes that land later change nothing`, async () => {
-    const kv = createMemoryKv();
-    const env = twoPhases(kv)[phase];
-    const { held, release } = heldIndexPuts(kv);
+  // Round 3 of the outside verifier (ENG-215): KV stops answering an index
+  // write of the welcome yes. Nothing of the reader's waits behind it, so an
+  // Off and a new On in Settings are handled at once, and what lands afterwards
+  // replaces nothing of the new subscription.
+  for (const hung of HUNG_INDEXES) {
+    test(`${phase}: a switch-off and a new subscribe in Settings are handled while the welcome yes's ${hung} index write hangs, and what lands later changes nothing`, async () => {
+      const kv = createMemoryKv();
+      const env = twoPhases(kv)[phase];
+      const { held, release } = heldIndexPut(kv, hung);
 
-    const yes = optIn(env);
-    await held;
-    const welcomeToken = (await objectOf(kv)).subscription!.unsubscribeToken;
-    // Both answer while the index writes hang.
-    await switchDigestOff(env);
-    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
-    const saved = await everythingStored(kv);
-    await release();
-    const answer = await yes;
+      const yes = optIn(env);
+      await held;
+      const welcomeToken = (await objectOf(kv)).subscription!.unsubscribeToken;
+      // Both answer while the index write hangs.
+      await switchDigestOff(env);
+      await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+      const saved = await everythingStored(kv);
+      await release();
+      const answer = await yes;
 
-    assert.deepEqual([answer.outcome, answer.preferences.maxPapers], ['on', 10]);
-    const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
-    assert.deepEqual([kept?.enabled, kept?.maxPapers, kept?.follows, kept?.welcomeConsent], [true, 10, [digestFollow()], undefined]);
-    assert.notEqual(kept!.unsubscribeToken, welcomeToken);
-    // The late puts wrote the index the key already held, and a link the opt-in removed again.
-    assert.deepEqual(await everythingStored(kv), saved);
-    assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${kept!.unsubscribeToken}`]);
-    assert.equal((await optIn(env)).outcome, 'on');
-  });
+      assert.deepEqual([answer.outcome, answer.preferences.maxPapers], ['on', 10]);
+      const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
+      assert.deepEqual([kept?.enabled, kept?.maxPapers, kept?.follows, kept?.welcomeConsent], [true, 10, [digestFollow()], undefined]);
+      assert.notEqual(kept!.unsubscribeToken, welcomeToken);
+      // What landed late is the index the key already held, or a link the opt-in removed again.
+      assert.deepEqual(await everythingStored(kv), saved);
+      assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${kept!.unsubscribeToken}`]);
+      assert.equal((await optIn(env)).outcome, 'on');
+    });
 
-  // The hang itself: the puts never answer while the request lives. The route
-  // gives up at its own deadline, far below any platform limit, and whatever
-  // the reader decided meanwhile stands when the puts land after all.
-  for (const later of ['a switch-off', 'a switch-off and a new subscribe'] as const) {
-    test(`${phase}: a welcome yes whose index writes never answer fails at its deadline, ${later} made meanwhile is handled at once, and the writes that land afterwards are harmless`, async (t) => {
+    // The hang itself: the put never answers while the request lives. The route
+    // gives up at its own deadline, far below any platform limit, and whatever
+    // the reader decided meanwhile stands when the put lands after all.
+    for (const later of ['a switch-off', 'a switch-off and a new subscribe'] as const) {
+      test(`${phase}: a welcome yes whose ${hung} index write never answers fails at its deadline, ${later} made meanwhile is handled at once, and the write that lands afterwards is harmless`, async (t) => {
+        t.mock.timers.enable({ apis: ['setTimeout'] });
+        const kv = createMemoryKv();
+        const env = twoPhases(kv)[phase];
+        const { held, release } = heldIndexPut(kv, hung);
+
+        const yes = optIn(env).then(answer => answer, (error: unknown) => error);
+        await held;
+        const welcomeToken = (await objectOf(kv)).subscription!.unsubscribeToken!;
+        const welcomeLink = `notification:unsubscribe:${welcomeToken}`;
+        await switchDigestOff(env);
+        if (later !== 'a switch-off') await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
+        const decided = await everythingStored(kv);
+        assert.equal(Boolean(decided.object.subscription), later !== 'a switch-off');
+
+        t.mock.timers.tick(5_000);
+        assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes), 'the opt-in did not give up at its deadline');
+        assert.deepEqual(await everythingStored(kv), decided);
+
+        // KV answers at last: the abandoned put lands after the reader's later decision.
+        await release();
+
+        assert.deepEqual(await objectOf(kv), decided.object);
+        const reader = await loadSubscriptionWithState(env, SYNC_READER_KEY);
+        assert.deepEqual(
+          [reader?.enabled, reader?.maxPapers, reader?.unsubscribeToken],
+          later === 'a switch-off' ? [undefined, undefined, undefined] : [true, 10, decided.object.subscription!.unsubscribeToken],
+        );
+        // A late link is all that lands of a link that hung: the route wrote
+        // nothing after its deadline. A late schedule index holds no record.
+        assert.equal(kv.values.has(welcomeLink), hung === 'link');
+        assert.equal(
+          kv.values.get(SYNC_READER_KEY),
+          later === 'a switch-off' && hung === 'link' ? undefined : JSON.stringify({ uid: SYNC_READER.uid }),
+        );
+        // The link of the welcome yes cancels nothing, and its index goes when it is used.
+        await postLink(env, welcomeToken);
+        assert.deepEqual(await objectOf(kv), decided.object);
+        assert.equal(kv.values.has(welcomeLink), false, 'the spent link kept its index');
+        assert.equal((await optIn(env)).outcome, later === 'a switch-off' ? 'declined' : 'on');
+      });
+    }
+
+    test(`${phase}: a welcome yes whose ${hung} index write never answers is completed and announced once by its retry, and the abandoned write changes nothing when it lands`, async (t) => {
       t.mock.timers.enable({ apis: ['setTimeout'] });
       const kv = createMemoryKv();
       const env = twoPhases(kv)[phase];
-      const { held, release } = heldIndexPuts(kv);
+      const { held, release, restore } = heldIndexPut(kv, hung);
 
       const yes = optIn(env).then(answer => answer, (error: unknown) => error);
       await held;
-      const welcomeToken = (await objectOf(kv)).subscription!.unsubscribeToken!;
-      await switchDigestOff(env);
-      if (later !== 'a switch-off') await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
-      const decided = await everythingStored(kv);
-      assert.equal(Boolean(decided.object.subscription), later !== 'a switch-off');
+      t.mock.timers.tick(4_999);
+      assert.equal(await Promise.race([yes, Promise.resolve('waiting')]), 'waiting');
+      t.mock.timers.tick(1);
+      assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes));
+      // Never the schedule index without the link.
+      assert.deepEqual([...kv.values.keys()], hung === 'link' ? [] : linkIndexes(kv));
+      assert.equal(kv.values.has(SYNC_READER_KEY), false);
+      restore();
 
-      t.mock.timers.tick(5_000);
-      assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes), 'the opt-in did not give up at its deadline');
-      assert.deepEqual(await everythingStored(kv), decided);
-
-      // KV answers at last: the abandoned puts land after the reader's later decision.
+      assert.deepEqual([(await optIn(env)).outcome, (await optIn(env)).outcome], ['created', 'on']);
+      const started = await everythingStored(kv);
+      assert.equal(kv.values.size, 2);
       await release();
-
-      assert.deepEqual(await objectOf(kv), decided.object);
-      const reader = await loadSubscriptionWithState(env, SYNC_READER_KEY);
-      assert.deepEqual(
-        [reader?.enabled, reader?.maxPapers, reader?.unsubscribeToken],
-        later === 'a switch-off' ? [undefined, undefined, undefined] : [true, 10, decided.object.subscription!.unsubscribeToken],
-      );
-      // The schedule key holds the index and nothing else, and the late link cancels nothing.
-      assert.equal(kv.values.get(SYNC_READER_KEY), JSON.stringify({ uid: SYNC_READER.uid }));
-      assert.equal(kv.values.get(`notification:unsubscribe:${welcomeToken}`), SYNC_READER.uid);
-      await postLink(env, welcomeToken);
-      assert.deepEqual(await objectOf(kv), decided.object);
-      assert.equal(kv.values.has(`notification:unsubscribe:${welcomeToken}`), false, 'the spent link kept its index');
-      assert.equal((await optIn(env)).outcome, later === 'a switch-off' ? 'declined' : 'on');
+      assert.deepEqual(await everythingStored(kv), started);
     });
   }
-
-  test(`${phase}: a welcome yes whose index writes never answer is completed and announced once by its retry, and the abandoned writes change nothing when they land`, async (t) => {
-    t.mock.timers.enable({ apis: ['setTimeout'] });
-    const kv = createMemoryKv();
-    const env = twoPhases(kv)[phase];
-    const { held, release, restore } = heldIndexPuts(kv);
-
-    const yes = optIn(env).then(answer => answer, (error: unknown) => error);
-    await held;
-    t.mock.timers.tick(4_999);
-    assert.equal(await Promise.race([yes, Promise.resolve('waiting')]), 'waiting');
-    t.mock.timers.tick(1);
-    assert.ok(refusedWith('EMAIL_UNAVAILABLE', 503)(await yes));
-    assert.equal(kv.values.size, 0);
-    restore();
-
-    assert.deepEqual([(await optIn(env)).outcome, (await optIn(env)).outcome], ['created', 'on']);
-    const started = await everythingStored(kv);
-    assert.equal(kv.values.size, 2);
-    await release();
-    assert.deepEqual(await everythingStored(kv), started);
-  });
 
   // The same through a sync of a reader the welcome yes subscribed: their record
   // is in the object, so a sync that finds the schedule index missing writes it.
@@ -7968,7 +7989,7 @@ for (const phase of DEPLOY_PHASES) {
     const env = twoPhases(kv)[phase];
     assert.equal((await optIn(env)).outcome, 'created');
     await kv.delete(SYNC_READER_KEY);
-    const { held, release } = heldIndexPuts(kv);
+    const { held, release } = heldIndexPut(kv, 'schedule');
 
     const sync = saveSubscription(preferencesPut({ sync: true, enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG', 'stat.ML'] }), env, SYNC_READER);
     await held;
@@ -8292,49 +8313,67 @@ test('without the quota ledger a welcome opt-in is a retryable 503 and writes no
   assert.equal(kv.values.size, 0);
 });
 
-// Round 2 of the outside verifier (ENG-215): one index put fails while the
-// other is still on its way. The failure is answered at once, and the put that
-// lands after a later Off and On replaces nothing.
+// The security verifier's partial failure (ENG-215): the schedule index landed
+// while the link index failed, so Monday's email went out with an unsubscribe
+// link that answered 400. The link is written first, and the schedule index
+// only once the link is there.
 for (const phase of DEPLOY_PHASES) {
-  test(`${phase}: when one index write of a welcome yes fails while the other hangs, the failure is answered at once, and a later subscription survives the write that lands late`, async () => {
+  test(`${phase}: a welcome yes whose link index write fails never writes the schedule index, so the schedule cannot reach a reader whose link does not work`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
-    const { held, release, restore } = heldIndexPuts(kv, { failLink: true });
+    const { attempted, restore } = failingIndexPut(kv, 'link');
 
     await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
-    await held;
-    await switchDigestOff(env);
-    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
-    const saved = await everythingStored(kv);
-    await release();
+
+    assert.equal(attempted.length, 1, 'a put was made after the link index failed');
+    assert.ok(attempted[0].startsWith('notification:unsubscribe:'));
+    assert.equal(kv.values.size, 0);
+    // The schedule lists keys under this prefix: none, so no email.
+    assert.deepEqual((await kv.list({ prefix: 'notification:subscription:' })).keys, []);
     restore();
 
-    assert.deepEqual(await everythingStored(kv), saved);
-    const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
-    assert.deepEqual([kept?.enabled, kept?.maxPapers, kept?.follows], [true, 10, [digestFollow()]]);
-    assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${kept!.unsubscribeToken}`]);
+    assert.equal((await optIn(env)).outcome, 'created');
+    const token = (await objectOf(kv)).subscription!.unsubscribeToken;
+    assert.deepEqual([...kv.values].sort(), [
+      [SYNC_READER_KEY, JSON.stringify({ uid: SYNC_READER.uid })],
+      [`notification:unsubscribe:${token}`, SYNC_READER.uid],
+    ]);
+    await unsubscribeWithLink(env, token);
+    assert.equal(await loadSubscriptionWithState(env, SYNC_READER_KEY), null);
   });
 
-  test(`${phase}: when one index write of a sync fails while the other hangs, a later subscription survives the write that lands late`, async () => {
+  test(`${phase}: a welcome yes whose schedule index write fails leaves only the link, and the link already works`, async () => {
+    const kv = createMemoryKv();
+    const env = twoPhases(kv)[phase];
+    const { restore } = failingIndexPut(kv, 'schedule');
+
+    await assert.rejects(optIn(env), refusedWith('EMAIL_UNAVAILABLE', 503));
+    restore();
+
+    const token = (await objectOf(kv)).subscription!.unsubscribeToken;
+    assert.deepEqual([...kv.values], [[`notification:unsubscribe:${token}`, SYNC_READER.uid]]);
+    await unsubscribeWithLink(env, token);
+    assert.equal((await objectOf(kv)).subscription, null);
+    assert.equal((await optIn(env)).outcome, 'declined');
+  });
+
+  test(`${phase}: a sync whose link index write fails does not write the schedule index either, and the next sync writes both`, async () => {
     const kv = createMemoryKv();
     const env = twoPhases(kv)[phase];
     assert.equal((await optIn(env)).outcome, 'created');
     // Both indexes are gone, so the sync writes both again.
     await Promise.all([...kv.values.keys()].map(key => kv.delete(key)));
-    const { held, release, restore } = heldIndexPuts(kv, { failLink: true });
+    const { attempted, restore } = failingIndexPut(kv, 'link');
 
     await assert.rejects(saveSubscription(preferencesPut({ sync: true, enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG', 'stat.ML'] }), env, SYNC_READER), /KV put failed/);
-    await held;
-    await switchDigestOff(env);
-    await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
-    const saved = await everythingStored(kv);
-    await release();
+
+    assert.equal(attempted.includes(SYNC_READER_KEY), false, 'the schedule index was written without its link');
+    assert.equal(kv.values.has(SYNC_READER_KEY), false);
     restore();
 
-    assert.deepEqual(await everythingStored(kv), saved);
-    const kept = await loadSubscriptionWithState(env, SYNC_READER_KEY);
-    assert.deepEqual([kept?.enabled, kept?.maxPapers, kept?.follows], [true, 10, [digestFollow()]]);
-    assert.deepEqual(linkIndexes(kv), [`notification:unsubscribe:${kept!.unsubscribeToken}`]);
+    await saveSubscription(preferencesPut({ sync: true, enabled: true, maxPapers: 5, follows: [], previewItems: [], interests: ['cs.LG', 'stat.ML'] }), env, SYNC_READER);
+    const token = (await objectOf(kv)).subscription!.unsubscribeToken;
+    assert.deepEqual([...kv.values.keys()].sort(), [SYNC_READER_KEY, `notification:unsubscribe:${token}`]);
   });
 
   test(`${phase}: a Settings save that keeps the subscription of a welcome yes not yet announced leaves its start for the retry to announce`, async () => {

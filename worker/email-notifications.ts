@@ -1629,8 +1629,10 @@ async function readOptInState(env: WorkerEnv, uid: string) {
  * The record goes into the object in phase 1 as well, like a reader phase 2
  * moved, so KV holds only its two indexes and never a copy with the address.
  *
- * The Worker writes the two indexes, and nothing waits on them but this
- * request: the reader's object is never held while KV answers, so an
+ * The Worker writes the two indexes, the link first and the schedule index
+ * only once the link is there, so a put that fails never leaves a reader the
+ * schedule reaches and whose unsubscribe link does not work. Nothing waits on
+ * them but this request: the reader's object is never held while KV answers, so an
  * unsubscribe reaches it at once however slow KV is. The indexes are not the
  * truth, only pointers the schedule and the unsubscribe link check against the
  * object. A put that lands late, after a failure, after this request gave up
@@ -1677,10 +1679,24 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
   // written: what this request wrote for it is then removed.
   const complete = async (subscription: Subscription, announce: boolean) => {
     const linkKey = `${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`;
+    let expired = false;
     let deadline: ReturnType<typeof setTimeout> | undefined;
+    // The link first, and the schedule index only once the link is there: the
+    // schedule never reaches a reader whose unsubscribe link answers 400. One
+    // deadline covers both puts, and nothing more is written once it has passed.
     const indexed = await Promise.race([
-      Promise.all([store.put(key, JSON.stringify({ uid })), store.put(linkKey, uid)]).then(() => true, () => false),
-      new Promise<false>((resolve) => { deadline = setTimeout(() => resolve(false), INDEX_WRITE_DEADLINE_MS); }),
+      (async () => {
+        await store.put(linkKey, uid);
+        if (expired) return false;
+        await store.put(key, JSON.stringify({ uid }));
+        return true;
+      })().catch(() => false),
+      new Promise<false>((resolve) => {
+        deadline = setTimeout(() => {
+          expired = true;
+          resolve(false);
+        }, INDEX_WRITE_DEADLINE_MS);
+      }),
     ]);
     clearTimeout(deadline);
     // A put that failed, or one still unanswered at the deadline. Retryable:
@@ -1829,10 +1845,11 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   // Otherwise a key that still holds a record, left by a move or a save whose
   // index write failed, becomes the index too, so KV keeps no copy of it.
   const [indexed, owner] = changed ? [null, null] : await Promise.all([inKv ? null : store.get<Subscription>(key, 'json'), store.get(unsubscribeKey)]);
-  await Promise.all([
-    inKv || (indexed && !indexed.unsubscribeToken) ? null : store.put(key, JSON.stringify({ uid: identity.uid })),
-    owner === identity.uid ? null : store.put(unsubscribeKey, identity.uid),
-  ]);
+  // The link first, and the schedule index only once the link is there, so a
+  // put that fails never leaves a reader the schedule reaches and whose
+  // unsubscribe link answers 400.
+  if (owner !== identity.uid) await store.put(unsubscribeKey, identity.uid);
+  if (!inKv && !(indexed && !indexed.unsubscribeToken)) await store.put(key, JSON.stringify({ uid: identity.uid }));
   if (changed && read.selectionChanged) {
     await updateDeliveryState(env, key, subscription, () => ({ heldDigest: null }));
   }
