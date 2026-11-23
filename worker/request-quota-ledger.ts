@@ -24,6 +24,9 @@ export interface QuotaRequest {
   // subject with its own limit, checked and counted in the same transaction
   // as the subject and the day, and given back with them.
   part?: QuotaPart;
+  // A second part, checked, counted and given back like `part`: a reader's
+  // OpenAlex miss names its address's minute as one and its day as the other.
+  secondPart?: QuotaPart;
   // The subjects this request is counted apart from (`reserve`), or whose
   // rest of the day is reported (`peek`). A release or a reading that names
   // the same request ignores it.
@@ -238,6 +241,9 @@ export class RequestQuotaLedger {
     const hasPart = payload?.partKey !== undefined || payload?.partLimit !== undefined;
     const partKey = hasPart ? safeSubjectKey(payload?.partKey) : '';
     const partLimit = hasPart ? positiveInteger(payload?.partLimit) : 0;
+    const hasSecondPart = payload?.secondPartKey !== undefined || payload?.secondPartLimit !== undefined;
+    const secondPartKey = hasSecondPart ? safeSubjectKey(payload?.secondPartKey) : '';
+    const secondPartLimit = hasSecondPart ? positiveInteger(payload?.secondPartLimit) : 0;
     const apartFrom = optionalRest(payload?.apartFrom);
     const pace = optionalPace(payload?.pace);
     if (!LEDGER_ACTIONS.has(action) || !subjectKey || !subjectLimit || !globalLimit || !amount
@@ -247,25 +253,30 @@ export class RequestQuotaLedger {
       || (expiresAt !== undefined && (!Number.isSafeInteger(expiresAt)
         || Number(expiresAt) <= Date.now() || Number(expiresAt) > Date.now() + MAX_EXPLICIT_RETENTION_MS))
       || (action === 'observe' && reportedRemaining === undefined)
-      || (hasPart && (!partKey || !partLimit)) || apartFrom === null) {
+      || (hasPart && (!partKey || !partLimit)) || (hasSecondPart && (!secondPartKey || !secondPartLimit))
+      || apartFrom === null) {
       return json({ code: 'INVALID_REQUEST' }, 400);
     }
 
     const result = await this.state.storage.transaction(async transaction => {
       const subjectStorageKey = `subject:${subjectKey}`;
       const partStorageKey = `subject:${partKey}`;
-      const [subjectValue, globalValue, observedValue, tallyValue, partValue, apartValues, sendsValue] = await Promise.all([
+      const secondPartStorageKey = `subject:${secondPartKey}`;
+      const [subjectValue, globalValue, observedValue, tallyValue, partValue, secondPartValue, apartValues, sendsValue] = await Promise.all([
         transaction.get(subjectStorageKey),
         transaction.get('global'),
         transaction.get('observed'),
         transaction.get('tally'),
         partKey ? transaction.get(partStorageKey) : undefined,
-        Promise.all((apartFrom?.subjectKeys ?? []).map(key => transaction.get(`subject:${key}`))),
+        secondPartKey ? transaction.get(secondPartStorageKey) : undefined,
+        // Read only where the rest is checked or reported.
+        Promise.all(((action === 'reserve' || action === 'peek') && apartFrom ? apartFrom.subjectKeys : []).map(key => transaction.get(`subject:${key}`))),
         pace ? transaction.get(PACE_SENDS_KEY) : undefined,
       ]);
       const subjectUsage = Math.max(0, Number(subjectValue) || 0);
       const globalUsage = Math.max(0, Number(globalValue) || 0);
       const partUsage = Math.max(0, Number(partValue) || 0);
+      const secondPartUsage = Math.max(0, Number(secondPartValue) || 0);
       const rest = Math.max(0, apartValues.reduce<number>((units, value) => units - Math.max(0, Number(value) || 0), globalUsage));
       const observed = storedObservation(observedValue);
       const tally = storedTally(tallyValue);
@@ -310,6 +321,7 @@ export class RequestQuotaLedger {
           transaction.put('global', releasedGlobalUsage),
           tallyName ? transaction.put('tally', tally) : undefined,
           partKey ? transaction.put(partStorageKey, Math.max(0, partUsage - amount)) : undefined,
+          secondPartKey ? transaction.put(secondPartStorageKey, Math.max(0, secondPartUsage - amount)) : undefined,
         ]);
         return {
           released: true,
@@ -333,7 +345,9 @@ export class RequestQuotaLedger {
         ? 'user'
         : partKey && partUsage + amount > partLimit
           ? 'part'
-          : globalAmount > 0 && (globalUsage + globalAmount > limit || !restHasRoom) ? 'global' : '';
+          : secondPartKey && secondPartUsage + amount > secondPartLimit
+            ? 'second-part'
+            : globalAmount > 0 && (globalUsage + globalAmount > limit || !restHasRoom) ? 'global' : '';
       // Only the day's share refusing is tallied: a subject's refusal (for
       // OpenAlex, the minute's ceiling) is a burst rather than a closed tier,
       // and counting it would add a write here exactly when the object is
@@ -373,6 +387,7 @@ export class RequestQuotaLedger {
         transaction.put('global', nextGlobalUsage),
         tallyName ? transaction.put('tally', tally) : undefined,
         partKey ? transaction.put(partStorageKey, partUsage + amount) : undefined,
+        secondPartKey ? transaction.put(secondPartStorageKey, secondPartUsage + amount) : undefined,
         paced ? transaction.put(PACE_SENDS_KEY, sends) : undefined,
       ]);
       return {
@@ -436,6 +451,7 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
   tally,
   remaining,
   part,
+  secondPart,
   apartFrom,
   pace,
 }: QuotaRequest): Promise<QuotaReading> {
@@ -444,6 +460,7 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
   }
   const subjectKey = await sha256(subject);
   const partKey = part ? await sha256(part.subject) : undefined;
+  const secondPartKey = secondPart ? await sha256(secondPart.subject) : undefined;
   const apartKeys = apartFrom && await Promise.all(apartFrom.subjects.map(sha256));
   const id = namespace.idFromName(String(periodKey).slice(0, 160));
   const response = await namespace.get(id, { locationHint: LEDGER_LOCATION_HINT }).fetch(`https://papertok.internal/quota/${action}`, {
@@ -464,6 +481,8 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
       remaining,
       partKey,
       partLimit: part?.limit,
+      secondPartKey,
+      secondPartLimit: secondPart?.limit,
       apartFrom: apartFrom && { percent: apartFrom.percent, subjectKeys: apartKeys },
       pace,
     }),

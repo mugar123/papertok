@@ -4487,7 +4487,8 @@ test('a reading the ledger does not take does not hold the answer it came with',
       get: (name: unknown): Pick<DurableObjectStub, 'fetch'> => ({
         fetch: async (_url, init) => {
           const { action } = JSON.parse(String(init!.body));
-          actions.push(`${action} ${name}`);
+          // The lookups' object is one of the day's sixteen, by caller.
+          actions.push(`${action} ${String(name).replace(/^(openalex-lookups:day:[\d-]+):[a-f0-9]$/, '$1')}`);
           return action === 'observe' ? new Promise<Response>(() => {}) : Response.json({ accepted: true });
         },
       }),
@@ -4503,7 +4504,7 @@ test('a reading the ledger does not take does not hold the answer it came with',
   assert.deepEqual(responses.map(response => response.status), [200, 200, 200]);
   assert.deepEqual(
     actions.sort(),
-    ['observe openalex:day:2026-10-22', 'observe openalex:day:2026-10-22', 'reserve openalex-lookups:caller:2026-10-22T15:00', 'reserve openalex:day:2026-10-22'],
+    ['observe openalex:day:2026-10-22', 'observe openalex:day:2026-10-22', 'reserve openalex-lookups:day:2026-10-22', 'reserve openalex:day:2026-10-22'],
     'one reading per upstream answer, the shared miss counted once',
   );
 });
@@ -4868,6 +4869,66 @@ test("one address's OpenAlex lookups by id stop at its allowance for the minute,
   assert.equal(store.entries.size, 302, 'and writes nothing to the shared store');
 });
 
+// ENG-225, ENG-223: a minute's allowance in every minute is the whole day.
+// With 300 units a minute and no share of the day, one address reserved all
+// the day has outside the harvest's part in 19 minutes.
+test("one address's billed OpenAlex misses stop at its share of the day, while another address is still served", async t => {
+  const start = Date.parse('2026-11-23T10:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: start });
+  const ask = relayFrom(openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, OPENALEX_GLOBAL_DAILY_LIMIT: '10000' }));
+  let asked = 0;
+  const list = (ip: string) => ask(ip, `works?filter=doi:10.1000/${asked += 1}&per-page=1`);
+
+  const upstream = await withCountedUpstream(async () => Response.json({ results: [] }), async () => {
+    let served = 0;
+    for (let minute = 0; minute < 19; minute += 1) {
+      t.mock.timers.setTime(start + minute * 60_000);
+      for (let miss = 0; miss < 300; miss += 1) {
+        if ((await list('192.0.2.1')).status !== 200) break;
+        served += 1;
+      }
+    }
+    assert.equal(served, 1_000, 'a tenth of the day');
+    const refused = await list('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get('retry-after'), '300');
+    assert.equal(refused.headers.get('x-papertok-budget-tier'), 'essential');
+    assert.equal((await list('192.0.2.2')).status, 200, 'the day is still open to everyone else');
+    // Another address of the same IPv6 /64 is the same caller.
+    for (let miss = 0; miss < 4; miss += 1) {
+      t.mock.timers.setTime(start + (20 + miss) * 60_000);
+      for (let each = 0; each < 250; each += 1) assert.equal((await list(`2001:db8:1:2::${each + 1}`)).status, 200);
+    }
+    assert.equal((await list('2001:db8:1:2:ffff::1')).status, 429);
+  });
+  assert.equal(upstream.length, 2_001, 'a refused miss asks OpenAlex nothing');
+});
+
+test("one address's OpenAlex lookups by id stop at its allowance for the day, while another address is still served", async t => {
+  const start = Date.parse('2026-11-23T10:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: start });
+  const ask = relayFrom(openAlexEnv({ REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding }));
+  let asked = 0;
+  const lookup = (ip: string) => ask(ip, `works/W${asked += 1}`);
+
+  const upstream = await withCountedUpstream(async () => Response.json({ id: 'https://openalex.org/W1' }), async () => {
+    for (let minute = 0; minute < 10; minute += 1) {
+      t.mock.timers.setTime(start + minute * 60_000);
+      for (let miss = 0; miss < 300; miss += 1) assert.equal((await lookup('192.0.2.1')).status, 200);
+    }
+    t.mock.timers.setTime(start + 10 * 60_000);
+    const refused = await lookup('192.0.2.1');
+    assert.equal(refused.status, 429);
+    assert.equal(refused.headers.get('retry-after'), '300');
+    assert.equal(refused.headers.get('x-papertok-budget-tier'), 'essential');
+    assert.equal((await lookup('192.0.2.2')).status, 200);
+    // The next UTC day brings a new allowance.
+    t.mock.timers.setTime(Date.parse('2026-11-24T00:00:01Z'));
+    assert.equal((await lookup('192.0.2.1')).status, 200);
+  });
+  assert.equal(upstream.length, 3_002);
+});
+
 test('an OpenAlex lookup by id with no caller address, no secret or no ledger is refused and asks OpenAlex nothing', async () => {
   const ledger = () => inMemoryQuotaLedger().binding;
   const unreachable = {
@@ -4903,6 +4964,24 @@ test("an account route's lookup by id carries no address and is not counted agai
   });
   assert.equal(upstream.length, 1);
   assert.deepEqual(ledger.calls.filter(key => key.startsWith('openalex-lookups:')), []);
+});
+
+// One object for every address's lookups would let a flood of refused ones
+// slow or fail it for every reader, since a lookup stops without its ledger.
+test("the callers' lookups by id are counted in sixteen ledger objects a day, each caller always in its own", async () => {
+  const ledger = inMemoryQuotaLedger();
+  const ask = relayFrom(openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding }));
+  await withCountedUpstream(async () => Response.json({ id: 'https://openalex.org/W1' }), async () => {
+    for (let address = 1; address <= 60; address += 1) {
+      assert.equal((await ask(`192.0.2.${address}`, `works/W${address}`)).status, 200);
+      assert.equal((await ask(`192.0.2.${address}`, `works/W${1_000 + address}`)).status, 200);
+    }
+  });
+  const objects = ledger.calls.filter(key => key.startsWith('openalex-lookups:'));
+  assert.equal(objects.length, 120);
+  for (const key of objects) assert.match(key, /^openalex-lookups:day:\d{4}-\d{2}-\d{2}:[a-f0-9]$/);
+  assert.ok(new Set(objects).size > 8 && new Set(objects).size <= 16, `${new Set(objects).size} objects`);
+  for (let index = 0; index < objects.length; index += 2) assert.equal(objects[index], objects[index + 1], 'one caller, one object');
 });
 
 // ENG-225: the harvest's share was only a ceiling on the harvest. Readers

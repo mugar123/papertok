@@ -41,7 +41,7 @@ export function isCallerQuotaSecretConfigured(secret: string | undefined): secre
 
 /**
  * The caller's ledger subject for one window: an HMAC-SHA-256 of `scope` (a
- * namespace and a UTC minute) and the address Cloudflare reports, an
+ * namespace and a UTC minute or day) and the address Cloudflare reports, an
  * IPv6 one as its /64 prefix (`normalizeCallerAddress`), keyed with
  * `PDF_RATE_LIMIT_SECRET`. The ledger client hashes it again before storing it,
  * so no counter holds the address. Null when the address or the secret is

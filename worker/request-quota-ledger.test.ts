@@ -609,6 +609,34 @@ test('an immediate paced slot is refused once the ledger\'s clock is past its bo
   assert.equal((await reserve('b'.repeat(64), 5_600)).sendAt, 5_600);
 });
 
+// ENG-225: a reader's OpenAlex miss counts against its address's minute and
+// its address's day, beside the shared minute and day, in one transaction.
+test('a reservation naming a second part stops at it, spends nothing when refused, and gives it back on release', async () => {
+  const { read, call, harness } = dayLedger();
+  const minute = { partKey: 'a'.repeat(64), partLimit: 5 };
+  const day = { secondPartKey: 'b'.repeat(64), secondPartLimit: 7 };
+
+  assert.equal((await read({ action: 'reserve', amount: 5, ...minute, ...day })).accepted, true);
+  // The next minute's part is new; the day's is not.
+  const nextMinute = { partKey: 'c'.repeat(64), partLimit: 5 };
+  const before = new Map(harness.values);
+  const refused = await read({ action: 'reserve', amount: 3, ...nextMinute, ...day });
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'second-part');
+  assert.deepEqual(new Map(harness.values), before, 'a refused second part spends nothing');
+  assert.equal((await read({ action: 'reserve', amount: 2, ...nextMinute, ...day })).accepted, true);
+  assert.equal(harness.values.get(`subject:${'b'.repeat(64)}`), 7);
+  assert.equal(harness.values.get('global'), 7);
+
+  await read({ action: 'release', amount: 2, ...nextMinute, ...day });
+  assert.equal(harness.values.get(`subject:${'b'.repeat(64)}`), 5);
+  assert.equal(harness.values.get(`subject:${'c'.repeat(64)}`), 0);
+
+  for (const body of [{ secondPartKey: 'f'.repeat(64) }, { secondPartLimit: 7 }, { secondPartKey: 'not a hash', secondPartLimit: 7 }]) {
+    assert.equal((await call({ action: 'reserve', ...body })).status, 400, JSON.stringify(body));
+  }
+});
+
 // ENG-225: the paper harvest's shares of the OpenAlex day were ceilings on
 // the harvest only, so every other spender could take the day before the
 // harvest ran. The others are counted apart from the harvest's subjects.
@@ -634,6 +662,10 @@ test('a reservation counted apart from some subjects stops at its percent of the
   assert.equal((await read({ action: 'peek' })).rest, undefined);
   assert.equal((await read({ action: 'reserve', amount: 1, apartFrom })).accepted, false);
   assert.equal(harness.values.get('global'), 90);
+
+  // A reading that names the same request is filed as any other.
+  assert.equal(typeof (await read({ action: 'observe', remaining: 5, apartFrom })).observed?.ceiling, 'number');
+  await read({ action: 'observe', remaining: 100, apartFrom });
 
   // A release naming the same request gives its units back to the rest.
   assert.equal((await read({ action: 'release', amount: 5, apartFrom })).released, true);
@@ -676,13 +708,17 @@ test('the quota client sends the subjects a request is counted apart from as has
 
   await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
     periodKey: 'openalex:day:2026-11-22', subject: 'openalex:minute:2026-11-22T10:00', subjectLimit: 3_000, globalLimit: 10_000,
+    secondPart: { subject: 'caller-day', limit: 1_000 },
     apartFrom: { percent: 55, subjects: ['openalex:harvest', 'openalex:harvest:new-follows'] },
   });
+
+  assert.match(String(body.secondPartKey), /^[a-f0-9]{64}$/);
+  assert.equal(body.secondPartLimit, 1_000);
 
   const apartFrom = body.apartFrom as { percent: number; subjectKeys: string[] };
   assert.equal(apartFrom.percent, 55);
   assert.equal(apartFrom.subjectKeys.length, 2);
   for (const key of apartFrom.subjectKeys) assert.match(key, /^[a-f0-9]{64}$/);
   assert.notEqual(apartFrom.subjectKeys[0], apartFrom.subjectKeys[1]);
-  assert.doesNotMatch(JSON.stringify(body), /harvest/, 'no subject leaves the client unhashed');
+  assert.doesNotMatch(JSON.stringify(body), /harvest|caller-day/, 'no subject leaves the client unhashed');
 });

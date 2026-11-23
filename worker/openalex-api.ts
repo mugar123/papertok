@@ -4,7 +4,7 @@ import type { OpenAlexBudget, OpenAlexTier, UpstreamError } from './provider-run
 export type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 
 import { sha256 } from './ai-explanation.ts';
-import { callerSubject, reserveCallerMinute } from './caller-quota.ts';
+import { callerSubject } from './caller-quota.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import {
   boundedText,
@@ -19,6 +19,7 @@ import {
   serveCached,
   SOURCE_UPSTREAM_TIMEOUT_MS,
 } from './provider-runtime.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
 // A work OpenAlex has not indexed is an answer. The author lookup in
@@ -44,15 +45,29 @@ const OPENALEX_SHARED_PREFIX = 'openalex:v1:';
 // spend the minute for every other reader. Thirty searches, or 300 card
 // batches; people behind one NAT share it.
 const OPENALEX_CALLER_MINUTE_UNITS = 300;
+// And in a UTC day: a tenth of the day's cap (OPENALEX_GLOBAL_DAILY_LIMIT,
+// 10,000). With the minute alone, one address reserved everything the day
+// has outside the harvest's part in 19 minutes of one-unit lists, and search,
+// enrichment, author pages and share pages had no OpenAlex until midnight
+// (ENG-225). About 45 searches from the palette (22 units each: papers,
+// authors, institutions, topics) or 1,000 card batches; an active reader's
+// day, counted from what the web sends, is about 180 units (five such
+// searches, five Explorer pages, a refresh of ten follows). People behind one
+// NAT share it, and a spent share still gets every stored answer, lookups by
+// id and the feed, which the store serves. Pablo authorized the day-long
+// identifier this needs on 2026-11-23 (privacy.html).
+const OPENALEX_CALLER_DAILY_UNITS = 1_000;
 // Lookups by id cost no unit, so they had no allowance at all: each miss is
 // still a call on PaperTok's key, a KV write and a reading filed with the
 // day's ledger, without limit for anyone asking for random ids (ENG-223). One
-// address's misses are now counted by the minute. The web's worst minute is
-// about 60 (a sweep over a long byline's author cards, one lookup per author;
-// citations opened in the reader): five times that, for the people who share
-// an address. A miss only: an answer at the edge or in the shared store is
-// served before anything is counted.
+// address's misses are now counted by the minute and by the day. The web's
+// worst minute is about 60 (a sweep over a long byline's author cards, one
+// lookup per author; citations opened in the reader), and a heavy session's
+// total is 30 to 60: five times that minute, and 50 such sessions a day for
+// the people who share an address. A miss only: an answer at the edge or in
+// the shared store is served before anything is counted.
 const OPENALEX_CALLER_MINUTE_LOOKUPS = 300;
+const OPENALEX_CALLER_DAILY_LOOKUPS = 3_000;
 // OpenAlex bills per call against a daily budget, so the browser can no longer
 // hold the credential. These are the entities and parameters the app actually
 // asks for; the URL is rebuilt from them rather than forwarded.
@@ -335,20 +350,44 @@ async function refused(response: Response): Promise<RelayedAnswer> {
   return { status: response.status, body: await response.text(), headers: response.headers, budgetRefusal: true };
 }
 
+// The caller's ledger subjects for the minute and the day of `now`, under a
+// namespace, or null without a caller address or the secret.
+async function callerWindows(request: Request, env: WorkerEnv, namespace: string, now: string) {
+  const [minute, day] = await Promise.all([
+    callerSubject(request, env, `${namespace}:${now.slice(0, 16)}`),
+    callerSubject(request, env, `${namespace}:${now.slice(0, 10)}`),
+  ]);
+  return minute && day ? { minute, day } : null;
+}
+
 /**
- * One lookup by id of the caller's allowance for the minute, a caller-only
- * reservation as `/oa` and `/arxiv` take. Null when accepted. A lookup now
- * waits for the ledger and stops without it, as every billed miss does: a
- * ledger that throws is answered like one that cannot answer.
+ * One lookup by id of the caller's allowances, the day's as the subject and
+ * the minute's as its part, in one transaction of a ledger object of the
+ * lookups' own, so counting them does not queue behind, or ahead of, the
+ * day's budget. The day has 16 such objects and a caller's first hex digit
+ * names its own, so a flood of refused lookups from some addresses slows or
+ * fails one object in sixteen rather than every reader's lookups. Only the
+ * caller is counted (`globalAmount: 0`), and each object is cleared with the
+ * ledger's three-day retention. Null when
+ * accepted. A lookup now waits for the ledger and stops without it, as every
+ * billed miss does: a ledger that throws is answered like one that cannot
+ * answer.
  */
-async function refuseLookup(request: Request, env: WorkerEnv) {
-  const { reading } = await reserveCallerMinute(request, env, 'openalex-lookups', OPENALEX_CALLER_MINUTE_LOOKUPS)
-    .catch((error: unknown) => {
-      console.warn('OpenAlex lookup ledger unreachable', error);
-      return { reading: { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' } };
-    });
+async function refuseLookup(env: WorkerEnv, now: string, caller: { minute: string; day: string }) {
+  const reading = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `openalex-lookups:day:${now.slice(0, 10)}:${caller.day[0]}`,
+    subject: caller.day,
+    subjectLimit: OPENALEX_CALLER_DAILY_LOOKUPS,
+    part: { subject: caller.minute, limit: OPENALEX_CALLER_MINUTE_LOOKUPS },
+    // The ledger requires a ceiling; with nothing spent against it, it is never read.
+    globalLimit: OPENALEX_CALLER_DAILY_LOOKUPS,
+    globalAmount: 0,
+  }).catch((error: unknown) => {
+    console.warn('OpenAlex lookup ledger unreachable', error);
+    return { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE', scope: undefined };
+  });
   // A lookup is a paper or a profile being opened, the tier a billed one spends.
-  return reading.accepted ? null : openAlexRefusal(env, '', reading, 'essential', false);
+  return reading.accepted ? null : openAlexRefusal(env, '', reading, 'essential', reading.scope === 'user');
 }
 
 // An edge miss: the shared store first, then -- and only then -- a reservation
@@ -381,16 +420,19 @@ async function relayMiss(request: Request, target: URL, cacheKey: Request, env: 
   // A lookup by id spends one of its caller's own. An account's route has
   // charged the account for its lookups and has no address to charge;
   // anything it asks that is billed needs a caller, like any billed miss.
-  if (lookup && !harvest && asker !== 'account') {
-    const refusal = await refuseLookup(request, env);
-    if (refusal) return refused(refusal);
-  }
-  if (cost.units > 0 && !harvest) {
-    // A reader's miss also spends the caller's own allowance for the minute,
-    // checked in the same transaction as the minute and the day.
-    const subject = await callerSubject(request, env, `openalex:${now.slice(0, 16)}`);
-    if (!subject) return refused(json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, { 'cache-control': 'no-store' }));
-    cost.part = { subject, limit: OPENALEX_CALLER_MINUTE_UNITS };
+  if (!harvest && !(lookup && asker === 'account')) {
+    // A reader's miss also spends the caller's own allowances for the minute
+    // and the day: a billed one in the same transaction as the shared minute
+    // and day, a lookup by id in a ledger object of its own.
+    const caller = await callerWindows(request, env, lookup ? 'openalex-lookups' : 'openalex', now);
+    if (!caller) return refused(json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, { 'cache-control': 'no-store' }));
+    if (lookup) {
+      const refusal = await refuseLookup(env, now, caller);
+      if (refusal) return refused(refusal);
+    } else {
+      cost.part = { subject: caller.minute, limit: OPENALEX_CALLER_MINUTE_UNITS };
+      cost.secondPart = { subject: caller.day, limit: OPENALEX_CALLER_DAILY_UNITS };
+    }
   }
   if (cost.units > 0) {
     // A ledger the harvest cannot reach answers it as one that cannot answer,

@@ -464,9 +464,15 @@
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
         the shared download allowance. It stores a protected identifier derived from
         the address and the current minute using a secret key, together with request
-        counts. It does not store the original IP address in these counters or attach
-        your account or the paper you requested. The identifier changes each minute
-        and is not sent to analytics. People sharing a public IP, such as a campus
+        counts. For an IPv6 address it uses the network prefix (the first 64 bits)
+        instead of the full address. Lookups that go through OpenAlex also keep a second
+        identifier, derived the same way from the address and the current day, so that one
+        address cannot use up the day's shared OpenAlex allowance: each address has 1,000
+        billed units and 3,000 lookups by identifier per UTC day. It does not store the
+        original IP address in these counters or attach
+        your account or the paper you requested. The per-minute identifier changes each
+        minute and the daily one each day; neither is sent to analytics. People sharing a
+        public IP, such as a campus
         network, share each route’s allowance. The PDF reader allows 30 requests per UTC minute,
         and the MCP server 30 tool calls.
       </p>
@@ -490,8 +496,9 @@
         fails to run that cleanup, but expired counters do not affect later windows.
         The arXiv, paper-figure and open-access lookup counters use the same cleanup schedule,
         and so do the MCP server's counters.
-        OpenAlex and shared-page lookup counters are stored with their daily
-        allowance and are scheduled for deletion after three days.
+        OpenAlex counters, both the per-minute and the daily identifiers, and shared-page
+        lookup counters are stored with the day's allowance, and their deletion is scheduled
+        for at most three days after the day's first request.
       </p>
       <p>
         Your feed comes from a shared catalogue that server keeps: once a day it collects new
