@@ -7534,7 +7534,7 @@ for (const [flow, expected] of Object.entries(PHASE1_OPERATIONS)) {
     await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, SYNC_READER);
     const { unsubscribeToken, stateId } = JSON.parse(kv.values.get(SYNC_READER_KEY)!) as Subscription;
     kv.values.set(`${deliveryStatePrefix}${SYNC_READER.uid}:${stateId}`, JSON.stringify({ lastSentAt: '2026-11-02T07:00:00.000Z' }));
-    kv.values.set('notification:schedule:link-expiry-sweep', 'done');
+    kv.values.set('notification:schedule:link-expiry-sweep', `done:${Date.parse('2026-11-05T07:00:00.000Z')}`);
     const { log, env } = recordingOperations(kv);
 
     if (flow === 'a save') await saveSubscription(preferencesPut({ ...SUBSCRIBE_ONE_FOLLOW, maxPapers: 10 }), env, SYNC_READER);
@@ -8923,7 +8923,7 @@ test('phase 1: keys written before they expired get an expiry in the next window
   await windowIn(kv, phase1, RENEWAL_WINDOW);
   for (const key of [SYNC_READER_KEY, linkKey, orphan]) assert.equal(kv.ttls.get(key), KEY_TTL_SECONDS, key);
   assert.equal(kv.values.get(orphan), 'gone-reader');
-  assert.equal(kv.values.get('notification:schedule:link-expiry-sweep'), 'done');
+  assert.equal(kv.values.get('notification:schedule:link-expiry-sweep'), `done:${Date.parse(RENEWAL_WINDOW)}`);
 });
 
 test('phase 1: a Settings save whose record write lands after an account deletion leaves a record that expires, and the schedule never renews it', async (t) => {
@@ -8997,4 +8997,79 @@ test('phase 1: the schedule index of a reader the welcome subscribed expires, is
   await windowIn(kv, phase1, RENEWAL_WINDOW);
   kv.delete = remove;
   assert.equal(kv.expirations.get(SYNC_READER_KEY), daysAfterWindow(30));
+});
+
+test('phase 1: a cancelled record a cached read returns without an expiry is deleted, not written back', async (t) => {
+  t.after(stubFetch(jsonResponse(503, {})));
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  const linkKey = await subscribedReader(kv, phase1);
+  const copy = kv.values.get(SYNC_READER_KEY)!;
+  assert.equal((await postLink(phase1, linkKey.replace('notification:unsubscribe:', ''))).status, 200);
+  // The copy a Worker from before keys expired left, or a cached read returns.
+  kv.values.set(SYNC_READER_KEY, copy);
+  await windowIn(kv, phase1, RENEWAL_WINDOW);
+  assert.equal(kv.values.has(SYNC_READER_KEY), false);
+  assert.deepEqual(keysWithAddress(kv), []);
+});
+
+test('phase 2: the schedule key of a moved reader that still holds the record is renewed as the index', async (t) => {
+  t.after(stubFetch(jsonResponse(503, {})));
+  const kv = createMemoryKv();
+  const { phase1, phase2 } = twoPhases(kv);
+  await subscribedReader(kv, phase1);
+  const record = kv.values.get(SYNC_READER_KEY)!;
+  assert.equal((await loadSubscriptionWithState(phase2, SYNC_READER_KEY))?.enabled, true);
+  // The move's index write failed: the key still holds the record.
+  kv.values.set(SYNC_READER_KEY, record);
+  kv.expirations.set(SYNC_READER_KEY, daysAfterWindow(30));
+  await windowIn(kv, phase2, RENEWAL_WINDOW);
+  assert.equal(kv.values.get(SYNC_READER_KEY), JSON.stringify({ uid: SYNC_READER.uid }));
+  assert.equal(kv.ttls.get(SYNC_READER_KEY), KEY_TTL_SECONDS);
+  assert.deepEqual(keysWithAddress(kv), []);
+});
+
+test('the schedule renews at most 60 readers a window, and the next window renews the rest', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  const readers = Array.from({ length: 61 }, (_, index) => ({ uid: `reader-${String(index).padStart(2, '0')}`, email: `r${index}@example.com`, displayName: 'Reader' }));
+  for (const reader of readers) await saveSubscription(preferencesPut(SUBSCRIBE_ONE_FOLLOW), phase1, reader);
+  const keys = readers.map(reader => `notification:subscription:${reader.uid}`);
+  keys.forEach((key) => { kv.expirations.delete(key); kv.ttls.delete(key); });
+  // A Thursday window: the readers are read and nothing is due.
+  await windowIn(kv, phase1, '2026-11-05T07:00:00.000Z');
+  assert.equal(keys.filter(key => kv.ttls.has(key)).length, 60);
+  await windowIn(kv, phase1, '2026-11-05T07:20:00.000Z');
+  assert.equal(keys.filter(key => kv.ttls.has(key)).length, 61);
+});
+
+test('the link sweep gives 100 links an expiry a window, then rests a month and starts again', async () => {
+  const kv = createMemoryKv();
+  const { phase1 } = twoPhases(kv);
+  const links = Array.from({ length: 101 }, (_, index) => `notification:unsubscribe:old-${String(index).padStart(3, '0')}`);
+  links.forEach(key => kv.values.set(key, 'gone-reader'));
+  const sweep = 'notification:schedule:link-expiry-sweep';
+  await windowIn(kv, phase1, RENEWAL_WINDOW);
+  assert.equal(links.filter(key => kv.ttls.has(key)).length, 100);
+  assert.equal(kv.values.get(sweep)?.startsWith('done:'), false);
+  await windowIn(kv, phase1, '2026-08-10T08:20:00.000Z');
+  assert.equal(links.filter(key => kv.ttls.has(key)).length, 101);
+  assert.equal(kv.values.get(sweep), `done:${Date.parse('2026-08-10T08:20:00.000Z')}`);
+
+  // A link a Worker from before this one writes after a rollback.
+  kv.values.set('notification:unsubscribe:after-rollback', 'reader');
+  await windowIn(kv, phase1, '2026-09-08T08:00:00.000Z');
+  assert.equal(kv.ttls.has('notification:unsubscribe:after-rollback'), false);
+  await windowIn(kv, phase1, '2026-09-10T08:00:00.000Z');
+  assert.equal(kv.ttls.get('notification:unsubscribe:after-rollback'), KEY_TTL_SECONDS);
+
+  // A cursor KV no longer accepts starts the sweep again.
+  kv.values.set(sweep, 'stale-cursor');
+  const list = kv.list.bind(kv);
+  kv.list = (async (options: { prefix?: string; cursor?: string }) => {
+    if (options?.cursor === 'stale-cursor') throw new Error('KV LIST failed: invalid cursor');
+    return list(options);
+  });
+  await windowIn(kv, phase1, '2026-09-10T08:20:00.000Z');
+  assert.equal(kv.values.has(sweep), false);
 });
