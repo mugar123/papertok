@@ -155,7 +155,7 @@ test('a new account\'s onboarding write is a create the rules accept', async () 
   const stored = (await getDoc(ref)).data();
   assert.equal(stored?.interestMix, 'half-and-half');
   assert.deepEqual(stored?.areaPreferences, { ai: { priority: 'curiosity', level: 'researcher' }, physics: { priority: 'essential' } });
-  assert.deepEqual(stored?.readingPreferences, { aiExplanationLevel: 'beginner', language: 'en', languagePreferenceSet: false });
+  assert.deepEqual(stored?.readingPreferences, { aiExplanationLevel: 'beginner', language: 'en', languagePreferenceSet: false, readAloudFromPosition: false });
 });
 
 test('an onboarding write that sets no mix and no area preference is a create the rules accept', async () => {
@@ -1176,7 +1176,7 @@ test('P19: a field outside the allowlist is refused', async () => {
   await assertSucceeds(setDoc(highlightRef(db), highlightBody()));
 });
 
-test('P19: a quote under eight characters or over four hundred is refused', async () => {
+test('P19: a quote under eight characters or over twelve hundred is refused', async () => {
   await reset();
   const db = asAlice();
   await assertFails(setDoc(highlightRef(db), highlightBody({ quote: 'siete c' })));
@@ -1359,7 +1359,7 @@ test('P19: a passage across paragraphs ends later in the same section, with its 
   await assertFails(setDoc(highlightRef(alice, 'float'), highlightBody({ endParagraphIndex: 4.5, endQuote: 'the end' })));
   await assertFails(setDoc(highlightRef(alice, 'noquote'), highlightBody({ endParagraphIndex: 4 })));
   await assertFails(setDoc(highlightRef(alice, 'empty'), highlightBody({ endParagraphIndex: 4, endQuote: '' })));
-  await assertFails(setDoc(highlightRef(alice, 'long'), highlightBody({ endParagraphIndex: 4, endQuote: 'a'.repeat(401) })));
+  await assertFails(setDoc(highlightRef(alice, 'long'), highlightBody({ endParagraphIndex: 4, endQuote: 'a'.repeat(1201) })));
   await assertFails(setDoc(highlightRef(alice, 'orphan'), highlightBody({ endQuote: 'the end' })));
 });
 
