@@ -26,7 +26,7 @@ import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
 import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
 import { FOLLOWED_JOURNAL_TYPE_FILTER } from '../src/utils/following.ts';
 import { handleHarvestArxiv, nextOwnSeatSeconds, takeArxivSeat } from './arxiv-api.ts';
-import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
+import { handleAccountOpenAlex, handleHarvestOpenAlex } from './openalex-api.ts';
 import { fetchAdsNotable, handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchJsonUpstream, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
@@ -1144,7 +1144,7 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
     else if (/^(?:doi:)?10\.\d{4,9}\/\S+$/i.test(id)) openAlexPaths.push(`/openalex/works/doi:${id.replace(/^doi:/i, '')}`);
   }
   const lookups: Array<Promise<Harvested[]>> = openAlexPaths.map(async path => {
-    const response = await askRoute(handleOpenAlex, path, {}, env);
+    const response = await askRoute(handleAccountOpenAlex, path, {}, env);
     const paper = mapOpenAlexWork(await response.json<OpenAlexWork>());
     return paper ? [{ paper, lanes: [] }] : [];
   });
