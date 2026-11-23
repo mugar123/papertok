@@ -7,7 +7,7 @@ import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import type { ArxivRecord } from './paper-sources.ts';
 import type { Paper } from '../src/models/paper.ts';
-import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, ingestPaperIds, notableLaneJobs, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { NOTABLE_LANES_PER_NIGHT, SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, ingestPaperIds, notableLaneJobs, paperIdLookup, notableLanesPerNight, notableListedYear, openAlexNotableListingFilter, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, NOTABLE_YEARS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { mapAdsPaper, mapBioRxivPaper } from '../src/services/domain-source-records.ts';
 import { enrichPending } from './paper-enrichment.ts';
@@ -77,6 +77,90 @@ test('an OAI page is not requested while the arXiv beat cannot answer, and is wa
   const page = await harvestArxivPage(env, { set: 'cs', from: '2026-10-20' });
   assert.deepEqual(page, { stored: 0, listed: 0, resumptionToken: '', retryAfterSeconds: 6 });
   assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+const reloadDate = Date.UTC(2026, 10, 23, 0, 0, 3);
+const icmlMark = { id: 'S4306419644', label: 'ICML', year: 2025, evidence: 'arxiv-comment' as const };
+const neuripsMark = { id: 'S4363606243', label: 'NeurIPS', evidence: 'arxiv-comment' as const };
+const acceptedAtIcml = 'Accepted at ICML 2025';
+
+function conferenceReload(t: import('node:test').TestContext, works: {
+  mark?: Paper['acceptedConference']; stamp?: number; comments: (string | null)[];
+}[]) {
+  t.mock.timers.enable({ apis: ['Date'], now: reloadDate });
+  const { db, binding } = testD1();
+  const records: string[] = [];
+  for (const [index, work] of works.entries()) {
+    const id = index + 1;
+    const paper = { title: `Stored title ${id}`, citationCount: 17, acceptedConference: work.mark, corpusUpdatedAt: work.stamp };
+    db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)').run(id, JSON.stringify(paper), '2026-10-01', '2027-01-01');
+    for (const comment of work.comments) {
+      const arxivId = `2601.${String(records.length + 1).padStart(5, '0')}`;
+      db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)').run('arxiv:' + arxivId, id);
+      records.push(`<record><metadata><arXivRaw><id>${arxivId}</id><title>Revised title</title>
+        <abstract>Revised text</abstract><categories>cs.LG</categories><version><date>2026-01-02</date></version>
+        ${comment === null ? '' : `<comments>${comment}</comments>`}</arXivRaw></metadata></record>`);
+    }
+  }
+  t.mock.method(globalThis, 'fetch', async () => new Response(`<OAI-PMH><ListRecords>${records.join('')}</ListRecords></OAI-PMH>`));
+  const env = { PAPER_STORE: binding } as Parameters<typeof harvestArxivPage>[0];
+  const run = () => harvestArxivPage(env, { set: 'cs', from: '2026-10-25', conferenceBackfillUntil: '2026-11-23' });
+  const rows = () => db.prepare('SELECT * FROM works ORDER BY id').all().map(row => ({
+    ...row, paper: JSON.parse(String(row.paper)) as Paper,
+  }));
+  return { db, binding, run, rows };
+}
+
+test('the reload re-derives only the mark and stamp once per stored work', async t => {
+  const openreview = { ...icmlMark, evidence: 'openreview' as const };
+  const { db, run, rows } = conferenceReload(t, [
+    { comments: [acceptedAtIcml] },
+    { mark: icmlMark, stamp: reloadDate + 10, comments: ['Accepted at NeurIPS'] },
+    { mark: icmlMark, stamp: reloadDate, comments: [null] },
+    { mark: openreview, stamp: 123, comments: ['Accepted at NeurIPS'] },
+    { mark: icmlMark, stamp: 123, comments: [acceptedAtIcml, 'Accepted at NeurIPS'] },
+    { comments: ['Accepted at NeurIPS', acceptedAtIcml] },
+    { mark: icmlMark, stamp: 123, comments: [acceptedAtIcml, null] },
+    { comments: [acceptedAtIcml, acceptedAtIcml] },
+    { mark: { evidence: 'arxiv-comment', year: 2025, label: 'ICML', id: icmlMark.id }, stamp: 123, comments: [acceptedAtIcml] },
+  ]);
+  const expected = rows();
+  for (const index of [0, 7]) Object.assign(expected[index].paper, { acceptedConference: icmlMark, corpusUpdatedAt: reloadDate });
+  Object.assign(expected[1].paper, { acceptedConference: neuripsMark, corpusUpdatedAt: reloadDate + 11 });
+  for (const index of [2, 4, 6]) {
+    delete expected[index].paper.acceptedConference;
+    expected[index].paper.corpusUpdatedAt = index === 2 ? reloadDate + 1 : reloadDate;
+  }
+  const page = { listed: 13, resumptionToken: '', retryAfterSeconds: 0 };
+  assert.deepEqual(await run(), { ...page, stored: 6, set: 2, changed: 1, cleared: 3 });
+  assert.deepEqual(rows(), expected);
+  const changes = () => db.prepare('SELECT total_changes() AS n').get()?.n;
+  const after = changes();
+  assert.deepEqual(await run(), { ...page, stored: 0, set: 0, changed: 0, cleared: 0 });
+  assert.equal(changes(), after);
+});
+
+test('a listing between the reload read and write keeps its mark and stamp', async t => {
+  const { db, binding, run, rows } = conferenceReload(t, [
+    { mark: neuripsMark, stamp: 101, comments: [acceptedAtIcml] },
+    { comments: [acceptedAtIcml] },
+  ]);
+  const openreview = { ...neuripsMark, evidence: 'openreview' as const };
+  const expected = rows();
+  expected[0].paper.corpusUpdatedAt = 102;
+  expected[1].paper.acceptedConference = openreview;
+  const prepare = binding.prepare.bind(binding);
+  t.mock.method(binding, 'prepare', (sql: string) => {
+    // SQLite reads synchronously. Queue a confirmation and a separate mark change
+    // after that read, before the reload resumes from its first await.
+    queueMicrotask(() => {
+      db.exec("UPDATE works SET paper = json_set(paper, '$.corpusUpdatedAt', 102) WHERE id = 1");
+      db.prepare("UPDATE works SET paper = json_set(paper, '$.acceptedConference', json(?)) WHERE id = 2").run(JSON.stringify(openreview));
+    });
+    return prepare(sql);
+  }, { times: 1 });
+  assert.deepEqual(await run(), { listed: 2, stored: 0, set: 0, changed: 0, cleared: 0, resumptionToken: '', retryAfterSeconds: 0 });
+  assert.deepEqual(rows(), expected);
 });
 
 test('an OAI page yields its live records with v1 as the publication date', () => {
@@ -2193,9 +2277,8 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all(), [], 'its progress is not recorded: the next run reads it again');
 });
 
-// Enrichment runs last in the nightly run and can always use more units. A
-// reader who follows something new after it has finished must still have the
-// follow harvested at once, not the next night.
+// Even when enrichment spends the nightly share, a reader's new follow can
+// still be harvested that day.
 test("followed searches stop at their part of the nightly run's OpenAlex share, category lanes and enrichment keep the rest of it, and new follows keep their own 300", async t => {
   const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
@@ -2291,12 +2374,52 @@ test("a recent paper a reader liked, looked up by id, is filed under its lanes w
   assert.deepEqual(lanes.map(row => row.arrived), lanes.map(() => null));
 });
 
+// A DOI went into the relay's path as the reader sent it.
+test('a DOI a reader sends is looked up as that DOI only: no other record, no added parameters, and parentheses reach OpenAlex', async t => {
+  const { urls, env } = relay(t, () => splicingWork);
+  const store = { ...env, PAPER_STORE: testD1().binding } as WorkerEnv;
+  const lookedUp = async (id: string) => {
+    urls.length = 0;
+    await ingestPaperIds(store, [id], { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
+    return urls.map(url => `${url.pathname}${[...url.searchParams.keys()].filter(name => name !== 'mailto' && name !== 'api_key').map(name => `?${name}`).join('')}`);
+  };
+  assert.deepEqual(await lookedUp('10.1000/a/../../authors/A5023888391'), [], 'a path that leaves the work is not asked');
+  assert.deepEqual(await lookedUp('doi:10.1000/a/./b'), []);
+  assert.deepEqual(await lookedUp('10.1000/a?select=id&per-page=200'), ['/works/doi:10.1000/a%3Fselect%3Did%26per-page%3D200']);
+  assert.deepEqual(await lookedUp('10.1000/a#part'), ['/works/doi:10.1000/a%23part']);
+  assert.deepEqual(await lookedUp('10.1000/a(%23)b'), ['/works/doi:10.1000/a%28%2523%29b']);
+  assert.deepEqual(await lookedUp('doi:10.1000/a%3Fb'), ['/works/doi:10.1000/a%253Fb']);
+  assert.deepEqual(await lookedUp('doi:10.1000/a%2Fb'), ['/works/doi:10.1000/a%252Fb']);
+  assert.deepEqual(await lookedUp('doi:10.1000/a%25b'), ['/works/doi:10.1000/a%2525b']);
+  assert.deepEqual(await lookedUp('10.1002/(SICI)1097-4571(199205)43:4<284::AID-ASI3>3.0.CO;2-0'),
+    ['/works/doi:10.1002/%28SICI%291097-4571%28199205%2943:4%3C284::AID-ASI3%3E3.0.CO%3B2-0']);
+  assert.deepEqual(paperIdLookup('10.1000/a/../../authors/A5023888391'), null);
+  assert.deepEqual(paperIdLookup('doi:10.1093/genetics/iyag290'), { openAlexPath: '/openalex/works/doi:10.1093/genetics/iyag290' });
+});
+
+test('DOI lookups use the relay limit of 240 encoded identifier characters', async t => {
+  const { urls, env } = relay(t, () => splicingWork);
+  const store = { ...env, PAPER_STORE: testD1().binding } as WorkerEnv;
+  const doi239 = `10.1000/${'a'.repeat(225)}:b`;
+  const doi240 = `10.1000/${'a'.repeat(219)}:,|é`;
+  const doi241 = `${doi240}b`;
+
+  await ingestPaperIds(store, [doi239, doi240, doi241], { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
+
+  assert.deepEqual(urls.map(url => url.pathname).sort(), [
+    `/works/doi:10.1000/${'a'.repeat(219)}:,|%C3%A9`,
+    `/works/doi:${doi239}`,
+  ]);
+  assert.equal(paperIdLookup(doi241), null);
+});
+
 // PAP-88: readers' searches and profile lists stop at 60 % of the day's
 // OpenAlex ceiling, their card batches at 80 %. A followed author, search or
 // project asks OpenAlex in those same shapes, and a run started by a new follow
-// can come at any hour, so the harvest spends its own share up to 95 % and
-// leaves the rest to papers being opened.
-test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the harvest leaves the last share to an opened paper", async t => {
+// can come at any hour, so the harvest spends its own share up to 95 %. The
+// last 5 % is nobody's since ENG-225: an opened paper stops with everything
+// else that is not the harvest, at their own part of the day.
+test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the harvest stops at its 95 % of the day", async t => {
   const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   const ceiling = 1_000;
   const share = (tier: keyof typeof OPENALEX_TIER_PERCENT) => Math.floor(ceiling * OPENALEX_TIER_PERCENT[tier] / 100);
@@ -2325,7 +2448,8 @@ test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the ha
   const opened = await handleOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=1', {
     headers: { 'cf-connecting-ip': '192.0.2.1' },
   }), env);
-  assert.equal(opened.status, 200, 'a paper being opened still has the rest of the ceiling');
+  assert.equal(opened.status, 429, 'a paper being opened has no part of the day left either');
+  assert.equal(opened.headers.get('x-papertok-budget-tier'), 'essential');
 });
 
 // The harvest's share is counted in the day's OpenAlex ledger, on a miss only:
@@ -3261,4 +3385,57 @@ test("a night lists every never-harvested notable job, then each source's share 
     'each source\'s share of its own jobs due again, the oldest harvest first',
   );
   assert.deepEqual(await nightWith(jobs.map(job => [job, '2026-10-27T03:00:00.000Z'])), [], 'none harvested in the last six days');
+});
+
+test('OpenReview harvest marks accepted venues and preserves the original submission text', async t => {
+  const main = 'ICLR.cc/2026/Conference';
+  const venues = [
+    ['ICLR 2026 Poster', main], ['Submitted to ICLR 2026', main], ['Withdrawn from ICLR 2026', main],
+    ['Rejected at ICLR 2026', main], ['ICLR 2026 Workshop', main], ['ICLR 2026', `${main}/Submission`],
+    ['ICLR 2026 Poster'], ['AAAI 2026 Oral', 'AAAI.cc/2026/Conference'], ['AAAI 2026', 'AAAI.cc/2026/Conference'],
+  ];
+  const { env } = relay(t, () => ({ notes: venues.map(([venue, venueId], i) => ({
+    id: `note-${i}`, domain: main, cdate: Date.UTC(2026, 1, 12),
+    content: { title: { value: `Manuscript ${i}` }, venue: { value: venue }, ...(venueId && { venueid: { value: venueId } }) },
+  })) }));
+  const { items } = await SOURCES.openreview.fetchPage(env, { lane: 'cs.LG', page: 1, since: '', waits: { seconds: 0 } });
+  assert.deepEqual(items.map(({ paper }) => paper.conference), venues.map(([venue]) => venue));
+  assert.deepEqual(items.map(({ paper }) => paper.acceptedConference), [
+    { id: 'S4306419637', label: 'ICLR', year: 2026, evidence: 'openreview' },
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    { id: 'S4210191458', label: 'AAAI', year: 2026, evidence: 'openreview' },
+  ]);
+});
+
+test('relisting a withdrawn OpenReview submission removes its previous venue evidence from the corpus', async t => {
+  let venue = 'ICLR 2026 Oral';
+  const { env } = relay(t, () => ({ notes: [{ id: 'revised-note', cdate: Date.UTC(2026, 2, 1),
+    content: { title: 'A synthetic venue correction', venue, venueid: 'ICLR.cc/2026/Conference' } }] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  const fileNotes = async (now: number) => {
+    const { items } = await SOURCES.openreview.fetchPage(env, { lane: 'cs.LG', page: 1, since: '', waits: { seconds: 0 } });
+    await ingestPapers(store, items, { now });
+    return db.prepare("SELECT paper ->> '$.acceptedConference.label' AS venue, paper ->> '$.corpusUpdatedAt' AS revision FROM works").get();
+  };
+  const first = Date.UTC(2026, 2, 15);
+  const startedEarlier = first - 1000;
+  assert.deepEqual({ ...await fileNotes(first) }, { venue: 'ICLR', revision: first });
+  venue = 'Withdrawn from ICLR 2026';
+  assert.deepEqual({ ...await fileNotes(startedEarlier) }, { venue: null, revision: first + 1 });
+});
+
+test('repeated arXiv listings cannot give a different edition to an OpenReview venue', async () => {
+  const { db, binding } = testD1();
+  const record = parseOaiPage(OAI_PAGE).papers[0];
+  const paper = arxivRecordPaper({ ...record, comments: 'Accepted at ICLR 2026' });
+  const venue = { id: 'S4306419637', label: 'ICLR', evidence: 'openreview' as const };
+  const file = async (record: Paper) => {
+    await ingestPapers({ PAPER_STORE: binding }, [{ paper: record, lanes: [] }], { keepUntil: '2026-12-01' });
+    return (JSON.parse(String(db.prepare('SELECT paper FROM works').get()?.paper)) as Paper).acceptedConference;
+  };
+  await file({ ...paper, sources: { primary: 'openreview', enrichedBy: [] }, openReviewVenueId: 'ICLR.cc/2025/Conference',
+    acceptedConference: { ...venue, year: 2025 } });
+  assert.deepEqual(await file(paper), venue);
+  assert.deepEqual(await file(paper), venue);
 });

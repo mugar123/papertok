@@ -138,6 +138,8 @@ a session can finish, lints the files changed on the branch and in the working t
   each of its clauses, in `src/legal/privacy-policy.ts`. The
   app shows that summary to eligible accounts in a dialog on /feed after onboarding.
   Until release 0.4, any record at or after the baseline settles later changes too.
+  A notice that must wait for a date opens no earlier than `PRIVACY_NOTICE_SHOWN_FROM`
+  (read against the reader's clock); it does not change who is owed it.
   As soon as the dialog opens, the current version is written to the account
   (`users/{uid}/settings/privacyNotice`, `src/services/privacy-notice-service.ts`) and to the
   browser, so Got it, Escape, the close button, a press outside and leaving /feed all settle it

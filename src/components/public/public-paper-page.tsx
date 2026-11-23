@@ -359,6 +359,7 @@ export default function PublicPaperPage({
             onSaveToList={handleSaveToList}
             onPickList={onSaveToList}
             publicMode={!isAuthenticated}
+            translationEnabled={false}
             analyticsSurface="other"
             hideScrollHint
             titleAs="h1"

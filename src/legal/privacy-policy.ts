@@ -14,7 +14,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so the account record identifies the text behind the notice.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-20.10';
+export const PRIVACY_POLICY_VERSION = '2026-11-23.11';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -124,19 +124,45 @@ export const PRIVACY_POLICY_VERSION = '2026-11-20.10';
  * Version 2026-11-20.8 adds the optional ORCID citation lookup for weekly emails.
  * Version 2026-11-20.9 adds the session sample for activity before a profile loads.
  *
- * Version 2026-11-20.10 adds Voice in the reader (ENG-119): the paragraph text
+ * Version 2026-11-23.10 adds the daily per-address share of the OpenAlex
+ * allowance, kept under a protected identifier derived from the address and the
+ * day and scheduled for deletion within three days, and says that Cloudflare's
+ * 30-day recovery history may keep a deleted request counter of any kind. It
+ * ships with #578 in the 23 November release batch, so this instant stands at
+ * the last moment of that day. If the merge slips to a later UTC day, move the
+ * page's "Last updated" date, this version and this instant to the merge day
+ * before merging, and lower this instant to the deployment's success time once
+ * it is live. Its summary also carries the point of the 20 November text that
+ * Pablo asked to repeat (rewrites and explanations by Anthropic may run outside
+ * the EU), which accounts without a notice record since 7 November may not have
+ * seen. The page text is live from the merge, but the notice waits for
+ * PRIVACY_NOTICE_SHOWN_FROM below: Pablo asked on 2026-11-23 that it appear no
+ * earlier than 30 November, with the 0.4 changes. That instant says when the
+ * dialog may open, not who is owed it: who is still decided by this instant.
+ *
+ * Version 2026-11-23.11 adds Voice in the reader (ENG-119): the paragraph text
  * sent to ElevenLabs, which keeps it in its request history, or to Cartesia
  * when ElevenLabs cannot answer; the audio PaperTok stores in R2 and plays to
  * every listener of the same paragraph; and the usage event that records only
  * that a paper was read aloud. Asier authorized both providers and what they
- * receive on 2026-11-17, first as version 2026-11-17. The text ships with
- * the read-aloud pull request, so this instant follows the rule above: it stands after that merge, at the
- * last moment the version's day allows. If the merge falls after it, move the
- * page's "Last updated" date, PRIVACY_POLICY_VERSION and this instant to the
- * merge day before merging; once Vercel reports the merge live, lower this
- * instant to that success time.
+ * receive on 2026-11-17, first as version 2026-11-17. It ships with the
+ * read-aloud pull request after 2026-11-23.10, and its summary carries that
+ * version's points too, since the notice for 2026-11-23.10 has not opened yet.
+ * The same rule applies: if the merge slips to a later UTC day, move the page's
+ * date, this version and the instant below to the merge day before merging.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-20T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-23T23:59:59Z';
+
+/**
+ * The earliest instant (ISO UTC) at which the in-app notice may open, read
+ * against the reader's own clock (privacyNoticeOwed in utils/nudges.ts). Until
+ * then nobody is owed it, and no account is asked for its record. A clock set
+ * ahead shows it early, one set behind shows it late; the page itself is
+ * unaffected. Release 0.4 replaces the once-per-account rule and decides what
+ * becomes of it; set a new one only when a notice has to wait for something the
+ * page does not.
+ */
+export const PRIVACY_NOTICE_SHOWN_FROM = '2026-11-30T00:00:00Z';
 
 /**
  * Notices through this version are retired for every account. A recorded
@@ -151,9 +177,9 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
-  "When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs, or to Cartesia when ElevenLabs cannot answer, never your identity or your email.",
-  "ElevenLabs keeps the text in its request history, and PaperTok stores the audio for anyone who listens to the same paragraph.",
-  "Usage analytics records only that a paper was read aloud, not which paper.",
+  "When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs, or to Cartesia when ElevenLabs cannot answer, never your identity or your email; PaperTok stores the audio for anyone who listens to the same paragraph.",
+  "OpenAlex lookups now count per IP address each day, under a protected day identifier scheduled for deletion within three days; Cloudflare's 30-day recovery history may keep any deleted request counter.",
+  'Anthropic may run rewrites/explanations outside the EU.',
 ];
 
 /**
@@ -166,20 +192,28 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since version 2026-11-20.9: Voice in the reader, who receives the
-  // paragraph text, the stored audio and the usage event.
+  // The changes since version 2026-11-20.9: Voice in the reader, the OpenAlex
+  // per-address count, Cloudflare's recovery history, and the Anthropic point.
   lead: 'When you listen to a paper',
   clauses: [
     ['When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs', /When you listen to a paper in the reader, the text of each paragraph is sent to ElevenLabs/],
     ['or to Cartesia when ElevenLabs cannot answer', /When ElevenLabs cannot answer, the text goes to Cartesia/],
     ['never your identity or your email', /Both receive the text, never your identity or your email\./],
-    ['ElevenLabs keeps the text in its request history', /which turns it into speech and keeps the text in its request history/],
     ['PaperTok stores the audio for anyone who listens to the same paragraph', /PaperTok's server stores the audio[^.]*plays it to anyone who listens to the same paragraph/],
-    ['Usage analytics', /Usage analytics is enabled by default/],
-    ['only that a paper was read aloud, not which paper', /Starting to read a paper aloud records only that it happened, not which paper\./],
+    ['count per IP address each day', /so that one address cannot use up the day's shared OpenAlex allowance: each address has 1,000 billed units and 3,000 lookups by identifier per UTC day/],
+    ['a protected day identifier', /a second identifier, derived the same way from the address and the current day/],
+    ['scheduled for deletion within three days', /Each store's deletion is scheduled for at most three days after the first request it receives/],
+    ["Cloudflare's 30-day recovery history", /Cloudflare keeps a recovery history of that storage that reaches back 30 days/],
+    ['any deleted request counter', /The request counters this policy describes, whether kept under a hashed account identifier, a protected identifier derived from an IP address or a hashed recipient identifier/],
+    ['rewrites/explanations', /Paper explanations and rewrites are generated by a Claude language model/],
+    ['outside the EU', /Anthropic may process the request in any region it serves, including outside the European Union/],
+    ['may keep', /a deleted counter may remain there/],
   ],
   unsaid: [
     [/\bPDF\b|full text|account|uid/i, 'the providers receive paragraph text only, nothing that identifies the reader'],
     [/\bsince \d{1,2} [a-z]+/i, 'the summary says only what changed since the previous version'],
+    [/(stores?|keeps?|logs?|records?|counts?) (your|the) IP address/i, 'the counters hold a derived identifier, not the address'],
+    [/(is|are|gets?) deleted|deleted (after|within)/i, 'deletion is scheduled, and Cloudflare can run it late'],
+    [/PaperTok (reads|uses) the recovery history/i, 'PaperTok has no feature that reads the recovery history'],
   ],
 };

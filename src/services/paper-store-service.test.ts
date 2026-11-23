@@ -24,6 +24,8 @@ const STORED = {
   _fetchedFor: ['med.cardio'],
 };
 
+const LEGACY_SNAPSHOT = { ...STORED, corpusUpdatedAt: 0 };
+
 function harness(answer: () => Promise<Response>) {
   const asked: Array<{ url: string; body: unknown }> = [];
   const options = {
@@ -60,7 +62,7 @@ test('a page asks the corpus for the categories, follows and likes, and returns 
       order: 'recent',
     },
   }]);
-  assert.deepEqual(papers, [STORED]);
+  assert.deepEqual(papers, [LEGACY_SNAPSHOT]);
 });
 
 test('a page sends only the follows the Worker reads: the first twenty with a lane, and a followed category as its category', async () => {
@@ -193,10 +195,10 @@ test('a page names its run beside the filter, and is otherwise the same request;
 test('a page returns whether the Worker passed over the papers the filter holds', async () => {
   const seen = new Set(['2610.00001']);
   const skipping = harness(async () => new Response(JSON.stringify({ papers: [STORED], skipsSeen: true }), { status: 200 }));
-  assert.deepEqual(await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, seen }, skipping.options), { papers: [STORED], skipsSeen: true });
+  assert.deepEqual(await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, seen }, skipping.options), { papers: [LEGACY_SNAPSHOT], skipsSeen: true });
   // A Worker from before PAP-103 reads the filter for notable papers only, and says nothing.
   const paging = harness(answered([STORED]));
-  assert.deepEqual(await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, seen }, paging.options), { papers: [STORED], skipsSeen: false });
+  assert.deepEqual(await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, seen }, paging.options), { papers: [LEGACY_SNAPSHOT], skipsSeen: false });
 });
 
 test('a custom feed page asks for exactly its lanes and says which follows are still loading', async () => {
@@ -223,7 +225,14 @@ test('a custom feed page asks for exactly its lanes and says which follows are s
   const older = harness(answered([STORED]));
   const served = await fetchCorpusPage({ categories: ['quant-ph'], exact: true, page: 0, pageSize: 15, order: 'daily' }, older.options);
   assert.deepEqual(served.loading, []);
-  assert.deepEqual(served.papers, [STORED]);
+  assert.deepEqual(served.papers, [LEGACY_SNAPSHOT]);
+});
+
+test('ranked and ID lookups carry the corpus snapshot even when no conference is recorded', async () => {
+  const { options } = harness(async () => Response.json({ papers: [{ ...STORED, corpusUpdatedAt: 12345 }] }));
+  const page = await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 1 }, options);
+  const byId = await fetchCorpusPapers([STORED.id], options);
+  assert.deepEqual([page.papers[0], byId[0]], Array(2).fill({ ...STORED, corpusUpdatedAt: 12345 }));
 });
 
 test('a store that fails rejects, so the feed can say so and offer a retry', async () => {
@@ -316,7 +325,7 @@ test('a grouped page with long example ids fits the request body limit and keeps
 });
 
 test('trimming long examples takes those of no group first, then the oldest of the fullest group', async () => {
-  const { asked, options } = harness(answered([]));
+  const { asked, options } = harness(answered([STORED]));
   const ids = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => `10.1234/${prefix}${index}${'a'.repeat(283)}`);
   const leaves = Array.from({ length: 149 }, (_, index) => `leaf.${index}`);
   const groups = [
@@ -324,7 +333,11 @@ test('trimming long examples takes those of no group first, then the oldest of t
     { categories: ['econ.EM'], exampleCategories: ['econ.EM', 'econ.GN'], positiveIds: ids('cold', 2), weight: 2 },
   ];
   const unassigned = ids('none', 2);
-  await fetchCorpusPage({ groups, positiveIds: unassigned, page: 0, pageSize: 15, seen: new Set(['2610.00001']), notable: 5 }, options);
+  const exampleKindsById = new Map<string, Array<'liked' | 'saved'>>();
+  for (const group of groups) for (const id of group.positiveIds) exampleKindsById.set(id, ['liked']);
+  for (const id of unassigned) exampleKindsById.set(id, ['saved']);
+  const { papers } = await fetchCorpusPage({ groups, positiveIds: unassigned, exampleKindsById, page: 0, pageSize: 15, seen: new Set(['2610.00001']), notable: 5 }, options);
+  assert.deepEqual(papers[0]._semanticExampleKinds, ['liked']);
   const body = asked[0].body as { positiveIds: string[]; groups: Array<{ positiveIds: string[] }> };
   assert.ok(new TextEncoder().encode(JSON.stringify(body)).byteLength <= 16_384);
   assert.deepEqual(body.positiveIds.filter(id => unassigned.includes(id)), [], 'the examples of no group go first');
@@ -337,7 +350,7 @@ test('trimming long examples takes those of no group first, then the oldest of t
 
 test("the corpus's copies of papers are asked for by the app's ids", async () => {
   const { asked, options } = harness(answered([STORED]));
-  assert.deepEqual(await fetchCorpusPapers(['pmid:41000001', 'W4391234567'], options), [STORED]);
+  assert.deepEqual(await fetchCorpusPapers(['pmid:41000001', 'W4391234567'], options), [LEGACY_SNAPSHOT]);
   assert.deepEqual(asked.map(entry => entry.body), [{ ids: ['pmid:41000001', 'W4391234567'] }]);
 });
 
@@ -392,7 +405,7 @@ test('a slow ID token does not spend the deadline of the store request, and the 
     fetchCorpusPage(request, { apiBase: WORKER, fetchWorker: fetchWorkerTo(storeAnswering(3_600)) }),
   ]);
   assert.ok(inTime.status === 'fulfilled');
-  assert.deepEqual(inTime.value.papers, [STORED]);
+  assert.deepEqual(inTime.value.papers, [LEGACY_SNAPSHOT]);
   assert.ok(tooSlow.status === 'rejected');
   assert.equal((tooSlow.reason as Error).name, 'TimeoutError');
 });
@@ -417,7 +430,7 @@ test("a store that answers in 5 s fills a list's first screen, and a later page 
     fetchCorpusPage({ categories: ['med.cardio'], page: 1, pageSize: 15 }, options),
   ]);
   assert.ok(firstScreen.status === 'fulfilled');
-  assert.deepEqual(firstScreen.value.papers, [STORED]);
+  assert.deepEqual(firstScreen.value.papers, [LEGACY_SNAPSHOT]);
   assert.ok(laterPage.status === 'rejected');
   assert.equal((laterPage.reason as Error).name, 'TimeoutError');
   assert.ok(sent.every(body => !Object.hasOwn(body as object, 'firstScreen')), 'the wait is the app\'s; the Worker is not told');
@@ -445,7 +458,7 @@ test('the main response reports its Worker version before parsing success or ref
       status, headers: { 'x-papertok-worker-version': 'bc13c637-c9af-4b4e-92a2-c4b3e9380a57' },
     }));
     const promise = fetchCorpusPage({ page: 0, pageSize: 15 }, { ...options, onVersion: version => { versions.push(version); } });
-    if (status === 200) assert.deepEqual((await promise).papers, [STORED]);
+    if (status === 200) assert.deepEqual((await promise).papers, [LEGACY_SNAPSHOT]);
     else await assert.rejects(promise, { status });
     assert.deepEqual(versions, ['bc13c637-c9af-4b4e-92a2-c4b3e9380a57']);
   }

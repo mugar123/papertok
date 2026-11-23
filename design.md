@@ -318,6 +318,30 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   publisher's page, whose head rows yield after the panel and scroll (Cards /
   Containers, "A card with no abstract"). On a tablet the column stops at a
   40rem reading measure.
+- **The kicker** reads field · reason · year · conference acceptance · citations.
+  It wraps as needed, with dots only between visible items. The reason
+  (`utils/feed-reason.ts`) uses `--text-secondary`. A notable
+  For You card reads "Highly cited in [field]" when its lane identifies a
+  taxonomy leaf and it has at least 100 known citations. Otherwise it shows
+  "You follow [name]" if a follow matches, or no reason.
+  On other cards a matching follow comes first. "Because you follow [name]"
+  credits only a follow that fetched the card in Following or For You.
+  All other matches read "You follow [name]", including matches in custom
+  feeds and follows that only boosted the card's score.
+  On a scored For You card, "Similar to papers you liked" (saved, liked or
+  saved, engaged with) names the examples sent with its page. It needs a
+  cosine of at least 0.65 to the closest example, and similarity must outweigh
+  each of the card's own signals. Area preference and affinity do not compete.
+  A remaining For You card reads "In your area" when the reader picked its
+  primary category or a leaf that includes its OpenAlex primary topic.
+  Otherwise, "Also in [category]" names the first picked category the card
+  was fetched for, then the first picked secondary category if needed. A pick
+  with the same label as the displayed field reads "In your area". Only picks
+  with a taxonomy label qualify.
+  The Worker's `acceptedConference` supplies the mark in `--text-secondary`.
+  It reads "Accepted at NeurIPS 2026", or "Accepted at NeurIPS" when the
+  conference year is unknown. About this paper repeats it under Status. A
+  preprint keeps its preprint status.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 

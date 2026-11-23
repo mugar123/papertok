@@ -22,6 +22,7 @@ import {
 import { buildSavedPaperPayload } from '../src/utils/saved-paper-payload.ts';
 import { paperLegacyAdapter, storedClassification } from '../src/models/paper.ts';
 import { areaLabelForPaper } from '../src/utils/area-accent.ts';
+import { serializeInteractionPaper } from '../src/context/library-entry.ts';
 import { serializeLibraryPaper } from '../src/utils/reading-library.ts';
 import { journalExplorerLink } from '../src/utils/explorer-paths.ts';
 import { copyForMergeWrite } from '../src/utils/stored-copy-write.ts';
@@ -1956,4 +1957,60 @@ test('custom feeds: the owner keeps up to eight feeds in one document, and nobod
   await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'settings', 'customFeeds')));
   await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'settings', 'customFeeds'), { feeds: [], updatedAt: serverTimestamp() }));
   await assertFails(getDoc(doc(asGuest(), 'users', ALICE, 'settings', 'customFeeds')));
+});
+
+test('likes and saves accept older corpus revisions and changes at the same revision', async () => {
+  await reset();
+  const id = '2611.26060';
+  const paper = { id, title: 'A conference paper' };
+  const dated = { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' as const };
+  const undated = { id: 'S4306419637', label: 'ICLR', evidence: 'openreview' as const };
+  for (const collection of ['interactions', 'savedPapers']) {
+    const ref = doc(asAlice(), 'users', ALICE, collection, id);
+    const write = (mark?: typeof dated | typeof undated, corpusUpdatedAt?: number) => {
+      const card = paperLegacyAdapter({ ...paper, acceptedConference: mark, corpusUpdatedAt });
+      return collection === 'interactions'
+        ? { liked: true, paper: copyForMergeWrite(serializeInteractionPaper(card, { personalLibrary: {}, libraryPapers: {} })) }
+        : copyForMergeWrite(buildSavedPaperPayload(card));
+    };
+    await assertSucceeds(setDoc(ref, write(dated), { merge: true }));
+    await assertSucceeds(setDoc(ref, write(), { merge: true }));
+    const read = async () => {
+      const data = (await getDoc(ref)).data()!;
+      return (collection === 'interactions' ? data.paper : data).acceptedConference;
+    };
+    assert.deepEqual(await read(), dated);
+    await assertSucceeds(setDoc(ref, write(undated), { merge: true }));
+    assert.deepEqual(await read(), undated);
+    await assertSucceeds(setDoc(ref, write(dated, 100), { merge: true }));
+    const fresh = write(undefined, 200);
+    await assertSucceeds(setDoc(ref, collection === 'interactions' ? { ...fresh, liked: false } : fresh, { merge: true }));
+    assert.equal(await read(), undefined);
+    await assertSucceeds(setDoc(ref, write(dated, 100), { merge: true }));
+    assert.deepEqual(await read(), dated);
+    const data = (await getDoc(ref)).data()!;
+    if (collection === 'interactions') assert.equal(data.liked, true);
+    assert.equal((collection === 'interactions' ? data.paper : data).corpusUpdatedAt, 100);
+    await assertSucceeds(setDoc(ref, write(undated, 100), { merge: true }));
+    assert.deepEqual(await read(), undated);
+    await assertFails(setDoc(doc(asBob(), 'users', ALICE, collection, id), write(dated), { merge: true }));
+  }
+});
+
+test('library rules reject malformed conference marks and corpus revisions on both copies', async () => {
+  await reset();
+  const dated = { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' };
+  for (const collection of ['interactions', 'savedPapers']) {
+    const ref = doc(asAlice(), 'users', ALICE, collection, '2611.26060');
+    const write = (fields: Record<string, unknown>) => setDoc(ref, collection === 'interactions'
+      ? { liked: true, paper: fields } : { title: 'A conference paper', ...fields });
+    await assertSucceeds(write({ acceptedConference: dated, corpusUpdatedAt: 100 }));
+    for (const revision of [-1, 0.5, '100', null]) {
+      await assertFails(write({ corpusUpdatedAt: revision }));
+    }
+    for (const mark of [null, 'NeurIPS', {}, { ...dated, id: '' }, { ...dated, label: '' },
+      { ...dated, year: 26 }, { ...dated, year: 2025.5 }, { ...dated, evidence: 'title' }, { ...dated, evidence: 'openalex' }, { ...dated, comments: 'full text' }]) {
+      await assertFails(write({ acceptedConference: mark }));
+    }
+  }
 });

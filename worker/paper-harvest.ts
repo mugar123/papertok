@@ -1,4 +1,5 @@
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import type { AuthorProgress, QualityCursor } from './paper-quality.ts';
 import type { AbstractRetries } from './paper-enrichment.ts';
 import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
@@ -6,6 +7,7 @@ import type { UpstreamError } from './provider-runtime.ts';
 
 import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired, thinLeaves, thinLeavesReport } from './paper-store.ts';
 import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, notableLaneJobs } from './paper-sources.ts';
+import { AuthorRateLimit, computePaperQuality, loadPaperAuthorImpact, prunePaperQuality } from './paper-quality.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
 
@@ -66,6 +68,9 @@ const OAI_STEP = { retries: { limit: 3, delay: '1 minute', backoff: 'exponential
 // next time.
 const OAI_MAX_WAIT_SECONDS = 300;
 const OAI_MAX_WAITS = 3;
+type AuthorStepResult = AuthorProgress | null | { seconds: number; firstAuthor: string } | { failed: string };
+const AUTHOR_MAX_WAITS = 3;
+const AUTHOR_STEP = { ...PAGE_STEP, timeout: '10 minutes' } as const;
 const LANE_STEP = { retries: { limit: 2, delay: '1 minute', backoff: 'exponential' }, timeout: '10 minutes' } as const;
 
 /** Where a set's harvest starts: the last day it was harvested to the end, else the corpus window. */
@@ -210,19 +215,23 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
   ]);
 }
 
+export interface HarvestParams { lanes?: string[]; arxivConferenceBackfill?: boolean }
+
 /**
  * One run a day, as `PaperHarvestWorkflow` (instrumentation.ts): every arXiv
  * set harvested from where it last finished, every other source's lanes, the
  * notable lanes due their weekly listing, the lanes readers follow, and
  * embeddings before historical reads or maintenance. Each enriched batch is
  * embedded before the next one; backfill has a final embedding pass within the
- * same daily budget. Eviction follows them, and last the filing of the areas'
- * journal articles under leaves, which reads the vectors. A run for newly
- * followed lanes (`payload.lanes`) harvests those within the new follows' share
- * of OpenAlex and embeds only their papers: the rest of the corpus is the daily
- * run's to embed.
+ * same daily budget. After eviction, the run files the areas' journal articles
+ * under leaves using their vectors. The final phases prune expired quality
+ * data, look up author h-indexes within their OpenAlex allowance and score
+ * recent papers (paper-quality.ts).
+ * A run for newly followed lanes (`payload.lanes`) harvests those within the
+ * new follows' share of OpenAlex and embeds only their papers: the rest of
+ * the corpus is the daily run's to embed.
  */
-export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
+export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<HarvestParams | undefined>>, step: WorkflowStep) {
   if (!env.PAPER_STORE) throw new Error('PAPER_STORE is not bound');
   const db = env.PAPER_STORE;
   const started = event.timestamp.getTime();
@@ -237,15 +246,16 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
 
   // The day the run started, so a run that crosses midnight records the day it covered.
   const today = event.timestamp.toISOString();
+  const backfill = event.payload?.arxivConferenceBackfill === true;
   for (const set of ARXIV_HARVEST_SETS) {
     // A set that fails is harvested from the same day on the next run, and so
     // are the ones after it: arXiv is down, and each would wait out its retries.
-    const harvested = await phase(`arXiv ${set}`, async () => {
-      const from = await step.do(`${set}: start`, () => harvestStart(db, set));
+    const harvestSet = async () => {
+      const from = backfill ? daysFromNow(-29, started).slice(0, 10) : await step.do(`${set}: start`, () => harvestStart(db, set));
       let resumptionToken = '';
       // Step names are the replay keys, so each request gets its own number.
       for (let request = 0, waits = 0, done = false; !done; request += 1) {
-        const page = await step.do(`${set}: request ${request}`, OAI_STEP, () => harvestArxivPage(env, { set, from, resumptionToken }));
+        const page = await step.do(`${set}: request ${request}`, OAI_STEP, () => harvestArxivPage(env, { set, from, resumptionToken, conferenceBackfillUntil: backfill ? today.slice(0, 10) : undefined }));
         if (page.retryAfterSeconds) {
           waits += 1;
           if (waits > OAI_MAX_WAITS || page.retryAfterSeconds > OAI_MAX_WAIT_SECONDS) {
@@ -259,13 +269,16 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
         done = !resumptionToken;
         if (!done) await step.sleep(`${set}: gap ${request}`, PAGE_GAP);
       }
+      if (backfill) return;
       await step.do(`${set}: finish`, async () => {
         await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES ('arxiv-oai', ?, ?)
           ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(set, today).run();
       });
-    });
-    if (!harvested) break;
+    };
+    if (backfill) await harvestSet();
+    else if (!await phase(`arXiv ${set}`, harvestSet)) break;
   }
+  if (backfill) return;
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
   await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));
@@ -313,6 +326,50 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   // Apart, so a failed recomputation still files by the last run's centroids.
   await phase('leaf centroids', () => step.do('leaf centroids', () => storeLeafCentroids(env, started)));
   await phase('file area papers', () => step.do('file area papers', () => fileAreaPapers(env)));
+  await phase('prune paper quality', async () => {
+    for (let batch = 0; ; batch += 1) {
+      if (!await step.do(`prune paper quality ${batch}`, PAGE_STEP, () => prunePaperQuality(db, started))) break;
+    }
+  });
+  await phase('author impact', async () => {
+    let progress: AuthorProgress | null = { after: null, pending: [] };
+    let lastWaitedAuthor: string | null = null;
+    let waits = 0;
+    for (let batch = 0; progress; batch += 1) {
+      const page: AuthorProgress = progress;
+      const result = await step.do(`author impact ${batch}`, AUTHOR_STEP, async (): Promise<AuthorStepResult> => {
+        try {
+          return await loadPaperAuthorImpact(db, env, started, page);
+        } catch (error) {
+          if (isD1Error(error)) throw error;
+          if (error instanceof AuthorRateLimit) return { seconds: error.seconds, firstAuthor: error.firstAuthor };
+          // Fail the phase outside the step so its D1 retries cannot repeat a refused provider call.
+          return { failed: error instanceof Error ? error.message : String(error) };
+        }
+      });
+      if (result && typeof result === 'object' && 'failed' in result) throw new Error(result.failed);
+      if (result && typeof result === 'object' && 'seconds' in result) {
+        if (waits >= AUTHOR_MAX_WAITS || lastWaitedAuthor === result.firstAuthor) {
+          console.warn(`Stopping author impact for this run: HTTP 429 for ${result.firstAuthor} after ${waits} waits`);
+          break;
+        }
+        waits++;
+        lastWaitedAuthor = result.firstAuthor;
+        await step.sleep(`author wait ${batch}`, result.seconds * 1000);
+      } else {
+        progress = result;
+        lastWaitedAuthor = null;
+      }
+    }
+  });
+  await phase('paper quality', async () => {
+    let after: QualityCursor | null = null;
+    for (let batch = 0; ; batch += 1) {
+      const page: QualityCursor | null = after;
+      after = await step.do(`paper quality ${batch}`, PAGE_STEP, (): Promise<QualityCursor | null> => computePaperQuality(db, started, page));
+      if (!after) break;
+    }
+  });
 }
 
 /**
