@@ -16,9 +16,8 @@ function authorName(author: Paper['authors'][number] | undefined) {
  * 1,000 characters, short of most abstracts, so the paper page could never
  * show the text the reader had seen in the feed from the copy alone and took
  * the provider's — a different text, when the provider was a different one.
- * The copy lives in the interaction document's `paper` map, which Firestore
- * bounds only as a map, so a whole abstract costs nothing to keep. The old
- * cap is remembered so a copy written under it can be told from a whole one.
+ * The interaction document keeps the abstract in its `paper` map. The old
+ * cap distinguishes an earlier excerpt from a whole abstract.
  */
 export const STORED_SUMMARY_CAP = 4000;
 export const LEGACY_STORED_SUMMARY_CAP = 1000;

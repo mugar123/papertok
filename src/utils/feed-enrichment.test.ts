@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Paper } from '../models/paper.ts';
-import { mergeFeedEvidence } from '../models/paper-evidence.ts';
+import type { ConferenceMark, Paper } from '../models/paper.ts';
+import { buildSavedPaperPayload } from './saved-paper-payload.ts';
+import { mergeConferenceMarks, mergeFeedEvidence } from '../models/paper-evidence.ts';
 import {
   abstractsInFlight,
   getOpenAlexEnrichmentId,
@@ -29,6 +30,38 @@ test('a recurring card takes evidence from a later batch and keeps its displayed
   ]);
   assert.deepEqual(next, [{ ...card, studyType: 'randomized-controlled-trial', trialRegistration: 'NCT04280705', trialRegistrationSource: undefined }]);
   assert.equal(mergeFeedEvidence(next, [card]), next);
+});
+
+test('a later corpus batch removes a withdrawn mark from a card already on screen', () => {
+  const current: Paper = { id: 'p', sources: { primary: 'openreview', enrichedBy: [] }, title: 'Paper', abstract: '', authors: [],
+    corpusUpdatedAt: 100, acceptedConference: { id: 'S4306419637', label: 'ICLR', evidence: 'openreview' } };
+  const next = mergeFeedEvidence([current], [{ ...current, acceptedConference: undefined, corpusUpdatedAt: 200 }]);
+  assert.equal(next[0].acceptedConference, undefined);
+  assert.equal(mergeFeedEvidence(next, [current]), next);
+});
+
+test('a newer stamp survives copying a card with identical evidence', () => {
+  const mark = { id: 'S4306419637', label: 'ICLR', evidence: 'openreview' as const };
+  const card: Paper = { id: 'p', sources: { primary: 'openalex', enrichedBy: [] }, title: 'Paper', abstract: '', authors: [], corpusUpdatedAt: 100 };
+  for (const acceptedConference of [undefined, mark]) {
+    const shown = [{ ...card, acceptedConference }];
+    const duplicate = { ...card, acceptedConference: acceptedConference && { ...acceptedConference }, corpusUpdatedAt: 300 };
+    const copied = mergeFeedEvidence(shown, [duplicate]).map(paper => ({ ...paper }));
+    assert.equal(buildSavedPaperPayload(copied[0]).corpusUpdatedAt, 300);
+    assert.equal(mergeFeedEvidence(copied, [{ ...card, corpusUpdatedAt: 200, acceptedConference: acceptedConference ? undefined : mark }]), copied);
+    assert.equal(mergeFeedEvidence(copied, [{ ...duplicate, acceptedConference: acceptedConference ? undefined : mark }])[0].acceptedConference, undefined);
+  }
+});
+
+test('two text sources identify the venue and keep only an uncontested year', () => {
+  const comment = { id: 'a', label: 'ICML', evidence: 'arxiv-comment' as const, year: 2026 };
+  const venue = { id: 'a', label: 'ICML', evidence: 'openreview' as const };
+  for (const merge of [mergeConferenceMarks, (a: ConferenceMark, b: ConferenceMark) => mergeConferenceMarks(b, a)]) {
+    assert.deepEqual(merge(comment, venue), { ...venue, year: 2026 });
+    assert.deepEqual(merge(comment, { ...venue, year: 2025 }), venue);
+    const different = { ...venue, id: 'b', label: 'ICLR' };
+    assert.deepEqual(merge(comment, different), different);
+  }
 });
 
 test('normalizes arXiv versions for OpenAlex enrichment', () => {

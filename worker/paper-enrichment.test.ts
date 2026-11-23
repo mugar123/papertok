@@ -36,7 +36,7 @@ const unknownPreprint = { ...preprint, id: '2610.22222', arxivId: '2610.22222', 
 // An OpenAlex record whose DOI Crossref types as a book.
 const book = { ...mapOpenAlexWork({ id: 'https://openalex.org/W568341909', doi: 'https://doi.org/10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals', type: 'article', publication_date: '2026-10-01' })!, abstract: 'A book.' };
 
-function providers(t: import('node:test').TestContext, { openAlexStatus = 200 } = {}) {
+function providers(t: import('node:test').TestContext, { openAlexStatus = 200, shortWait = false } = {}) {
   const asked: string[] = [];
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
@@ -44,6 +44,10 @@ function providers(t: import('node:test').TestContext, { openAlexStatus = 200 } 
     const url = new URL(String(input instanceof Request ? input.url : input));
     asked.push(url.hostname);
     if (url.hostname === 'api.openalex.org') {
+      if (shortWait) {
+        shortWait = false;
+        return new Response(null, { status: 429, headers: { 'retry-after': '1' } });
+      }
       if (openAlexStatus !== 200) return new Response('{}', { status: openAlexStatus });
       return Response.json({ results: [{
         id: 'https://openalex.org/W4400000001',
@@ -119,6 +123,16 @@ test("readers' closed card-batch tier does not stop the harvest's enrichment", a
     amount: Math.floor(ceiling * OPENALEX_TIER_PERCENT.enrichment / 100) + 100,
   });
   assert.equal((await enrichPending(env, 50, NOW)).workIds.length, 3);
+  assert.equal(stored(db)['2610.11111'].paper.citationCount, 7);
+});
+
+test('enrichment retries a short OpenAlex rate limit and stores the recovered citation count', async t => {
+  const timer = t.mock.method(globalThis, 'setTimeout');
+  const asked = providers(t, { shortWait: true });
+  const { env, db } = await corpus();
+  await enrichPending(env, 50, NOW);
+  assert.equal(asked.filter(host => host === 'api.openalex.org').length, 2);
+  assert.equal(timer.mock.calls.filter(call => call.arguments[1] === 1000).length, 1);
   assert.equal(stored(db)['2610.11111'].paper.citationCount, 7);
 });
 
@@ -1289,4 +1303,26 @@ test('a retraction PubMed records after the paper was stored reaches it from Eur
   wakefieldTypes = [...wakefieldTypes, 'Retracted Publication'];
   await enrichPending(env, 50, LISTED + 15 * DAY_MS);
   assert.deepEqual(statusAndLanes(db), { 'pmid:9500320': ['retracted', []], 'pmid:42934083': ['published', ['med.peds']] });
+});
+
+test('an arXiv abstract lookup can confirm the conference of the matching stored work', async t => {
+  const { env, db } = await corpus();
+  const paper = { ...preprint, id: 'openalex:W4400000002', arxivId: '2610.98765', sources: { primary: 'openalex', enrichedBy: [] },
+    title: 'A separate paper awaiting an arXiv abstract', abstract: '' };
+  await ingestPapers(env, [{ paper, lanes: [] }], { now: NOW });
+  providers(t);
+  const upstream = globalThis.fetch;
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.hostname !== 'export.arxiv.org') return upstream(input, init);
+    assert.equal(url.searchParams.get('id_list'), '2610.98765');
+    return new Response(`<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom"><entry>
+      <id>http://arxiv.org/abs/2610.98765v1</id><published>2026-10-10</published><title>A separate paper</title>
+      <summary>We recover the abstract from the matching arXiv record.</summary><category term="cs.LG"/>
+      <arxiv:comment>Accepted at NeurIPS 2026</arxiv:comment></entry></feed>`);
+  });
+  await enrichPending(env, 50, NOW);
+  const works = stored(db);
+  assert.deepEqual(works[paper.id].paper.acceptedConference, { id: 'S4363606243', label: 'NeurIPS', year: 2026, evidence: 'arxiv-comment' });
+  assert.equal(works[preprint.id].paper.acceptedConference, undefined);
 });

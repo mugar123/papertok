@@ -49,6 +49,8 @@ export interface CorpusPageRequest {
   groups?: InterestGroup[];
   follows?: FollowEntity[];
   positiveIds?: string[];
+  /** Local evidence for the reason on a For You card. Only the IDs travel to the Worker. */
+  exampleKindsById?: ReadonlyMap<string, NonNullable<Paper['_semanticExampleKinds']>>;
   negativeIds?: string[];
   excludedIds?: string[];
   page: number;
@@ -112,7 +114,10 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
   const papers = answer?.papers;
   if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
   const more = typeof answer?.more === 'boolean' ? answer.more : undefined;
-  return { papers, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more };
+  // Even a pre-versioning corpus response owns its conference field. A later
+  // versioned snapshot can supersede it after either library copy is reloaded.
+  const snapshots = papers.map(paper => paper.corpusUpdatedAt === undefined ? { ...paper, corpusUpdatedAt: 0 } : paper);
+  return { papers: snapshots, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more };
 }
 
 /** The follows an exact answer says are still loading; a Worker that does not say any answers none. */
@@ -174,7 +179,7 @@ function cutFollowText<T>(value: T, max: number): T {
  */
 export function fetchCorpusPage(request: CorpusPageRequest & { exact: true }, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean; loading: LoadingFollow[]; more?: boolean }>;
 export function fetchCorpusPage(request: CorpusPageRequest, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean }>;
-export function fetchCorpusPage({ categories = [], areas = [], exact = false, groups, follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, walk, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage({ categories = [], areas = [], exact = false, groups, follows = [], positiveIds = [], exampleKindsById, negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, walk, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = servedFollows(follows).map(({ follow }) => follow);
   const body = {
     categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
@@ -247,7 +252,18 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
     } else break;
   }
   const answer = askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
-  return exact ? answer : answer.then(({ papers, skipsSeen }) => ({ papers, skipsSeen }));
+  if (exact) return answer;
+  // The size limit may have removed examples from the plan. Keep only the
+  // kinds actually sent with this page, alongside its semantic scores.
+  // The Worker's walkNamed fallback can return a kept rank scored against
+  // earlier examples. Only the Worker can identify which examples scored it.
+  const kinds = exampleKindsById && [...new Set(body.positiveIds.flatMap(id => exampleKindsById.get(id) ?? []))];
+  return answer.then(({ papers, skipsSeen }) => {
+    if (kinds?.length) {
+      for (const paper of papers) paper._semanticExampleKinds = kinds;
+    }
+    return { papers, skipsSeen };
+  });
 }
 
 /**

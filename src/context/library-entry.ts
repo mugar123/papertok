@@ -3,7 +3,7 @@ import type { Paper } from '../models/paper.ts';
 import type { InteractionDocumentData } from '../utils/interaction-profile.ts';
 
 import { readStoredClassification, withJournalOf, withPublicationEvidenceOf } from '../models/paper.ts';
-import { readStoredStudyType, studyTypeFromIds } from '../models/paper-evidence.ts';
+import { readStoredStudyType } from '../models/paper-evidence.ts';
 import { copyOfRecordWithoutCopy, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { readLaterStamp, restoreReadLater } from './read-later-rollback.ts';
 
@@ -179,10 +179,12 @@ export function libraryCopyOf(library: Record<string, LibraryEntry>, papers: Rec
 }
 
 export function serializeInteractionPaper(paper: Paper, state: LibraryState) {
-  const studyType = studyTypeFromIds([
-    paper.studyType, state.personalLibrary[paper.id]?.paper.studyType, state.libraryPapers[paper.id]?.studyType,
-  ]);
-  return serializeLibraryPaper({ ...paper, studyType });
+  const { studyType, acceptedConference, corpusUpdatedAt } = keepingPublicationEvidence(paper, state.personalLibrary[paper.id], state.libraryPapers[paper.id]);
+  // A direct provider has no conference decision to write. The remote copy
+  // may already hold a newer decision than the one loaded on this device.
+  return serializeLibraryPaper({ ...paper, studyType,
+    ...(paper.corpusUpdatedAt !== undefined || paper.acceptedConference ? { acceptedConference, corpusUpdatedAt } : {}),
+  });
 }
 
 export function readInteractionPaper(id: string, record: InteractionDocumentData) {

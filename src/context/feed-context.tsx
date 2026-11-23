@@ -1331,7 +1331,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         examples: profileSignals.current.positiveExamples,
         exposure: profileSignals.current.categoryExposure,
         affinities: profileSignals.current.categoryAffinities,
-      }, interestSettings);
+      }, interestSettings, interactionProfile.current);
       let newPapers: Paper[] = [];
       let rankingSeen = false;
       if (activeMode === 'top' || activeMode === null) {
@@ -1476,7 +1476,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
       if (requestId !== feedRequestId.current) return;
 
-      if ((!reset || keepThroughVisible) && newPapers.some(paper => paper.studyType || paper.trialRegistration)) {
+      if ((!reset || keepThroughVisible) && newPapers.some(paper => paper.corpusUpdatedAt !== undefined || paper.acceptedConference || paper.studyType || paper.trialRegistration)) {
         const userId = activeUserId.current;
         const signature = feedPreferenceSignature(userPreferences);
         setPapers(current => {
