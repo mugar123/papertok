@@ -9,11 +9,13 @@ import type { Paper } from '../../models/paper.ts';
 import FeedContainer from '../feed/feed-container.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
+import PrivacyPopover from '../public/privacy-popover.tsx';
+import { conferencePaperPath } from './conference-paper-path.ts';
 import './conference-papers-page.css';
 
 type Props = Pick<ComponentProps<typeof FeedContainer>, 'onOpenPdf' | 'onSaveToList' | 'onAuthRequired'> & { appChrome: boolean };
 
-function PapersFeed({ edition, appChrome, ...props }: Props & { edition: ConferenceEdition }) {
+function PapersFeed({ edition, appChrome, guest, ...props }: Props & { edition: ConferenceEdition; guest: boolean }) {
   const status = useConferenceStatus(edition.id);
   const { entries, next, loading, error, loadMore, refresh } = useConferencePapers(edition.id);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
@@ -29,7 +31,9 @@ function PapersFeed({ edition, appChrome, ...props }: Props & { edition: Confere
       <nav className="conference-papers-header" aria-label="Conference edition">
         <Link to={'/conferences/' + edition.id}>Event details <span className="visually-hidden">for {edition.name}</span></Link>
         <Link to={'/conferences/' + edition.id + '/papers'} aria-current="page">Papers</Link>
+        {guest && <PrivacyPopover />}
         {Boolean(status?.listed) && <span>{status?.listed} papers listed</span>}
+        <span>This list may be incomplete.</span>
         {status?.staleSince && status.updatedAt && (
           <span>Last updated {new Date(status.updatedAt).toLocaleDateString('en', { timeZone: 'UTC' })}</span>
         )}
@@ -41,6 +45,7 @@ function PapersFeed({ edition, appChrome, ...props }: Props & { edition: Confere
         source={{
           papers, loading, hasMore: Boolean(next), loadMore, refresh, error: error ? new Error('Conference papers unavailable') : undefined,
           dismissal, surface: 'other', trackImpressions: false, persistReadingPosition: false,
+          paperTitlePath: conferencePaperPath,
           emptyState: !loading && !error ? (
             <EmptyState title={entries.length ? 'No more papers shown' : 'No papers listed yet'} role="status">
               {next && <Button onClick={() => { loadMore(); }}>Load more papers</Button>}
@@ -54,8 +59,8 @@ function PapersFeed({ edition, appChrome, ...props }: Props & { edition: Confere
 
 export default function ConferencePapersPage(props: Props) {
   const { editionId } = useParams();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const edition = findConferenceEdition(editionId);
   if (!edition) return <div className="conference-page"><h1>Conference not found</h1><Link to="/conferences">Conference calendar</Link></div>;
-  return <PapersFeed key={edition.id + ':' + (user?.uid ?? 'guest')} edition={edition} {...props} />;
+  return <PapersFeed key={edition.id + ':' + (user?.uid ?? 'guest')} edition={edition} guest={!user && !loading} {...props} />;
 }

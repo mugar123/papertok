@@ -77,11 +77,11 @@ function refusalReason(body: { name?: unknown; message?: unknown } | null, accou
   return words ? ` (${words})` : '';
 }
 
-async function signIn(account: Account, signal: AbortSignal, timeoutMs: number) {
+async function signIn(account: Account, signal: AbortSignal, timeoutMs: number, request: typeof fetchWithDeadline) {
   const refused = refusedSignIns.get(account.username);
   if (refused && refused.until > Date.now()) throw refused.error;
 
-  const response = await fetchWithDeadline(`${OPENREVIEW_API}/login`, {
+  const response = await request(`${OPENREVIEW_API}/login`, {
     method: 'POST',
     headers: { ...HEADERS, 'content-type': 'application/json' },
     body: JSON.stringify({ id: account.username, password: account.password }),
@@ -145,7 +145,9 @@ function publicNote(note: ReadableNote): OpenReviewNote | null {
  *
  * `timeoutMs` covers the whole lookup, a sign-in included, not each request.
  */
-export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs = SOURCE_UPSTREAM_TIMEOUT_MS) {
+export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs = SOURCE_UPSTREAM_TIMEOUT_MS, {
+  request = fetchWithDeadline, retryUnauthorized = true, requireComplete = false,
+}: { request?: typeof fetchWithDeadline; retryUnauthorized?: boolean; requireComplete?: boolean } = {}) {
   const account = openReviewAccount(env);
   if (!account) {
     const error: UpstreamError = new Error('No OpenReview account is configured');
@@ -153,7 +155,7 @@ export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs 
     throw error;
   }
   const signal = AbortSignal.timeout(timeoutMs);
-  const ask = (token: string) => fetchWithDeadline(
+  const ask = (token: string) => request(
     `${OPENREVIEW_API}/notes?id=${encodeURIComponent(id)}`,
     { headers: { ...HEADERS, authorization: `Bearer ${token}` }, signal },
     timeoutMs,
@@ -161,13 +163,13 @@ export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs 
 
   const kept = sessions.get(account.username);
   const keptToken = kept && Date.now() - kept.signedInAt < TOKEN_LIFETIME_MS ? kept.token : null;
-  let response = await ask(keptToken ?? await signIn(account, signal, timeoutMs));
+  let response = await ask(keptToken ?? await signIn(account, signal, timeoutMs, request));
   // A kept token OpenReview no longer accepts gets one fresh sign-in. A token
   // issued for this very lookup and refused is a failure, not a reason to ask
   // for another.
   if (response.status === 401 && keptToken) {
     if (sessions.get(account.username)?.token === keptToken) sessions.delete(account.username);
-    response = await ask(await signIn(account, signal, timeoutMs));
+    if (retryUnauthorized) response = await ask(await signIn(account, signal, timeoutMs, request));
   }
   if (response.status === 404) return null;
   if (!response.ok) {
@@ -176,9 +178,12 @@ export async function fetchOpenReviewNote(env: WorkerEnv, id: string, timeoutMs 
     error.retryAfter = response.headers.get('retry-after') || '';
     throw error;
   }
-  const payload = await response.json<{ notes?: ReadableNote[] }>();
+  const payload = await response.json<{ notes?: ReadableNote[]; count?: number }>();
+  if (requireComplete && (!Array.isArray(payload?.notes) || payload.notes.length !== 1
+    || (payload.count !== undefined && payload.count !== 1))) return null;
   const note = (payload?.notes || []).find(candidate => candidate?.id === id);
   if (!note) return null;
+  if (requireComplete && (!Array.isArray(note.readers) || !note.readers.includes('everyone'))) return null;
   const reply = (note.forum ?? id) !== id;
   const archived = String(note.domain || '').toLowerCase().startsWith('openreview.net/archive');
   return !reply && isOpenReviewSubmission(note) && !archived ? publicNote(note) : null;

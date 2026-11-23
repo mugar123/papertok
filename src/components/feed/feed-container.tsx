@@ -17,6 +17,7 @@ interface FeedSource {
   onPaperViewed?: (paper: Paper) => void;
   trackImpressions?: boolean;
   persistReadingPosition?: boolean;
+  paperTitlePath?: (paper: Paper) => string | null;
   surface?: string;
   endCard?: ReactNode;
   /** The source's own empty state; a retry button of its own takes FeedRetryRefContext. */
@@ -1520,6 +1521,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onAuthRequired,
           >
             <PaperCard
               paper={paper}
+              titlePath={source?.paperTitlePath?.(paper)}
               publicMode={Boolean(onAuthRequired && !user)}
               onAuthRequired={onAuthRequired}
               isLiked={likedPaperIds.has(interactionIdFor(paper)!)}

@@ -808,6 +808,13 @@ button.pc-topics-pop-item:focus-visible {
   overflow: visible;
 }
 
+.pc-paper-title-link {
+  display: block;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+  -webkit-line-clamp: inherit;
+}
+
 .pc-title-btn {
   display: block;
   width: 100%;

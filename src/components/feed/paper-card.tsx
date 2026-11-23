@@ -34,6 +34,7 @@ export interface PaperCardProps {
   getInteractionState?: (paper: Paper) => { isLiked?: boolean; isSaved?: boolean; isRead?: boolean };
   hideScrollHint?: boolean;
   titleAs?: 'h1' | 'h2';
+  titlePath?: string | null;
   publicMode?: boolean;
   onAuthRequired?: (reason: string) => void;
   /**
@@ -432,6 +433,7 @@ const PaperCard = memo(function PaperCard({
   // The title's level: an h2 wherever the card is one of many, the page's h1
   // where it is the page (PublicPaperPage).
   titleAs = 'h2',
+  titlePath,
   publicMode = false,
   onAuthRequired,
   analyticsSurface,
@@ -2091,7 +2093,13 @@ const PaperCard = memo(function PaperCard({
 
         {/* On a phone the title opens the abstract sheet, which shows it
             whole; only when there is an abstract to show under it. */}
-        {titleOpensSheet ? (
+        {titlePath ? (
+          <TitleTag className="pc-title pc-title--opens" lang="en">
+            <Link className="pc-paper-title-link" to={titlePath}>
+              <span className="pc-title-text"><ScientificText>{paper.title}</ScientificText></span>
+            </Link>
+          </TitleTag>
+        ) : titleOpensSheet ? (
           <TitleTag className="pc-title pc-title--opens" lang="en">
             <button
               type="button"

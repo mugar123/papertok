@@ -100,6 +100,8 @@ flowchart TD
 - The navbar calendar icon opens the public `/conferences` route.
   `/conferences/:editionId` opens a public event page. Both routes use the
   static [edition registry](src/data/conferences.ts) and the Vercel SPA rewrite.
+  The public `/conferences/:editionId/papers` route reads the edition's list
+  from the [Worker conference API](worker/README.md#conference-accepted-paper-lists).
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
   routes. The frontend and Worker deploy separately.
