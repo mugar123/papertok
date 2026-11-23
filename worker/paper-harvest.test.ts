@@ -125,6 +125,25 @@ test("a followed lanes' run embeds its own lanes' papers and leaves the rest to 
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM work_vectors').get() as { n: number }).n, 2);
 });
 
+test('the nightly run stores quality after enrichment even when author lookup fails, while the follow run skips it', async t => {
+  const { env, db } = corpus();
+  const asked = providers(t, url => url.pathname === '/authors' ? new Response(null, { status: 401 }) : undefined);
+  const stored = { ...paper('2610.30005', 'A voted preprint'), authors: [{ id: 'A8', name: 'An author' }], huggingFaceUpvotes: 4 };
+  await ingestPapers(env, [{ paper: stored, lanes: ['cs.CL'] }]);
+  const followed = workflowStep();
+  await runPaperHarvest(env, followRun(['author:A8']), followed.step);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM work_quality').get()?.n, 0);
+
+  const nightly = workflowStep({ skipLanes: true, fail: name => name.startsWith('backfill ') || name.startsWith('evict ') });
+  const errors = t.mock.method(console, 'error', () => {});
+  await runPaperHarvest(env, dailyRun(), nightly.step);
+  assert.ok(nightly.steps.indexOf('author impact 0') > nightly.steps.indexOf('enrich 0'));
+  assert.ok(nightly.steps.indexOf('paper quality 0') < nightly.steps.indexOf('embed 0'));
+  assert.equal(asked.filter(url => url.pathname === '/authors').length, 1);
+  assert.ok(errors.mock.calls.some(call => String(call.arguments[0]).includes('author impact')));
+  assert.deepEqual(db.prepare('SELECT max_h_index, hf_upvotes FROM work_quality').all().map(Object.values), [[null, 4]]);
+});
+
 test('open and closed articles are embedded before backfill and maintenance without repeating unchanged text', async t => {
   providers(t);
   const { env, db, texts } = corpus();

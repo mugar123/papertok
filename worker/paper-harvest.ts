@@ -1,4 +1,5 @@
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import type { AuthorProgress, QualityCursor } from './paper-quality.ts';
 import type { AbstractRetries } from './paper-enrichment.ts';
 import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
@@ -6,6 +7,7 @@ import type { UpstreamError } from './provider-runtime.ts';
 
 import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired, thinLeaves, thinLeavesReport } from './paper-store.ts';
 import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, notableLaneJobs } from './paper-sources.ts';
+import { computePaperQuality, loadPaperAuthorImpact, prunePaperQuality } from './paper-quality.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
 
@@ -66,6 +68,8 @@ const OAI_STEP = { retries: { limit: 3, delay: '1 minute', backoff: 'exponential
 // next time.
 const OAI_MAX_WAIT_SECONDS = 300;
 const OAI_MAX_WAITS = 3;
+// A failed author list waits until the next night, with successful batches already in D1.
+const AUTHOR_STEP = { retries: { limit: 0, delay: '1 minute' }, timeout: '10 minutes' } as const;
 const LANE_STEP = { retries: { limit: 2, delay: '1 minute', backoff: 'exponential' }, timeout: '10 minutes' } as const;
 
 /** Where a set's harvest starts: the last day it was harvested to the end, else the corpus window. */
@@ -217,7 +221,10 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
  * embeddings before historical reads or maintenance. Each enriched batch is
  * embedded before the next one; backfill has a final embedding pass within the
  * same daily budget. Eviction follows them, and last the filing of the areas'
- * journal articles under leaves, which reads the vectors. A run for newly
+ * journal articles under leaves, which reads the vectors. After enrichment,
+ * the paper-quality phases prune `work_quality`, look up author h-indexes
+ * within their own OpenAlex part and score recent papers (paper-quality.ts).
+ * A run for newly
  * followed lanes (`payload.lanes`) harvests those within the new follows' share
  * of OpenAlex and embeds only their papers: the rest of the corpus is the daily
  * run's to embed.
@@ -286,6 +293,26 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
         await step.do(`embed enriched ${batch}:${start}`, PAGE_STEP, () => embedWorks(env, ids, undefined));
       }
       if (enriched.stop) break;
+    }
+  });
+  await phase('prune paper quality', async () => {
+    for (let batch = 0; ; batch += 1) {
+      if (!await step.do(`prune paper quality ${batch}`, PAGE_STEP, () => prunePaperQuality(db, started))) break;
+    }
+  });
+  await phase('author impact', async () => {
+    let progress: AuthorProgress | null = { after: null, pending: [] };
+    for (let batch = 0; progress; batch += 1) {
+      const page: AuthorProgress = progress;
+      progress = await step.do(`author impact ${batch}`, AUTHOR_STEP, (): Promise<AuthorProgress | null> => loadPaperAuthorImpact(db, env, started, page));
+    }
+  });
+  await phase('paper quality', async () => {
+    let after: QualityCursor | null = null;
+    for (let batch = 0; ; batch += 1) {
+      const page: QualityCursor | null = after;
+      after = await step.do(`paper quality ${batch}`, PAGE_STEP, (): Promise<QualityCursor | null> => computePaperQuality(db, started, page));
+      if (!after) break;
     }
   });
   await phase('embed', () => embedAll(env, step));

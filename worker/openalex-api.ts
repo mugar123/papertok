@@ -154,7 +154,26 @@ export async function fetchOpenAlexJsonWithFallback<T = unknown>(url: URL, env: 
 }
 
 /** The longest parameter value the relay forwards; a longer one is dropped. */
-export const OPENALEX_PARAM_MAX_LENGTH = 2_000;
+const OPENALEX_PARAM_MAX_LENGTH = 2_000;
+
+// A longer filter is dropped by the relay. A value too long even on its own cannot be requested.
+export function openAlexFilterBatches(key: string, values: string[], perFilter: number) {
+  const batches: string[][] = [];
+  let length = 0;
+  for (const value of values) {
+    const single = key.length + 1 + value.length;
+    if (single > OPENALEX_PARAM_MAX_LENGTH) continue;
+    const batch = batches.at(-1);
+    if (batch && batch.length < perFilter && length + 1 + value.length <= OPENALEX_PARAM_MAX_LENGTH) {
+      batch.push(value);
+      length += 1 + value.length;
+    } else {
+      batches.push([value]);
+      length = single;
+    }
+  }
+  return batches;
+}
 
 // Rebuilds the upstream URL from an entity allowlist and a parameter allowlist.
 // Nothing the caller sends reaches OpenAlex verbatim -- in particular an

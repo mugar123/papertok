@@ -149,7 +149,8 @@ export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Obj
 // their own, and the nightly run the rest, so neither spends the other's: a
 // follow added after the run's enrichment is still harvested at once. The
 // nightly run's lanes spend named parts of its share, checked in the same
-// transaction (`HARVEST_OPENALEX_PARTS` in paper-sources.ts).
+// transaction (`HARVEST_OPENALEX_PARTS` in paper-sources.ts, and
+// `AUTHOR_IMPACT_PART` in paper-quality.ts).
 export const OPENALEX_HARVEST_DAILY_UNITS = 4_000;
 export const OPENALEX_NEW_FOLLOWS_DAILY_UNITS = 300;
 // How much of the day's ceiling everything that is not the harvest may spend
