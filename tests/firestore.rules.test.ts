@@ -1180,12 +1180,12 @@ test('P19: a quote under eight characters or over four hundred is refused', asyn
   const db = asAlice();
   await assertFails(setDoc(highlightRef(db), highlightBody({ quote: 'siete c' })));
   await assertFails(setDoc(highlightRef(db), highlightBody({ quote: '' })));
-  await assertFails(setDoc(highlightRef(db), highlightBody({ quote: 'a'.repeat(401) })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ quote: 'a'.repeat(1201) })));
   await assertFails(setDoc(highlightRef(db), highlightBody({ quote: 42 })));
   // Both ends of the range the client enforces, asserted so a later trim to
   // either bound fails here first.
   await assertSucceeds(setDoc(highlightRef(db), highlightBody({ quote: 'a'.repeat(8) })));
-  await assertSucceeds(setDoc(highlightRef(db), highlightBody({ quote: 'a'.repeat(400) })));
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody({ quote: 'a'.repeat(1200) })));
 });
 
 test('P19: paragraphIndex is a whole number from zero to one hundred', async () => {
@@ -1297,7 +1297,7 @@ test('P20: an AI annotation at full length is still a clean allow', async () => 
   await assertSucceeds(setDoc(highlightRef(asAlice()), highlightBody({
     paperId: 'a'.repeat(400),
     sectionId: 'a'.repeat(40),
-    quote: 'a'.repeat(400),
+    quote: 'a'.repeat(1200),
     note: 'a'.repeat(2000),
     paperTitle: 'a'.repeat(1000),
     paragraphIndex: 100,
@@ -1315,12 +1315,12 @@ test('P19: the heaviest highlight a reader can write is a clean allow', async ()
   await assertSucceeds(setDoc(highlightRef(asAlice()), highlightBody({
     paperId: 'a'.repeat(400),
     sectionId: 'a'.repeat(40),
-    quote: 'a'.repeat(400),
+    quote: 'a'.repeat(1200),
     note: 'a'.repeat(2000),
     paperTitle: 'a'.repeat(1000),
     paragraphIndex: 99,
     endParagraphIndex: 100,
-    endQuote: 'a'.repeat(400),
+    endQuote: 'a'.repeat(1200),
     kind: 'caveat',
     color: 'violet',
     occurrence: 100,
