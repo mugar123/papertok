@@ -7,7 +7,7 @@ import ConferenceCover from './conference-cover.tsx';
 import ConferenceFilterBar, { ClearFilters } from './conference-filter-bar.tsx';
 import { filterConferences, filterLabels, readConferenceFilters } from '../../utils/conference-filters.ts';
 import { downloadConferenceIcs } from '../../utils/conference-ics.ts';
-import { conferenceSubtitle, coverSaysName, deadlineSources, deadlineToday, formatConferenceDates, formatConferenceMonth, formatDeadline, nextDeadline, usesCcfDeadlines } from '../../utils/conference-text.ts';
+import { conferenceSubtitle, coverSaysName, deadlineCloses, deadlineSources, formatConferenceDates, formatConferenceMonth, formatDeadline, nextDeadline, usesCcfDeadlines } from '../../utils/conference-text.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { conferenceEditions, conferenceFields, findConferenceEdition } from '../../data/conferences.ts';
 import type { ConferenceDeadline, ConferenceEdition } from '../../data/conferences.ts';
@@ -42,9 +42,9 @@ function Sites({ edition }: { edition: ConferenceEdition }) {
   );
 }
 
-function ConferenceCard({ edition, search, deadlineDay }: { edition: ConferenceEdition; search: string; deadlineDay: string }) {
+function ConferenceCard({ edition, search, now }: { edition: ConferenceEdition; search: string; now: number }) {
   const subtitle = conferenceSubtitle(edition);
-  const deadline = nextDeadline(edition, deadlineDay);
+  const deadline = nextDeadline(edition, now);
   return (
     <li className="conference-card" data-field={edition.field}>
       <ConferenceCover edition={edition} />
@@ -64,13 +64,13 @@ function ConferenceCard({ edition, search, deadlineDay }: { edition: ConferenceE
   );
 }
 
-function EditionGroup({ title, editions, search, deadlineDay }: { title: string; editions: readonly ConferenceEdition[]; search: string; deadlineDay: string }) {
+function EditionGroup({ title, editions, search, now }: { title: string; editions: readonly ConferenceEdition[]; search: string; now: number }) {
   if (!editions.length) return null;
   return (
     <section className="conference-group">
       <h2>{title}</h2>
       <ul className="conference-list">
-        {editions.map(edition => <ConferenceCard key={edition.id} edition={edition} search={search} deadlineDay={deadlineDay} />)}
+        {editions.map(edition => <ConferenceCard key={edition.id} edition={edition} search={search} now={now} />)}
       </ul>
     </section>
   );
@@ -93,7 +93,7 @@ function Calendar() {
   const [params, setParams] = useSearchParams();
   const filters = readConferenceFilters(params);
   const today = localCalendarDate(new Date());
-  const deadlineDay = deadlineToday(new Date());
+  const now = new Date().getTime();
   const editions = filterConferences(conferenceEditions, filters);
   const { upcoming, undated, past } = groupConferences(editions, today, filters.month);
   const search = params.toString();
@@ -114,10 +114,10 @@ function Calendar() {
         <ClearFilters filters={filters} params={params} onChange={replace} />
       </div>
       {[...upcoming].map(([month, rows]) => (
-        <EditionGroup key={month} title={formatConferenceMonth(month)} editions={rows} search={search} deadlineDay={deadlineDay} />
+        <EditionGroup key={month} title={formatConferenceMonth(month)} editions={rows} search={search} now={now} />
       ))}
-      <EditionGroup title="Dates to be announced" editions={undated} search={search} deadlineDay={deadlineDay} />
-      <EditionGroup title="Past conferences" editions={past} search={search} deadlineDay={deadlineDay} />
+      <EditionGroup title="Dates to be announced" editions={undated} search={search} now={now} />
+      <EditionGroup title="Past conferences" editions={past} search={search} now={now} />
       <Credits editions={conferenceEditions} />
     </>
   );
@@ -163,9 +163,9 @@ function DeadlineList({ deadlines }: { deadlines: readonly ConferenceDeadline[] 
 }
 
 function Deadlines({ deadlines }: { deadlines: readonly ConferenceDeadline[] }) {
-  const today = deadlineToday(new Date());
-  const open = deadlines.filter(deadline => deadline.date >= today);
-  const passed = deadlines.filter(deadline => deadline.date < today);
+  const now = new Date().getTime();
+  const open = deadlines.filter(deadline => deadlineCloses(deadline) > now);
+  const passed = deadlines.filter(deadline => deadlineCloses(deadline) <= now);
   return (
     <>
       <h3>Key deadlines</h3>
