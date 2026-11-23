@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { runConferenceIngest } from './conference-ingest.ts';
@@ -95,7 +96,7 @@ for (const kind of ['short', 'missing count', 'negative count', 'count smaller t
   });
 }
 
-for (const kind of ['withdrawn', 'rejected', 'deleted', 'restricted', 'not found', 'empty', 'partial', 'unknown', 'unknown visibility', 'malformed readers', 'future deletion', 'error']) {
+for (const kind of ['withdrawn', 'rejected', 'deleted', 'restricted', 'not found', 'empty', 'partial', 'unknown', 'unknown visibility', 'malformed readers', 'empty readers', 'future deletion', 'error']) {
   test('forum recheck handles ' + kind + ' evidence', async context => {
     const state = fixture(context, { credentials: true });
     const forum = 'knownForum';
@@ -112,6 +113,7 @@ for (const kind of ['withdrawn', 'rejected', 'deleted', 'restricted', 'not found
       : kind === 'unknown' ? Response.json({ notes: [{ id: forum, forum, content: {} }] })
       : kind === 'unknown visibility' ? Response.json({ notes: [{ ...withdrawn, readers: 'chairs' }] })
       : kind === 'malformed readers' ? Response.json({ notes: [{ ...withdrawn, readers: ['everyone', 7] }] })
+      : kind === 'empty readers' ? Response.json({ notes: [{ ...withdrawn, readers: [] }] })
       : kind === 'future deletion' ? Response.json({ notes: [{ ...accepted, ddate: Date.now() + 2 * day }] })
       : Response.json({ notes: [] });
     let lookups = 0;
@@ -183,6 +185,42 @@ test('a completed pass immediately prioritizes a forum missing from that pass', 
   assert.deepEqual(state.papers().map(paper => paper.visible), [1, 1]);
 });
 
+for (const [signal, fields] of Object.entries({
+  'empty readers': { readers: [] },
+  'restricted readers': { readers: ['chairs'] },
+  'deletion date': { ddate: Date.UTC(2026, 10, 22) },
+})) {
+  test(`search with ${signal} defers to exact lookups and preserves the published edition`, async context => {
+    const state = fixture(context, { credentials: true });
+    const accepted = ['first', 'second', 'third'].map(forum => submission(forum));
+    let degradedSearch = false;
+    const lookups: string[] = [];
+    context.mock.method(globalThis, 'fetch', async (input: URL | string) => {
+      const url = new URL(input);
+      if (url.pathname === '/login') return Response.json({ token: 'mock-session' });
+      if (url.pathname === '/notes') {
+        lookups.push(url.searchParams.get('id') ?? '');
+        return Response.json({ notes: [], count: 0 });
+      }
+      const notes = degradedSearch ? accepted.map(note => ({ ...note, ...fields })) : accepted;
+      return Response.json({ notes, count: notes.length });
+    });
+
+    await state.run();
+    assert.deepEqual(state.papers().map(paper => paper.visible), [1, 1, 1]);
+    degradedSearch = true;
+    state.advance(60_000);
+    state.refresh();
+    await state.run();
+
+    assert.deepEqual(state.papers().map(paper => paper.visible), [1, 1, 1]);
+    assert.deepEqual(lookups, ['first', 'second', 'third']);
+    assert.equal(state.db.prepare('SELECT COUNT(*) AS count FROM conference_papers WHERE missing_from_search = 1').get()?.count, 3);
+    assert.equal(state.db.prepare('SELECT COUNT(*) AS count FROM conference_forum_block').get()?.count, 0);
+    assert.equal(state.db.prepare("SELECT listed_count FROM conference_editions WHERE edition_id = 'neurips-2026'").get()?.listed_count, 3);
+  });
+}
+
 test('the nightly ledger counts a recheck sign-in as the 150th request and refuses the lookup', async context => {
   const state = fixture(context, { credentials: true });
   let calls = 0;
@@ -230,23 +268,30 @@ test('a recheck 429 keeps the forum and pauses future requests', async context =
 
 test('the documented manual block survives the next accepted harvest', async context => {
   const state = fixture(context);
-  context.mock.method(globalThis, 'fetch', async () => Response.json({ notes: [submission('first')], count: 1 }));
+  const notes = [submission('first'), submission('second')];
+  context.mock.method(globalThis, 'fetch', async () => Response.json({ notes, count: notes.length }));
   await state.run();
-  state.db.exec(`
-    BEGIN;
-    INSERT INTO conference_forum_block (edition_id, forum_id, venue_id, blocked_at)
-    VALUES ('neurips-2026', 'first', 'manual', 1)
-    ON CONFLICT (edition_id, forum_id) DO NOTHING;
-    UPDATE conference_papers SET visible = 0 WHERE edition_id = 'neurips-2026' AND forum_id = 'first';
-    UPDATE conference_editions SET revision = revision + 1,
-      listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = 'neurips-2026' AND visible = 1)
-    WHERE edition_id = 'neurips-2026';
-    COMMIT;
-  `);
+  const edition = state.db.prepare("SELECT revision, listed_count, checked_at, stale_since FROM conference_editions WHERE edition_id = 'neurips-2026'");
+  const before = edition.get();
+  assert.ok(before && typeof before.revision === 'number');
+  assert.equal(before.listed_count, 2);
+
+  const readme = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+  const section = readme.split('### Manually block a forum')[1]?.split('\n### ')[0] ?? '';
+  const [takedown, verify] = [...section.matchAll(/--command "([^"]+)"/g)].map(([, sql]) =>
+    sql.replaceAll('$edition_id', 'neurips-2026').replaceAll('$forum_id', 'first'));
+  assert.ok(takedown && verify);
+  state.db.exec(takedown);
+  assert.deepEqual({ ...state.db.prepare(verify).get() }, { edition_id: 'neurips-2026', forum_id: 'first', venue_id: 'manual' });
+  assert.deepEqual(state.papers().map(paper => paper.visible), [0, 1]);
+  assert.equal(edition.get()?.revision, before.revision + 1);
+  assert.equal(edition.get()?.listed_count, 1);
+
+  state.advance(60_000);
   state.refresh();
   await state.run();
-  assert.equal(state.papers()[0].visible, 0);
-  assert.equal(state.db.prepare("SELECT listed_count FROM conference_editions WHERE edition_id = 'neurips-2026'").get()?.listed_count, 0);
+  assert.deepEqual(state.papers().map(paper => paper.visible), [0, 1]);
+  assert.deepEqual({ ...edition.get() }, { revision: before.revision + 2, listed_count: 1, checked_at: Date.now(), stale_since: null });
 });
 
 test('an explicit withdrawal cancels a forum that is staged in the first harvest', async context => {

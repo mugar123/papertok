@@ -4,7 +4,7 @@ import type { OpenReviewNote } from '../src/services/open-review-service.ts';
 import { mapOpenReviewNote } from '../src/services/open-review-service.ts';
 import { storedPaper } from './paper-store.ts';
 import { conferenceMembership, conferenceSortKey, conferenceSources, openReviewField } from './conference-membership.ts';
-import { fetchOpenReviewNote, isOpenReviewSubmission, openReviewAccount, openReviewSearchUrl, openReviewUnavailable } from './open-review-api.ts';
+import { fetchOpenReviewNote, isOpenReviewSearchNotePublic, isOpenReviewSubmission, openReviewAccount, openReviewSearchUrl } from './open-review-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { findConferenceEdition } from '../src/data/conferences.ts';
@@ -172,12 +172,7 @@ async function ingestPage(db: D1Database, state: EditionState, request: typeof f
 
   const evidence: { forum: string; venue: string }[] = [];
   const statements = await Promise.all(notes.map(async note => {
-    const unavailable = note && openReviewUnavailable(note, now);
-    if (unavailable) {
-      const forum = note.forum;
-      if (forum && note.id === forum && isOpenReviewSubmission(note)) evidence.push({ forum, venue: 'openreview:' + unavailable });
-      return null;
-    }
+    if (!note || !isOpenReviewSearchNotePublic(note, now)) return null;
     const membership = conferenceMembership(state.edition_id, note);
     if (!membership) {
       const forum = note?.forum;

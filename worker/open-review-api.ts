@@ -124,11 +124,20 @@ type ReadableNote = OpenReviewNote & { readers?: unknown; ddate?: unknown };
 type UnavailableNoteReason = 'deleted' | 'restricted';
 
 function validReaders(readers: unknown): readers is string[] {
-  return Array.isArray(readers) && readers.every(reader => typeof reader === 'string' && reader.trim().length > 0);
+  return Array.isArray(readers) && readers.length > 0
+    && readers.every(reader => typeof reader === 'string' && reader.trim().length > 0);
 }
 
-export function openReviewUnavailable(note: ReadableNote, now = Date.now()): UnavailableNoteReason | null {
-  if (typeof note.ddate === 'number' && Number.isSafeInteger(note.ddate) && note.ddate > 0 && note.ddate <= now) return 'deleted';
+function isDeleted(note: ReadableNote, now: number) {
+  return typeof note.ddate === 'number' && Number.isSafeInteger(note.ddate) && note.ddate > 0 && note.ddate <= now;
+}
+
+export function isOpenReviewSearchNotePublic(note: ReadableNote, now: number) {
+  return !isDeleted(note, now) && (note.readers === undefined || (validReaders(note.readers) && note.readers.includes('everyone')));
+}
+
+function openReviewUnavailable(note: ReadableNote): UnavailableNoteReason | null {
+  if (isDeleted(note, Date.now())) return 'deleted';
   if (validReaders(note.readers) && !note.readers.includes('everyone')) return 'restricted';
   return null;
 }

@@ -2033,23 +2033,34 @@ address. Test with `node --test worker/mcp-server.test.ts`.
 
 The nightly conference workflow uses anonymous OpenReview search and signed-in forum lookups, independently of corpus harvesting. Both share atomic quotas of 12 requests per minute and 150 per UTC day, including sign-ins. A D1 lease serializes overlapping work. A failed search defers its edition and lets other editions proceed. A 429 pauses conference requests and honors Retry-After for up to seven days. Search offsets are capped at 10,000.
 
-Each search page needs a count. Both search passes must reach their reported counts before publication. When the staged records fall more than 2% below the search count or the current visible count, the edition keeps its prior list. Forums missing from the latest completed search move to the front of the recheck queue, even when that search was too small to publish. Empty, partial, or failed lookups leave their papers listed. A complete exact lookup can block a forum on an explicit venue change, an effective OpenReview deletion date, or an explicit readers list without `everyone`. Publication excludes blocked forums even if an older search result still marks them accepted.
+Each search page needs a count. Both search passes must reach their reported counts before publication. When the staged records fall more than 2% below the search count or the current visible count, the edition keeps its prior list. Search skips notes with an effective deletion date or a supplied readers list that does not establish public access. Forums missing from the latest completed search move to the front of the recheck queue, even when that search was too small to publish. Empty, partial, or failed lookups leave their papers listed. An explicit venue change can block a forum. Deletion or restricted access requires a complete exact lookup with an effective OpenReview deletion date or a valid, nonempty readers list without `everyone`. Publication excludes blocked forums even if an older search result still marks them accepted.
 
-For a manual takedown, bind the verified edition and forum IDs and the current Unix time in milliseconds. Bind `[editionId, forumId, now]` to the first statement, `[editionId, forumId]` to the second, and `[editionId]` to the third. Run the three prepared statements in one D1 batch so the block, visible count, and public cache revision change together.
+### Manually block a forum
 
-```sql
+With production write approval, set the verified edition and OpenReview forum IDs once in a shell. Use only letters, digits, hyphens and underscores in the IDs. Run the first command to block and hide the forum, update the public count and bump the cache revision. The second command should return one row for the blocked forum.
+
+```sh
+edition_id='neurips-2026'
+forum_id='REPLACE_WITH_FORUM_ID'
+npx wrangler d1 execute PAPER_STORE --remote --command "
 INSERT INTO conference_forum_block (edition_id, forum_id, venue_id, blocked_at)
-VALUES (?1, ?2, 'manual', ?3)
+VALUES ('$edition_id', '$forum_id', 'manual', CAST(strftime('%s', 'now') AS INTEGER) * 1000)
 ON CONFLICT (edition_id, forum_id) DO NOTHING;
 
 UPDATE conference_papers SET visible = 0
-WHERE edition_id = ?1 AND forum_id = ?2;
+WHERE edition_id = '$edition_id' AND forum_id = '$forum_id';
 
 UPDATE conference_editions SET revision = revision + 1,
-  listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = ?1 AND visible = 1)
-WHERE edition_id = ?1;
+  listed_count = (SELECT COUNT(*) FROM conference_papers WHERE edition_id = '$edition_id' AND visible = 1)
+WHERE edition_id = '$edition_id';"
+
+npx wrangler d1 execute PAPER_STORE --remote --command "
+SELECT edition_id, forum_id, venue_id FROM conference_forum_block
+WHERE edition_id = '$edition_id' AND forum_id = '$forum_id';"
 ```
 
 To restore a corrected forum, confirm the exact accepted venue by ID and remove its edition and forum pair from `conference_forum_block`. A subsequent complete harvest can publish it.
+
+### Release conference paper lists
 
 For release, verify D1 capacity, the `REQUEST_QUOTA_LEDGER` binding, and the existing `PDF_RATE_LIMIT_SECRET`, `OPENREVIEW_USERNAME` and `OPENREVIEW_PASSWORD` secrets. Use an OpenReview account with no venue roles. Apply `0015_conference_lists.sql` to `PAPER_STORE`, then deploy the Worker with `CONFERENCE_INGEST` and the feature switch unset. After verifying that deployment, enable the nightly job with `npx wrangler secret put CONFERENCE_PAPERS_ENABLED` and enter `1`. Setting the secret deploys a new version of that Worker. Merge the web last. The Papers tab appears once the API reports a nonzero list.
