@@ -85,7 +85,7 @@ test('reader can translate, see the original again and switch accounts without s
   rememberTranslationLanguage('reader-1', 'ja', localStorage);
   const view = render(createElement(Reader, { uid: 'reader-1' }));
   assert.equal(screen.queryByRole('combobox'), null);
-  const translateButton = screen.getByRole('button', { name: 'Translate' });
+  const translateButton = screen.getByRole('button', { name: 'Translate title and abstract' });
   assert.equal(translateButton.textContent, 'Translate');
   assert.ok(translateButton.querySelector('svg[aria-hidden="true"]'));
   fireEvent.click(translateButton);
@@ -96,15 +96,18 @@ test('reader can translate, see the original again and switch accounts without s
   await waitFor(() => assert.equal(screen.getByText(title).closest('[lang]')?.getAttribute('lang'), 'ja'));
   assert.ok(screen.getByText('AI translation · English to Japanese'));
   assert.equal(screen.getByText(title).closest('[translate]')?.getAttribute('translate'), 'no');
-  assert.match(screen.getByRole('status').textContent ?? '', /Showing AI translation in Japanese/);
+  assert.match(screen.getByRole('status').textContent ?? '', /Showing AI translation of the title and abstract in Japanese/);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Show original' }));
+  const showOriginal = screen.getByRole('button', { name: 'Show original title and abstract' });
+  assert.equal(showOriginal.textContent, 'Show original');
+  fireEvent.click(showOriginal);
   assert.ok(screen.getByText(paper.abstract ?? ''));
   assert.equal(screen.queryByText(title), null);
-  fireEvent.click(screen.getByRole('button', { name: 'Translate' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Translate title and abstract' }));
   assert.ok(screen.getByText(title));
   fireEvent.click(screen.getByRole('button', { name: 'Read full abstract' }));
   assert.equal(screen.getByRole<HTMLSelectElement>('combobox').value, 'ja');
+  assert.equal(screen.getByRole('button', { name: 'Translate abstract' }).textContent?.trim(), 'Translate abstract');
   assert.equal(screen.getAllByRole('option').length, 26);
   for (const name of ['Chinese (Traditional)', 'Catalan', 'Hebrew', 'Galician', 'Basque']) {
     assert.ok(screen.getByRole('option', { name }));
@@ -112,7 +115,7 @@ test('reader can translate, see the original again and switch accounts without s
 
   const late = worker.hold('/ai/translate');
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'de' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Translate paper' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Translate abstract' }));
   await late.requested();
   assert.equal(preferredTranslationLanguage('reader-1', [], localStorage), 'ja');
   // The SDK can switch accounts before React commits the new account context.
@@ -126,7 +129,7 @@ test('reader can translate, see the original again and switch accounts without s
   view.rerender(createElement(Reader, { uid: 'reader-1' }));
   const lateSuccess = worker.hold('/ai/translate');
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'de' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Translate paper' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Translate abstract' }));
   await lateSuccess.requested();
   firebase.auth.currentUser = { uid: 'reader-2', getIdToken: async () => 'new-test-token' };
   view.rerender(createElement(Reader, { uid: 'reader-2' }));
@@ -136,12 +139,12 @@ test('reader can translate, see the original again and switch accounts without s
   });
   assert.equal(screen.queryByText('Entfernung zu Sternen'), null);
   assert.equal(signInPrompts, 0);
-  fireEvent.click(screen.getByRole('button', { name: 'Translate' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Translate title and abstract' }));
   assert.equal(screen.getByRole<HTMLSelectElement>('combobox').value, '');
   assert.equal(document.activeElement, screen.getByRole('combobox'));
 
   view.rerender(createElement(Reader));
-  fireEvent.click(screen.getByRole('button', { name: 'Translate' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Translate title and abstract' }));
   assert.equal(signInPrompts, 1);
   assert.equal(screen.queryByRole('combobox'), null);
 
