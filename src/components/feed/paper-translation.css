@@ -28,12 +28,19 @@
   min-block-size: 24px;
   margin-inline-start: auto;
   /* Keep the ghost button's padding inside the card's clipping edge. */
-  padding-inline: var(--space-6) 0;
+  padding-inline: var(--space-5) 0;
 }
 
 .paper-translation-button > span {
   /* The label supplies the button's baseline in both states. */
   align-self: baseline;
+}
+
+.paper-translation-button,
+.pc-abstract-tools:has(> .paper-translation-button) > .pc-abstract-toggle {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-normal);
 }
 
 .paper-translation-picker {
@@ -61,7 +68,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-1) var(--space-2);
 }
 
 .pc-abstract-tools > .pc-abstract-toggle {
