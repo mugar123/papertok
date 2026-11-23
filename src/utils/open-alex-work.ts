@@ -126,18 +126,27 @@ function normalizeDoi(value: unknown) {
   return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
 }
 
-// The DOI as a path id the Worker relay accepts (`openAlexTargetUrl` in
-// worker/openalex-api.ts): letters, digits and `._:%|,-/`, at most 240
-// characters, nothing that decodes to `..`. `encodeURIComponent` leaves
-// `!'()*~` as they are, and SICI DOIs carry parentheses; the slash after the
-// DOI prefix stays a slash. A `.` or `..` segment would not reach the relay as
-// sent: the URL parser resolves it first, into another path. A DOI the relay
-// would refuse, or the parser rewrite, has no path id ('').
-export function doiPathId(doi: string) {
-  const id = `doi:${encodeURIComponent(doi)
+// The relay checks the encoded id against its 240-character limit. Keep the
+// punctuation it accepts and encode parentheses for SICI DOIs.
+export function doiPathId(doi: string, { preserveEscapes = false } = {}) {
+  let id = `doi:${encodeURIComponent(doi)
     .replace(/[!'()*~]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/%2F/gi, '/')}`;
-  return id.length <= 240 && !doi.includes('..') && !doi.split('/').includes('.') ? id : '';
+    .replace(/%(?:2C|2F|3A|7C)/g, escape => decodeURIComponent(escape))}`;
+  let decoded = doi;
+  if (preserveEscapes && doi.includes('%')) {
+    const escapedId = id.replace(/%25(?=[\da-f]{2})/gi, '%');
+    // Only reuse escapes from a DOI already spelled as a relay path.
+    if (new URL(`https://doi.org/doi:${doi}`).pathname === `/${escapedId}`) {
+      try {
+        decoded = decodeURIComponent(escapedId);
+        id = escapedId;
+      } catch {
+        // Keep the percent signs encoded when the relay cannot decode the escapes.
+      }
+    }
+  }
+  // URL parsing resolves dot segments between literal path separators.
+  return id.length <= 240 && !decoded.includes('..') && !doi.split('/').includes('.') ? id : '';
 }
 
 function extractArxivId(value: unknown) {

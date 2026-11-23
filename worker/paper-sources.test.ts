@@ -2303,10 +2303,25 @@ test('a DOI a reader sends is looked up as that DOI only: no other record, no ad
   assert.deepEqual(await lookedUp('10.1000/a/../../authors/A5023888391'), [], 'a path that leaves the work is not asked');
   assert.deepEqual(await lookedUp('doi:10.1000/a/./b'), []);
   assert.deepEqual(await lookedUp('10.1000/a?select=id&per-page=200'), ['/works/doi:10.1000/a%3Fselect%3Did%26per-page%3D200']);
+  assert.deepEqual(await lookedUp('10.1000/a#part'), ['/works/doi:10.1000/a%23part']);
+  assert.deepEqual(await lookedUp('10.1000/a(%23)b'), ['/works/doi:10.1000/a%28%2523%29b']);
   assert.deepEqual(await lookedUp('10.1002/(SICI)1097-4571(199205)43:4<284::AID-ASI3>3.0.CO;2-0'),
-    ['/works/doi:10.1002/%28SICI%291097-4571%28199205%2943%3A4%3C284%3A%3AAID-ASI3%3E3.0.CO%3B2-0']);
+    ['/works/doi:10.1002/%28SICI%291097-4571%28199205%2943:4%3C284::AID-ASI3%3E3.0.CO%3B2-0']);
   assert.deepEqual(paperIdLookup('10.1000/a/../../authors/A5023888391'), null);
   assert.deepEqual(paperIdLookup('doi:10.1093/genetics/iyag290'), { openAlexPath: '/openalex/works/doi:10.1093/genetics/iyag290' });
+});
+
+test('DOI lookups use the relay limit of 240 encoded identifier characters', async t => {
+  const { urls, env } = relay(t, () => splicingWork);
+  const store = { ...env, PAPER_STORE: testD1().binding } as WorkerEnv;
+  const doi239 = `10.1000/${'a'.repeat(225)}:b`;
+  const doi240 = `10.1000/${'a'.repeat(219)}:,|%C3%A9`;
+  const doi241 = `${doi240}b`;
+
+  await ingestPaperIds(store, [doi239, doi240, doi241], { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
+
+  assert.deepEqual(urls.map(url => url.pathname).sort(), [`/works/doi:${doi240}`, `/works/doi:${doi239}`]);
+  assert.equal(paperIdLookup(doi241), null);
 });
 
 // PAP-88: readers' searches and profile lists stop at 60 % of the day's
