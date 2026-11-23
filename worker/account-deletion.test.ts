@@ -276,7 +276,9 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     assert.equal(store.data.has(`notification:subscription:${UID}`), false);
     assert.equal(store.data.has('notification:unsubscribe:tok-1'), false);
     assert.equal(env.EMAIL_SUBSCRIPTIONS.visitState(UID).lastVisit, undefined);
-    assert.equal(env.EMAIL_SUBSCRIPTIONS.visitState(UID).alarm, null);
+    // The visit's alarm is gone; the one left ends the deleted account's object in 30 days.
+    const alarm = env.EMAIL_SUBSCRIPTIONS.visitState(UID).alarm;
+    assert.ok(alarm !== null && alarm > Date.now() + 29 * 24 * 60 * 60 * 1000 && alarm <= Date.now() + 30 * 24 * 60 * 60 * 1000, String(alarm));
   } finally {
     restore();
   }
@@ -866,4 +868,23 @@ test('a welcome yes that arrives after the deletion purged the subscription, whi
     else (globalThis as TestGlobals).caches = originalCaches;
     restore();
   }
+});
+
+// The subscription object ends 30 days after the account is gone (ENG-215). The
+// purge before the sign-in account's delete must not start that: the delete
+// can be refused, and the reader keeps the account.
+test('a deletion whose sign-in account delete is refused leaves the subscription object without an end date', async () => {
+  const { env, object } = welcomeEnvironment();
+  assert.equal((await emailNotificationInternals.startDigestOptIn(WELCOME_YES_REQUEST(), env, { uid: UID, email: 'alice@example.com', displayName: '' })).outcome, 'created');
+
+  await assert.rejects(
+    () => runAccountDeletionSlice(memoryAdmin(), UID, env, {
+      idToken: TOKEN,
+      fetchImpl: async () => new Response(JSON.stringify({ error: { message: 'CREDENTIAL_TOO_OLD_LOGIN_AGAIN' } }), { status: 400 }),
+    }),
+    error => (error as Error & { code?: string }).code === 'AUTH_RECENT_LOGIN_REQUIRED',
+  );
+
+  assert.equal(env.EMAIL_SUBSCRIPTIONS.visitState(UID).alarm, null);
+  assert.ok((await object()).version > 0, 'the object lost its marks');
 });

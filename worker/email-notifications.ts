@@ -149,6 +149,14 @@ const OPT_IN_ACCOUNT_HOURLY_LIMIT = 10;
 // retryable failure. A put that lands later writes a value the key may already
 // hold and cannot replace anything else (see startDigestOptIn).
 const INDEX_WRITE_DEADLINE_MS = 5_000;
+// Workers KV refuses a second write to one key within a second (429).
+const KV_SAME_KEY_WRITE_INTERVAL_MS = 1000;
+// Every unsubscribe-link index expires this long after its last write. A save
+// that writes it, and every email before it goes out (checkDraft), write it
+// again, so the link of each email works for at least this long after it was
+// sent. One a late write left for a cancelled subscription, or for a deleted
+// account, goes on its own. The same period as the delivery state's.
+const LINK_INDEX_TTL_SECONDS = 120 * 24 * 60 * 60;
 const SCHEDULE_STATUS_KEY = 'notification:schedule:last-run';
 const SCHEDULE_HISTORY_PREFIX = 'notification:schedule:history:';
 const SCHEDULE_CURSOR_KEY = 'notification:schedule:cursor';
@@ -1492,7 +1500,7 @@ async function deleteScheduleIndex(env: WorkerEnv, uid: string, deleted?: Set<st
  * A retry passes the same `keys`: once the subscription is gone, only the
  * earlier attempt still knows its unsubscribe index and delivery state.
  */
-export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>()) {
+export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys = new Set<string>(), { accountDeleted = false } = {}) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
   // A KV record that a closed object hides (one a Worker from before the
@@ -1510,6 +1518,11 @@ export async function purgeEmailSubscription(env: WorkerEnv, uid: string, keys =
   // or a later step fails finds no record to learn its token and delivery state from.
   const { held } = await closeBeforeCancelling(env, uid, undefined, undefined, keys);
   const { previous: changed, slot } = await changeSubscription(env, uid, current => (current ? null : undefined));
+  // Once the sign-in account is gone (`accountDeleted`, the purge after the
+  // Auth delete), the object keeps its marks for 30 more days, then deletes
+  // them (forget in email-subscription-store.ts). The purge before the Auth
+  // delete does not: that delete can still be refused, and the account kept.
+  if (accountDeleted) await callSubscriptionStore(env, uid, { action: 'forget' });
   if (!subscriptionInKv(env)) await collectHiddenRecord();
   const previous = changed || held;
   keys.add(key).add(deliveryStateKey(uid, previous || { uid }));
@@ -1682,7 +1695,7 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
     // deadline covers both puts, and nothing more is written once it has passed.
     const indexed = await Promise.race([
       (async () => {
-        await store.put(linkKey, uid);
+        await store.put(linkKey, uid, { expirationTtl: LINK_INDEX_TTL_SECONDS });
         if (expired) return false;
         await store.put(key, JSON.stringify({ uid }));
         return true;
@@ -1700,11 +1713,24 @@ async function startDigestOptIn(request: Request, env: WorkerEnv, identity: Emai
     if (!indexed) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
     const { slot } = await callSubscriptionStore(env, uid, announce ? { action: 'announce', token: subscription.unsubscribeToken } : { action: 'read' });
     if (slot.subscription?.unsubscribeToken === subscription.unsubscribeToken) return slot.announced ? 'created' as const : 'on' as const;
-    await store.delete(linkKey);
+    // Best effort, each step tried once more after a second: KV refuses a
+    // second write to one key within a second, and these keys were written
+    // just now. The answer is what the object holds either way. What is left
+    // goes by itself: the link index expires (LINK_INDEX_TTL_SECONDS), and the
+    // schedule's next window removes an index that points at no subscription.
+    const tidy = async (step: () => Promise<unknown>) => {
+      try {
+        await step();
+      } catch {
+        await wait(KV_SAME_KEY_WRITE_INTERVAL_MS);
+        await step().catch((error: unknown) => console.warn('Could not remove an index the opt-in wrote', (error as Error)?.message || error));
+      }
+    };
+    await tidy(() => store.delete(linkKey));
     // The schedule key goes only when the reader has no subscription: one
     // they made since owns it. deleteScheduleIndex leaves a record alone and
     // puts the index back if they subscribe while it runs.
-    if (!slot.subscription) await deleteScheduleIndex(env, uid);
+    if (!slot.subscription) await tidy(() => deleteScheduleIndex(env, uid));
     return 'changed' as const;
   };
   // The answer for a reader the opt-in may not write for; null at version 0,
@@ -1844,7 +1870,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   // The link first, and the schedule index only once the link is there, so a
   // put that fails never leaves a reader the schedule reaches and whose
   // unsubscribe link answers 400.
-  if (owner !== identity.uid) await store.put(unsubscribeKey, identity.uid);
+  if (owner !== identity.uid) await store.put(unsubscribeKey, identity.uid, { expirationTtl: LINK_INDEX_TTL_SECONDS });
   if (!inKv && !(indexed && !indexed.unsubscribeToken)) await store.put(key, JSON.stringify({ uid: identity.uid }));
   if (changed && read.selectionChanged) {
     await updateDeliveryState(env, key, subscription, () => ({ heldDigest: null }));
@@ -3210,17 +3236,40 @@ function draftMatchesSubscription(draft: { provider?: string; subscriptionVersio
  * record counts only while its revision is the object's version: a KV read can
  * return the record from before the last save, and a save reopens the object,
  * raising its version, before it writes KV.
+ *
+ * Before that, the draft's unsubscribe link: its index is written again, which
+ * also renews its expiry, so an email never goes out with a link that answers
+ * 400. A save whose link write failed, while an index of the reader's
+ * schedule key outlived the cancellation before it, left exactly that.
+ * `link-unavailable` when KV cannot write it: the send waits for a later
+ * window. An index written here for a subscription the object no longer
+ * holds is deleted again.
  */
-async function checkDraft(env: WorkerEnv, key: string, draft: Parameters<typeof draftMatchesSubscription>[0] & { orcidConnectedAt?: string }) {
+async function checkDraft(env: WorkerEnv, key: string, draft: Parameters<typeof draftMatchesSubscription>[0] & { orcidConnectedAt?: string; unsubscribeUrl?: string | null }) {
   const uid = subscriptionUid(key);
   if (draft.orcidConnectedAt
     && (await readDigestOrcid(env, uid).catch(() => null))?.connectedAt !== draft.orcidConnectedAt) return 'orcid-changed';
+  const store = env.NOTIFICATION_STORE!;
+  const token = draft.provider === 'resend' && draft.unsubscribeUrl ? new URL(draft.unsubscribeUrl).searchParams.get('token') : null;
+  const linkKey = token && `${UNSUBSCRIBE_PREFIX}${token}`;
+  let written = false;
+  if (linkKey) {
+    try {
+      written = (await store.get(linkKey)) !== uid;
+      await store.put(linkKey, uid, { expirationTtl: LINK_INDEX_TTL_SECONDS });
+    } catch {
+      return 'link-unavailable';
+    }
+  }
   const kv = subscriptionInKv(env) ? await readKvRecord(env, uid) : null;
   const { slot } = await callSubscriptionStore(env, uid, { action: 'read' });
   const current = slot.subscription ? slot
     : kv && slot.migratable && kv.revision === slot.version ? kv : null;
   const subscription = current && withVersion(current);
-  return subscription?.enabled && draftMatchesSubscription(draft, subscription) ? 'current' : 'subscription-changed';
+  if (subscription?.enabled && draftMatchesSubscription(draft, subscription)) return 'current';
+  // Best effort: an index left here expires with the rest (LINK_INDEX_TTL_SECONDS).
+  if (linkKey && written && subscription?.unsubscribeToken !== token && slot.token !== token) await store.delete(linkKey).catch(() => undefined);
+  return 'subscription-changed';
 }
 
 async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEnv, {
@@ -3271,6 +3320,10 @@ async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEn
     // The earlier send may have reached Resend. Keep its ledger entry so an
     // ORCID change or outage cannot turn a potentially sent edition into a new send.
     if (current === 'orcid-changed') return { pending: true, cancelled: true };
+    // Nothing is sent with a link that may answer 400. The reservation stays,
+    // and a later window settles it as uncertain without sending, as for any
+    // retry that did not go out; the first attempt may have reached Resend.
+    if (current === 'link-unavailable') return { pending: true };
     if (current === 'subscription-changed') {
       await releaseEmailDelivery(env, reservationId, ledgerTime);
       return { pending: true, cancelled: true };
@@ -3333,10 +3386,16 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   // The last check, right before the send: a draft goes out only while the
   // subscription is the version it was prepared from. A new address, a follow
   // removed or an unsubscribe since then cancels it.
-  if (await checkDraft(env, key, reservedDraft) !== 'current') {
+  const verdict = await checkDraft(env, key, reservedDraft);
+  if (verdict !== 'current') {
     if (reservation.duplicate) return { pending: true };
     await releaseEmailDelivery(env, reservationId, now);
-    return { cancelled: true };
+    if (verdict !== 'link-unavailable') return { cancelled: true };
+    // Not sent with a link that may answer 400: the schedule tries again in a
+    // later window, and a test email answers a retryable failure.
+    const postponed = new EmailNotificationError('EMAIL_UNSUBSCRIBE_LINK_UNAVAILABLE', 503);
+    postponed.transient = true;
+    throw postponed;
   }
   return deliverReservedDraft(env, reservationId, reservedDraft, now);
 }
