@@ -14,8 +14,9 @@
     {
       "collectionGroup": "authorMetricReceipts",
       "fieldPath": "expiresAt",
-      "ttl": true,
-      "indexes": []
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
     }
   ]
 }

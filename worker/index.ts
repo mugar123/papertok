@@ -1,5 +1,6 @@
 import type { WorkerEnv } from './env.ts';
 
+import { runAuthorReceiptCleanup } from './author-metrics.ts';
 import { runEmailNotificationSchedule } from './email-notifications.ts';
 import { PAPER_HARVEST_CRON } from './paper-harvest.ts';
 import { PAPER_STORE_PING_CRON, pingPaperStore } from './paper-store.ts';
@@ -38,6 +39,8 @@ export default {
         const conferenceId = 'conferences-' + new Date(controller.scheduledTime).toISOString().slice(0, 10);
         context.waitUntil(env.CONFERENCE_INGEST.create({ id: conferenceId }).then(() => undefined, (error: unknown) => console.error('Conference ingest did not start', error)));
       }
+      // Once a day: one Firestore read when nothing has expired.
+      context.waitUntil(runAuthorReceiptCleanup(env, controller.scheduledTime));
       return;
     }
     context.waitUntil(runEmailNotificationSchedule(env, controller.scheduledTime));
