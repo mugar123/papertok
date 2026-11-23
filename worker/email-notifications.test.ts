@@ -8724,7 +8724,7 @@ test('a deleted account\'s object waits for its cleanup journal before it ends, 
   assert.equal((await ask({ action: 'read' })).version, 2);
   assert.equal(stores.visitState('journal-reader').alarm, ends + 24 * 60 * 60 * 1000);
 
-  await ask({ action: 'read', ack: cleanup!.map(entry => entry.at) });
+  await ask({ action: 'read', ack: cleanup.map(entry => entry.at) });
   t.mock.timers.setTime(ends + 24 * 60 * 60 * 1000);
   await stores.runAlarm('journal-reader');
   assert.deepEqual(await ask({ action: 'read' }), { version: 0, subscription: null, migratable: true, cancelledAt: 0, consentRevision: 0 });
