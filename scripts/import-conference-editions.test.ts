@@ -24,7 +24,7 @@ const row = {
 test('normalizes a verified event without repeating the year or retaining tracking', () => {
   assert.deepEqual(convertConferenceEdition(row, 'engineering'), {
     id: 'example2027', name: 'Example2027', series: 'Example Conference', acronym: 'Example2027', year: 2027, field: 'engineering',
-    dates: [{ start: '2027-03-01', end: null }], placeText: 'Chicago', format: 'hybrid',
+    dates: [{ start: '2027-03-01', end: null }], placeText: 'Chicago', country: undefined, format: 'hybrid',
     url: 'https://example.org/2027?lang=en', sourceUrl: 'https://example.org/2027',
     checkedOn: '2026-11-23', source: undefined, dateText: undefined,
   });
@@ -112,4 +112,19 @@ test('drops the remarks a deadline label ends with and keeps that a date is tent
   assert.equal(labelOf('Decisions (Fall; decision is final major-revision n)'), 'Decisions (Fall)');
   assert.equal(labelOf('Papers due (Cycle 1 Deadline)'), 'Papers due (Cycle 1)');
   assert.equal(labelOf('Abstracts due (preliminary)'), 'Abstracts due (preliminary)');
+});
+
+test('records a country the source or a U.S. state makes certain, and no other', () => {
+  const countryOf = (fields: object) => convertConferenceEdition({ ...row, placeText: null, ...fields }, 'engineering')?.country;
+  for (const [placeText, expected] of [
+    ['Hinxton, UK', 'GB'], ['Atlanta, Georgia, USA', 'US'], ['Atlanta, GA', 'US'], ['Savannah, GA', undefined], ['Toronto, CA', undefined], ['Tel Aviv, IL', undefined], ['Norman, OK', 'US'], ['Washington, D.C., and online', 'US'], ['Seattle, Washington', 'US'],
+    ['Honolulu, Hawaiʻi', 'US'], ['Seoul, Republic of Korea', 'KR'], ['Madrid (Spain)', 'ES'], ['Rotterdam, The Netherlands', 'NL'], ['Tbilisi, Georgia', undefined],
+    ['Atlanta, Georgia', undefined], ['Berlin, DE', undefined], ['Perth, WA', undefined], ['Messe Berlin', undefined], ['Hannover', undefined],
+    ['University of Pennsylvania Perelman School of Medicine', undefined], ['Washington', undefined], ['Granada, Sierra Nevada', undefined],
+  ] as const) assert.equal(countryOf({ placeText }), expected, placeText);
+  assert.equal(countryOf({ placeText: 'University of Reading', country: 'United Kingdom' }), 'GB');
+  assert.equal(countryOf({ placeText: 'Perth, WA', country: 'Australia' }), 'AU');
+  assert.equal(countryOf({ placeText: 'Atlanta, GA', country: 'Atlantis' }), undefined);
+  assert.equal(countryOf({ placeText: 'Convention and Expo Center', city: 'Hong Kong' }), 'HK');
+  assert.equal(countryOf({ placeText: 'Fully Virtual', online: true }), undefined);
 });

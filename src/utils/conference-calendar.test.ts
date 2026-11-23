@@ -3,7 +3,7 @@ import test from 'node:test';
 import { conferenceEditions, findConferenceEdition } from '../data/conferences.ts';
 import { groupConferences, isConferencePath, localCalendarDate } from './conference-calendar.ts';
 import type { ConferenceEdition } from '../data/conferences.ts';
-import { filterConferences } from './conference-filters.ts';
+import { filterConferences, matchingSites } from './conference-filters.ts';
 
 test('an edition stays upcoming until its last site ends', () => {
   const { upcoming, past } = groupConferences(conferenceEditions, '2026-12-13');
@@ -54,11 +54,22 @@ test('an edition that crosses months is listed under the month the reader chose'
   const july = findConferenceEdition('icml-2027');
   assert.deepEqual(july?.dates, [{ start: '2027-07-31', end: '2027-08-06' }]);
   const listed = (month: string | null) => {
-    const { upcoming } = groupConferences(filterConferences(conferenceEditions, { field: 'cs', month, format: null }), '2026-11-23', month);
+    const { upcoming } = groupConferences(filterConferences(conferenceEditions, { field: 'cs', region: null, month, format: null }), '2026-11-23', month);
     return [...upcoming].filter(([, rows]) => rows.some(row => row.id === 'icml-2027')).map(([key]) => key);
   };
   assert.deepEqual(listed('2027-08'), ['2027-08']);
   assert.deepEqual(listed('2027-07'), ['2027-07']);
   assert.deepEqual(listed(null), ['2027-07']);
   assert.deepEqual(listed('2027-09'), []);
+});
+
+test('an edition is listed by the sites in the chosen region', () => {
+  const fixture: ConferenceEdition = { id: 'sites', name: 'Sites', series: 'Sites', year: 2027, field: 'cs', dates: [
+    { start: '2026-12-06', end: '2026-12-12', country: 'AU' },
+    { start: '2027-01-09', end: '2027-01-13', country: 'FR' },
+  ] };
+  const months = (region: 'oceania' | 'europe' | null) => [...groupConferences([fixture], '2026-11-23', null, edition => matchingSites(edition, { region, month: null })).upcoming.keys()];
+  assert.deepEqual(months('europe'), ['2027-01']);
+  assert.deepEqual(months('oceania'), ['2026-12']);
+  assert.deepEqual(months(null), ['2026-12']);
 });

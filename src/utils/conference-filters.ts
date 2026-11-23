@@ -1,5 +1,7 @@
 import { conferenceFields } from '../data/conferences.ts';
-import type { ConferenceEdition, ConferenceField } from '../data/conferences.ts';
+import type { ConferenceEdition, ConferenceField, ConferenceSite } from '../data/conferences.ts';
+import { conferenceRegions, regionOfCountry } from '../data/conference-regions.ts';
+import type { ConferenceRegion } from '../data/conference-regions.ts';
 import { formatConferenceMonth } from './conference-text.ts';
 
 export const conferenceFormats = {
@@ -12,6 +14,7 @@ type FormatFilter = keyof typeof conferenceFormats;
 
 export type ConferenceFilters = {
   field: ConferenceField | null;
+  region: ConferenceRegion | null;
   /** `YYYY-MM`. */
   month: string | null;
   format: FormatFilter | null;
@@ -26,6 +29,7 @@ export function readConferenceFilters(params: URLSearchParams): ConferenceFilter
   const month = params.get('month');
   return {
     field: known<ConferenceField>(conferenceFields, params.get('field')),
+    region: known<ConferenceRegion>(conferenceRegions, params.get('region')),
     month: month !== null && /^20\d\d-(?:0[1-9]|1[0-2])$/.test(month) ? month : null,
     format: known<FormatFilter>(conferenceFormats, params.get('format')),
   };
@@ -40,8 +44,8 @@ export function withConferenceParam(params: URLSearchParams, name: string, value
 }
 
 /** The active filters in words, in the order of the filter bar. */
-export function filterLabels({ field, month, format }: ConferenceFilters) {
-  return [field && conferenceFields[field], month && formatConferenceMonth(month), format && conferenceFormats[format]].filter(label => label !== null);
+export function filterLabels({ field, region, month, format }: ConferenceFilters) {
+  return [field && conferenceFields[field], region && conferenceRegions[region], month && formatConferenceMonth(month), format && conferenceFormats[format]].filter(label => label !== null);
 }
 
 /**
@@ -55,14 +59,47 @@ export function conferenceFormatsOf(edition: ConferenceEdition): FormatFilter[] 
   return placed ? ['in-person', 'unknown'] : ['unknown'];
 }
 
-function meetsInMonth({ start, end }: ConferenceEdition['dates'][number], month: string) {
+/**
+ * The regions of one site, or of an edition that has no dates yet. A site whose
+ * country is not certain is in its own choice, so no region hides it unseen.
+ */
+function regionsAt(edition: ConferenceEdition, site?: ConferenceSite): ConferenceRegion[] {
+  if (edition.format === 'online') return ['online'];
+  const country = site?.country ?? edition.country;
+  const place = (country && regionOfCountry(country)) || 'unknown';
+  return edition.format === 'hybrid' ? [place, 'online'] : [place];
+}
+
+/** Every region an edition meets in, once each. */
+export function conferenceRegionsOf(edition: ConferenceEdition) {
+  const sites = edition.dates.length ? edition.dates : [undefined];
+  return [...new Set(sites.flatMap(site => regionsAt(edition, site)))];
+}
+
+function meetsInMonth({ start, end }: ConferenceSite, month: string) {
   return start.slice(0, 7) <= month && (end ?? start).slice(0, 7) >= month;
 }
 
-export function filterConferences(editions: readonly ConferenceEdition[], { field, month, format }: ConferenceFilters) {
+/** The sites of an edition in the region and the month. */
+export function matchingSites(edition: ConferenceEdition, { region, month }: Pick<ConferenceFilters, 'region' | 'month'>) {
+  return edition.dates.filter(site => (!region || regionsAt(edition, site).includes(region)) && (!month || meetsInMonth(site, month)));
+}
+
+export function filterConferences(editions: readonly ConferenceEdition[], filters: ConferenceFilters) {
+  const { field, region, month, format } = filters;
   return editions.filter(edition => (!field || edition.field === field)
-    && (!month || edition.dates.some(site => meetsInMonth(site, month)))
-    && (!format || conferenceFormatsOf(edition).includes(format)));
+    && (!format || conferenceFormatsOf(edition).includes(format))
+    && (edition.dates.length ? matchingSites(edition, filters).length > 0 : !month && (!region || conferenceRegionsOf(edition).includes(region))));
+}
+
+export function isCalendarView(params: URLSearchParams) {
+  return params.get('view') === 'calendar';
+}
+
+/** The chosen day of the link's month, as `YYYY-MM-DD`. */
+export function readConferenceDay(params: URLSearchParams, month: string) {
+  const day = `${month}-${params.get('day') ?? ''}`;
+  return /-\d\d$/.test(day) && !Number.isNaN(Date.parse(day)) && new Date(day).toISOString().startsWith(day) ? day : null;
 }
 
 /** Every month with a conference, in order, and the chosen one even if it has none. */

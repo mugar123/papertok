@@ -16,7 +16,15 @@
 
 .conference-page h1 { font-size: clamp(1.9rem, 4.2vw, 2.6rem); }
 
-.conference-header > p { color: var(--text-secondary); }
+.conference-list-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.conference-list-header p { color: var(--text-secondary); }
 
 .conference-filters {
   display: grid;

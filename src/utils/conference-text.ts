@@ -15,6 +15,10 @@ export function formatConferenceDates(start: string, end: string | null) {
   return end ? dateFormat.formatRange(new Date(start), new Date(end)) : dateFormat.format(new Date(start));
 }
 
+export function conferencePlace(edition: ConferenceEdition, city?: string) {
+  return city ?? edition.placeText ?? edition.venue ?? (edition.format === 'online' ? 'Online' : 'Location to be announced');
+}
+
 /** Letters and digits, without the years a name adds to its series. */
 function bareName(value: string) {
   return value.toLowerCase().replace(/\b20\d\d\b/g, '').replace(/[^\p{L}\p{N}]+/gu, '');

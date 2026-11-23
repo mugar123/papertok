@@ -1,0 +1,239 @@
+.conference-calendar { margin-top: var(--space-5); }
+
+.conference-month-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.conference-month-bar h2 {
+  margin-right: auto;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+}
+
+.conference-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  color: var(--text-secondary);
+}
+
+.conference-month,
+.conference-days {
+  width: 100%;
+  table-layout: fixed;
+  border-spacing: 0;
+}
+
+.conference-month th,
+.conference-days th {
+  padding: var(--space-1) var(--space-2);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+/* Every cell has a left border, so a bar's width adds up from equal cells. */
+.conference-month { border: solid var(--border-default); border-width: 1px 1px 1px 0; }
+
+.conference-month td {
+  --bar: 1.75rem;
+
+  position: relative;
+  height: calc(2rem + max(var(--rows), 2) * var(--bar) + var(--space-1));
+  padding: 0;
+  border-top: 1px solid var(--border-default);
+  vertical-align: top;
+}
+
+.conference-month td { border-left: 1px solid var(--border-subtle); }
+.conference-month :is(td, th):first-child { border-left: 1px solid var(--border-default); }
+.conference-month td[data-outside] { background: var(--bg-sunken); }
+
+.conference-month time {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  margin: 0.25rem;
+  padding: 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.conference-month td[aria-current="date"] time {
+  border-radius: var(--radius-sm);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-weight: var(--fw-semibold);
+}
+
+.conference-bars {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A bar starts in its first day's cell and covers the days after it. */
+.conference-bar {
+  position: absolute;
+  z-index: 1;
+  top: calc(2rem + var(--lane) * var(--bar));
+  left: 0;
+  width: calc(var(--span) * 100% + (var(--span) - 1) * 1px);
+  padding-inline: 2px;
+}
+
+.conference-bar a,
+.conference-more {
+  display: block;
+  width: 100%;
+  height: 1.5rem;
+  padding-inline: var(--space-2);
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: 1.5rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.conference-bar a {
+  border: 1px solid color-mix(in srgb, var(--conference-ink) 40%, var(--bg-card));
+  background: color-mix(in srgb, var(--conference-ink) 10%, var(--bg-card));
+  line-height: calc(1.5rem - 2px);
+  text-decoration: none;
+}
+
+.conference-bar a[data-starts] {
+  border-left: 3px solid var(--conference-ink);
+  border-start-start-radius: var(--radius-sm);
+  border-end-start-radius: var(--radius-sm);
+}
+
+.conference-bar a[data-ends] {
+  border-start-end-radius: var(--radius-sm);
+  border-end-end-radius: var(--radius-sm);
+}
+
+/* A bar cut by the week's edge has no border there. */
+.conference-bar a:not([data-starts]) { border-left: 0; }
+.conference-bar a:not([data-ends]) { border-right: 0; }
+
+.conference-more {
+  position: absolute;
+  z-index: 1;
+  top: calc(2rem + 3 * var(--bar));
+  left: 0;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .conference-bar a:hover { background: color-mix(in srgb, var(--conference-ink) 20%, var(--bg-card)); }
+  .conference-more:hover { color: var(--text-primary); }
+}
+
+.conference-more-popup {
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: var(--available-height);
+  overflow-y: auto;
+}
+
+.conference-more-title {
+  font-family: var(--font-serif);
+  font-size: var(--fs-base);
+}
+
+.conference-more-list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conference-more-list li {
+  padding-block: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.conference-more-list a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+  font-family: var(--font-serif);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.conference-more-list p {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.conference-days th { padding-inline: 0; text-align: center; }
+.conference-days td { padding: 1px; }
+
+.conference-days button {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 2.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+.conference-days td[aria-selected="true"] button {
+  border-color: var(--border-ink);
+  background: var(--bg-secondary);
+  font-weight: var(--fw-semibold);
+}
+
+.conference-day-number {
+  min-width: 1.5rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.25rem;
+}
+
+.conference-days button[aria-current="date"] .conference-day-number {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.conference-day-marks {
+  display: flex;
+  gap: 2px;
+  height: 5px;
+}
+
+.conference-day-marks span {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--conference-ink);
+}
+
+.conference-day { margin-top: var(--space-5); }
+
+.conference-day h2 {
+  margin-bottom: var(--space-3);
+  font-family: var(--font-serif);
+  font-size: var(--fs-xl);
+}

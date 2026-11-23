@@ -1,6 +1,7 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { regionOfCountry } from '../src/data/conference-regions.ts';
 import type { ConferenceDeadline, ConferenceDetails, ConferenceEdition, ConferenceFormat } from '../src/data/conferences.ts';
 
 const fields = {
@@ -112,6 +113,57 @@ function notesSayHybrid(notes: unknown) {
 /** Editions whose own words say hybrid although their row says "online": false. */
 const verifiedHybrid: ReadonlySet<string> = new Set(['ecosta-2027']);
 
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+const letters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+const countryCodes = letters.flatMap(first => letters.map(second => first + second)).filter(code => regionOfCountry(code));
+const countryByName = new Map<string, string>([
+  ...countryCodes.map(code => [countryKey(regionNames.of(code) ?? code), code] as const),
+  ...Object.entries({
+    us: 'US', usa: 'US', 'united states of america': 'US', uk: 'GB', 'great britain': 'GB', england: 'GB', scotland: 'GB', wales: 'GB', 'northern ireland': 'GB',
+    'republic of korea': 'KR', 'hong kong': 'HK', macau: 'MO', macao: 'MO', 'czech republic': 'CZ', turkey: 'TR', 'viet nam': 'VN', uae: 'AE',
+  }),
+]);
+const stateNames = new Set(['alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado', 'connecticut', 'delaware', 'district of columbia', 'florida', 'hawaii',
+  'idaho', 'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana', 'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota', 'mississippi', 'missouri',
+  'montana', 'nebraska', 'nevada', 'new hampshire', 'new jersey', 'new mexico', 'new york', 'north carolina', 'north dakota', 'ohio', 'oklahoma', 'oregon',
+  'pennsylvania', 'rhode island', 'south carolina', 'south dakota', 'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington', 'west virginia', 'wisconsin', 'wyoming']);
+// Codes that are also country codes (CA, IL, IN, GA, DE, WA...) are read as states only in verifiedPlaces.
+const stateCodes = new Set('AL AK AZ AR CA CO CT DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WV WI WY'.split(' '));
+/**
+ * Places whose country was checked by hand: they name the state without a comma
+ * before it, or by a code that is also a country code ("Chicago, IL").
+ */
+const verifiedPlaces: ReadonlyMap<string, string> = new Map([
+  ['Atlanta, GA', 'US'],
+  ['Big Island of Hawaii', 'US'],
+  ['Boston Convention & Exhibition Center, Boston, MA', 'US'],
+  ['Boston, MA', 'US'],
+  ['Chicago, IL', 'US'],
+  ['Hilton Chicago, Chicago, IL', 'US'],
+  ['Louisville Kentucky', 'US'],
+  ['Nashville, TN', 'US'],
+  ['New Orleans, LA', 'US'],
+  ['San Diego Convention Center in San Diego, CA', 'US'],
+  ['San Diego Convention Center, San Diego, CA', 'US'],
+  ['SAN DIEGO, CA', 'US'],
+  ['San Francisco, CA', 'US'],
+  ['University of Maryland, Baltimore County, Baltimore, MD', 'US'],
+]);
+
+function countryKey(name: string) {
+  return name.toLowerCase().replaceAll('.', '').replace(/^the\s+/, '').trim();
+}
+
+/** The country a place ends with, by its name or by a U.S. state after a city. */
+function countryOfPlace(place: string) {
+  const parts = place.split(/[,/·()]/).map(part => part.trim()).filter(Boolean);
+  const last = parts.at(-1) ?? '';
+  // Georgia is a country and a state.
+  if (countryKey(last) === 'georgia') return undefined;
+  const isState = parts.length > 1 && (stateNames.has(countryKey(last).replace(/[^a-z\s]/g, '')) || (stateCodes.has(last.replaceAll('.', '')) && !regionOfCountry(last.replaceAll('.', ''))));
+  return isState ? 'US' : countryByName.get(countryKey(last));
+}
+
 const verifiedSites: Readonly<Record<string, string>> = {
   'aiche-2027': 'https://www.aiche.org/conferences/aiche-annual-meeting/2027',
   asce2027: 'https://www.asce.org/asce2027',
@@ -162,6 +214,9 @@ export function convertConferenceEdition(value: unknown, inputField: keyof typeo
   const place = rawPlace.trim().replace(/^(?:(?:in|at|on)\s+)?(?:the\s+)?(?=\p{Lu})/u, '');
   const placeText = onlineOnly.test(place) ? '' : place.replace(onlineTail, '');
   const officialUrl = verifiedSites[id] ?? (source === undefined && !/\.pdf$/i.test(new URL(url).pathname) ? withoutTracking(url) : undefined);
+  // A country the source states decides. Otherwise its place or its city may name one.
+  const certainCountry = text(country) ? countryByName.get(countryKey(country))
+    : countryOfPlace(placeText) ?? (text(city) ? countryOfPlace(city) : undefined) ?? verifiedPlaces.get(placeText);
   const meetsOnline = online === true || onlineWord.test(place);
   const format: ConferenceFormat | undefined = (meetsOnline && placeText) || verifiedHybrid.has(id) || (online !== false && notesSayHybrid(notes)) ? 'hybrid'
     : meetsOnline ? 'online' : online === false ? 'in-person' : undefined;
@@ -171,7 +226,7 @@ export function convertConferenceEdition(value: unknown, inputField: keyof typeo
     series: series.replace(/ \? /g, ' – '), acronym: text(acronym) ? acronym.trim().replace(/ \? /g, ' – ') : undefined, year: Number(year), field: fields[inputField], url: officialUrl, source,
     sourceUrl: withoutTracking(sourceUrl), checkedOn, format,
     dateText: text(dateText) && !dateText.includes('?') ? dateText : undefined,
-    placeText: placeText || undefined,
+    placeText: placeText || undefined, country: placeText ? certainCountry : undefined,
     dates: typeof startsOn === 'string' ? [{ start: startsOn, end: typeof endsOn === 'string' ? endsOn : null }] : [],
   };
 }
@@ -231,6 +286,7 @@ function main() {
   const editions = rows.map(row => (nameCounts.get(row.name) ?? 0) > 1
     ? { ...row, name: row.series + ' (' + row.name + ')' }
     : row);
+  console.log('Country not certain: ' + editions.filter(edition => !edition.country).map(edition => edition.id).join(', '));
   writeFileSync(new URL('../src/data/conference-editions.ts', import.meta.url),
     "import type { ConferenceDetails, ConferenceEdition } from './conferences.ts';\n\n/** Details of the editions that conferences.ts writes by hand. */\nexport const launchDetails: Readonly<Record<string, ConferenceDetails>> = " + JSON.stringify(launchDetails) + ";\n\nexport const importedEditions: readonly ConferenceEdition[] = [\n"
     + editions.map(row => '  ' + JSON.stringify(row) + ',\n').join('') + '];\n');

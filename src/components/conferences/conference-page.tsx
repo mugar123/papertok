@@ -1,68 +1,27 @@
-import { ArrowLeft, ArrowUpRight, CalendarBlank, CalendarPlus, MapPin } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowUpRight, CalendarPlus } from '@phosphor-icons/react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '../ui/button.tsx';
 import { buttonVariants } from '../ui/button-variants.ts';
 import PrivacyPopover from '../public/privacy-popover.tsx';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
+import ConferenceCard, { ConferenceSites } from './conference-card.tsx';
 import ConferenceCover from './conference-cover.tsx';
+import ConferenceDeadlines from './conference-deadlines.tsx';
 import ConferenceFilterBar, { ClearFilters } from './conference-filter-bar.tsx';
-import { filterConferences, filterLabels, readConferenceFilters } from '../../utils/conference-filters.ts';
+import ConferenceMonthView from './conference-month-view.tsx';
+import { filterConferences, filterLabels, isCalendarView, matchingSites, readConferenceDay, readConferenceFilters, withConferenceParam } from '../../utils/conference-filters.ts';
+import type { ConferenceFilters } from '../../utils/conference-filters.ts';
+import { calendarEntries, entriesInMonth } from '../../utils/conference-month.ts';
 import { downloadConferenceIcs } from '../../utils/conference-ics.ts';
-import { conferenceSubtitle, coverSaysName, deadlineSources, deadlineToday, formatConferenceDates, formatConferenceMonth, formatDeadline, nextDeadline, usesCcfDeadlines } from '../../utils/conference-text.ts';
+import { conferenceSubtitle, deadlineToday, formatConferenceDates, formatConferenceMonth, usesCcfDeadlines } from '../../utils/conference-text.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { conferenceEditions, conferenceFields, findConferenceEdition } from '../../data/conferences.ts';
-import type { ConferenceDeadline, ConferenceEdition } from '../../data/conferences.ts';
+import type { ConferenceEdition } from '../../data/conferences.ts';
 import { groupConferences, localCalendarDate } from '../../utils/conference-calendar.ts';
 import './conference-page.css';
 
 /** What the source states. A format it does not state has no label. */
 const formatLabels = { 'in-person': 'In person', online: 'Online', hybrid: 'In person + online' } as const;
-
-function placeOf(edition: ConferenceEdition, city?: string) {
-  return city ?? edition.placeText ?? edition.venue ?? (edition.format === 'online' ? 'Online' : 'Location to be announced');
-}
-
-function Site({ dates, place }: { dates: string; place: string }) {
-  return (
-    <li>
-      <span className="conference-site-dates"><CalendarBlank aria-hidden="true" /> {dates}</span>
-      <span><MapPin aria-hidden="true" /> {place}</span>
-    </li>
-  );
-}
-
-/** The dates and place of each site. An edition without dates has one place. */
-function Sites({ edition }: { edition: ConferenceEdition }) {
-  return (
-    <ul className="conference-sites">
-      {edition.dates.map(({ start, end, city }) => (
-        <Site key={start + (city ?? '')} dates={formatConferenceDates(start, end)} place={placeOf(edition, city)} />
-      ))}
-      {!edition.dates.length && <Site dates="Dates to be announced" place={placeOf(edition)} />}
-    </ul>
-  );
-}
-
-function ConferenceCard({ edition, search, deadlineDay }: { edition: ConferenceEdition; search: string; deadlineDay: string }) {
-  const subtitle = conferenceSubtitle(edition);
-  const deadline = nextDeadline(edition, deadlineDay);
-  return (
-    <li className="conference-card" data-field={edition.field}>
-      <ConferenceCover edition={edition} />
-      <div className="conference-card-copy">
-        {/* The edition's name too, when the acronym and year on the cover do not make it. */}
-        <p className="conference-field">{conferenceFields[edition.field]}{subtitle && !coverSaysName(edition) && ` · ${edition.name}`}</p>
-        <h3>
-          <Link to={`/conferences/${edition.id}`} state={{ calendarSearch: search }}>
-            {subtitle && <span className="visually-hidden">{edition.name}: </span>}
-            {subtitle ?? edition.name}
-          </Link>
-        </h3>
-        <Sites edition={edition} />
-        {deadline && <p className="conference-chip">{deadline.label} · {formatDeadline(deadline)}</p>}
-      </div>
-    </li>
-  );
-}
 
 function EditionGroup({ title, editions, search, deadlineDay }: { title: string; editions: readonly ConferenceEdition[]; search: string; deadlineDay: string }) {
   if (!editions.length) return null;
@@ -91,34 +50,70 @@ function Credits({ editions }: { editions: readonly ConferenceEdition[] }) {
 
 function Calendar() {
   const [params, setParams] = useSearchParams();
-  const filters = readConferenceFilters(params);
+  const read = readConferenceFilters(params);
+  const inCalendar = isCalendarView(params);
+  // The calendar shows the month it is on. Only the list filters by it.
+  const filters = inCalendar ? { ...read, month: null } : read;
   const today = localCalendarDate(new Date());
-  const deadlineDay = deadlineToday(new Date());
+  const month = read.month ?? today.slice(0, 7);
   const editions = filterConferences(conferenceEditions, filters);
-  const { upcoming, undated, past } = groupConferences(editions, today, filters.month);
   const search = params.toString();
   const replace = (next: URLSearchParams) => setParams(next, { replace: true });
-  // Naming the filters makes the announcement differ when the count does not.
-  const count = `${editions.length} ${editions.length === 1 ? 'conference' : 'conferences'}`;
+  // The calendar's month and day say where it is, not what to filter: the list starts from every month.
+  const listParams = ['view', 'month', 'day'].reduce((next, name) => withConferenceParam(next, name, null), params);
+  const goTo = (nextMonth: string | null, day: string | null) => replace(withConferenceParam(withConferenceParam(params, 'month', nextMonth), 'day', day));
+  // Each site is its own entry, and a region keeps only the sites in it.
+  const entries = inCalendar ? calendarEntries(editions.map(edition => ({ edition, sites: matchingSites(edition, filters) }))) : [];
+  const inMonth = new Set(entriesInMonth(entries, month).map(entry => entry.edition)).size;
+  const count = editions.length ? `${editions.length} ${editions.length === 1 ? 'conference' : 'conferences'}` : 'No conferences';
   return (
     <>
-      <header className="conference-header">
-        <h1>Conference calendar</h1>
-        <p>Explore research conferences by field, date and format.</p>
+      <header className="conference-header conference-list-header">
+        <div>
+          <h1>Conference calendar</h1>
+          <p>Explore research conferences by field, region, date and format.</p>
+        </div>
+        <ToggleGroup aria-label="View" value={[inCalendar ? 'calendar' : 'list']} onValueChange={([view]) => { if (view) replace(view === 'calendar' ? withConferenceParam(params, 'view', view) : listParams); }}>
+          <ToggleGroupItem value="list">List</ToggleGroupItem>
+          <ToggleGroupItem value="calendar">Calendar</ToggleGroupItem>
+        </ToggleGroup>
       </header>
-      <ConferenceFilterBar filters={filters} params={params} onChange={replace} />
+      <ConferenceFilterBar filters={filters} params={params} inCalendar={inCalendar} onChange={replace} />
       <div className="conference-state">
+        {/* Naming the filters makes the announcement differ when the count does not. */}
         <p role="status" className="conference-count">
-          {[editions.length ? count : 'No conferences', ...filterLabels(filters)].join(' · ')}
+          {[count, ...filterLabels(filters), ...(inCalendar ? [`${inMonth} in ${formatConferenceMonth(month)}`] : [])].join(' · ')}
         </p>
-        <ClearFilters filters={filters} params={params} onChange={replace} />
+        <ClearFilters filters={filters} params={params} inCalendar={inCalendar} onChange={replace} />
       </div>
+      {inCalendar ? (
+        <ConferenceMonthView
+          month={month}
+          today={today}
+          entries={entries}
+          search={search}
+          day={readConferenceDay(params, month)}
+          undated={editions.filter(edition => !edition.dates.length).length}
+          listSearch={listParams.toString()}
+          onMonth={nextMonth => goTo(nextMonth, null)}
+          onDay={day => goTo(day.slice(0, 7), day.slice(8))}
+        />
+      ) : <ConferenceList editions={editions} filters={filters} today={today} search={search} />}
+      <Credits editions={conferenceEditions} />
+    </>
+  );
+}
+
+function ConferenceList({ editions, filters, today, search }: { editions: readonly ConferenceEdition[]; filters: ConferenceFilters; today: string; search: string }) {
+  const { upcoming, undated, past } = groupConferences(editions, today, filters.month, edition => matchingSites(edition, filters));
+  const deadlineDay = deadlineToday(new Date());
+  return (
+    <>
       {[...upcoming].map(([month, rows]) => (
         <EditionGroup key={month} title={formatConferenceMonth(month)} editions={rows} search={search} deadlineDay={deadlineDay} />
       ))}
       <EditionGroup title="Dates to be announced" editions={undated} search={search} deadlineDay={deadlineDay} />
       <EditionGroup title="Past conferences" editions={past} search={search} deadlineDay={deadlineDay} />
-      <Credits editions={conferenceEditions} />
     </>
   );
 }
@@ -132,7 +127,7 @@ function Hero({ edition }: { edition: ConferenceEdition }) {
         <p className="conference-field">{conferenceFields[edition.field]}</p>
         <h1>{edition.name}</h1>
         {subtitle && <p className="conference-series">{subtitle}</p>}
-        <Sites edition={edition} />
+        <ConferenceSites edition={edition} />
         {edition.format && <p className="conference-chip">{formatLabels[edition.format]}</p>}
         <div className="conference-actions">
           {edition.dates.length > 0 && (
@@ -148,37 +143,6 @@ function Hero({ edition }: { edition: ConferenceEdition }) {
         </div>
         {edition.dates.length > 0 && <p className="conference-note">.ics download · No account needed</p>}
       </div>
-    </>
-  );
-}
-
-function DeadlineList({ deadlines }: { deadlines: readonly ConferenceDeadline[] }) {
-  return (
-    <dl className="conference-facts">
-      {deadlines.map(deadline => (
-        <div key={deadline.label + deadline.date}><dt>{deadline.label}</dt><dd><time dateTime={deadline.date}>{formatDeadline(deadline)}</time></dd></div>
-      ))}
-    </dl>
-  );
-}
-
-function Deadlines({ deadlines }: { deadlines: readonly ConferenceDeadline[] }) {
-  const today = deadlineToday(new Date());
-  const open = deadlines.filter(deadline => deadline.date >= today);
-  const passed = deadlines.filter(deadline => deadline.date < today);
-  return (
-    <>
-      <h3>Key deadlines</h3>
-      {open.length > 0 && <DeadlineList deadlines={open} />}
-      {passed.length > 0 && (
-        <details className="conference-passed">
-          <summary>{passed.length === 1 ? '1 passed deadline' : `${passed.length} passed deadlines`}</summary>
-          <DeadlineList deadlines={passed} />
-        </details>
-      )}
-      <p className="conference-source">
-        Deadlines from {deadlineSources(deadlines).map(({ url, name }, index) => <span key={url}>{index > 0 && ', '}<a href={url}>{name}</a></span>)}. Confirm them with the organizer.
-      </p>
     </>
   );
 }
@@ -200,7 +164,7 @@ function Overview({ edition }: { edition: ConferenceEdition }) {
         {venue && <div><dt>Venue</dt><dd>{venue}</dd></div>}
         {place && place !== venue && <div><dt>Location</dt><dd>{place}</dd></div>}
       </dl>
-      {deadlines && <Deadlines deadlines={deadlines} />}
+      {deadlines && <ConferenceDeadlines deadlines={deadlines} />}
     </>
   );
 }
