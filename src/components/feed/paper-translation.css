@@ -66,6 +66,14 @@
   background: var(--bg-primary);
 }
 
+.paper-translation-picker > button {
+  block-size: auto;
+  min-block-size: max(24px, var(--space-8));
+  max-inline-size: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .pc-abstract-tools {
   display: flex;
   flex-wrap: wrap;
@@ -76,6 +84,7 @@
 
 .pc-abstract-tools > .pc-abstract-toggle {
   align-self: baseline;
+  text-align: start;
 }
 
 .abstract-sheet-body > .paper-translation-picker {

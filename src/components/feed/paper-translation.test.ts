@@ -2,8 +2,8 @@ import '../../../tests/dom/dom-environment.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement, useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { loadPaperTranslation } from '../../../tests/dom/component-modules.ts';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { loadAbstractSheet, loadPaperTranslation } from '../../../tests/dom/component-modules.ts';
 import { stubWorker } from '../../../tests/dom/worker-stub.ts';
 import type { Paper } from '../../models/paper.ts';
 import { defaultTranslationLanguage, preferredTranslationLanguage, rememberTranslationLanguage, translationSource } from '../../utils/paper-translation.ts';
@@ -49,6 +49,36 @@ test('the translation parser rejects an oversized title or abstract', () => {
   assert.equal(parseTranslationText({ ...text, abstract: text.abstract + 'x' }), null);
 });
 
+test('the abstract sheet names both translation toggle states', async t => {
+  const { AbstractSheet, close } = await loadAbstractSheet();
+  t.after(async () => {
+    cleanup();
+    await close();
+  });
+  function Sheet() {
+    const [showing, setShowing] = useState(true);
+    return createElement(AbstractSheet, {
+      paper,
+      onClose: () => {},
+      translation: {
+        scope: 'reader', eligible: true, signedIn: true,
+        current: { scope: 'reader', showing, translation: { language: 'es', title: 'Distancias estelares', abstract: 'Medimos distancias con dos métodos.' } },
+        chooseLanguage: () => 'es' as const,
+        translate: async () => { setShowing(true); },
+        showOriginal: () => setShowing(false),
+      },
+    });
+  }
+  render(createElement(Sheet));
+  const original = await screen.findByRole('button', { name: 'Show original title and abstract' });
+  assert.equal(original.textContent, 'Show original');
+  fireEvent.click(original);
+  const translation = screen.getByRole('button', { name: 'Show translation of title and abstract' });
+  assert.equal(translation.textContent, 'Show translation');
+  fireEvent.click(translation);
+  assert.ok(screen.getByRole('button', { name: 'Show original title and abstract' }));
+});
+
 test('reader can translate, see the original again and switch accounts without sharing a result or preference', async t => {
   const app = await loadPaperTranslation();
   const worker = stubWorker();
@@ -84,6 +114,11 @@ test('reader can translate, see the original again and switch accounts without s
   }
   rememberTranslationLanguage('reader-1', 'ja', localStorage);
   const view = render(createElement(Reader, { uid: 'reader-1' }));
+  function pickerSubmit() {
+    const form = screen.getByRole('combobox').closest('form');
+    assert.ok(form);
+    return within(form).getByRole('button', { name: 'Translate title and abstract' });
+  }
   assert.equal(screen.queryByRole('combobox'), null);
   const translateButton = screen.getByRole('button', { name: 'Translate title and abstract' });
   assert.equal(translateButton.textContent, 'Translate');
@@ -107,7 +142,7 @@ test('reader can translate, see the original again and switch accounts without s
   assert.ok(screen.getByText(title));
   fireEvent.click(screen.getByRole('button', { name: 'Read full abstract' }));
   assert.equal(screen.getByRole<HTMLSelectElement>('combobox').value, 'ja');
-  assert.equal(screen.getByRole('button', { name: 'Translate abstract' }).textContent?.trim(), 'Translate abstract');
+  assert.equal(pickerSubmit().textContent?.trim(), 'Translate');
   assert.equal(screen.getAllByRole('option').length, 26);
   for (const name of ['Chinese (Traditional)', 'Catalan', 'Hebrew', 'Galician', 'Basque']) {
     assert.ok(screen.getByRole('option', { name }));
@@ -115,7 +150,7 @@ test('reader can translate, see the original again and switch accounts without s
 
   const late = worker.hold('/ai/translate');
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'de' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Translate abstract' }));
+  fireEvent.click(pickerSubmit());
   await late.requested();
   assert.equal(preferredTranslationLanguage('reader-1', [], localStorage), 'ja');
   // The SDK can switch accounts before React commits the new account context.
@@ -129,7 +164,7 @@ test('reader can translate, see the original again and switch accounts without s
   view.rerender(createElement(Reader, { uid: 'reader-1' }));
   const lateSuccess = worker.hold('/ai/translate');
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'de' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Translate abstract' }));
+  fireEvent.click(pickerSubmit());
   await lateSuccess.requested();
   firebase.auth.currentUser = { uid: 'reader-2', getIdToken: async () => 'new-test-token' };
   view.rerender(createElement(Reader, { uid: 'reader-2' }));
@@ -139,7 +174,10 @@ test('reader can translate, see the original again and switch accounts without s
   });
   assert.equal(screen.queryByText('Entfernung zu Sternen'), null);
   assert.equal(signInPrompts, 0);
-  fireEvent.click(screen.getByRole('button', { name: 'Translate title and abstract' }));
+  const cardTranslate = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Translate title and abstract' })
+    .find(button => button.type === 'button');
+  assert.ok(cardTranslate);
+  fireEvent.click(cardTranslate);
   assert.equal(screen.getByRole<HTMLSelectElement>('combobox').value, '');
   assert.equal(document.activeElement, screen.getByRole('combobox'));
 
