@@ -32,6 +32,10 @@ import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import UsesCount from '../reader/uses-count.tsx';
 import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-viewer-notes.ts';
 import { fullTextListen } from './read-aloud.ts';
+import { ReadingTabs } from './reading-tabs.tsx';
+import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
+
+const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
@@ -175,6 +179,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // `consent` and `uid` drop it at once, and `analyticsSessionContext` checks again at each send.
   const { trackEvent, consent } = useAnalyticsConsent();
   const { user, readingPreferences } = useAuth();
+  // The plain-words reader as the viewer's second tab: it opens over the paper, and its Paper tab comes back.
+  const [plain, setPlain] = useState(false);
+  const canPlain = Boolean(user) && canRewritePaper(paper);
   const uid = user?.uid ?? '';
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
     void trackEvent(name, params, stillValid);
@@ -274,8 +281,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             </DialogClose>
 
             {/* The bar names the paper once the article's own title has scrolled
-                away, rising in from below; it leaves the way it came. */}
-            <AnimatePresence initial={false}>
+                away, rising in from below; it leaves the way it came. Where the paper
+                can be read in plain words, the bar holds the two tabs instead. */}
+            {canPlain ? <ReadingTabs current="paper" onChange={view => setPlain(view === 'plain')} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
                   key="title"
@@ -288,7 +296,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                   {paper.title}
                 </motion.h3>
               )}
-            </AnimatePresence>
+            </AnimatePresence>}
           </div>
 
           <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined}>
@@ -441,6 +449,11 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             />}
           </div>
         </div>
+        {plain && (
+          <Suspense fallback={null}>
+            <PaperReader paper={paper} card={{ paper, menu }} onClose={() => { setPlain(false); onClose(); }} onPaperTab={() => setPlain(false)} />
+          </Suspense>
+        )}
       </DialogContent>
     </Dialog>
   );

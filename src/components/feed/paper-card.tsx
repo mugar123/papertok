@@ -2689,6 +2689,10 @@ const PaperCard = memo(function PaperCard({
             originRect={readerOrigin}
             closeRef={readerCloseRef}
             onClose={() => setShowReader(false)}
+            onPaperTab={() => {
+              setShowReader(false);
+              void onOpenPdf(readablePaper, undefined, readerMenu);
+            }}
           />
         </Suspense>,
         document.body,

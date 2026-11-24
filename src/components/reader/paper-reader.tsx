@@ -11,6 +11,8 @@ interface PaperReaderProps {
   closeRef?: Ref<() => void> | null;
   /** The level to open at instead of the reader's default (the summary history opens the one it lists). */
   initialLevel?: ReadingLevel;
+  /** Opens the paper itself, when the reader is one of two tabs with the paper viewer. */
+  onPaperTab?: () => void;
 }
 export type ReaderCopy = typeof COPY.en;
 import { useCallback, useEffect, useEffectEvent, useId, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -71,6 +73,7 @@ import { PassageHandles } from '../pdf/passage-handles.tsx';
 import { overlapping, quoteOffsets, replacingHighlights } from '../pdf/passage-range.ts';
 import { useOutlineActive } from '../pdf/use-outline.ts';
 import { PaperAuthors } from '../pdf/paper-byline.tsx';
+import { ReadingTabs } from '../pdf/reading-tabs.tsx';
 import { acceptedConferenceText } from '../../utils/paper-status.ts';
 import HighlightedScientificText from './highlighted-scientific-text.tsx';
 import UsesCount from './uses-count.tsx';
@@ -382,7 +385,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
   );
 }
 
-export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel }: PaperReaderProps) {
+export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel, onPaperTab }: PaperReaderProps) {
   const { user, readingPreferences, interestSettings } = useAuth();
   const uid = user?.uid;
   const { trackEvent, consent } = useAnalyticsConsent();
@@ -1189,8 +1192,9 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
               <X size={18} aria-hidden="true" />
             </Button>
             {/* The bar names the paper once the document's own title has scrolled
-                away, rising in from below; it leaves the way it came. */}
-            <AnimatePresence initial={false}>
+                away, rising in from below; it leaves the way it came. Opened as the
+                viewer's tab, the bar holds the two tabs instead. */}
+            {onPaperTab ? <ReadingTabs current="plain" onChange={(view) => { if (view === 'paper') onPaperTab(); }} /> : <AnimatePresence initial={false}>
               {!titleInView && (
                 <motion.p
                   key="title"
@@ -1203,7 +1207,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
                   <ScientificText>{paper?.title}</ScientificText>
                 </motion.p>
               )}
-            </AnimatePresence>
+            </AnimatePresence>}
           </header>
 
         {/* The viewer's stage: the notes take the right of it, and the paper and its dock move over. */}
