@@ -152,7 +152,7 @@ export default function ReadAloudListen({ title, queue, player, voiceLeft = null
         <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
         {voiceLeft && (
           <p className="rd-podcast-header-voice">
-            <span className="rd-tag rd-uses" title="New papers with PaperTok’s voice left today">
+            <span className="rd-tag rd-tag--ai rd-uses" role="status">
               <Headphones size={12} aria-hidden="true" />
               <UsesCount left={voiceLeft.papersLeft} limit={voiceLeft.dailyPapers} what="new papers with PaperTok’s voice" />
             </span>

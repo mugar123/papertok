@@ -1,6 +1,8 @@
 import { authenticatedWorkerFetch } from './worker-api-client.ts';
 
 const PARAGRAPH_TIMEOUT_MS = 40_000;
+/** Papers asked about in one request, the most the Worker answers for (`/tts/papers`). */
+const VOICED_PAGE = 60;
 
 export class ReadAloudError extends Error {
   declare code: string;
@@ -17,7 +19,7 @@ export class ReadAloudError extends Error {
 function postToVoice(body: unknown, signal?: AbortSignal) {
   const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
   if (!apiBase) return Promise.resolve(null);
-  return authenticatedWorkerFetch(`${apiBase}/tts/paragraph`, {
+  return authenticatedWorkerFetch(`${apiBase}/tts/papers`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -25,10 +27,14 @@ function postToVoice(body: unknown, signal?: AbortSignal) {
   }, PARAGRAPH_TIMEOUT_MS).catch(() => null);
 }
 
-/** Tells the Worker every paragraph of the paper came with PaperTok's audio, so the feed can show it. */
-export async function markPaperVoiced(paperId: string) {
-  const response = await postToVoice({ paperId, voiced: true });
-  if (response?.ok) noteVoiced([paperId]);
+/**
+ * Hands the Worker the name of every paragraph's audio, so it marks the paper as voiced once it
+ * finds them all stored, and the feed can show it.
+ */
+export async function markPaperVoiced(paperId: string, audio: string[]) {
+  const response = await postToVoice({ paperId, voiced: true, audio });
+  const body = response?.ok ? await response.json().catch(() => null) as { voiced?: unknown } | null : null;
+  if (body?.voiced === true) noteVoiced([paperId]);
 }
 
 const voiced = new Map<string, boolean>();
@@ -59,8 +65,8 @@ export function askPaperVoiced(paperId: string) {
   asking ??= setTimeout(() => {
     asking = null;
     const ids = [...asked].filter(id => !voiced.has(id));
-    for (let start = 0; start < ids.length; start += 60) {
-      const page = ids.slice(start, start + 60);
+    for (let start = 0; start < ids.length; start += VOICED_PAGE) {
+      const page = ids.slice(start, start + VOICED_PAGE);
       void postToVoice({ papers: page })
         .then(response => (response?.ok ? response.json() as Promise<{ voiced?: unknown }> : null))
         .then((body) => {
@@ -71,7 +77,10 @@ export function askPaperVoiced(paperId: string) {
   }, 50);
 }
 
-/** How many new papers the account may still have read in PaperTok's voice today; null when unknown. */
+/**
+ * How many new papers the account may still have read in PaperTok's voice today. Null when
+ * unknown, and for an account whose AI is unlimited, so neither shows a count.
+ */
 export async function fetchVoiceUsage({ signal }: { signal?: AbortSignal } = {}) {
   const response = await postToVoice({ usage: true }, signal);
   const body = response?.ok ? await response.json().catch(() => null) as { papersLeft?: unknown; dailyPapers?: unknown } | null : null;
@@ -80,9 +89,9 @@ export async function fetchVoiceUsage({ signal }: { signal?: AbortSignal } = {})
 }
 
 /**
- * One paragraph spoken by PaperTok's voice, as MP3. With `storedOnly` the
- * Worker answers only from audio already made, refusing with
- * `AI_AUDIO_NOT_STORED` rather than spending credits.
+ * One paragraph spoken by PaperTok's voice, as MP3, with the name the Worker
+ * stores it under. With `storedOnly` the Worker answers only from audio already
+ * made, refusing with `AI_AUDIO_NOT_STORED` rather than spending credits.
  */
 export async function fetchParagraphAudio(text: string, { signal, storedOnly = false, paperId }: { signal?: AbortSignal; storedOnly?: boolean; paperId?: string } = {}) {
   const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
@@ -102,7 +111,7 @@ export async function fetchParagraphAudio(text: string, { signal, storedOnly = f
     const body = await response.json().catch(() => null) as { code?: unknown; quota?: { scope?: unknown } } | null;
     throw new ReadAloudError(typeof body?.code === 'string' ? body.code : 'AI_UNAVAILABLE', typeof body?.quota?.scope === 'string' ? body.quota.scope : undefined);
   }
-  return response.blob();
+  return { blob: await response.blob(), key: response.headers.get('x-tts-audio') };
 }
 
 /**

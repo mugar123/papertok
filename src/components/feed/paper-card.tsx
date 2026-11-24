@@ -519,7 +519,8 @@ const PaperCard = memo(function PaperCard({
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
   const { institution, user } = useAuth();
-  // Whether PaperTok's voice is ready for every paragraph: listening to it then spends no use.
+  // Stored audio for every paragraph, which listening spends none of the day's papers on.
+  const hasCitations = paper.citationCountKnown || (paper.citationCount ?? 0) > 0;
   const voiced = useSyncExternalStore(subscribeVoicedPapers, () => Boolean(user) && isPaperVoiced(paper.id));
   useEffect(() => {
     if (user) askPaperVoiced(paper.id);
@@ -2031,7 +2032,7 @@ const PaperCard = memo(function PaperCard({
                 <span className="pc-date">{paper.year}</span>
               </>
             ) : null}
-            {(paper.citationCountKnown || paper.citationCount! > 0) && (
+            {hasCitations && (
               <>
                 {/* The modifier gives this dot the chip's fade: the two mount
                     together, and when enrichment runs past the ceiling they
@@ -2057,9 +2058,10 @@ const PaperCard = memo(function PaperCard({
             )}
             {voiced && (
               <>
-                {(categoryLabel || reason || paper.year || paper.citationCountKnown || paper.citationCount! > 0) ? <span className="pc-meta-dot">·</span> : null}
-                <span className="pc-voiced" title="PaperTok’s voice is ready for this paper: listening uses none of today’s papers">
+                {(categoryLabel || reason || paper.year || hasCitations) ? <span className="pc-meta-dot">·</span> : null}
+                <span className="pc-voiced">
                   <Headphones size={12} weight="bold" aria-hidden="true" /> Audio ready
+                  <span className="visually-hidden">, free to listen</span>
                 </span>
               </>
             )}

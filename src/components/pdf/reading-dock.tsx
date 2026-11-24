@@ -34,15 +34,27 @@ type ReadingDockProps = Pick<ComponentProps<typeof PaperDock>, 'scroll' | 'conte
 };
 
 export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canListen, topbar = null, notes, originalUrl, children }: ReadingDockProps) {
-  const { readingPreferences } = useAuth();
+  const { readingPreferences, user } = useAuth();
+  // How many new papers the account may still hear in PaperTok's voice today, read again when a
+  // paragraph is refused for them; kept with the account it was read for.
+  const [voiceRead, setVoiceRead] = useState(0);
+  const [voiceUsage, setVoiceUsage] = useState<{ uid: string; usage: Awaited<ReturnType<typeof fetchVoiceUsage>> } | null>(null);
+  const voiceLeft = voiceUsage && voiceUsage.uid === user?.uid ? voiceUsage.usage : null;
   const { trackEvent } = useAnalyticsConsent();
   const readAloud = useReadAloud(spoken?.queue ?? NO_PASSAGES, spoken?.chapters ?? NO_CHAPTERS, {
     title,
     paperId: paper?.id,
-    onFallback: cause => toast(!(cause instanceof ReadAloudError) ? 'PaperTok’s voice is not available right now, so this browser’s voice reads instead.'
-      : cause.code === 'AI_QUOTA_EXHAUSTED' && cause.scope === 'user' ? 'You have used today’s papers with PaperTok’s voice, so this browser’s voice reads the parts without it. More tomorrow.'
-      : cause.code === 'AI_QUOTA_EXHAUSTED' || cause.code === 'AI_AUDIO_NOT_STORED' ? 'Parts of this paper have no PaperTok audio yet, so this browser’s voice reads them.'
-      : 'PaperTok’s voice is not available right now, so this browser’s voice reads instead.'),
+    onFallback: (cause) => {
+      const code = cause instanceof ReadAloudError ? cause.code : '';
+      if (code === 'AI_QUOTA_EXHAUSTED' && (cause as ReadAloudError).scope === 'user') {
+        setVoiceRead(read => read + 1);
+        toast('You have used today’s papers with PaperTok’s voice, so this browser’s voice reads the parts without it. More tomorrow.');
+      } else if (code === 'AI_QUOTA_EXHAUSTED' || code === 'AI_AUDIO_NOT_STORED') {
+        toast('Parts of this paper have no PaperTok audio yet, so this browser’s voice reads them.');
+      } else {
+        toast('PaperTok’s voice is not available right now, so this browser’s voice reads instead.');
+      }
+    },
     onError: () => toast.error('Reading aloud stopped. This browser could not play the voice.'),
     onBlocked: () => toast('The audio is ready. Press play to listen.'),
   });
@@ -92,23 +104,24 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     setListening(open);
   };
   const podcast = listening && canListen;
-  // How many new papers the account may still hear in PaperTok's voice today, read once the
-  // first passages are ready, so it already counts this paper.
-  const [voiceLeft, setVoiceLeft] = useState<Awaited<ReturnType<typeof fetchVoiceUsage>>>(null);
+  // Read once the first passages are ready, so the count already holds this paper.
   const startupDone = readAloud.startup.failed || readAloud.startup.ready >= readAloud.startup.total;
+  const uid = user?.uid;
   useEffect(() => {
-    if (!podcast || !startupDone) return undefined;
+    if (!podcast || !startupDone || !uid) return undefined;
     const controller = new AbortController();
-    void fetchVoiceUsage({ signal: controller.signal }).then(usage => { if (!controller.signal.aborted) setVoiceLeft(usage); });
+    void fetchVoiceUsage({ signal: controller.signal }).then((usage) => { if (!controller.signal.aborted) setVoiceUsage({ uid, usage }); });
     return () => controller.abort();
-  }, [podcast, startupDone]);
+  }, [podcast, startupDone, uid, voiceRead]);
   const unsaved = readAloud.prepared.ready < readAloud.prepared.total;
-  // Every paragraph has PaperTok's audio: the feed marks the paper as one to hear without spending a use.
+  // Every passage has stored audio: the Worker checks it and the feed shows the paper as voiced.
   const paperId = paper?.id;
   const voiced = Boolean(paperId) && readAloud.prepared.total > 0 && !unsaved;
+  const { audioKeys } = readAloud;
   useEffect(() => {
-    if (voiced && paperId) void markPaperVoiced(paperId);
-  }, [voiced, paperId]);
+    const audio = voiced && paperId ? audioKeys() : null;
+    if (audio && paperId) void markPaperVoiced(paperId, audio);
+  }, [voiced, paperId, audioKeys]);
   useEffect(() => {
     if (!scroll || !podcast) return undefined;
     scroll.toggleAttribute('inert', true);

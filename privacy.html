@@ -559,6 +559,14 @@
         ElevenLabs read it, and plays it to anyone who listens to the same paragraph. When
         neither can answer, your browser's own voice reads the paragraph instead.
       </p>
+      <p>
+        Each account may have two new papers a day read in this voice. To count them, the
+        server keeps, per UTC day, how many new papers and characters of new audio your
+        account used, and for each paper that needed new audio a counter named by a hash of
+        the day, your account and the paper. These counters are kept for three days and are
+        not sent to analytics. When every paragraph of a paper has stored audio, the server
+        also marks that paper, without your account, so the feed can show its audio is ready.
+      </p>
 
       <h2>Who it is shared with</h2>
       <p>

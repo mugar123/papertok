@@ -48,7 +48,7 @@ function recordingLedger({ accepted = true, scope = '', refused = {} }: { accept
       fetch: async (url: RequestInfo | URL, options?: RequestInit) => {
         const call = { period, ...JSON.parse(options!.body as string) };
         if (period.startsWith('tts:making:') || period.startsWith('tts:paper')) {
-          turns.push(call);
+          if (period.startsWith('tts:making:')) turns.push(call);
           if (!making.has(period)) making.set(period, ledgerObject());
           return making.get(period)!.fetch(new Request(url, options));
         }
@@ -90,8 +90,8 @@ function env(ledger: ReturnType<typeof recordingLedger>, bucket: ReturnType<type
   } as unknown as WorkerEnv;
 }
 
-function paragraphRequest(body: unknown = { text: TEXT }, authorization: string | null = 'Bearer test-token') {
-  return new Request(ROUTE, {
+function paragraphRequest(body: unknown = { text: TEXT, paperId: 'paper-1' }, authorization: string | null = 'Bearer test-token', route = ROUTE) {
+  return new Request(route, {
     method: 'POST',
     headers: { origin: ORIGIN, 'content-type': 'application/json', ...(authorization ? { authorization } : {}) },
     body: JSON.stringify(body),
@@ -404,17 +404,18 @@ test('when the request making a paragraph fails, a request waiting for it makes 
   assert.deepEqual(ledger.calls.map(call => call.action), ['reserve', 'release', 'reserve']);
 });
 
+const PAPERS_ROUTE = 'https://papertok-report-api.example/tts/papers';
+const papersRequest = (body: unknown, authorization: string | null = 'Bearer test-token') => paragraphRequest(body, authorization, PAPERS_ROUTE);
+
 test('an account\'s new papers are counted once each, a third is refused, and stored audio stays free', async () => {
-  const ledger = recordingLedger();
-  const bucket = memoryBucket();
-  const environment = env(ledger, bucket, { TTS_DAILY_USER_PAPERS: '2' });
+  const environment = env(recordingLedger(), memoryBucket(), { TTS_DAILY_USER_PAPERS: '2' });
   const ask = (text: string, paperId: string) => withProviders(
     { cartesia: cartesiaAudio },
     () => signedIn(() => reportApi.fetch(paragraphRequest({ text, paperId }), environment)),
   );
-  const usage = async () => (await signedIn(() => reportApi.fetch(paragraphRequest({ usage: true }), environment))).json<{ papersLeft: number; dailyPapers: number }>();
+  const usage = async () => (await signedIn(() => reportApi.fetch(papersRequest({ usage: true }), environment))).json<{ papersLeft: number; dailyPapers: number }>();
 
-  assert.deepEqual(await usage().then(({ papersLeft, dailyPapers }) => ({ papersLeft, dailyPapers })), { papersLeft: 2, dailyPapers: 2 });
+  assert.deepEqual(await usage(), { papersLeft: 2, dailyPapers: 2 });
   assert.equal((await ask(`${TEXT} One.`, 'paper-a')).response.status, 200);
   assert.equal((await ask(`${TEXT} Two.`, 'paper-a')).response.status, 200, 'a second paragraph of the same paper is not a second paper');
   assert.equal((await usage()).papersLeft, 1);
@@ -434,15 +435,14 @@ test('an account\'s new papers are counted once each, a third is refused, and st
   assert.equal((await ask(`${TEXT} Five.`, 'paper-a')).response.status, 200, 'a paper counted today keeps its new audio');
 });
 
-test('a paper whose first new paragraph fails at both providers is not counted', async () => {
-  const ledger = recordingLedger();
-  const environment = env(ledger, memoryBucket(), { TTS_DAILY_USER_PAPERS: '1' });
+test('a paper whose first new paragraph fails at both providers is given back', async () => {
+  const environment = env(recordingLedger(), memoryBucket(), { TTS_DAILY_USER_PAPERS: '1' });
   const failed = await withProviders(
     { cartesia: () => new Response('down', { status: 503 }), elevenlabs: () => new Response('down', { status: 503 }) },
     () => signedIn(() => reportApi.fetch(paragraphRequest({ text: TEXT, paperId: 'paper-a' }), environment)),
   );
   assert.equal(failed.response.status, 502);
-  const usage = await signedIn(() => reportApi.fetch(paragraphRequest({ usage: true }), environment));
+  const usage = await signedIn(() => reportApi.fetch(papersRequest({ usage: true }), environment));
   assert.equal((await usage.json<{ papersLeft: number }>()).papersLeft, 1, 'nothing was spent');
   const retried = await withProviders(
     { cartesia: cartesiaAudio },
@@ -451,14 +451,46 @@ test('a paper whose first new paragraph fails at both providers is not counted',
   assert.equal(retried.response.status, 200, 'the day\'s paper is still there for another');
 });
 
-test('a paper the viewer marks as voiced is named when a feed asks about its papers', async () => {
+test('new audio needs the paper it is for, and an account with unlimited AI is not counted', async () => {
+  const environment = env(recordingLedger(), memoryBucket(), { TTS_DAILY_USER_PAPERS: '1' });
+  const without = await withProviders({ cartesia: cartesiaAudio }, () => signedIn(() => reportApi.fetch(paragraphRequest({ text: TEXT }), environment)));
+  assert.equal(without.response.status, 400);
+  assert.equal(without.calls.length, 0);
+
+  const unlimited = env(recordingLedger(), memoryBucket(), { TTS_DAILY_USER_PAPERS: '1', AI_UNLIMITED_EMAILS: 'reader@example.com' });
+  const asUnlimited = <Result>(callback: () => Promise<Result>) => {
+    const original = (globalThis as TestGlobals).caches;
+    (globalThis as TestGlobals).caches = {
+      default: {
+        match: async () => new Response(JSON.stringify({ uid: 'user-2', email: 'reader@example.com', emailVerified: true }), { headers: { 'content-type': 'application/json' } }),
+        put: async () => undefined,
+      },
+    };
+    return callback().finally(() => { (globalThis as TestGlobals).caches = original; });
+  };
+  for (const paperId of ['paper-a', 'paper-b']) {
+    const made = await withProviders({ cartesia: cartesiaAudio }, () => asUnlimited(() => reportApi.fetch(paragraphRequest({ text: `${TEXT} ${paperId}`, paperId }), unlimited)));
+    assert.equal(made.response.status, 200, `${paperId} is read`);
+  }
+  assert.deepEqual(await (await asUnlimited(() => reportApi.fetch(papersRequest({ usage: true }), unlimited))).json(), { unlimited: true });
+});
+
+test('a paper is marked voiced only when every audio the viewer names is stored, and a feed learns which are', async () => {
   const bucket = memoryBucket();
   const environment = env(recordingLedger(), bucket);
-  const ask = async (body: unknown) => (await signedIn(() => reportApi.fetch(paragraphRequest(body), environment))).json<{ voiced: unknown }>();
+  const ask = async (body: unknown) => (await signedIn(() => reportApi.fetch(papersRequest(body), environment))).json<{ voiced: unknown }>();
+  const { response } = await withProviders({ cartesia: cartesiaAudio }, () => signedIn(() => reportApi.fetch(paragraphRequest(), environment)));
+  const key = response.headers.get('x-tts-audio')!;
+  assert.match(key, /^tts\/[0-9a-f]{64}$/);
+  assert.match(response.headers.get('access-control-expose-headers')!, /x-tts-audio/);
+  const missing = await audioKey('cartesia', 'A paragraph nobody made.');
 
-  assert.deepEqual(await ask({ papers: ['paper-a', 'paper-b'] }), { voiced: [] });
-  assert.deepEqual(await ask({ paperId: 'paper-a', voiced: true }), { voiced: true });
+  assert.deepEqual(await ask({ paperId: 'paper-a', voiced: true, audio: [key, missing] }), { voiced: false }, 'one paragraph without audio');
+  assert.deepEqual(await ask({ papers: ['paper-a'] }), { voiced: [] });
+  assert.deepEqual(await ask({ paperId: 'paper-a', voiced: true, audio: [key] }), { voiced: true });
   assert.deepEqual(await ask({ papers: ['paper-a', 'paper-b', 7, 'paper-a'] }), { voiced: ['paper-a'] });
-  const unsigned = await reportApi.fetch(paragraphRequest({ papers: ['paper-a'] }, null), environment);
+  const invalid = await signedIn(() => reportApi.fetch(papersRequest({ paperId: 'paper-b', voiced: true, audio: ['../secret'] }), environment));
+  assert.equal(invalid.status, 400);
+  const unsigned = await reportApi.fetch(papersRequest({ papers: ['paper-a'] }, null), environment);
   assert.equal(unsigned.status, 401);
 });

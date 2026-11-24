@@ -4,8 +4,12 @@ import { readBoundedJson } from './bounded-body.ts';
 import { peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 
 export const READ_ALOUD_PATH = '/tts/paragraph';
+export const VOICE_PAPERS_PATH = '/tts/papers';
 
 const MAX_REQUEST_BYTES = 12_000;
+/** A paper's audio keys, about 70 bytes each, for the longest papers' few hundred paragraphs. */
+const MAX_PAPERS_REQUEST_BYTES = 48_000;
+const MAX_AUDIO_KEYS = 600;
 export const MAX_PARAGRAPH_CHARS = 3_000;
 /** One provider's call at most, and both together, inside the browser's 40 seconds. */
 const SYNTHESIS_TIMEOUT_MS = 20_000;
@@ -16,8 +20,6 @@ const DEFAULT_USER_DAILY_PAPERS = 2;
 const MAX_PAPER_ID_CHARS = 200;
 /** Papers a feed asks about at once: a page of cards. */
 const MAX_PAPERS_ASKED = 60;
-/** Where a paper whose every paragraph has PaperTok's audio is marked, by a hash of its id. */
-const voicedKey = (paperId: string) => sha256(paperId).then(hash => `papers/${hash}`);
 /** How often a request waiting for another's audio of the same paragraph looks for it. */
 const MAKING_POLL_MS = 1_000;
 /**
@@ -134,6 +136,13 @@ export function audioKey(provider: Provider['name'], text: string) {
   return sha256(`${VOICES[provider]}\n${text}`).then(hash => `tts/${hash}`);
 }
 
+/**
+ * Where a paper whose every paragraph has stored audio is marked, by a hash of its id. The voices
+ * are part of the name, so a change of voice, which makes new audio, takes the marks with it.
+ */
+const voicedKey = async (paperId: string) => `papers/${await sha256(Object.values(VOICES).join('\n'))}/${await sha256(paperId)}`;
+const AUDIO_KEY = /^tts\/[0-9a-f]{64}$/;
+
 const dayOf = (now = new Date()) => now.toISOString().slice(0, 10);
 
 /** The account's count of new papers today, in the request ledger. */
@@ -148,35 +157,42 @@ function papersToday(env: WorkerEnv, uid: string, day: string) {
 
 const ledgerFailure = (code: string) => new AIExplanationError(code === 'QUOTA_LEDGER_NOT_CONFIGURED' ? 'AI_NOT_CONFIGURED' : 'AI_UNAVAILABLE', 503);
 
-/** One ledger object per account, paper and day, holding a single use: taken once the paper is counted. */
-async function paperMarker(uid: string, paperId: string, day: string) {
-  return { periodKey: `tts:paper:${await sha256(`${day}\n${uid}\n${paperId}`)}`, subject: 'tts:paper', subjectLimit: 1, globalLimit: 1 };
+/** Ledger objects of one account, paper and day, each holding a single use: counted, and made. */
+async function paperMarkers(uid: string, paperId: string, day: string) {
+  const hash = await sha256(`${day}\n${uid}\n${paperId}`);
+  const marker = (name: string) => ({ periodKey: `tts:${name}:${hash}`, subject: `tts:${name}`, subjectLimit: 1, globalLimit: 1 });
+  return { counted: marker('paper'), made: marker('paper-made') };
 }
 
 /**
- * Before a provider is paid: a paper already counted today passes, and a new one is refused when
- * the account's papers are spent. Nothing is taken here, so a paragraph that then fails costs nothing.
+ * Takes one of the account's papers for the day before a provider is paid, the first time the
+ * paper needs new audio; a paper already taken today passes. Returns how to give it back, which
+ * gives it back only while none of the paper's audio has been made that day, so a paragraph that
+ * fails costs nothing and one made by another request at the same time keeps the paper counted.
  */
-async function checkPaper(env: WorkerEnv, uid: string, paperId: string, day: string) {
+async function takePaper(env: WorkerEnv, uid: string, paperId: string, day: string) {
   const ledger = env.REQUEST_QUOTA_LEDGER ?? null;
-  const seen = await peekRequestQuota(ledger, await paperMarker(uid, paperId, day));
-  if (seen.code) throw ledgerFailure(seen.code);
-  if (seen.remaining === 0) return;
-  const left = await peekRequestQuota(ledger, papersToday(env, uid, day));
-  if (left.code) throw ledgerFailure(left.code);
-  if ((left.remaining ?? 1) <= 0) {
+  const markers = await paperMarkers(uid, paperId, day);
+  const papers = papersToday(env, uid, day);
+  const first = await reserveRequestQuota(ledger, markers.counted);
+  if (first.code) throw ledgerFailure(first.code);
+  const made = async () => { await reserveRequestQuota(ledger, markers.made); };
+  if (!first.accepted) return { made, giveBack: async () => undefined };
+  const counted = await reserveRequestQuota(ledger, papers);
+  if (!counted.accepted) {
+    await releaseRequestQuota(ledger, markers.counted).catch(() => undefined);
+    if (counted.code) throw ledgerFailure(counted.code);
     throw new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', { ...getDailyQuotaReset(), scope: 'user' });
   }
-}
-
-/**
- * Once a paragraph's audio is made, counts its paper, the first time that day only. Two new papers
- * started at once with one left can both pass the check; the second is then made without counting.
- */
-async function countPaper(env: WorkerEnv, uid: string, paperId: string, day: string) {
-  const ledger = env.REQUEST_QUOTA_LEDGER ?? null;
-  const first = await reserveRequestQuota(ledger, await paperMarker(uid, paperId, day));
-  if (first.accepted) await reserveRequestQuota(ledger, papersToday(env, uid, day));
+  return {
+    made,
+    giveBack: async () => {
+      const reading = await peekRequestQuota(ledger, markers.made);
+      if (reading.code || reading.remaining === 0) return;
+      await releaseRequestQuota(ledger, papers);
+      await releaseRequestQuota(ledger, markers.counted);
+    },
+  };
 }
 
 /**
@@ -191,44 +207,26 @@ async function countPaper(env: WorkerEnv, uid: string, paperId: string, day: str
  * own day of characters and its own allowance per reader; a reader past their
  * Cartesia allowance gets no ElevenLabs. `storedOnly` asks for stored audio
  * and nothing else, so a reader whose allowance or the providers' characters
- * ran out still gets every paragraph already made. With `paperId`, the first
- * new paragraph of a paper that day counts it against the account's papers
- * (`TTS_DAILY_USER_PAPERS`); `{ usage: true }` says how many are left. `timings` asks for the
+ * ran out still gets every paragraph already made. New audio needs `paperId`:
+ * the first new paragraph of a paper that day takes one of the account's
+ * papers (`TTS_DAILY_USER_PAPERS`), unless the account's AI is unlimited.
+ * The audio's name comes back in `key`, which the viewer hands to
+ * `/tts/papers` to mark the paper as voiced. `timings` asks for the
  * stored timings of the audio the paragraph is served with instead, as JSON,
  * and never synthesizes.
  */
-export async function handleReadAloud(request: Request, env: WorkerEnv, keepAlive?: (work: Promise<unknown>) => void) {
+export async function handleReadAloud(request: Request, env: WorkerEnv, keepAlive?: (work: Promise<unknown>) => void): Promise<{ body: ArrayBuffer; type: string; key?: string }> {
   if (Number(request.headers.get('content-length') || 0) > MAX_REQUEST_BYTES) {
     throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   }
   const account = await verifyFirebaseAccount(request, env);
-  const payload = await readBoundedJson<{ text?: unknown; storedOnly?: unknown; timings?: unknown; usage?: unknown; paperId?: unknown; voiced?: unknown; papers?: unknown }>(request, MAX_REQUEST_BYTES, {
+  const payload = await readBoundedJson<{ text?: unknown; storedOnly?: unknown; timings?: unknown; paperId?: unknown }>(request, MAX_REQUEST_BYTES, {
     tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
     invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
   });
-  if (payload?.usage === true) {
-    const papers = papersToday(env, account.uid, dayOf());
-    const reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, papers);
-    if (reading.code) throw new AIExplanationError('AI_UNAVAILABLE', 503);
-    const usage = { papersLeft: reading.remaining ?? papers.subjectLimit, dailyPapers: papers.subjectLimit, resetAt: getDailyQuotaReset().resetAt };
-    return { body: JSON.stringify(usage), type: 'application/json' };
-  }
   const paperId = typeof payload?.paperId === 'string' ? payload.paperId.trim().slice(0, MAX_PAPER_ID_CHARS) : '';
   const store = env.TTS_AUDIO;
   if (!store) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
-  // Which of a page's papers have PaperTok's audio for every paragraph, as the viewer marked them.
-  if (Array.isArray(payload?.papers)) {
-    const ids = [...new Set(payload.papers.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= MAX_PAPER_ID_CHARS))].slice(0, MAX_PAPERS_ASKED);
-    const found = await Promise.all(ids.map(async id => Boolean(await store.head(await voicedKey(id)))));
-    return { body: JSON.stringify({ voiced: ids.filter((_, index) => found[index]) }), type: 'application/json' };
-  }
-  // The viewer marks a paper once every paragraph it read came with PaperTok's audio. The mark is
-  // its word, not checked against the bucket: a wrong one only shows the feed's sign on a paper.
-  if (payload?.voiced === true) {
-    if (!paperId) throw new AIExplanationError('AI_INVALID_REQUEST', 400);
-    await store.put(await voicedKey(paperId), '');
-    return { body: JSON.stringify({ voiced: true }), type: 'application/json' };
-  }
   const text = typeof payload?.text === 'string' ? payload.text.replace(/\0/g, '').replace(/\s+/g, ' ').trim() : '';
   if (!text) throw new AIExplanationError('AI_INVALID_REQUEST', 400);
   if (text.length > MAX_PARAGRAPH_CHARS) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
@@ -243,12 +241,14 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
     return { body: await timings.arrayBuffer(), type: 'application/json' };
   }
   const storedAudio = async () => {
-    const stored = (await Promise.all(keys.map(key => store.get(`${key}.mp3`)))).find(Boolean);
-    return stored ? { body: await stored.arrayBuffer(), type: 'audio/mpeg' } : null;
+    const found = await Promise.all(keys.map(key => store.get(`${key}.mp3`)));
+    const index = found.findIndex(Boolean);
+    return index < 0 ? null : { body: await found[index]!.arrayBuffer(), type: 'audio/mpeg', key: keys[index] };
   };
   const stored = await storedAudio();
   if (stored) return stored;
   if (payload?.storedOnly === true) throw new AIExplanationError('AI_AUDIO_NOT_STORED', 404);
+  if (!paperId) throw new AIExplanationError('AI_INVALID_REQUEST', 400);
 
   const deadline = Date.now() + REQUEST_DEADLINE_MS;
   // One request at a time makes a paragraph. The ledger object named after the
@@ -269,11 +269,15 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
       // Stored between this request's look at the bucket and its turn.
       const made = await storedAudio();
       if (made) return made;
-      const day = dayOf();
-      if (paperId) await checkPaper(env, account.uid, paperId, day);
-      const audio = await synthesize(env, store, account.uid, text, keys, deadline);
-      if (paperId) await countPaper(env, account.uid, paperId, day).catch(() => undefined);
-      return audio;
+      const paper = account.unlimitedAI ? null : await takePaper(env, account.uid, paperId, dayOf());
+      try {
+        const audio = await synthesize(env, store, account.uid, text, keys, deadline);
+        await paper?.made().catch(() => undefined);
+        return audio;
+      } catch (error) {
+        await paper?.giveBack().catch(() => undefined);
+        throw error;
+      }
     } finally {
       await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, making).catch(() => undefined);
     }
@@ -320,7 +324,7 @@ async function synthesize(env: WorkerEnv, store: NonNullable<WorkerEnv['TTS_AUDI
       ]).catch((error: unknown) => {
         console.error('Read-aloud audio not stored', error);
       });
-      return { body: audio, type: 'audio/mpeg' };
+      return { body: audio, type: 'audio/mpeg', key: keys[index] };
     } catch (error) {
       await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, ledgerRequest).catch(() => undefined);
       refusal = error instanceof AIExplanationError
@@ -330,4 +334,49 @@ async function synthesize(env: WorkerEnv, store: NonNullable<WorkerEnv['TTS_AUDI
     }
   }
   throw refusal;
+}
+
+/**
+ * The voice's day for an account and its feed's sign. `{ usage: true }` says how many new papers the
+ * account has left today (`unlimited` when its AI is). `{ paperId, voiced: true, audio }`, with the
+ * name of every paragraph's audio the viewer was served, marks the paper as voiced once each of them
+ * is in the bucket: the mark stands for audio made by Cartesia or ElevenLabs, never the browser's.
+ * `{ papers }` names which of a page's papers are marked.
+ */
+export async function handleVoicePapers(request: Request, env: WorkerEnv) {
+  if (Number(request.headers.get('content-length') || 0) > MAX_PAPERS_REQUEST_BYTES) {
+    throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
+  }
+  const account = await verifyFirebaseAccount(request, env);
+  const payload = await readBoundedJson<{ usage?: unknown; paperId?: unknown; voiced?: unknown; audio?: unknown; papers?: unknown }>(request, MAX_PAPERS_REQUEST_BYTES, {
+    tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
+    invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
+  });
+  if (payload?.usage === true) {
+    if (account.unlimitedAI) return { unlimited: true };
+    const papers = papersToday(env, account.uid, dayOf());
+    const reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, papers);
+    if (reading.code) throw ledgerFailure(reading.code);
+    if (reading.remaining === undefined) throw new AIExplanationError('AI_UNAVAILABLE', 503);
+    return { papersLeft: reading.remaining, dailyPapers: papers.subjectLimit };
+  }
+  const store = env.TTS_AUDIO;
+  if (!store) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  if (Array.isArray(payload?.papers)) {
+    const ids = [...new Set(payload.papers.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= MAX_PAPER_ID_CHARS))].slice(0, MAX_PAPERS_ASKED);
+    const found = await Promise.all(ids.map(async id => Boolean(await store.head(await voicedKey(id)))));
+    return { voiced: ids.filter((_, index) => found[index]) };
+  }
+  const paperId = typeof payload?.paperId === 'string' ? payload.paperId.trim() : '';
+  const audio = Array.isArray(payload?.audio) ? [...new Set(payload.audio)] : [];
+  if (payload?.voiced !== true || !paperId || paperId.length > MAX_PAPER_ID_CHARS || audio.length === 0 || audio.length > MAX_AUDIO_KEYS
+    || !audio.every((key): key is string => typeof key === 'string' && AUDIO_KEY.test(key))) {
+    throw new AIExplanationError('AI_INVALID_REQUEST', 400);
+  }
+  const mark = await voicedKey(paperId);
+  if (await store.head(mark)) return { voiced: true };
+  const stored = await Promise.all(audio.map(key => store.head(`${key}.mp3`)));
+  if (!stored.every(Boolean)) return { voiced: false };
+  await store.put(mark, '');
+  return { voiced: true };
 }
