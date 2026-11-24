@@ -657,9 +657,12 @@ the paper's title over a particle visual, the sentence being read as a caption,
 and a player with speed, 15-second skips and a timeline cut into the paper's
 sections; its chapters open in a panel beside it, full screen on a phone. Opening
 the tab prepares three passages from the starting position (or the remaining
-passages for a shorter ending). While it does, a ring round the visual fills with them and, centred under it,
-the tab says what it prepares, the percentage, the chapters and about how long the paper lasts; the
-player and the caption arrive once it is done. The percentage covers only that initial buffer;
+passages for a shorter ending). While it does, the visual fills the room the paper's title and the
+tab's foot leave it, flowing from form to form every 2.5 seconds in the mesh's grey, and "Preparing
+your paper" sits at the foot over a running bar; no percentage is shown. Once they are in, the
+visual settles into its place from a larger size and fades into the brand's colours over 400ms, and
+the player and the caption arrive. With reduced motion the visual holds one form, the bar stands
+still at half opacity, and the change of size and colour is a short fade.
 Play becomes available when it is ready, without starting automatically;
 system playback controls respect the same initial buffer. Two
 background requests keep loading the rest. A jump to uncached audio shows
