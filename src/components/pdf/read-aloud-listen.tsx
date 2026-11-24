@@ -178,14 +178,18 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
                   type="button"
                   disabled={preparing}
                   aria-current={(!preparing && part.start === chapter.start) || undefined}
+                  data-played={(!preparing && part.start < chapter.start) || undefined}
                   data-section={(Boolean(part.number) && !part.number.includes('.')) || undefined}
                   onClick={() => { onSeek(part.start); closeDrawer(); }}
-                  aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, ${clock(part.end - part.start)}`}
+                  aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, from ${clock(part.start)}`}
                 >
-                  {/* "Appendix A" is shown as "A", so a long label keeps to the numbers' column. */}
-                  <span className="rd-podcast-drawer-number">{part.number.split(/\s+/).pop()}</span>
-                  <span className="rd-podcast-drawer-title">{part.title}</span>
-                  <span className="rd-podcast-drawer-time">{clock(part.end - part.start)}</span>
+                  <span className="rd-podcast-drawer-time">{clock(part.start)}</span>
+                  <span className="rd-podcast-drawer-dot" aria-hidden="true" />
+                  {/* "Appendix A" is shown as "A", so a long label stays short beside its title. */}
+                  <span className="rd-podcast-drawer-title">
+                    {part.number && <span className="rd-podcast-drawer-number">{part.number.split(/\s+/).pop()}</span>}
+                    {part.title}
+                  </span>
                 </button>
               </li>
             ))}

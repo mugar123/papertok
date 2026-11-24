@@ -157,17 +157,21 @@
   text-transform: uppercase;
   color: var(--text-secondary);
 }
-.rd-podcast-drawer ol { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--border-subtle); }
+/* The chapters along a rail, each at its starting minute: the rail is inked as far as the voice
+   has got, and the chapter it is in has the large dot. */
+.rd-podcast-drawer ol { display: grid; margin: 0; padding: 0; list-style: none; }
 .rd-podcast-drawer ol button {
+  --rail: var(--border-subtle);
+  position: relative;
   display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  grid-template-columns: 3.25rem 20px minmax(0, 1fr);
   gap: var(--space-2);
-  align-items: baseline;
+  align-items: center;
   width: 100%;
   min-height: 44px;
   padding: var(--space-2) var(--space-1);
   border: 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-primary);
   font: 400 0.9375rem/1.35 var(--font-serif);
@@ -175,21 +179,50 @@
   cursor: pointer;
   transition: background-color 150ms ease;
 }
+.rd-podcast-drawer ol button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--space-1) + 3.25rem + var(--space-2) + 9px);
+  width: 2px;
+  background: var(--rail);
+}
+.rd-podcast-drawer li:first-child button::before { top: 50%; }
+.rd-podcast-drawer li:last-child button::before { bottom: 50%; }
+.rd-podcast-drawer ol button[data-played] { --rail: var(--text-primary); }
+.rd-podcast-drawer ol button[aria-current]::before { background: linear-gradient(var(--text-primary) 50%, var(--border-subtle) 50%); }
+.rd-podcast-drawer-dot {
+  position: relative;
+  justify-self: center;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--bg-card);
+  border-radius: 50%;
+  box-sizing: content-box;
+  background: var(--border-default);
+}
+.rd-podcast-drawer ol button[data-section] .rd-podcast-drawer-dot { width: 11px; height: 11px; }
+.rd-podcast-drawer ol button[data-played] .rd-podcast-drawer-dot { background: var(--text-primary); }
+.rd-podcast-drawer ol button[aria-current] .rd-podcast-drawer-dot {
+  width: 13px;
+  height: 13px;
+  background: var(--podcast-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--podcast-accent) 20%, transparent);
+}
 .rd-podcast-drawer ol button:disabled { cursor: default; color: var(--text-tertiary); }
 @media (hover: hover) and (pointer: fine) {
   .rd-podcast-drawer ol button:not(:disabled):hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
 }
 .rd-podcast-drawer ol button[aria-current] { font-weight: 600; }
-.rd-podcast-drawer ol button[aria-current] .rd-podcast-drawer-title { color: var(--podcast-accent); }
+.rd-podcast-drawer ol button[aria-current] .rd-podcast-drawer-title { color: var(--text-primary); }
 .rd-podcast-drawer-number, .rd-podcast-drawer-time {
   font: 500 0.75rem/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
 }
+.rd-podcast-drawer-number { margin-inline-end: var(--space-2); }
 .rd-podcast-drawer-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rd-podcast-drawer-number { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-
 
 @media (prefers-reduced-motion: reduce) {
   .rd-podcast { animation: none; transition: none; }
@@ -255,4 +288,23 @@
 /* On a phone the chapters take the whole screen under the bar, as the notes do in the reader. */
 @media (max-width: 600px) {
   .rd-podcast-drawer { width: 100%; border-left: 0; padding-inline: var(--space-4); }
+}
+
+/* On a wide screen the section and the caption sit beside the sphere, as a player sets a song's
+   name beside its cover, and the controls run under both. */
+@media (min-width: 901px) {
+  .rd-podcast {
+    display: grid;
+    grid-template-columns: auto minmax(0, 560px);
+    grid-template-rows: 1fr auto auto 1fr auto;
+    grid-template-areas: 'cover .' 'cover title' 'cover caption' 'cover .' 'player player';
+    justify-content: center;
+    align-content: safe center;
+    column-gap: var(--space-10);
+  }
+  .rd-podcast-cover { grid-area: cover; align-self: center; width: min(44vh, 360px); margin-bottom: var(--space-10); }
+  .rd-podcast-title { grid-area: title; text-align: start; }
+  .rd-podcast-caption { grid-area: caption; width: 100%; }
+  .rd-podcast-text { text-align: start; text-wrap: pretty; }
+  .rd-podcast-player { grid-area: player; justify-self: center; }
 }
