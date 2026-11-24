@@ -48,8 +48,11 @@ test('keeps the original selected across more chunks and drops late results on a
       headers: { 'content-type': 'application/x-ndjson' },
     }));
   });
-  const push = (request: number, event: object) => {
-    requests[request].stream.enqueue(new TextEncoder().encode(JSON.stringify(event) + '\n'));
+  const push = (request: number, event: object, splitAccent = false) => {
+    const bytes = new TextEncoder().encode(JSON.stringify(event) + '\n');
+    const split = splitAccent ? bytes.indexOf(0xc3) + 1 : 0;
+    if (split) requests[request].stream.enqueue(bytes.slice(0, split));
+    requests[request].stream.enqueue(bytes.slice(split));
   };
 
   function Reader({ uid }: { uid: string }) {
@@ -97,8 +100,8 @@ test('keeps the original selected across more chunks and drops late results on a
 
   fireEvent.click(screen.getByRole('button', { name: 'Translate' }));
   await waitFor(() => assert.equal(requests.length, 3));
-  push(2, { type: 'chunk', index: 0, segments: ['Borrador'] });
-  assert.ok(await screen.findByText('Borrador'));
+  push(2, { type: 'chunk', index: 0, segments: ['Traducción'] }, true);
+  assert.ok(await screen.findByText('Traducción'));
   fireEvent.click(screen.getByRole('button', { name: 'Cancel translation' }));
   assert.equal(requests[2].signal?.aborted, true);
   assert.ok(screen.getByText('Original article'));

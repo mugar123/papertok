@@ -67,7 +67,7 @@ function replaceProse(content: Inline[], translations: Map<TextInline, string>, 
 
 export function applyTranslatedPassages(chunk: Passage[], values: string[], language: TranslationLanguage): Map<Block, Block> {
   let index = 0;
-  return new Map(chunk.map(({ block, slots }) => {
+  return new Map<Block, Block>(chunk.map(({ block, slots }) => {
     const translations = new Map(slots.map(slot => [slot, values[index++]] as const));
     if (block.t === 'list') return [block, { ...block, items: block.items.map(item => replaceProse(item, translations, language)) }];
     if (block.t === 'heading' || block.t === 'p') return [block, { ...block, children: replaceProse(block.children, translations, language) }];

@@ -61,14 +61,15 @@ async function readPaperTranslation(
   chunks: string[][],
   onChunk: (index: number, segments: string[]) => void,
 ): Promise<Failure | null> {
-  const reader = body.pipeThrough(new TextDecoderStream('utf-8', { fatal: true })).getReader();
+  const reader = body.getReader();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
   let pending = '';
   let completed = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) return { code: 'AI_INVALID_RESPONSE' };
-      pending += value;
+      pending += decoder.decode(value, { stream: true });
       let newline = pending.indexOf('\n');
       while (newline >= 0 && newline <= 31_000) {
         const event: unknown = JSON.parse(pending.slice(0, newline));
