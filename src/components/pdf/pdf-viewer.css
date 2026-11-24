@@ -217,18 +217,28 @@
 
 
 
-/* A tab's view arrives from its side of the bar (`--view-from`, set by pdf-viewer.tsx): the
-   summary over the paper, the paper back from under it, the Listen tab over both. The view left
-   goes at once and the one arriving is opaque from the start, so two texts never show through
-   each other; only its contents slide in and fade up. */
+/* A tab's view arrives over the one it covers: the summary over the paper, the paper back from under
+   it, the Listen tab over both. The view left goes at once and the one arriving is opaque from the
+   start, so two texts never show through each other. The paper and the summary can hold tens of
+   thousands of nodes, so they arrive under a veil of the page's colour that fades out: moving or
+   fading the text itself repainted all of it, a second or more on a long paper. The Listen tab is
+   small, and slides in from its tab's side (`--view-from`, set by pdf-viewer.tsx). */
 @keyframes pdf-view-in { from { opacity: 0; translate: var(--view-from, 0) 0; } }
+@keyframes pdf-veil-out { to { opacity: 0; } }
 .pdf-summary { position: absolute; inset: var(--pdf-topbar-h, 60px) 0 0; z-index: 5; background: var(--bg-primary); }
-/* The paper's own reading surfaces, not the dock or the notes beside them, which place themselves. */
-.pdf-summary > *,
-.pdf-stage[data-arrive] > :is(.ft-scroll, iframe, .pdf-pages, .pdf-loading, .pdf-fallback, .pdf-text-failed),
+.pdf-stage[data-arrive]::after,
+.pdf-summary::after { content: ''; position: absolute; inset: 0; z-index: 6; background: var(--bg-primary); pointer-events: none; animation: pdf-veil-out 220ms var(--ease-out) forwards; }
 .rd-podcast > :not(.rd-podcast-drawer) { animation: pdf-view-in 220ms var(--ease-out) backwards; }
+/* Under another tab the paper is skipped, not made inert: the browser keeps its layout and scroll,
+   so covering and uncovering a long paper costs a frame instead of restyling every node (pdf-viewer.tsx
+   falls back to `inert` where content-visibility is missing). Skipped content is out of the tab order,
+   like inert content. Under the summary the whole stage goes; under Listen only the text, beside the
+   podcast in the dock. The selectors name the element they skip: a `:not()` or `*` keyed on the stage's
+   attribute made the browser restyle the whole paper at every switch. */
+.pdf-stage[data-covered='summary'],
+.pdf-stage[data-covered='listen'] > .ft-scroll { content-visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
-  .pdf-summary > *,
-  .pdf-stage[data-arrive] > :is(.ft-scroll, iframe, .pdf-pages, .pdf-loading, .pdf-fallback, .pdf-text-failed),
+  .pdf-stage[data-arrive]::after,
+  .pdf-summary::after { animation-duration: 120ms; animation-timing-function: linear; }
   .rd-podcast > :not(.rd-podcast-drawer) { animation: fadeIn 120ms linear backwards; }
 }

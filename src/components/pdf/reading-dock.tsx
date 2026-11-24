@@ -15,6 +15,7 @@ import type { ReadAloudChapter, SpokenPassage } from './read-aloud.ts';
 import { readAloudStart } from './read-aloud.ts';
 import { useReadAloud } from './use-read-aloud.ts';
 import { useZoteroAction } from './use-zotero-action.ts';
+import { skipsCoveredView } from './paper-view.ts';
 import { ZoteroMark } from './zotero-mark.tsx';
 import ReadAloudListen from './read-aloud-listen.tsx';
 import UsesCount from '../reader/uses-count.tsx';
@@ -132,7 +133,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     if (audio && paperId) void markPaperVoiced(paperId, audio);
   }, [voiced, paperId, audioKeys]);
   useEffect(() => {
-    if (!scroll || !podcast) return undefined;
+    if (!scroll || !podcast || skipsCoveredView) return undefined;
     scroll.toggleAttribute('inert', true);
     return () => { scroll.toggleAttribute('inert', false); };
   }, [podcast, scroll]);

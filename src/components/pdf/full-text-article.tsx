@@ -1,7 +1,7 @@
 import type { MouseEvent, ReactNode } from 'react';
 import type { Block, Cell, FullText, Inline, Reference } from '../../utils/full-text.ts';
 import { blockInlines } from '../../utils/full-text.ts';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getKatex, loadKatex } from '../../utils/katex-loader.ts';
 import { getTemml, loadTemml, temmlMarkup } from '../../utils/temml-loader.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
@@ -360,7 +360,11 @@ function needsMath(doc: FullText) {
     || [...doc.abstract, ...doc.body].some(block => (block.t === 'equation' ? Boolean(block.tex) : blockInlines(block).some(hasTex)));
 }
 
-export default function FullTextArticle({ doc, paper, showAbstract = true, passageHint }: { doc: FullText; paper: Paper; showAbstract?: boolean; passageHint?: string }) {
+/**
+ * The paper's text, tens of thousands of nodes on a long paper: memoized, so a change around it (a
+ * tab, the notes, the dock) does not render it again while its own props stay the same.
+ */
+export default memo(function FullTextArticle({ doc, paper, showAbstract = true, passageHint }: { doc: FullText; paper: Paper; showAbstract?: boolean; passageHint?: string }) {
   const wantsMath = useMemo(() => needsMath(doc), [doc]);
   useEffect(() => {
     if (!wantsMath || mathReady()) return undefined;
@@ -448,4 +452,4 @@ export default function FullTextArticle({ doc, paper, showAbstract = true, passa
       <ReferencePeek reference={shownReference} open={referenceOpen} onOpenChange={setReferenceOpen} anchor={citation} scroll={citationScroll} lang={doc.lang} />
     </article>
   );
-}
+});

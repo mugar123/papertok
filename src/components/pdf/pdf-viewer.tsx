@@ -17,6 +17,7 @@ import type { FullText } from '../../utils/full-text.ts';
 import FullTextArticle from './full-text-article.tsx';
 import { OutlineList, OutlineRail } from './full-text-outline.tsx';
 import { useOutline } from './use-outline.ts';
+import { skipsCoveredView } from './paper-view.ts';
 import { ReadingDock } from './reading-dock.tsx';
 import ViewerLoading from './viewer-loading.tsx';
 import { NewTabHint } from './new-tab-hint.tsx';
@@ -328,7 +329,7 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, clos
           </div>
 
           {/* Under the AI summary tab the paper stays mounted, so its place waits, but out of reach. */}
-          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} data-arrive={(shown === 'paper' && tab.turn > 0) || undefined} inert={summaryOpen}>
+          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} data-arrive={(shown === 'paper' && tab.turn > 0) || undefined} data-covered={shown === 'paper' ? undefined : shown} inert={summaryOpen && !skipsCoveredView}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
                 <p>The text of this paper could not be loaded right now.</p>
