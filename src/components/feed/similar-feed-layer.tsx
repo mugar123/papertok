@@ -1,3 +1,4 @@
+import type { ReadingView } from '../pdf/reading-tabs.tsx';
 import type { PointerEvent, UIEvent } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { ReaderMenu } from './paper-menu.tsx';
@@ -41,7 +42,7 @@ function clipFrom(origin: HTMLElement) {
  * (similar-feed-service.ts, PAP-50); until then the layer is a skeleton.
  */
 export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, onSaveToList }: {
-  onOpenPdf?: (paper: Paper, menu: ReaderMenu) => void;
+  onOpenPdf?: (paper: Paper, menu: ReaderMenu, initialView?: ReadingView, onPaperOpen?: () => void) => void;
   onSaveToList?: (paper: Paper) => void;
   anchor: Paper;
   origin: HTMLElement;

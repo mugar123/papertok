@@ -1,3 +1,4 @@
+import type { ReadingView } from '../pdf/reading-tabs.tsx';
 import type { MouseEvent, PropsWithChildren, ReactElement } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { ReaderMenu } from '../feed/paper-menu.tsx';
@@ -292,7 +293,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   useEffect(() => {
     if (handedPaper) void navigate({ search: location.search }, { replace: true, state: null });
   }, [handedPaper, location.search, navigate]);
-  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null);
+  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu; initialView?: ReadingView } | null>(null);
   const pdfPaper = pdfOpen?.paper ?? null;
   // Back closes this PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
   // Through the viewer's own close, the one the X uses — it owns `open` and
@@ -1045,7 +1046,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
             onNotInterested={(paper) => { void markNotInterested(paper); closeSelectedPaper(); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
-            onOpenPdf={(paper, _surface, menu) => setPdfOpen({ paper, menu })}
+            onOpenPdf={(paper, _surface, menu, initialView) => setPdfOpen({ paper, menu, initialView })}
             onSaveToList={handleSaveToList}
             onPickList={onSaveToList}
             getInteractionState={getInteractionState}
@@ -1058,7 +1059,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
 
       {/* PDF Viewer */}
       {pdfOpen && (
-        <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
+        <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} initialView={pdfOpen.initialView} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
       )}
     </main>
   );

@@ -1,3 +1,4 @@
+import type { ReadingView } from '../pdf/reading-tabs.tsx';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { ReaderMenu } from '../feed/paper-menu.tsx';
@@ -383,7 +384,7 @@ export default function EntityExplorer({
   const [searchQuery, setSearchQuery] = useState('');
 
   const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
-  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null);
+  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu; initialView?: ReadingView } | null>(null);
   const pdfPaperToView = pdfOpen?.paper ?? null;
   // Back closes this PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
   // Through the viewer's own close, the one the X uses — it owns `open` and
@@ -2907,7 +2908,7 @@ export default function EntityExplorer({
             onNotInterested={(paper) => { void markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
-            onOpenPdf={(paper, _surface, menu) => setPdfOpen({ paper, menu })}
+            onOpenPdf={(paper, _surface, menu, initialView) => setPdfOpen({ paper, menu, initialView })}
             onSaveToList={handleSaveToList}
             onPickList={onSaveToList}
             getInteractionState={getInteractionState}
@@ -2921,7 +2922,7 @@ export default function EntityExplorer({
       </PaperOverlay>
 
       {pdfOpen && (
-        <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
+        <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} initialView={pdfOpen.initialView} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
       )}
     </div>
   );

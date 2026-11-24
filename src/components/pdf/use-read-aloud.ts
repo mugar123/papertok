@@ -4,8 +4,9 @@ import { CHARS_PER_SECOND, locateInListen, passageText, readAloudTimeline } from
 import { ReadAloudError, fetchParagraphAudio, fetchParagraphTimings } from '../../services/read-aloud-service.ts';
 
 const hasBrowserVoice = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
-/** Passages one listener asks for at once, well inside the plan's concurrent generations shared by every listener. */
-const WORKERS = 3;
+// Two background requests leave a third slot for a seek to an uncached passage.
+const WORKERS = 2;
+const STARTUP_PASSAGES = 3;
 // A moment of silence played within the press: Safari on iOS lets an audio element that has
 // played once from a press play again later, when its clip arrives after the network wait.
 const SILENCE = 'data:audio/wav;base64,UklGRjQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YRAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -32,15 +33,6 @@ function clipSeconds(url: string) {
   });
 }
 
-/**
- * Reads the paper aloud in PaperTok's voice. Starting asks for every passage,
- * a couple at a time from where the listen begins, so the whole paper is there
- * to seek through, and the timeline swaps each estimate for the clip's real
- * length as it arrives. Once the voice's credits are spent, only audio already
- * made is asked for, so every stored passage still plays in PaperTok's voice;
- * a passage without audio is read by the browser's own voice, which can only
- * start a passage from its beginning.
- */
 export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, onFallback, onError, onBlocked }: {
   title: string;
   onFallback: (error: unknown) => void;
@@ -67,17 +59,19 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   const pace = useRef({ chars: 0, seconds: 0 });
   // Every passage has been asked for, so any still missing will not come.
   const [prepareDone, setPrepareDone] = useState(false);
+  const [startup, setStartup] = useState<{ start: number; ready: number; total: number; failed: boolean } | null>(null);
+  const [buffering, setBuffering] = useState(false);
   const run = useRef(0);
   const audio = useRef<HTMLAudioElement | null>(null);
   const clips = useRef(new Map<string, Promise<string>>());
   const fetches = useRef<AbortController | null>(null);
   // The voice refused for want of credits: from then on, stored audio only.
   const storedOnly = useRef(false);
+  const activeRequests = useRef(0);
+  const waitingRequests = useRef<Array<() => void>>([]);
   const told = useRef(false);
   // The queue whose passages are being fetched in full; a new queue starts over.
-  const fetchingAll = useRef<SpokenPassage[] | null>(null);
-  // Settles once that queue's passages have all been asked for, or the asking stopped.
-  const preparation = useRef<Promise<void>>(Promise.resolve());
+  const fetchingAll = useRef<{ items: SpokenPassage[]; remaining: SpokenPassage[] } | null>(null);
   const [speed, setSpeedState] = useState<number>(1);
   // Read when a clip or sentence starts, so a change made meanwhile applies to it.
   const speedNow = useRef(1);
@@ -90,6 +84,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     audio.current?.pause();
     if (hasBrowserVoice()) window.speechSynthesis.cancel();
     setPlaying(false);
+    setBuffering(false);
   }, []);
 
   const reset = useCallback(() => {
@@ -118,14 +113,27 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   }, [pause]);
 
   const request = async (text: string): Promise<Blob> => {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return await fetchParagraphAudio(text, { signal: fetches.current?.signal, storedOnly: storedOnly.current });
-      } catch (error) {
-        if (error instanceof ReadAloudError && error.code === 'AI_QUOTA_EXHAUSTED') storedOnly.current = true;
-        if (!(error instanceof ReadAloudError && error.code === 'AI_BUSY') || attempt >= BUSY_RETRIES) throw error;
-        await wait(800 * (attempt + 1));
+    await new Promise<void>((resolve) => {
+      if (activeRequests.current < WORKERS + 1) {
+        activeRequests.current += 1;
+        resolve();
+      } else waitingRequests.current.push(resolve);
+    });
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        fetches.current?.signal.throwIfAborted();
+        try {
+          return await fetchParagraphAudio(text, { signal: fetches.current?.signal, storedOnly: storedOnly.current });
+        } catch (error) {
+          if (error instanceof ReadAloudError && error.code === 'AI_QUOTA_EXHAUSTED') storedOnly.current = true;
+          if (!(error instanceof ReadAloudError && error.code === 'AI_BUSY') || attempt >= BUSY_RETRIES) throw error;
+          await wait(800 * (attempt + 1));
+        }
       }
+    } finally {
+      const next = waitingRequests.current.shift();
+      if (next) next();
+      else activeRequests.current -= 1;
     }
   };
 
@@ -134,6 +142,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     const known = clips.current.get(text);
     if (known) return known;
     const pending = request(text).then((blob) => {
+      fetches.current?.signal.throwIfAborted();
       const url = URL.createObjectURL(blob);
       void clipSeconds(url).then((seconds) => {
         setLengths(lengths => ({ ...lengths, [text]: seconds ?? readAloudTimeline([item], []).duration }));
@@ -148,44 +157,54 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     return pending;
   };
 
-  /**
-   * Asks for every passage, from `start` to the end and then the ones before it.
-   * A passage refused for credits or not stored is skipped; any other failure
-   * (the Worker down, a timeout) stops the rest.
-   */
-  const fetchAll = (start: number) => {
-    if (fetchingAll.current === queue) return preparation.current;
+  const fetchAll = (start: number, opening = false) => {
+    if (fetchingAll.current?.items === queue) {
+      const pending = new Set(fetchingAll.current.remaining);
+      fetchingAll.current.remaining = [...queue.slice(start), ...queue.slice(0, start)].filter(item => pending.has(item));
+      return;
+    }
     const items = queue;
-    fetchingAll.current = items;
+    const batch = { items, remaining: [...items.slice(start), ...items.slice(0, start)] };
+    fetchingAll.current = batch;
     setPrepareDone(false);
-    let settle = () => {};
-    preparation.current = new Promise<void>((resolve) => { settle = resolve; });
-    const order = [...items.slice(start), ...items.slice(0, start)];
-    let next = 0;
+    const initial = items.slice(start, start + STARTUP_PASSAGES);
+    if (opening) setStartup({ start, ready: 0, total: initial.length, failed: false });
+    let settled = 0;
     let stopped = false;
     let working = WORKERS;
     const work = async () => {
-      while (!stopped && next < order.length && fetchingAll.current === items) {
+      while (!stopped && batch.remaining.length && fetchingAll.current === batch && !fetches.current?.signal.aborted) {
+        const item = batch.remaining.shift();
+        if (!item) break;
         try {
-          await clip(order[next++]);
+          await clip(item);
         } catch (error) {
-          if (!skippable(error) && !stopped) {
+          if (!skippable(error)) {
             stopped = true;
-            fetchingAll.current = null;
-            setPrepareDone(true);
-            settle();
+            if (fetchingAll.current === batch) {
+              fetchingAll.current = null;
+              setPrepareDone(true);
+              if (opening) setStartup({ start, ready: settled, total: initial.length, failed: true });
+            }
           }
         }
+        if (initial.includes(item)) settled += 1;
+        if (opening && fetchingAll.current === batch) setStartup({ start, ready: settled, total: initial.length, failed: false });
       }
       working -= 1;
-      if (working === 0 && fetchingAll.current === items) setPrepareDone(true);
-      if (working === 0) settle();
+      if (working === 0 && fetchingAll.current === batch) setPrepareDone(true);
     };
     for (let count = 0; count < WORKERS; count += 1) void work();
-    return preparation.current;
+  };
+
+  const prepare = (start: number) => {
+    setParagraph(start);
+    setProgress(0);
+    fetchAll(start, true);
   };
 
   const play = (start: number, fraction = 0) => {
+    if (startup && !startup.failed && startup.ready < startup.total) return;
     const token = ++run.current;
     const current = () => token === run.current;
     // A jump while either voice is speaking silences it before the new place starts.
@@ -215,6 +234,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       utterance.rate = speedNow.current;
       const before = item.utterances.slice(0, sentence).reduce((sum, text) => sum + text.length + 1, 0) + skip;
       voice.current = 'browser';
+      setBuffering(false);
       spokenChars.current = before;
       const said = { before, length: line.length, startedAt: 0, heard: false };
       browserSentence.current = said;
@@ -287,6 +307,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       setParagraph(index);
       setProgress(from);
       voice.current = null;
+      setBuffering(true);
       clip(queue[index]).then((url) => {
         if (!current()) return undefined;
         const element = (audio.current ??= new Audio());
@@ -310,7 +331,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
             if (found) setTimings(known => ({ ...known, [text]: found }));
           });
         }
-        return element.play();
+        return element.play().then(() => { if (current()) setBuffering(false); });
       }).catch((error: unknown) => {
         // The browser refused to start audio without a fresh press: the clip is fine, so wait for one.
         if (error instanceof DOMException && error.name === 'NotAllowedError') {
@@ -323,19 +344,26 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       });
     }
 
-    // The whole paper's audio is prepared before the voice starts, so it plays through without waits.
-    void fetchAll(start).then(() => next(start, fraction));
+    fetchAll(start);
+    next(start, fraction);
   };
 
   const at = paragraph === null ? null : timeline.passages[paragraph];
   const position = at ? at.start + progress * (at.end - at.start) : 0;
 
   const seek = (seconds: number) => {
+    if (!queue.length) return;
     const target = locateInListen(timeline, Math.min(Math.max(0, seconds), timeline.duration));
     if (playing) play(target.index, target.fraction);
     else {
       setParagraph(target.index);
       setProgress(target.fraction);
+      const token = ++run.current;
+      setBuffering(true);
+      fetchAll(target.index);
+      void clip(queue[target.index]).catch(() => undefined).finally(() => {
+        if (token === run.current) setBuffering(false);
+      });
     }
   };
 
@@ -426,6 +454,9 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   return {
     timeline,
     timings,
+    prepare,
+    buffering,
+    startup: startup ?? { start: 0, ready: 0, total: Math.min(STARTUP_PASSAGES, queue.length), failed: false },
     audioFile,
     live,
     /** How much of the paper's audio exists yet; `failed` once a passage was refused and the rest will not come. */

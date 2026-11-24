@@ -61,6 +61,9 @@ export async function loadReadAloud() {
       onBlocked: () => void;
     }) => {
       playing: boolean;
+      buffering: boolean;
+      startup: { start: number; ready: number; total: number; failed: boolean };
+      prepare: (start: number) => void;
       prepared: { ready: number; total: number; failed: boolean };
       timeline: ReadAloudTimeline;
       paragraph: number | null;
@@ -123,4 +126,13 @@ export async function loadReadingDock() {
     import('./firebase-stub.ts').FirebaseStub,
   ]>('/src/components/pdf/reading-dock.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');
   return { ...dock, ...contexts, firebase, close };
+}
+
+export async function loadPaperViewer() {
+  const { modules: [viewer, contexts, firebase], close } = await loadModules<[
+    { default: Component<{ paper: Paper; menu: { snapshot: () => { about: null; links: null; isRead: boolean; shareUrl: string; notInterested: () => void; toggleRead: () => void }; subscribe: () => () => void }; initialView: 'plain'; onClose: () => void; onPaperOpen: () => void }> },
+    Record<'AuthContext' | 'AnalyticsContext' | 'FeedContext', Context<unknown>>,
+    import('./firebase-stub.ts').FirebaseStub,
+  ]>('/src/components/pdf/pdf-viewer.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');
+  return { Viewer: viewer.default, ...contexts, firebase, close };
 }

@@ -33,7 +33,7 @@ function viewerFrame() {
 }
 const LISTEN = 'Listen to the paper as a podcast';
 
-test('shared reading tools: the round button opens the podcast and starts the voice, leaving it stops the voice, and it goes with the explanation', async () => {
+test('shared reading tools: the round button opens the podcast and prepares the voice, leaving it stops the voice, and it goes with the explanation', async () => {
   const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
   const worker = stubWorker();
   const audioRoute = worker.hold('/tts/paragraph');
@@ -66,9 +66,12 @@ test('shared reading tools: the round button opens the podcast and starts the vo
     assert.equal(view.getByRole('link', { name: 'Open in a new tab' }).getAttribute('href'), 'https://doi.org/10.1234/paper');
     assert.equal(view.queryByRole('button', { name: 'Voice, read aloud' }), null, 'the dock has no Voice of its own');
     fireEvent.click(screen.getByRole('button', { name: LISTEN }));
-    assert.ok(screen.getByRole('region', { name: 'Paper' }), 'the podcast tab opens and starts the voice');
+    assert.ok(screen.getByRole('region', { name: 'Paper' }), 'the podcast tab opens');
     await audioRoute.requested();
     audioRoute.answer({});
+    await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Play' })));
+    assert.equal(Clip.instances.some(clip => clip.preload !== 'metadata'), false);
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
     await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Pause' })));
     await waitFor(() => assert.ok(Clip.instances.some(clip => clip.preload !== 'metadata')));
     const player = Clip.instances.find(clip => clip.preload !== 'metadata');
@@ -127,9 +130,9 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
     fireEvent.click(screen.getByRole('button', { name: LISTEN }));
     const tab = view.getByRole('region', { name: 'Paper' });
     const chapterList = () => within(view.getByRole('navigation', { name: 'All chapters' }));
-    assert.match(tab.textContent ?? '', /Preparing the audio, 0%/);
+    assert.match(tab.textContent ?? '', /Preparing the first passages, 0%/);
     const status = within(tab).getByRole('status');
-    await waitFor(() => assert.equal(status.textContent, 'Preparing the audio', 'the player tells a screen reader it is preparing'));
+    await waitFor(() => assert.equal(status.textContent, 'Preparing the first passages', 'the player tells a screen reader it is preparing'));
     assert.equal(chapterList().getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), true, 'no jumps before the audio is there');
     await audioRoute.requested();
     audioRoute.answer({});
@@ -137,7 +140,9 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
       for (const clip of Clip.instances.filter(clip => clip.preload === 'metadata')) clip.onloadedmetadata?.();
     });
     await waitFor(() => assert.equal(chapterList().getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), false));
-    assert.match(tab.textContent ?? '', /1\. Method\./);
+    assert.equal(status.textContent, 'Paused');
+    fireEvent.click(within(tab).getByRole('button', { name: 'Play' }));
+    await waitFor(() => assert.match(tab.textContent ?? '', /1\. Method\./));
     await waitFor(() => assert.equal(status.textContent, 'Reading 1 Method', 'and then the section the voice is reading'));
     assert.equal(tab.querySelectorAll('.rd-listen-part').length, 2, 'the line has a block per section, the subsection inside its section');
     assert.ok(chapterList().getByRole('button', { name: /^1\.1 Data, / }), 'the chapter list still names the subsection');

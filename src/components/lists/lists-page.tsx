@@ -1,3 +1,4 @@
+import type { ReadingView } from '../pdf/reading-tabs.tsx';
 import type { DocumentData, QuerySnapshot } from 'firebase/firestore';
 import type { Paper } from '../../models/paper.ts';
 import type { ReaderMenu } from '../feed/paper-menu.tsx';
@@ -279,7 +280,7 @@ const rowElement = (papers: HTMLElement | null, paperId: string) => Array.from(p
 const rowControl = (papers: HTMLElement | null, paperId: string | null | undefined) => (paperId == null ? undefined : rowElement(papers, paperId))
   ?.querySelector<HTMLElement>('[data-removal-focus]');
 
-export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (paper: Paper, menu: ReaderMenu) => void; onEditPaper: (paper: Paper, finalFocus?: ComponentProps<typeof SaveToListModal>['finalFocus']) => void }) {
+export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (paper: Paper, menu: ReaderMenu, initialView?: ReadingView, onPaperOpen?: () => void) => void; onEditPaper: (paper: Paper, finalFocus?: ComponentProps<typeof SaveToListModal>['finalFocus']) => void }) {
   const { user } = useAuth();
   const activeUid = useRef(user?.uid);
   useEffect(() => { activeUid.current = user?.uid; }, [user?.uid]);
@@ -2411,7 +2412,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             onNotInterested={(paper) => { void markNotInterested(paper); closeOverlayPaper(); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkReadInCard}
-            onOpenPdf={(paper, _surface, menu) => onOpenPdf?.(paper, menu)}
+            onOpenPdf={(paper, _surface, menu, initialView) => onOpenPdf?.(paper, menu, initialView)}
             onSaveToList={(paper) => onEditPaper?.(paper)}
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}

@@ -1,3 +1,4 @@
+import type { ReadingView } from '../pdf/reading-tabs.tsx';
 import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
 import type { Icon, IconWeight } from '@phosphor-icons/react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/paper.ts';
@@ -20,7 +21,7 @@ export interface PaperCardProps {
   onUnmarkAsRead?: (paper: Paper | string) => void | Promise<void>;
   trackViewTime?: (paper: Paper, seconds: number, surface?: string) => void | Promise<void>;
   trackSkip?: (paper: Paper, surface?: string) => void | Promise<void>;
-  onOpenPdf?: (paper: Paper, surface: string | undefined, menu: ReaderMenu) => void | Promise<void>;
+  onOpenPdf?: (paper: Paper, surface: string | undefined, menu: ReaderMenu, initialView?: ReadingView) => void | Promise<void>;
   /** `surface` overrides the one a quick-save handler reports its saves under. */
   onSaveToList?: (paper: Paper, surface?: string) => void | Promise<void>;
   /**
@@ -45,7 +46,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useSyncExternalStore, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -136,11 +137,9 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { currentAIUses } from './current-ai-uses.ts';
 import { markSeparatorLineEnds } from './separator-line-ends.ts';
-import UsesCount from '../reader/uses-count.tsx';
 import '../ui/tag.css';
-import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
+import { canRewritePaper, getCachedRewrite } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { acceptedConferenceText, accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
@@ -551,7 +550,6 @@ const PaperCard = memo(function PaperCard({
   const { followedByType, isFollowing } = useFollowing();
   const { institution, user, readingPreferences } = useAuth();
   const { language } = useLanguage();
-  const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(user?.uid));
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
   // (hooks/use-stable-navigate.ts says what it cost).
@@ -833,8 +831,8 @@ const PaperCard = memo(function PaperCard({
   const watermarkRef = useRef<HTMLSpanElement | null>(null);
   // A separator the row wraps after is left hanging at the end of its line, as "2020 ·", so it is hidden there.
   const metaRef = useRef<HTMLDivElement | null>(null);
-  // When what the row holds changes, as a late citation count or the uses tag can move the break; the observer covers resizes.
-  useLayoutEffect(() => markSeparatorLineEnds(metaRef.current), [paper.id, paper.citationCount, paper.year, quota]);
+  // Late citation counts can change the line breaks; the observer covers resizes.
+  useLayoutEffect(() => markSeparatorLineEnds(metaRef.current), [paper.id, paper.citationCount, paper.year]);
   useEffect(() => {
     const meta = metaRef.current;
     if (!meta) return undefined;
@@ -1682,11 +1680,9 @@ const PaperCard = memo(function PaperCard({
     openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
   } : paper, [paper, resolvedOpenCopy]);
   const canRequestRewrite = canRewritePaper(readablePaper);
-  const usesNow = currentAIUses(quota, { now: Date.now(), online: navigator.onLine });
   const firstTarget = openTargetsForPaper(paper, resolvedOpenCopy, currentInstitutionAccess)[0];
   const inlineTarget = firstTarget?.mode === 'inline' ? firstTarget : null;
   const rewriteHint = canRequestRewrite && !publicMode && user && isCardVisible
-    // The uses left are the masthead's tag; under the button only a saved version, which opens free.
     ? (getCachedRewrite(readablePaper, readingPreferences.aiExplanationLevel) ? 'Open this version for free.' : '')
     : '';
 
@@ -2050,7 +2046,6 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
         <div ref={metaRef} className="pc-meta">
-          {/* The paper's details wrap among themselves; the uses tag keeps to the first line's end. */}
           <div className="pc-meta-items">
             {primaryTopic ? (
               <button
@@ -2124,13 +2119,6 @@ const PaperCard = memo(function PaperCard({
             {/* A line of its own under the kicker's items, read after them and before the title. */}
             {acceptedPill && <span className="pc-accepted-row">{acceptedPill}</span>}
           </div>
-          {/* The day's AI uses, as the reader shows them, at the first line's far end: what reading in plain words would spend. */}
-          {canRequestRewrite && !publicMode && user && usesNow ? (
-            <span className="rd-tag rd-tag--ai rd-uses pc-uses">
-              <Sparkle size={12} aria-hidden="true" />
-              <UsesCount left={usesNow.left} limit={usesNow.limit} />
-            </span>
-          ) : null}
         </div>
 
         {/* On a phone the title opens the abstract sheet, which shows it
@@ -2410,6 +2398,10 @@ const PaperCard = memo(function PaperCard({
                     requireAuthentication('paper_rewrite');
                     return;
                   }
+                  if (inlineTarget) {
+                    void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}), pdfUrl: inlineTarget.url, openAccess: true }, analyticsSurface, readerMenu, 'plain');
+                    return;
+                  }
                   const bounds = event.currentTarget.getBoundingClientRect();
                   setReaderOrigin({
                     left: bounds.left,
@@ -2672,11 +2664,6 @@ const PaperCard = memo(function PaperCard({
             originRect={readerOrigin}
             closeRef={readerCloseRef}
             onClose={() => setShowReader(false)}
-            // The Paper tab only where Read would open the paper in the viewer, and with the copy Read would open.
-            onPaperTab={inlineTarget ? () => {
-              setShowReader(false);
-              void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}), pdfUrl: inlineTarget.url, openAccess: true }, analyticsSurface, readerMenu);
-            } : undefined}
           />
         </Suspense>,
         document.body,
