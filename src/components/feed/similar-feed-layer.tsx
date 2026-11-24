@@ -4,6 +4,7 @@ import type { ReaderMenu } from './paper-menu.tsx';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { pageLocationOf } from '../pdf/paper-view.ts';
 import { ArrowsClockwise, Intersect, X } from '@phosphor-icons/react';
 import { Dialog, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
@@ -57,8 +58,9 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
   const titleRef = useRef<HTMLSpanElement | null>(null);
   // A topic, author or project link on a card in the layer navigates the page
   // underneath. The layer then has nothing left to return to: it goes with
-  // the page it was opened over, quietly, instead of hiding the new one.
-  const { key: routeKey } = useLocation();
+  // the page it was opened over, quietly, instead of hiding the new one. A paper's viewer opened
+  // from it is not leaving: the page stays under the viewer (paper-view.ts).
+  const { key: routeKey } = pageLocationOf(useLocation());
   const [openedOn] = useState(routeKey);
   const routeLeft = routeKey !== openedOn;
   const shown = open && !routeLeft;

@@ -4,7 +4,8 @@ import type { Shared } from './share-targets.ts';
 
 export interface PaperMenuAction { id: string; label: string; hint: string; Icon: ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' }>; onSelect: (event: MouseEvent) => void }
 /** `notInterestedHint`: the card's feed's own hint under Not interested (feed-dismissal.ts); without one, the account's. */
-export interface ReaderCard { about: ReactNode; links: ReactNode; isRead: boolean; shareUrl: string; notInterested: () => void; notInterestedHint?: string; toggleRead: () => void }
+/** A card's state and actions for the reader's menu; a reader opened from a link has no card, and no `toggleRead` or `notInterested`. */
+export interface ReaderCard { about: ReactNode; links: ReactNode; isRead: boolean; shareUrl: string; notInterested?: () => void; notInterestedHint?: string; toggleRead?: () => void }
 export interface ReaderMenu { snapshot: () => ReaderCard; subscribe: (onChange: () => void) => () => void }
 export interface PaperMenuPanel { id: string; title: string; subtitle?: ReactNode; aside?: ReactNode; content: ReactNode; className?: string; style?: CSSProperties; onBack: () => void }
 

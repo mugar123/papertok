@@ -1,6 +1,7 @@
 import type { ComponentProps, MouseEvent, ReactNode } from 'react'
 import type { Paper } from './models/paper.ts'
-import type { ReaderMenu } from './components/feed/paper-menu.tsx'
+import { matchPaperView, pageLocationOf, useOpenPaperView } from './components/pdf/paper-view.ts'
+import { PaperViewRoute } from './components/pdf/paper-view-route.tsx'
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -11,7 +12,6 @@ import { flushAllInteractionProfiles } from './services/interaction-profile-stor
 import { primeAIUses } from './services/paper-rewrite-service.ts'
 import PageTransition from './components/layout/page-transition.tsx'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/use-page-transition-custom.ts'
-import { useOverlayHistory } from './hooks/use-overlay-history.ts'
 import useIsPhone from './hooks/use-is-phone.ts'
 import { INITIAL_ACCOUNT_SCOPE, accountScopeKey, nextAccountScope } from './utils/account-scope.ts'
 import { feedResumeMemory } from './utils/feed-resume-memory.ts'
@@ -127,24 +127,13 @@ function LoginRedirect() {
 }
 
 function AppContent() {
-  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null)
-  const pdfPaper = pdfOpen?.paper ?? null
-  // Back closes the PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
-  // Through the viewer's own close, the one the X uses — it owns `open` and
-  // reports back only when its leave has played; `setPdfOpen(null)` is just
-  // the fallback for before the lazy chunk has mounted.
-  const pdfCloseRef = useRef<(() => void) | null>(null)
-  const requestPdfClose = useCallback(() => {
-    if (pdfCloseRef.current) pdfCloseRef.current()
-    else setPdfOpen(null)
-  }, [])
-  useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf')
   // Every pointer opens the PDF here, in the viewer. A touch screen used to be
   // sent to the browser's viewer in a new tab, because a framed PDF is
   // crippled there (2026-08-29); the viewer now draws the pages itself on a
   // touch screen (pdf-pages.tsx), so the paper stays in PaperTok on a phone as
   // it does on a desktop (2026-10-09).
-  const openPdf = useCallback((paper: Paper, menu: ReaderMenu) => setPdfOpen({ paper, menu }), [])
+  // It opens on the paper's own route (paper-view.ts), over this page, which stays mounted under it.
+  const openPdf = useOpenPaperView()
   // The paper the list picker is open for, with the surface of the card that
   // opened it: the picker's save carries it (forYouCardNotable). The lists
   // page also says where focus goes on close (`finalFocus`).
@@ -186,9 +175,18 @@ function AppContent() {
   // Without the flush its write waits for the debounce timer, the tab being
   // hidden or pagehide, and the reload fires the last two only as it unloads
   // the page.
+  // A paper's viewer is a route drawn over the page it was opened from, which stays mounted under
+  // it; reached by a link, that page is the paper's own (paper-view.ts). The page is what counts
+  // as where the reader is, so opening the viewer or switching its tab never reloads for a deploy.
+  const paperView = matchPaperView(location.pathname)
+  const pageLocation = pageLocationOf(location)
+  // The viewer stays mounted after Back leaves its route, to close as its X does: a modal torn out
+  // while open would leave the page behind it locked (use-overlay-history.ts).
+  const [mountedView, setMountedView] = useState(paperView)
+  if (paperView && (paperView.paperKey !== mountedView?.paperKey || paperView.view !== mountedView.view)) setMountedView(paperView)
   useEffect(() => {
-    void reloadIfBehindDeploy(location.pathname, () => Promise.all([flushAllInteractionProfiles(), waitForPendingWrites(db)]))
-  }, [location.pathname])
+    void reloadIfBehindDeploy(pageLocation.pathname, () => Promise.all([flushAllInteractionProfiles(), waitForPendingWrites(db)]))
+  }, [pageLocation.pathname])
   // The ONE place this is computed. Every PageTransition reads it from the
   // provider below, and AnimatePresence hands it to the page on its way out —
   // which cannot work it out for itself, because it is kept mounted inside a
@@ -196,7 +194,7 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const isPhone = useIsPhone()
   const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
-  const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
+  const normalizedPathname = pageLocation.pathname === '/' ? '/' : pageLocation.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/feed', '/lists', '/profile', '/recent', '/following', '/search', '/settings', '/help', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, list and entity pages keep the app chrome for a signed-in
   // user — reaching a paper from a list, a list from someone's shared link,
@@ -389,7 +387,7 @@ function AppContent() {
           `initial` on the app's first render. */}
       <PageTransitionCustomProvider value={pageTransitionCustom}>
       <AnimatePresence mode="sync" initial={false} custom={pageTransitionCustom}>
-        <Routes location={location} key={location.pathname.startsWith('/settings/') ? '/settings' : location.pathname}>
+        <Routes location={pageLocation} key={pageLocation.pathname.startsWith('/settings/') ? '/settings' : pageLocation.pathname}>
           {/* The sign-in page is gone; the address still works for old links
               and bookmarks: the onboarding, with the sign-in dialog open. */}
           {/* The entry address, by its own route rather than the wildcard
@@ -684,11 +682,7 @@ function AppContent() {
       {/* Each overlay suspends on its own: while its chunk downloads (idle
           prefetch usually has it already) nothing flashes, and the rest of
           the screen stays interactive. */}
-      <Suspense fallback={null}>
-        {pdfOpen && (
-          <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
-        )}
-      </Suspense>
+      {mountedView && <PaperViewRoute paperKey={mountedView.paperKey} view={mountedView.view} left={!paperView} onLeft={() => setMountedView(null)} />}
 
       <Suspense fallback={null}>
         {saveModal && (

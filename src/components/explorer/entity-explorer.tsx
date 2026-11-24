@@ -1,6 +1,5 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
 import type { Project } from '../../services/open-aire-service.ts';
 import type { RecentImpact } from '../../services/open-alex-service.ts';
@@ -77,7 +76,6 @@ import { toast } from 'sonner';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useHeightSettle } from '../../hooks/use-height-settle.ts';
 import { useIsPageArriving, useAfterPageArrival } from '../../hooks/use-page-arrival.ts';
-import { useOverlayHistory } from '../../hooks/use-overlay-history.ts';
 import { CATEGORIES } from '../../data/categories.ts';
 import { areaAccentForCategory as getAreaGradient } from '../../utils/area-accent.ts';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorer-skeleton-shape.ts';
@@ -114,7 +112,7 @@ import { useFeed } from '../../context/feed-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import PaperCard from '../feed/paper-card.tsx';
 import PaperOverlay from '../feed/paper-overlay.tsx';
-import PDFViewer from '../pdf/pdf-viewer.tsx';
+import { useOpenPaperView } from '../pdf/paper-view.ts';
 import RecentImpactStat from './recent-impact-stat.tsx';
 import { ListRowAuthors, PaperListRow } from '../lists/list-row.tsx';
 import SharePanel from '../feed/share-panel.tsx';
@@ -383,20 +381,8 @@ export default function EntityExplorer({
   const [searchQuery, setSearchQuery] = useState('');
 
   const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
-  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null);
-  const pdfPaperToView = pdfOpen?.paper ?? null;
-  // Back closes this PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
-  // Through the viewer's own close, the one the X uses — it owns `open` and
-  // reports back only when its leave has played; `setPdfOpen(null)` is
-  // just the fallback for the sub-frame gap before PDFViewer's own
-  // `useImperativeHandle` has populated the ref — this import (above) is
-  // plain, not lazy, so there is no chunk boundary to blame it on here.
-  const pdfCloseRef = useRef<(() => void) | null>(null);
-  const requestPdfClose = useCallback(() => {
-    if (pdfCloseRef.current) pdfCloseRef.current();
-    else setPdfOpen(null);
-  }, []);
-  useOverlayHistory(Boolean(pdfPaperToView), requestPdfClose, 'pdf');
+  // The paper's viewer opens on its own route, over this page, which stays mounted under it.
+  const openPaperView = useOpenPaperView();
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
 
   // The paper the overlay is SHOWING, which outlives the one selected. Closing
@@ -816,7 +802,6 @@ export default function EntityExplorer({
     resetForEntityRef.current = visitKey;
     const timer = setTimeout(() => {
       setSelectedPaper(null);
-      setPdfOpen(null);
       setActiveTab('papers');
       setAuthorsOpened(false);
       setExpandedSummary(false);
@@ -2907,7 +2892,7 @@ export default function EntityExplorer({
             onNotInterested={(paper) => { void markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
-            onOpenPdf={(paper, _surface, menu) => setPdfOpen({ paper, menu })}
+            onOpenPdf={(paper, _surface, menu) => openPaperView(paper, menu)}
             onSaveToList={handleSaveToList}
             onPickList={onSaveToList}
             getInteractionState={getInteractionState}
@@ -2919,10 +2904,6 @@ export default function EntityExplorer({
           />
         )}
       </PaperOverlay>
-
-      {pdfOpen && (
-        <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
-      )}
     </div>
   );
 }

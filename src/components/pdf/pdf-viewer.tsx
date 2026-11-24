@@ -1,7 +1,7 @@
-import type { MouseEvent as ReactMouseEvent, Ref } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { ReaderMenu } from '../feed/paper-menu.tsx';
-import { lazy, Suspense, useEffect, useEffectEvent, useImperativeHandle, useMemo, useState, useRef, useCallback, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useState, useRef, useCallback, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { useFeed } from '../../context/feed-context.tsx';
@@ -44,17 +44,17 @@ const PdfPages = lazy(() => import('./pdf-pages.tsx'));
 const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 
 /**
- * A full-screen Base UI Dialog (ui/dialog.jsx). app.tsx mounts the viewer and
- * unmounts it on `onClose`, so the viewer owns its open state: closing flips
- * it, the primitive plays the exit in pdf-viewer.css, and the parent is told
- * from `onOpenChangeComplete(false)` once that has finished. The primitive
- * also owns what the old overlay did by hand — the focus trap, Escape, the
- * scroll lock and the restore to the button that opened it.
+ * A full-screen Base UI Dialog (ui/dialog.jsx) on the paper's own route (paper-view-route.tsx),
+ * over the page it was opened from. The viewer owns its open state: closing flips it, the
+ * primitive plays the exit in pdf-viewer.css, and `onClose` leaves the route from
+ * `onOpenChangeComplete(false)` once that has finished. The primitive also owns the focus trap,
+ * Escape, the scroll lock and the restore to the button that opened it. Its tab is the route's:
+ * a press asks for the other route (`onViewChange`), and the view arrives from that tab's side.
  */
 /** The viewer's tabs in the bar's order, which sets the side a view arrives from. */
 const VIEW_ORDER: readonly ReadingView[] = ['paper', 'listen', 'summary'];
 
-export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null }) {
+export default function PDFViewer({ paper, menu, readingView, onViewChange, closing = false, onClose }: { paper: Paper; menu: ReaderMenu; readingView: ReadingView; onViewChange: (view: ReadingView) => void; closing?: boolean; onClose: () => void }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
@@ -130,13 +130,15 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const startTimeRef = useRef<number | null>(null);
 
   // The X and Escape land here, so the bounce is counted once, whichever it was.
+  const leaveForLink = useCallback(() => undefined, []);
+  const countBounce = useCallback(() => {
+    if (startTimeRef.current !== null && Date.now() - startTimeRef.current < 5000) void trackPdfBounce(paper);
+  }, [paper, trackPdfBounce]);
   const handleClose = useCallback(() => {
     if (!open) return;
-    if (startTimeRef.current !== null && Date.now() - startTimeRef.current < 5000) {
-      void trackPdfBounce(paper);
-    }
+    countBounce();
     setOpen(false);
-  }, [open, paper, trackPdfBounce]);
+  }, [countBounce, open]);
   const afterClose = useRef<(() => void) | null>(null);
   const leaveThen = useCallback((then: () => void) => {
     if (!open) return;
@@ -147,14 +149,11 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   useEffect(() => {
     startTimeRef.current = Date.now();
   }, []);
+  // Its route was left (Back): it closes as the X closes it, leave and bounce included.
+  useEffect(() => {
+    if (closing) countBounce();
+  }, [closing, countBounce]);
 
-  /**
-   * The same way out, published for the browser's Back button: the owner arms
-   * `useOverlayHistory` with whatever this ref holds, so Back counts the
-   * bounce and plays the leave exactly as the X does, instead of unmounting
-   * this node with `open` still true (use-overlay-history.ts).
-   */
-  useImperativeHandle(closeRef, () => handleClose, [handleClose]);
 
   // Apunta a lo que el lector está viendo cuando hay iframe, y al PDF que no
   // cabe en él cuando no lo hay.
@@ -182,11 +181,14 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // `consent` and `uid` drop it at once, and `analyticsSessionContext` checks again at each send.
   const { trackEvent, consent } = useAnalyticsConsent();
   const { user, readingPreferences } = useAuth();
-  // The tab chosen, and the side the view it shows arrives from: a tab to the right comes in from
+  // The route's tab, and the side the view it shows arrives from: a tab to the right comes in from
   // the right. The view left goes at once, so two texts never show through each other.
-  const [tab, setTab] = useState<{ view: ReadingView; from: number; turn: number }>({ view: 'paper', from: 0, turn: 0 });
-  const choose = (view: ReadingView) => setTab(current => (current.view === view ? current
-    : { view, from: Math.sign(VIEW_ORDER.indexOf(view) - VIEW_ORDER.indexOf(current.view)), turn: current.turn + 1 }));
+  const [arrival, setArrival] = useState({ view: readingView, from: 0, turn: 0 });
+  if (arrival.view !== readingView) {
+    setArrival({ view: readingView, from: Math.sign(VIEW_ORDER.indexOf(readingView) - VIEW_ORDER.indexOf(arrival.view)), turn: arrival.turn + 1 });
+  }
+  const tab = { ...arrival, view: readingView };
+  const choose = (next: ReadingView) => { if (next !== readingView) onViewChange(next); };
   const canSummarize = Boolean(user) && canRewritePaper(paper);
   const uid = user?.uid ?? '';
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
@@ -274,12 +276,16 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // A tab that is no longer offered (the text turned to the PDF, say) falls back to the paper.
   const shown = tabs.includes(tab.view) ? tab.view : 'paper';
   const summaryOpen = shown === 'summary';
-  // A tab no longer offered once the paper's text is in (the text turned to the PDF) is left for the paper.
-  if (fullText !== undefined && shown !== tab.view) setTab({ view: 'paper', from: 0, turn: tab.turn });
+  // A tab not offered once the paper's text is in (the text turned to the PDF, or Listen asked for
+  // by a link without an account) leaves its route for the paper's.
+  const leaveUnoffered = useEffectEvent(() => onViewChange('paper'));
+  useEffect(() => {
+    if (fullText !== undefined && shown !== readingView) leaveUnoffered();
+  }, [fullText, shown, readingView]);
 
   return (
     <Dialog
-      open={open}
+      open={open && !closing}
       onOpenChange={(nextOpen) => { if (!nextOpen) handleClose(); }}
       onOpenChangeComplete={(nextOpen) => {
         if (nextOpen) return;
@@ -474,7 +480,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
         {summaryOpen && (
           <div className="pdf-summary">
             <Suspense fallback={null}>
-              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={() => choose('paper')} />
+              {/* Embedded, the summary closes only for its journal link, whose own navigation leaves
+                  the viewer's route and so closes it: the route's close would go Back over it. */}
+              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={leaveForLink} onLeave={leaveThen} onPaperTab={() => choose('paper')} />
             </Suspense>
           </div>
         )}

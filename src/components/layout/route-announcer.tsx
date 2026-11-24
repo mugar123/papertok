@@ -5,11 +5,13 @@
 // so Tab restarts at the content instead of the top of the page.
 import { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
+import { pageLocationOf } from '../pdf/paper-view.ts'
 import { useCustomFeeds } from '../../hooks/use-custom-feeds.ts'
 import { routeTitle, routeLabel } from '../../utils/route-metadata.ts'
 
 export default function RouteAnnouncer() {
-  const location = useLocation()
+  // Under a paper's viewer, the page it was opened over: the viewer and its tabs are not a new view.
+  const location = pageLocationOf(useLocation())
   const liveRef = useRef<HTMLSpanElement | null>(null)
   // Last pathname we actually announced, not "is this the first render":
   // React.StrictMode (src/main.tsx) double-invokes this effect on mount

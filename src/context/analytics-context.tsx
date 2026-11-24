@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { pageview } from '@vercel/analytics';
 import { useLocation } from 'react-router-dom';
+import { pageLocationOf } from '../components/pdf/paper-view.ts';
 import { useLanguage } from './language-context.tsx';
 import { useAuth } from './auth-context.tsx';
 import { useAnalyticsConsent } from './privacy-context.tsx';
@@ -11,7 +12,8 @@ import {
 } from '../services/analytics-service.ts';
 
 export default function AnalyticsEffects() {
-  const location = useLocation();
+  // A paper's viewer and its tabs are not page views; the page under it is (paper-view.ts).
+  const location = pageLocationOf(useLocation());
   const { language } = useLanguage();
   const { loading: authLoading } = useAuth();
   const { consent } = useAnalyticsConsent();

@@ -2,14 +2,14 @@ type OverlayHistory = Pick<History, 'pushState' | 'replaceState' | 'back'> & { s
 import { useEffect, useRef } from 'react';
 
 /**
- * A reader or a PDF viewer is local component state rendered through a
- * portal, not a route — it pushes nothing onto session history. Pressing
+ * A reader or the Similar layer is local component state rendered through a
+ * portal, not a route — it pushes nothing onto session history. (The paper
+ * viewer is a route of its own, paper-view.ts.) Pressing
  * Back while one is open therefore does not close it; it leaves PaperTok
  * entirely, straight to whatever the visitor had open before (the tester's
  * report). The router cannot help on its own, whichever router it is: it reads
- * the URL, and none of these five overlays (PaperCard's reader, the Similar
- * layer, and App's, EntityExplorer's and SearchPage's independently-mounted
- * PDF viewers) change it. Nothing below reads a URL either — the entry is cloned from
+ * the URL, and none of these overlays (the saved summaries' reader and the
+ * Similar layer) change it. Nothing below reads a URL either — the entry is cloned from
  * `history.state` and pushed at `location.href`, whatever that happens to be —
  * which is why the move off HashRouter (2026-09-18) went through this file
  * without a line changing.
@@ -51,103 +51,39 @@ import { useEffect, useRef } from 'react';
  * idx=k+1 (real) — with the overlay's own idx=k entry invisible in between.
  *
  * Overlays of DIFFERENT tags do stack: the Similar layer (`similar`) is a feed
- * of cards, and each card opens its reader (`reader`) or App's PDF viewer
- * (`pdf`) on top of it. Every armed owner hears every `popstate`, so `onPop`
+ * of cards, and each card opens the paper's viewer, a route, on top of it. Every armed owner hears every `popstate`, so `onPop`
  * ignores a pop that leaves its own tagged entry on top: that Back belonged
  * to an overlay above it. Without that check one Back press closed the reader
  * and the layer under it, and closing the reader with its X — a `history.back()`
  * of its own — closed the layer too.
  *
  * Beyond that, `onPop` does not ask whose entry was popped. No two owners of
- * the SAME tag can be open at once through the UI to begin with: PaperReader
- * (`reader`), the Similar layer (`similar`) and the three independent
- * `<PDFViewer>` mounts that all share `pdf` — App's own, EntityExplorer's,
- * SearchPage's — are each a modal Base UI Dialog, and a modal dialog makes the
- * rest of the page — including whatever would open a second one — inert while
- * it is open (confirmed by reading each: PaperReader has no PDF affordance,
- * and its one link, the journal's name, closes the reader on the click that
- * navigates, as the Similar layer's links do (below); the layer re-anchors
- * itself rather than opening a second one). So the only real question left
- * is "did Back just undo my own push", and treating any other pop while armed as "close me" resolves toward
- * the overlay closing rather than staying open over a URL that no longer
- * backs it — the failure direction this hook has to prefer, per "never trap
- * the user".
+ * the SAME tag can be open at once: the saved summaries' reader (`reader`)
+ * and the Similar layer (`similar`) have one owner each, and each is a modal
+ * Base UI Dialog that makes the rest of the page inert while open. So the only
+ * real question left is "did Back just undo my own push", and treating any
+ * other pop while armed as "close me" resolves toward the overlay closing
+ * rather than staying open over a URL that no longer backs it — the failure
+ * direction this hook has to prefer, per "never trap the user". The paper
+ * viewer is not one of these: it is a route of its own (paper-view.ts), so a
+ * paper opened from the Similar layer pushes a real entry over the layer's,
+ * and Back from it lands on the layer's entry, which leaves the layer open.
  *
- * SHARED-TAG INVARIANT. "No two owners of the same tag can be open at once"
- * is worth being precise about, because it is an invariant this hook DEPENDS
- * on rather than one it ENFORCES. `reader` has a single owner, so it cannot
- * arise there; `pdf` has three, and each calls `createOverlayHistory`
- * separately — its own `ctlRef`, its own closured `armed`, its own
- * `listen`/`unlisten` pair — with nothing sharing state between them except
- * the one real `window` all three `addEventListener('popstate', …)` calls
- * land on. Nothing in this module would notice if two of them were armed at
- * once. In particular, `alreadyOnTag` guards only whether `arm()` calls
- * `pushState`: it lets a re-arm that lands on an entry already tagged the
- * same skip pushing a duplicate. `armed = { tag, onClose }` and the
- * `listen(onPop)` call right after it are NOT inside that guard — they run
- * every time, regardless of whether this call pushed anything. So a second
- * `pdf` owner arming while the first is still armed would not be turned away;
- * it would ride the first owner's entry, believe itself armed, and add its
- * own `onPop` to the same `window`.
- *
- * Two failures follow from that, and neither throws — both are silent,
- * behavioural, and surface only as something a person watched happen. (1) A
- * single `popstate` reaches every listener on `window`, so one real Back
- * press would run BOTH owners' `onPop` and close both viewers, even though
- * the browser popped only the one entry the first owner had pushed. (2) If
- * the second owner is instead closed by its own X, its `disarm()` reads
- * `history.state?.overlay === tag` — still true, since neither a pop nor a
- * push has touched the entry since — and issues a real `history.back()`,
- * which consumes whatever the first owner is still sitting on and closes it
- * too, from a click the user aimed at the second owner alone.
- *
- * What keeps this from happening today is two facts about the app that live
- * entirely OUTSIDE this file — this hook enforces neither, so a change to
- * either would reopen the invariant without anything here noticing. First,
- * `/`, `/lists`, `/following`, `/search` and `/explorer/:type/:id`
- * are sibling `<Route>`s inside the one `<Routes>` in app.tsx, so
- * EntityExplorer's and SearchPage's own `pdf` owners are never both mounted,
- * nor mounted alongside a fresh trigger for App's (`openPdf` is only ever
- * handed to route children). App's own `<PDFViewer>`, though, is a permanent
- * sibling of that `<Routes>`, not gated by it — once armed, it does not
- * unmount just because the route underneath it changed. Second, a modal
- * makes the rest of the page inert while open, which blocks the ordinary,
- * click-driven way to reach another route; the one navigation left, the Back
- * button, is exactly what this hook already intercepts. The exception is a
- * modal whose own content links elsewhere — the Similar layer is a feed of
- * cards with topic and author links, and PaperReader links the journal's
- * name to its Explorer page (paper-reader.tsx) — and it closes itself the
- * moment the route changes under it, so its disarm finds the new route's
- * entry on top and steps back over nothing. The gap that `inert`
- * does NOT cover is a keydown bound on `window` — focus is trapped inside
- * the dialog, but the event still bubbles to `window` — which is precisely
- * why `search-shortcut.ts` refuses the bare `/` shortcut whenever any
- * `[aria-modal="true"]` element exists: without that check, it could open
- * the search command palette and navigate for real while a `pdf` owner sits
- * armed, landing its route change on top of an overlay that never got the
- * chance to close. Move App's viewer to a route-scoped mount, add a link or
- * shortcut that reaches `/search` or `/explorer/*` without checking for a
- * modal, or give `pdf` a fourth mount anywhere reachable while another is
- * open, and two owners WILL end up armed together — silently, until the Back
- * button above stops behaving like one.
+ * This is an invariant the hook DEPENDS on rather than ENFORCES: a second
+ * owner of a tag arming while the first is armed would ride the first's
+ * entry, and one Back press would close both. A window keydown still reaches
+ * the page under a modal, which is why `search-shortcut.ts` refuses its `/`
+ * whenever a `[aria-modal="true"]` element exists.
  *
  * What `onClose` must BE: the overlay's own close request — the function its X
- * and Escape already travel through (`requestClose` in PaperReader,
- * `handleClose` in PDFViewer) — never the parent's unmount switch. Both
- * overlays own their `open` internally and call the parent back only from
- * `onOpenChangeComplete(false)`, so unmounting them straight from here would
- * tear the node out with `open` still true: the leave animation is cut, and
- * Base UI never unwinds what a modal took — the scroll lock, `inert` and
- * `aria-hidden` on everything behind it. A visitor would be left looking at a
- * live page they cannot scroll or click, trapped by a different mechanism than
- * the one this hook exists to unblock. Back and the X have to end up in the
- * same function; the Similar layer arms the hook with its own `requestClose`,
- * and the four others hand this hook exactly that (a `closeRef`
- * the overlay publishes into, with the unmount switch kept only as the
- * fallback for the window before the overlay has published its close — a
- * lazy chunk still loading in `app.tsx` and `paper-card.tsx`, and the render
- * before the ref is assigned in `entity-explorer.tsx` and `search-page.tsx`,
- * which import `PDFViewer` plainly).
+ * and Escape already travel through (`requestClose` in PaperReader) — never
+ * the parent's unmount switch. The overlay owns its `open` and calls the
+ * parent back only from `onOpenChangeComplete(false)`, so unmounting it
+ * straight from here would tear the node out with `open` still true: the leave
+ * animation is cut, and Base UI never unwinds what a modal took — the scroll
+ * lock, `inert` and `aria-hidden` on everything behind it. Back and the X have
+ * to end up in the same function. (The paper viewer's route keeps it mounted
+ * after Back for the same reason, app.tsx.)
  */
 export function createOverlayHistory({ history, listen, unlisten }: { history: Omit<OverlayHistory, 'replaceState'>; listen: (callback: () => void) => void; unlisten: (callback: () => void) => void }) {
   let armed: { tag: string; onClose: () => void } | null = null;
@@ -171,7 +107,7 @@ export function createOverlayHistory({ history, listen, unlisten }: { history: O
       // nothing past it. `armed = …` and `listen(onPop)` below run whether or
       // not this branch pushed, so a SECOND, independent instance for the
       // same tag arms itself just as happily, riding this one's entry — see
-      // the SHARED-TAG INVARIANT paragraph in the file doc comment above for
+      // the invariant paragraph in the file doc comment above for
       // what that costs and why it does not happen today.
       const alreadyOnTag = Boolean(history.state) && history.state!.overlay === tag;
       if (!alreadyOnTag) {
