@@ -47,25 +47,7 @@
   .rd-listen-track:hover .rd-listen-thumb { scale: 1.2; }
 }
 .rd-listen-track[data-dragging] .rd-listen-thumb { scale: 1.4; }
-/* Until every passage has audio, the track is how much of it there is. */
-.rd-listen-progress {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 100%;
-  height: 4px;
-  translate: 0 -50%;
-  border: 0;
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--accent-secondary);
-  appearance: none;
-  overflow: hidden;
-}
-.rd-listen-progress::-webkit-progress-bar { background: var(--bg-secondary); }
-.rd-listen-progress::-webkit-progress-value { background: var(--accent-secondary); transition: width 200ms var(--ease-out); }
-.rd-listen-progress::-moz-progress-bar { background: var(--accent-secondary); }
-.rd-listen-track:not(:has(.rd-listen-progress)) { cursor: pointer; touch-action: none; }
+.rd-listen-track { cursor: pointer; touch-action: none; }
 /* Keyboard only: the track reads the pointer itself, over the line's full width. */
 .rd-listen-track input {
   position: absolute;

@@ -135,13 +135,22 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
   const sentence = item ? spokenSentence(item, word) : null;
 
   return (
-    <section className="rd-podcast" aria-labelledby="rd-podcast-paper" data-chapters-open={drawerOpen || undefined}>
+    <section className="rd-podcast" aria-labelledby="rd-podcast-paper" data-chapters-open={drawerOpen || undefined} data-preparing={preparing || undefined}>
       {/* The paper heads the tab, as a player names the album over its cover. */}
       <span ref={statusRegion} className="visually-hidden" role="status" />
       <header className="rd-podcast-header">
         <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
       </header>
-      <div className="rd-podcast-cover"><ReadAloudForms ready={!preparing} playing={playing && !buffering} /></div>
+      <div className="rd-podcast-cover">
+        <ReadAloudForms ready={!preparing} playing={playing && !buffering} />
+        {/* While the first passages are prepared, a ring round the forms fills with them. */}
+        {preparing && (
+          <svg className="rd-podcast-ring" viewBox="0 0 100 100" aria-hidden="true">
+            <circle cx="50" cy="50" r="49" pathLength={100} />
+            <circle cx="50" cy="50" r="49" pathLength={100} strokeDasharray="100" strokeDashoffset={100 - percent} />
+          </svg>
+        )}
+      </div>
 
       <div className="rd-podcast-words">
         {/* The section the voice is in: small over the caption on a wide screen, the large title on a phone, as a player names a song. */}
@@ -151,11 +160,18 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
           </h2>
         )}
 
-        <div ref={caption} className="rd-podcast-caption">
+        {preparing && (
+          <div className="rd-podcast-wait">
+            <p className="rd-podcast-wait-what">Preparing the first passages</p>
+            <p className="rd-podcast-wait-meta">
+              {[`${percent}%`, timeline.chapters.length > 1 && `${timeline.chapters.length} chapters`, `about ${Math.max(1, Math.round(timeline.duration / speed / 60))} min`].filter(Boolean).join(' · ')}
+            </p>
+            <progress className="visually-hidden" max={startup.total} value={startup.ready} aria-label="Preparing the first passages" />
+          </div>
+        )}
+        <div ref={caption} className="rd-podcast-caption" hidden={preparing}>
           <p className="rd-podcast-text" lang="en">
-            {preparing
-              ? `Preparing the first passages, ${percent}%`
-              : buffering ? 'Loading this passage…'
+            {buffering ? 'Loading this passage…'
               : !sentence ? 'Press play to listen.' : (
                 <span key={`${paragraph}:${sentence.first}`} className="rd-podcast-piece">
                   {sentence.words.map((text, index) => (
@@ -169,8 +185,8 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
 
       {/* The controls: under the caption on a wide screen; on a phone, a bar fixed to the bottom of the
           tab, ruled off from the forms and the caption, which scroll behind it. */}
-      <div className="rd-podcast-player" inert={drawerOpen && drawerCovers}>
-        {preparing ? <div className="rd-listen-track"><progress className="rd-listen-progress" max={startup.total} value={startup.ready} aria-label="Preparing the first passages" /></div> : (
+      {!preparing && (
+        <div className="rd-podcast-player" inert={drawerOpen && drawerCovers}>
           <div className="rd-podcast-dock">
             {/* As a music player lays them out: the transport centred, the speed and the chapters at its sides. */}
             <div className="rd-podcast-buttons">
@@ -192,8 +208,8 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
               <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Every chapter at once, with its length, in a drawer from the side. */}
       {timeline.chapters.length > 1 && (

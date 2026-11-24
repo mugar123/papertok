@@ -650,7 +650,9 @@ the paper's title over a particle visual, the sentence being read as a caption,
 and a player with speed, 15-second skips and a timeline cut into the paper's
 sections; its chapters open in a panel beside it, full screen on a phone. Opening
 the tab prepares three passages from the starting position (or the remaining
-passages for a shorter ending). The percentage covers only that initial buffer;
+passages for a shorter ending). While it does, a ring round the visual fills with them and, centred under it,
+the tab says what it prepares, the percentage, the chapters and about how long the paper lasts; the
+player and the caption arrive once it is done. The percentage covers only that initial buffer;
 Play becomes available when it is ready, without starting automatically;
 system playback controls respect the same initial buffer. Two
 background requests keep loading the rest. A jump to uncached audio shows
