@@ -32,7 +32,7 @@ import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import UsesCount from '../reader/uses-count.tsx';
 import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-viewer-notes.ts';
 import { fullTextListen } from './read-aloud.ts';
-import { ReadingTabs } from './reading-tabs.tsx';
+import { ReadingTabs, type ReadingView } from './reading-tabs.tsx';
 import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
 import { passageQuote } from '../../services/user-highlight-service.ts';
 
@@ -51,8 +51,8 @@ const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/
  * also owns what the old overlay did by hand — the focus trap, Escape, the
  * scroll lock and the restore to the button that opened it.
  */
-/** How long the AI summary takes to leave, a little over its 150ms fade (pdf-viewer.css). */
-const SUMMARY_LEAVE_MS = 160;
+/** The viewer's tabs in the bar's order, which sets the side a view arrives from. */
+const VIEW_ORDER: readonly ReadingView[] = ['paper', 'listen', 'summary'];
 
 export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
@@ -182,17 +182,11 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // `consent` and `uid` drop it at once, and `analyticsSessionContext` checks again at each send.
   const { trackEvent, consent } = useAnalyticsConsent();
   const { user, readingPreferences } = useAuth();
-  // The AI summary as the viewer's second tab: it opens over the paper, and its Paper tab comes back.
-  // Leaving it, it stays a moment while it fades out over the paper.
-  const [summary, setSummary] = useState<'shown' | 'leaving' | null>(null);
-  const summaryOpen = summary === 'shown';
-  const showPaper = () => setSummary(shown => shown && 'leaving');
-  // Its leave lasts 150ms (pdf-viewer.css); then it goes, whether or not an animation ran.
-  useEffect(() => {
-    if (summary !== 'leaving') return undefined;
-    const timer = window.setTimeout(() => setSummary(null), SUMMARY_LEAVE_MS);
-    return () => clearTimeout(timer);
-  }, [summary]);
+  // The tab chosen, and the side the view it shows arrives from: a tab to the right comes in from
+  // the right. The view left goes at once, so two texts never show through each other.
+  const [tab, setTab] = useState<{ view: ReadingView; from: number; turn: number }>({ view: 'paper', from: 0, turn: 0 });
+  const choose = (view: ReadingView) => setTab(current => (current.view === view ? current
+    : { view, from: Math.sign(VIEW_ORDER.indexOf(view) - VIEW_ORDER.indexOf(current.view)), turn: current.turn + 1 }));
   const canSummarize = Boolean(user) && canRewritePaper(paper);
   const uid = user?.uid ?? '';
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
@@ -273,6 +267,15 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
 
   // Read aloud: the paper's prose in PaperTok's voice, for a signed-in reader of an English text.
   const spoken = useMemo(() => (fullText ? fullTextListen(fullText, { withAbstract: abstractShown }) : null), [fullText, abstractShown]);
+  // Listening needs the paper's English text, read as text, for a signed-in reader.
+  const listenable = Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '');
+  // The same list while the same tabs apply: the tabs measure their layout when it changes.
+  const tabs = useMemo(() => VIEW_ORDER.filter(item => item === 'paper' || (item === 'summary' ? canSummarize : listenable)), [canSummarize, listenable]);
+  // A tab that is no longer offered (the text turned to the PDF, say) falls back to the paper.
+  const shown = tabs.includes(tab.view) ? tab.view : 'paper';
+  const summaryOpen = shown === 'summary';
+  // A tab no longer offered once the paper's text is in (the text turned to the PDF) is left for the paper.
+  if (fullText !== undefined && shown !== tab.view) setTab({ view: 'paper', from: 0, turn: tab.turn });
 
   return (
     <Dialog
@@ -290,6 +293,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
         showClose={false}
         closeLabel={'Close paper'}
         aria-label={'Paper viewer'}
+        style={{ '--view-from': `${tab.from * 16}px` }}
       >
         <div className="pdf-viewer">
           {/* Top bar */}
@@ -300,8 +304,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
 
             {/* The bar names the paper once the article's own title has scrolled
                 away, rising in from below; it leaves the way it came. Where the paper
-                has an AI summary, the bar holds the two tabs instead. */}
-            {canSummarize ? <ReadingTabs current={summaryOpen ? 'summary' : 'paper'} onChange={view => (view === 'summary' ? setSummary('shown') : showPaper())} /> : <AnimatePresence initial={false}>
+                has other tabs (an AI summary, Listen), the bar holds them instead. */}
+            {tabs.length > 1 ? <ReadingTabs current={shown} views={tabs} onChange={choose} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
                   key="title"
@@ -318,7 +322,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
           </div>
 
           {/* Under the AI summary tab the paper stays mounted, so its place waits, but out of reach. */}
-          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} inert={summaryOpen}>
+          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} data-arrive={(shown === 'paper' && tab.turn > 0) || undefined} inert={summaryOpen}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
                 <p>The text of this paper could not be loaded right now.</p>
@@ -401,7 +405,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {fullText !== undefined && (
             <ReadingDock
               title={paper.title} paper={paper} scroll={showsText ? textScroll : null}
-              spoken={spoken} topbar={topbar} canListen={!summaryOpen && Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
+              spoken={spoken} topbar={topbar} canListen={listenable} listening={shown === 'listen'}
               notes={notesOn ? { id: 'viewer-notes', open: notesOpen, count: notes.passages.length, onOpenChange: setNotesOpen } : null}
               originalUrl={dockUrl}
               menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText
@@ -467,10 +471,10 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             />}
           </div>
         </div>
-        {summary && (
-          <div className="pdf-summary" data-leaving={summary === 'leaving' || undefined} inert={summary === 'leaving'}>
+        {summaryOpen && (
+          <div className="pdf-summary">
             <Suspense fallback={null}>
-              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={showPaper} />
+              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={() => choose('paper')} />
             </Suspense>
           </div>
         )}

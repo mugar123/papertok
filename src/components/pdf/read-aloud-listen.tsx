@@ -1,7 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Headphones, ListBullets, X } from '@phosphor-icons/react';
-import UsesCount from '../reader/uses-count.tsx';
-import '../ui/tag.css';
+import { ListBullets, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { SpokenPassage } from './read-aloud.ts';
 import type { useReadAloud } from './use-read-aloud.ts';
@@ -18,6 +16,10 @@ const PREPARING = 'Preparing the first passages';
 
 /** About three lines of the caption on a wide screen and five on a phone; a longer sentence is shown a piece at a time, as lyrics are. */
 const CAPTION_WORDS = 20;
+
+/** How near a jump's place the voice must report itself before the line follows it again, and how long the line waits. */
+const LANDED_SECONDS = 1.5;
+const LANDING_MS = 4_000;
 
 /** The piece of a sentence's words that holds the one being said, the pieces as even as they can be. */
 function captionPiece(words: string[], current: number) {
@@ -49,16 +51,14 @@ function spokenSentence(item: SpokenPassage, word: number) {
  * controls round the timeline (which shows the audio still to come, then where the voice
  * is), and the paper's sections as chapters in a drawer.
  */
-export default function ReadAloudListen({ title, queue, player, voiceLeft = null, onPlayPause }: {
+export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
   title: string;
   queue: readonly SpokenPassage[];
   /** The voice the dock plays: where it is, how much is ready, and its controls. */
   player: Pick<ReturnType<typeof useReadAloud>, 'timeline' | 'startup' | 'buffering' | 'paragraph' | 'position' | 'playing' | 'speed' | 'timings' | 'live' | 'setSpeed' | 'seek'>;
-  /** New papers the account may still hear in PaperTok's voice today, when known. */
-  voiceLeft?: { papersLeft: number; dailyPapers: number } | null;
   onPlayPause: () => void;
 }) {
-  const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek: onSeek } = player;
+  const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek } = player;
   const preparing = !startup.failed && startup.ready < startup.total;
   const percent = startup.total ? Math.floor((startup.ready / startup.total) * 100) : 100;
   // What the wait is for: the chapters and, at the chosen speed, about how long they last (left out when unknown).
@@ -69,7 +69,22 @@ export default function ReadAloudListen({ title, queue, player, voiceLeft = null
   // The player's position moves when a clip reports its time, and with the browser's voice only
   // as each sentence ends; while it speaks, the tab reads where the voice is on every frame.
   const [voiceAt, setVoiceAt] = useState<number | null>(null);
-  const now = playing && voiceAt !== null ? voiceAt : position;
+  const reported = playing && voiceAt !== null ? voiceAt : position;
+  // After a jump the voice takes a moment to get there (its clip loading, and Safari placing a clip
+  // only once its metadata is in) and meanwhile reports where it was. The line holds the place asked
+  // for until the voice is near it (LANDED_SECONDS), or for LANDING_MS at most.
+  const [landing, setLanding] = useState<number | null>(null);
+  if (landing !== null && Math.abs(reported - landing) < LANDED_SECONDS) setLanding(null);
+  useEffect(() => {
+    if (landing === null) return undefined;
+    const timer = window.setTimeout(() => setLanding(null), LANDING_MS);
+    return () => clearTimeout(timer);
+  }, [landing]);
+  const onSeek = (seconds: number) => {
+    setLanding(Math.min(Math.max(0, seconds), timeline.duration));
+    seek(seconds);
+  };
+  const now = landing ?? reported;
   const shown = target ?? now;
   const chapter = chapterAt(timeline, shown);
   // The player's state, told to a screen reader as it changes: the section only when the voice
@@ -150,14 +165,6 @@ export default function ReadAloudListen({ title, queue, player, voiceLeft = null
       <span ref={statusRegion} className="visually-hidden" role="status" />
       <header className="rd-podcast-header">
         <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
-        {voiceLeft && (
-          <p className="rd-podcast-header-voice">
-            <span className="rd-tag rd-tag--ai rd-uses" role="status">
-              <Headphones size={12} aria-hidden="true" />
-              <UsesCount left={voiceLeft.papersLeft} limit={voiceLeft.dailyPapers} what="new papers with PaperTok’s voice" />
-            </span>
-          </p>
-        )}
       </header>
       <div className="rd-podcast-cover">
         <ReadAloudForms progress={preparing ? startup.ready / startup.total : 1} playing={playing && !buffering} />

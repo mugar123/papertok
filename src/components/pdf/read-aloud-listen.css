@@ -1,6 +1,5 @@
-/* The way into the podcast tab: a round button in the top bar's last corner, the podcast's download beside it. */
+/* In the bar's last corner while the Listen tab is open: the day's voice papers and the podcast's download. */
 .rd-listen-corner { grid-column: 3; justify-self: end; display: flex; gap: var(--space-1); align-items: center; }
-.rd-listen-toggle { border-radius: 50%; }
 
 /* The podcast tab: over the paper's text in the viewer's stage, in the app's theme. The particles are
    the brand's yellow, rose and violet; the accent marks the timeline and the chapters. */
@@ -24,7 +23,6 @@
   overflow: hidden auto;
   background: var(--bg-primary);
   color: var(--text-primary);
-  animation: rd-podcast-in 200ms var(--ease-out);
   /* The chapters panel's width; on a wide screen the tab moves over by it, as the paper does for the notes. */
   --podcast-drawer-w: min(360px, 90vw);
   transition: padding-right 240ms var(--ease-out);
@@ -32,7 +30,6 @@
 @media (min-width: 601px) {
   .rd-podcast[data-chapters-open] { padding-right: calc(var(--podcast-drawer-w) + var(--space-4)); }
 }
-@keyframes rd-podcast-in { from { opacity: 0; } }
 
 :root[data-theme='dark'] .rd-podcast {
   --podcast-visual-via: var(--accent-rose);
@@ -67,8 +64,6 @@
   text-align: center;
   text-wrap: balance;
 }
-/* Under the title, how many new papers the account may still hear in PaperTok's voice today. */
-.rd-podcast-header-voice { margin: var(--space-2) 0 0; text-align: center; }
 /* The paper's title over everything, centred. */
 .rd-podcast-header { flex: none; width: 100%; margin-bottom: var(--space-6); text-align: center; }
 .rd-podcast-header-title { margin: 0; font: 600 1.125rem/1.3 var(--font-serif); color: var(--text-primary); text-wrap: balance; }

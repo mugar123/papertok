@@ -75,7 +75,18 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   const waitingRequests = useRef<Array<() => void>>([]);
   const told = useRef(false);
   // The queue whose passages are being fetched in full; a new queue starts over.
-  const fetchingAll = useRef<{ items: SpokenPassage[]; remaining: SpokenPassage[] } | null>(null);
+  /**
+   * The paper's audio being fetched: what is left, in the order wanted, what has settled, and the
+   * first passages the tab opened at, which its progress counts.
+   */
+  const fetchingAll = useRef<{
+    items: SpokenPassage[];
+    remaining: SpokenPassage[];
+    settled: Set<SpokenPassage>;
+    start: number;
+    initial: SpokenPassage[];
+    opening: boolean;
+  } | null>(null);
   const [speed, setSpeedState] = useState<number>(1);
   // Read when a clip or sentence starts, so a change made meanwhile applies to it.
   const speedNow = useRef(1);
@@ -162,19 +173,31 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     return pending;
   };
 
+  /** The first passages a tab opened at `start` prepares before Play is offered. */
+  const firstPassages = (start: number) => queue.slice(start, start + STARTUP_PASSAGES);
+
+  const reportStartup = (batch: NonNullable<typeof fetchingAll.current>, failed = false) => {
+    if (!batch.opening) return;
+    const ready = batch.initial.filter(item => batch.settled.has(item)).length;
+    setStartup({ start: batch.start, ready, total: batch.initial.length, failed });
+  };
+
   const fetchAll = (start: number, opening = false) => {
-    if (fetchingAll.current?.items === queue) {
-      const pending = new Set(fetchingAll.current.remaining);
-      fetchingAll.current.remaining = [...queue.slice(start), ...queue.slice(0, start)].filter(item => pending.has(item));
+    const order = (items: SpokenPassage[]) => [...items.slice(start), ...items.slice(0, start)];
+    const running = fetchingAll.current;
+    // Already fetching this paper: what is left comes from the new place, and a tab opened there
+    // counts its own first passages, those already settled included, not the last opening's.
+    if (running?.items === queue) {
+      const pending = new Set(running.remaining);
+      running.remaining = order(queue).filter(item => pending.has(item));
+      if (opening) Object.assign(running, { opening, start, initial: firstPassages(start) });
+      reportStartup(running);
       return;
     }
-    const items = queue;
-    const batch = { items, remaining: [...items.slice(start), ...items.slice(0, start)] };
+    const batch = { items: queue, remaining: order(queue), settled: new Set<SpokenPassage>(), start, initial: firstPassages(start), opening };
     fetchingAll.current = batch;
     setPrepareDone(false);
-    const initial = items.slice(start, start + STARTUP_PASSAGES);
-    if (opening) setStartup({ start, ready: 0, total: initial.length, failed: false });
-    let settled = 0;
+    reportStartup(batch);
     let stopped = false;
     let working = WORKERS;
     const work = async () => {
@@ -189,12 +212,12 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
             if (fetchingAll.current === batch) {
               fetchingAll.current = null;
               setPrepareDone(true);
-              if (opening) setStartup({ start, ready: settled, total: initial.length, failed: true });
+              reportStartup(batch, true);
             }
           }
         }
-        if (initial.includes(item)) settled += 1;
-        if (opening && fetchingAll.current === batch) setStartup({ start, ready: settled, total: initial.length, failed: false });
+        batch.settled.add(item);
+        if (fetchingAll.current === batch) reportStartup(batch);
       }
       working -= 1;
       if (working === 0 && fetchingAll.current === batch) setPrepareDone(true);

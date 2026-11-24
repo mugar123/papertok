@@ -113,12 +113,20 @@ export async function loadWelcomeProjectSupport() {
 }
 
 
+/** The podcast tab alone, handed a player the test drives. */
+export async function loadReadAloudListen() {
+  const { modules: [listen], close } = await loadModules<[
+    { default: Component<{ title: string; queue: SpokenPassage[]; player: Record<string, unknown>; onPlayPause: () => void }> },
+  ]>('/src/components/pdf/read-aloud-listen.tsx');
+  return { ReadAloudListen: listen.default, close };
+}
+
 export async function loadReadingDock() {
   const { modules: [dock, contexts, firebase], close } = await loadModules<[
     { ReadingDock: Component<{
       title: string; paper?: Paper; scroll: HTMLElement | null; contents: null;
       spoken: { queue: SpokenPassage[]; chapters: ReadAloudChapter[] } | null;
-      canListen: boolean; topbar?: HTMLElement | null; originalUrl: string;
+      canListen: boolean; listening?: boolean; topbar?: HTMLElement | null; originalUrl: string;
       notes: { id: string; open: boolean; count: number; onOpenChange: (open: boolean) => void } | null;
       children?: ReactNode;
     }> },

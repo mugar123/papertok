@@ -217,15 +217,18 @@
 
 
 
-/* The AI summary tab: over the paper, under the viewer's own bar with its tabs. It slides in
-   from the side of its tab and fades over the paper, and leaves the same way, faster, in the
-   150ms pdf-viewer.tsx waits before removing it. No fill after the entrance, so nothing is left
-   translated once it is in. */
-.pdf-summary { position: absolute; inset: var(--pdf-topbar-h, 60px) 0 0; z-index: 5; animation: pdf-summary-in 220ms var(--ease-out) backwards; }
-.pdf-summary[data-leaving] { pointer-events: none; animation: pdf-summary-out 150ms var(--ease-out) forwards; }
-@keyframes pdf-summary-in { from { opacity: 0; translate: 16px 0; } }
-@keyframes pdf-summary-out { to { opacity: 0; translate: 16px 0; } }
+/* A tab's view arrives from its side of the bar (`--view-from`, set by pdf-viewer.tsx): the
+   summary over the paper, the paper back from under it, the Listen tab over both. The view left
+   goes at once and the one arriving is opaque from the start, so two texts never show through
+   each other; only its contents slide in and fade up. */
+@keyframes pdf-view-in { from { opacity: 0; translate: var(--view-from, 0) 0; } }
+.pdf-summary { position: absolute; inset: var(--pdf-topbar-h, 60px) 0 0; z-index: 5; background: var(--bg-primary); }
+/* The paper's own reading surfaces, not the dock or the notes beside them, which place themselves. */
+.pdf-summary > *,
+.pdf-stage[data-arrive] > :is(.ft-scroll, iframe, .pdf-pages, .pdf-loading, .pdf-fallback, .pdf-text-failed),
+.rd-podcast > :not(.rd-podcast-drawer) { animation: pdf-view-in 220ms var(--ease-out) backwards; }
 @media (prefers-reduced-motion: reduce) {
-  .pdf-summary { animation: fadeIn 120ms linear backwards; }
-  .pdf-summary[data-leaving] { animation: fadeOut 120ms linear forwards; }
+  .pdf-summary > *,
+  .pdf-stage[data-arrive] > :is(.ft-scroll, iframe, .pdf-pages, .pdf-loading, .pdf-fallback, .pdf-text-failed),
+  .rd-podcast > :not(.rd-podcast-drawer) { animation: fadeIn 120ms linear backwards; }
 }

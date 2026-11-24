@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowSquareOut, CircleNotch, DownloadSimple, Headphones, NotePencil } from '@phosphor-icons/react';
 import { toast } from 'sonner';
@@ -17,6 +17,8 @@ import { useReadAloud } from './use-read-aloud.ts';
 import { useZoteroAction } from './use-zotero-action.ts';
 import { ZoteroMark } from './zotero-mark.tsx';
 import ReadAloudListen from './read-aloud-listen.tsx';
+import UsesCount from '../reader/uses-count.tsx';
+import '../ui/tag.css';
 
 const NO_PASSAGES: SpokenPassage[] = [];
 const NO_CHAPTERS: ReadAloudChapter[] = [];
@@ -26,14 +28,16 @@ type ReadingDockProps = Pick<ComponentProps<typeof PaperDock>, 'scroll' | 'conte
   paper?: Paper;
   spoken: { queue: SpokenPassage[]; chapters: ReadAloudChapter[] } | null;
   canListen: boolean;
-  /** The top bar of the viewer around the text, where the podcast's round button goes. */
+  /** Whether the viewer's Listen tab is chosen: the podcast covers the text. */
+  listening?: boolean;
+  /** The top bar of the viewer around the text, where the podcast's download goes. */
   topbar?: HTMLElement | null;
   notes: { id: string; open: boolean; count: number; onOpenChange: (open: boolean) => void } | null;
   originalUrl: string;
   children?: ReactNode;
 };
 
-export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canListen, topbar = null, notes, originalUrl, children }: ReadingDockProps) {
+export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canListen, listening = false, topbar = null, notes, originalUrl, children }: ReadingDockProps) {
   const { readingPreferences, user } = useAuth();
   // How many new papers the account may still hear in PaperTok's voice today, read again when a
   // paragraph is refused for them; kept with the account it was read for.
@@ -60,7 +64,6 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   });
   const { paragraph: speaking, reset: resetReadAloud } = readAloud;
   useEffect(() => () => resetReadAloud(), [spoken, canListen, resetReadAloud]);
-  const listenButton = useRef<HTMLButtonElement | null>(null);
   const savingAudio = useRef(false);
   const downloadAudio = () => {
     if (savingAudio.current) return;
@@ -91,19 +94,23 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     }
   };
 
-  // The podcast tab's way in and out, round in the top bar's corner. The text under it is left
-  // out of the keyboard's way while the tab covers it.
-  // Opening prepares the first passages; playback starts with the player's Play button.
-  const [listening, setListening] = useState(false);
-  const listen = (open: boolean) => {
+  // The viewer's Listen tab. Opening it prepares the first passages, and playback starts with the
+  // player's Play button; leaving it stops the voice. The text under it is left out of the
+  // keyboard's way while the tab covers it.
+  const podcast = listening && canListen;
+  const listen = useEffectEvent((open: boolean) => {
     if (open && speaking === null) {
       void trackEvent('read_aloud_start', { surface: 'reader' });
       readAloud.prepare(startAt());
     }
     if (!open) readAloud.pause();
-    setListening(open);
-  };
-  const podcast = listening && canListen;
+  });
+  const opened = useRef(false);
+  useEffect(() => {
+    if (podcast === opened.current) return;
+    opened.current = podcast;
+    listen(podcast);
+  }, [podcast]);
   // Read once the first passages are ready, so the count already holds this paper.
   const startupDone = readAloud.startup.failed || readAloud.startup.ready >= readAloud.startup.total;
   const uid = user?.uid;
@@ -114,6 +121,8 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     return () => controller.abort();
   }, [podcast, startupDone, uid, voiceRead]);
   const unsaved = readAloud.prepared.ready < readAloud.prepared.total;
+  const downloadNoteId = useId();
+  const downloadNote = `${readAloud.prepared.ready} of ${readAloud.prepared.total} parts ready. The download needs PaperTok’s voice for all of them.`;
   // Every passage has stored audio: the Worker checks it and the feed shows the paper as voiced.
   const paperId = paper?.id;
   const voiced = Boolean(paperId) && readAloud.prepared.total > 0 && !unsaved;
@@ -129,25 +138,30 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   }, [podcast, scroll]);
 
   return <>
-    {canListen && topbar && createPortal(
+    {podcast && topbar && createPortal(
       <div className="rd-listen-corner">
-        {/* The podcast's download sits by the button that opened it; it waits for every paragraph's audio. */}
-        {podcast && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={downloadAudio}
-            disabled={unsaved}
-            focusableWhenDisabled
-            aria-label="Download the audio"
-            title={unsaved ? 'The audio cannot be saved yet: some paragraphs do not have PaperTok’s voice.' : 'Download the audio'}
-          >
-            <DownloadSimple size={18} aria-hidden="true" />
-          </Button>
+        {/* The day's new papers with PaperTok's voice, as the reader shows its AI uses, then the
+            podcast's download, in the bar's corner while the Listen tab is open; the download waits
+            for every paragraph's audio. */}
+        {voiceLeft && (
+          <span className="rd-tag rd-tag--ai rd-uses" role="status">
+            <Headphones size={12} aria-hidden="true" />
+            <UsesCount left={voiceLeft.papersLeft} limit={voiceLeft.dailyPapers} what="new papers with PaperTok’s voice" />
+          </span>
         )}
-        <Toggle ref={listenButton} className="rd-listen-toggle" pressed={podcast} onPressedChange={listen} aria-label="Listen to the paper as a podcast" title={podcast ? 'Back to the text' : 'Listen as a podcast'}>
-          <Headphones size={18} weight={podcast ? 'fill' : 'regular'} aria-hidden="true" />
-        </Toggle>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={downloadAudio}
+          disabled={unsaved}
+          focusableWhenDisabled
+          aria-label="Download the audio"
+          aria-describedby={unsaved ? downloadNoteId : undefined}
+          title={unsaved ? downloadNote : 'Download the audio'}
+        >
+          <DownloadSimple size={18} aria-hidden="true" />
+        </Button>
+        {unsaved && <span id={downloadNoteId} className="visually-hidden">{downloadNote}</span>}
       </div>,
       topbar,
     )}
@@ -165,7 +179,6 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       title={paper?.title ?? title}
       queue={spoken.queue}
       player={readAloud}
-      voiceLeft={voiceLeft}
       onPlayPause={playPause}
     />}
   </>;

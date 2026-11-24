@@ -491,3 +491,50 @@ test('a late failure from an old preparation cannot hide a new ready buffer', as
     Clip.instances = [];
   }
 });
+
+test('a paragraph heard before plays from the browser\'s cache when the paper is opened again, without asking the Worker', async () => {
+  const { useReadAloud, firebase, close } = await loadReadAloud();
+  const worker = stubWorker();
+  const route = worker.hold('/tts/paragraph');
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  const originalCaches = Object.getOwnPropertyDescriptor(globalThis, 'caches');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  const kept = new Map<string, Response>();
+  const cache = {
+    match: async (address: string) => kept.get(address)?.clone(),
+    put: async (address: string, response: Response) => { kept.set(address, response); },
+    delete: async (address: string) => kept.delete(address),
+    keys: async () => [...kept.keys()].map(address => new Request(address)),
+  };
+  Object.defineProperty(globalThis, 'caches', { configurable: true, value: { open: async () => cache, keys: async () => [], delete: async () => false } });
+  const views: Array<() => void> = [];
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const queue: SpokenPassage[] = [{ passage: 'b0', utterances: ['The only result.'] }];
+    const open = () => {
+      const view = renderHook(() => useReadAloud(queue, [], { title: 'Results paper', onFallback: () => assert.fail('audio should come'), onError: () => assert.fail('audio should play'), onBlocked: () => {} }));
+      views.push(view.unmount);
+      act(() => view.result.current.play(0));
+    };
+    open();
+    await route.requested();
+    route.answer({});
+    await waitFor(() => assert.ok(Clip.instances.some(clip => clip.src.startsWith('blob:'))));
+    await waitFor(() => assert.equal(kept.size, 1, 'the heard paragraph is kept'));
+
+    views.splice(0).forEach(unmount => unmount());
+    Clip.instances = [];
+    route.wait();
+    open();
+    await waitFor(() => assert.ok(Clip.instances.some(clip => clip.src.startsWith('blob:')), 'it plays though the Worker is not answering'));
+  } finally {
+    views.forEach(unmount => unmount());
+    worker.stop();
+    await close();
+    if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
+    else Reflect.deleteProperty(globalThis, 'Audio');
+    if (originalCaches) Object.defineProperty(globalThis, 'caches', originalCaches);
+    else Reflect.deleteProperty(globalThis, 'caches');
+    Clip.instances = [];
+  }
+});
