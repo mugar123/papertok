@@ -639,7 +639,7 @@ options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
 new tab. Both readers use `pdf/reading-dock.tsx` for Notes and the
 original-paper link. The paper viewer's top bar holds up to three tabs, Paper,
-AI summary and Listen, each where it applies, with a chip that slides to the one
+Listen and AI summary, each where it applies, with a chip that slides to the one
 chosen (`pdf/reading-tabs.tsx`). A tab's view arrives from its side of the bar:
 the view left goes at once, and the one chosen is opaque from the start while its
 contents slide 16px in and fade up over 220ms (opacity only with reduced motion),

@@ -8,8 +8,8 @@ const LABELS: Record<ReadingView, string> = { paper: 'Paper', summary: 'AI summa
 const PAPER_AND_SUMMARY: readonly ReadingView[] = ['paper', 'summary'];
 
 /**
- * The paper's ways to read, at the top of the viewer, in this order: the paper, its AI summary,
- * and listening to it. The raised chip slides to the tab chosen, so the switch reads as one
+ * The paper's ways to read, at the top of the viewer, in the order the viewer hands them: the
+ * paper, listening to it, and its AI summary. The raised chip slides to the tab chosen, so the switch reads as one
  * control moving rather than buttons swapping colour.
  */
 export function ReadingTabs({ current, views = PAPER_AND_SUMMARY, onChange }: { current: ReadingView; views?: readonly ReadingView[]; onChange: (view: ReadingView) => void }) {

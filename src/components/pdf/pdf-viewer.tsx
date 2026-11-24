@@ -52,7 +52,7 @@ const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/
  * scroll lock and the restore to the button that opened it.
  */
 /** The viewer's tabs in the bar's order, which sets the side a view arrives from. */
-const VIEW_ORDER: readonly ReadingView[] = ['paper', 'summary', 'listen'];
+const VIEW_ORDER: readonly ReadingView[] = ['paper', 'listen', 'summary'];
 
 export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
