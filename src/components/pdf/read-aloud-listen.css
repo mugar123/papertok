@@ -44,17 +44,15 @@
 }
 .rd-podcast-sphere { display: block; width: 100%; height: 100%; }
 
-/* The paper and the section the voice is in, small, over the caption. */
+/* The paper and the section the voice is in, small, over the caption; on a narrow screen it wraps rather than cutting the title short. */
 .rd-podcast-title {
   flex: none;
   max-width: min(100%, 760px);
   margin: 0 0 var(--space-2);
-  overflow: hidden;
   font: 600 0.8125rem/1.3 var(--font-body);
   color: var(--text-secondary);
   text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-wrap: balance;
 }
 
 /* The sentence being read, as a large caption: spoken words in ink, the current one marked. */
