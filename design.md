@@ -638,14 +638,15 @@ menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
 new tab. Both readers use `pdf/reading-dock.tsx` for Notes and the
-original-paper link. The paper viewer's top bar holds two tabs, Paper and
-AI summary, with a chip that slides to the one chosen (`pdf/reading-tabs.tsx`);
-AI summary opens the AI summary inside the viewer, under the same bar, sliding
-in from its tab's side over the paper, and Paper goes back to the text as the
-summary fades out the same way. Cards have no AI summary button: the viewer's
-tab is the way in. Switching
-to Paper keeps the dialog and its history entry mounted; it does not reveal the feed. A round headphones button at the bar's end opens
-the podcast tab (`pdf/read-aloud-listen.tsx`), which reads the paper's text aloud:
+original-paper link. The paper viewer's top bar holds up to three tabs, Paper,
+AI summary and Listen, each where it applies, with a chip that slides to the one
+chosen (`pdf/reading-tabs.tsx`). A tab's view arrives from its side of the bar:
+the view left goes at once, and the one chosen is opaque from the start while its
+contents slide 16px in and fade up over 220ms (opacity only with reduced motion),
+so two texts never show through each other. Cards have no AI summary button: the
+viewer's tab is the way in. Switching
+to Paper keeps the dialog and its history entry mounted; it does not reveal the feed. The Listen tab
+opens the podcast (`pdf/read-aloud-listen.tsx`), with its download in the bar's corner, which reads the paper's text aloud:
 the paper's title over a particle visual, the sentence being read as a caption,
 and a player with speed, 15-second skips and a timeline cut into the paper's
 sections; its chapters open in a panel beside it, full screen on a phone. Opening
