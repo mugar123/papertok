@@ -121,18 +121,16 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   const sentence = item ? spokenSentence(item, word) : null;
 
   return (
-    <section className="rd-podcast" aria-labelledby="rd-podcast-title" data-chapters-open={drawerOpen || undefined}>
-      {/* On a phone the paper heads the tab, as a player names the album over its cover; wider, it is in the line over the caption. */}
+    <section className="rd-podcast" aria-labelledby="rd-podcast-paper" data-chapters-open={drawerOpen || undefined}>
+      {/* The paper heads the tab, as a player names the album over its cover. */}
       <header className="rd-podcast-header">
-        <p className="rd-podcast-header-title">{title}</p>
+        <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
       </header>
       <div className="rd-podcast-cover"><ReadAloudForms ready={!preparing} playing={playing} /></div>
 
       <div className="rd-podcast-words">
-        {/* The paper, then the section the voice is in: one line on a wide screen; on a phone the
-            paper is the small label and the section the large title, as a player names a song. */}
-        <h2 id="rd-podcast-title" className="rd-podcast-title">
-          <span className="rd-podcast-paper">{title}</span>
+        {/* The section the voice is in: small over the caption on a wide screen, the large title on a phone, as a player names a song. */}
+        <h2 className="rd-podcast-title">
           {!preparing && <span key={chapter.start} className="rd-podcast-section">{[chapter.number, chapter.title].filter(Boolean).join(' ')}</span>}
         </h2>
 
