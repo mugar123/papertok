@@ -4,7 +4,8 @@ import type { WorkerEnv } from './env.ts';
 /**
  * Anthropic's Claude models through the official SDK. PaperTok's AI provider
  * since 2026-11-19, when the NaN Builders key had expired and the team's Claude
- * credits took over; `AI_PROVIDER` switches every route to another provider.
+ * credits took over. `AI_PROVIDER` can switch rewrite and annotation to another
+ * provider.
  *
  * Like `nan-client.ts`, only configuration, the request body, error
  * classification and reading an answer live here, so each AI route shares them

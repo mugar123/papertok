@@ -41,3 +41,14 @@ export async function startAppModules() {
     },
   };
 }
+
+/** `worker-api-client.ts` with the Firebase stub, so a test can move `auth.currentUser`. */
+export async function loadWorkerApiClient() {
+  const app = await startAppModules();
+  try {
+    return { client: await app.load<typeof import('../../src/services/worker-api-client.ts')>('/src/services/worker-api-client.ts'), firebase: app.firebase, close: app.close };
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
+}

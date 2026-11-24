@@ -100,6 +100,23 @@ test('signing out takes the legacy follow counters with everything else', () => 
 });
 
 /**
+ * The retired translation pilot remembered the reader's last language under
+ * `papertok:paper-translation-language:{uid}`. Nothing writes that key any more.
+ */
+
+test('signing out takes the legacy translation language with everything else', () => {
+  const storage = createStorage();
+
+  storage.setItem('papertok:paper-translation-language:user-t', 'es');
+  storage.setItem('papertok:paper-translation-language:user-u', 'ca');
+
+  clearUserScopedStorage('user-t', storage);
+
+  assert.equal(storage.getItem('papertok:paper-translation-language:user-t'), null);
+  assert.equal(storage.getItem('papertok:paper-translation-language:user-u'), 'ca', 'another account keeps its own key');
+});
+
+/**
  * The removed public-profile editor remembered the owner's profile under
  * `papertok_ownProfile:{uid}`. Nothing writes that key any more either.
  */

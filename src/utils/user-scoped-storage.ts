@@ -401,6 +401,8 @@ export function clearUserScopedStorage(userId: string | undefined, storage?: (Sc
     getPmfSurveyStorageKey(userId),
     getLocalHiddenStorageKey(userId),
     LEGACY_LOCAL_HIDDEN_KEY,
+    // The retired translation pilot (#581) remembered a language per account.
+    `papertok:paper-translation-language:${userId}`,
     `papertok_following_${safeUserId}`,
     `papertok_following_updates_${safeUserId}`,
     `papertok_readingLibrary_${userId}`,
