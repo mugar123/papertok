@@ -203,6 +203,16 @@ function step(scene: Scene, seconds: number, speaking: boolean, progress: number
   }
 }
 
+function settleScene(scene: Scene, progress: number) {
+  scene.gather = progress;
+  scene.level = 0.1;
+  scene.pump = 1;
+  scene.bands = Array.from({ length: BANDS }, (_, i) => 0.3 + 0.25 * Math.sin(scene.t * 1.1 + i * 1.9));
+  for (let i = 0; i < SETTINGS.particles; i++) {
+    scene.pos.set(target(FORMS[scene.form], i, SETTINGS.particles, scene.t * PACE, scene.level, scene.bands), i * 3);
+  }
+}
+
 /** Dots in three colour groups, larger when nearer and as the voice swells; the glow is a blurred copy behind. */
 function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene, ready: boolean) {
   const gather = scene.gather;
@@ -261,8 +271,7 @@ export default function ReadAloudForms({ progress, playing }: { progress: number
     const state = scene.current;
     const speaking = playing && ready;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      state.gather = progress;
-      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false, progress);
+      settleScene(state, progress);
       render(canvas, behind, state, ready);
       return undefined;
     }
@@ -283,7 +292,7 @@ export default function ReadAloudForms({ progress, playing }: { progress: number
     state.form = (state.form + 1) % FORMS.length;
     state.shownAt = state.t;
     if (sharp.current && glow.current && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false, progress);
+      settleScene(state, progress);
       render(sharp.current, glow.current, state, ready);
     }
   };

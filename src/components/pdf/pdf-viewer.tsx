@@ -10,6 +10,8 @@ import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { readShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
 import './pdf-viewer.css';
+import '../reader/paper-reader.css';
+import '../reader/annotations.css';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
 import { getFullText } from '../../services/full-text-service.ts';
@@ -300,7 +302,6 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, clos
         showClose={false}
         closeLabel={'Close paper'}
         aria-label={'Paper viewer'}
-        style={{ '--view-from': `${tab.from * 16}px` }}
       >
         <div className="pdf-viewer">
           {/* Top bar */}
@@ -341,7 +342,7 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, clos
             )}
 
             {fullText && showsText && (
-              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onMouseMove={notesOn && !coarsePointer ? pointAtHighlight : undefined} onMouseLeave={() => setHoveredPassage(null)} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
+              <div className="ft-scroll" tabIndex={shown === 'paper' ? 0 : -1} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onMouseMove={notesOn && !coarsePointer ? pointAtHighlight : undefined} onMouseLeave={() => setHoveredPassage(null)} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
                 const block = event.target as HTMLElement;
                 if (event.key !== 'Enter' || !block.matches('[data-passage]')) return;
                 event.preventDefault();
@@ -412,7 +413,7 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, clos
             {fullText !== undefined && (
             <ReadingDock
               title={paper.title} paper={paper} scroll={showsText ? textScroll : null}
-              spoken={spoken} topbar={topbar} canListen={listenable} listening={shown === 'listen'}
+              spoken={spoken} topbar={topbar} canListen={listenable} listening={shown === 'listen'} arrivalFrom={tab.from * 16}
               notes={notesOn ? { id: 'viewer-notes', open: notesOpen, count: notes.passages.length, onOpenChange: setNotesOpen } : null}
               originalUrl={dockUrl}
               menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText

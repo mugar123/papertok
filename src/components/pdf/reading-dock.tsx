@@ -31,6 +31,7 @@ type ReadingDockProps = Pick<ComponentProps<typeof PaperDock>, 'scroll' | 'conte
   canListen: boolean;
   /** Whether the viewer's Listen tab is chosen: the podcast covers the text. */
   listening?: boolean;
+  arrivalFrom?: number;
   /** The top bar of the viewer around the text, where the podcast's download goes. */
   topbar?: HTMLElement | null;
   notes: { id: string; open: boolean; count: number; onOpenChange: (open: boolean) => void } | null;
@@ -38,7 +39,7 @@ type ReadingDockProps = Pick<ComponentProps<typeof PaperDock>, 'scroll' | 'conte
   children?: ReactNode;
 };
 
-export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canListen, listening = false, topbar = null, notes, originalUrl, children }: ReadingDockProps) {
+export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canListen, listening = false, arrivalFrom = 0, topbar = null, notes, originalUrl, children }: ReadingDockProps) {
   const { readingPreferences, user } = useAuth();
   // How many new papers the account may still hear in PaperTok's voice today, read again when a
   // paragraph is refused for them; kept with the account it was read for.
@@ -177,6 +178,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       {originalUrl && <Button role="link" variant="ghost" size="icon" aria-label="Open in a new tab" title="Open in a new tab" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}><ArrowSquareOut size={18} aria-hidden="true" /></Button>}
     </PaperDock></div>
     {podcast && spoken && <ReadAloudListen
+      arrivalFrom={arrivalFrom}
       title={paper?.title ?? title}
       queue={spoken.queue}
       player={readAloud}
