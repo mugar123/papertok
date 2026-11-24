@@ -1,5 +1,6 @@
 import type { WorkerEnv } from './env.ts';
 
+import { fullPaperTranslationAvailable } from './ai-full-paper-translation.ts';
 import { activeAIProvider, checkAIProviderHealth, isAIProviderConfigured } from './ai-explanation.ts';
 import { isCallerQuotaSecretConfigured } from './caller-quota.ts';
 import { checkEmailProviderHealth, configuredEmailProvider, configuredEmailSubscriptionStore, getEmailDeliveryLedgerHealth, getEmailScheduleHealth } from './email-notifications.ts';
@@ -204,9 +205,9 @@ export async function handleScopusHealth(request: Request, env: WorkerEnv) {
 
 export async function handleAIHealth(request: Request, env: WorkerEnv) {
   const origin = request.headers.get('origin') || '';
+  const capabilities = { fullPaperTranslation: fullPaperTranslationAvailable(env) };
+  const headers = { ...corsHeaders(origin, env), 'cache-control': 'no-store' };
+  if (new URL(request.url).searchParams.get('capabilities') === '1') return json({ capabilities }, 200, headers);
   const health = await checkAIProviderHealth(env);
-  return json(health, health.available ? 200 : 503, {
-    ...corsHeaders(origin, env),
-    'cache-control': 'no-store',
-  });
+  return json({ ...health, capabilities }, health.available ? 200 : 503, headers);
 }

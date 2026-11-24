@@ -1,7 +1,7 @@
 import type { Paper, PaperAuthor } from '../../models/paper.ts';
 import type { OpenAlexAuthor } from '../../services/adapters/open-alex-types.ts';
 import type { WikiInfo } from '../../services/wiki-service.ts';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { getEntityById } from '../../services/open-alex-service.ts';
 import { loadEntityWikiInfo } from '../../services/wiki-service.ts';
 import { authorExplorerPath, openAlexAuthorId } from '../../utils/explorer-paths.ts';
@@ -125,13 +125,13 @@ function AuthorName({ author, paper, preload }: { author: PaperAuthor; paper: Pa
   );
 }
 
-export function PaperByline({ paper }: { paper: Paper }) {
+export function PaperByline({ paper, translatedTitle }: { paper: Paper; translatedTitle?: { content: ReactNode; direction: 'ltr' | 'rtl' } }) {
   const authors = paper.authors.map(author => (typeof author === 'string' ? { name: author } : author)).filter(author => author.name);
   const affiliations = [...new Set(authors.map(author => author.affiliation?.trim()).filter((place): place is string => Boolean(place)))];
   const numbered = affiliations.length > 1;
   return (
     <header className="ft-head">
-      <h2 className="ft-title"><ScientificText>{paper.title}</ScientificText></h2>
+      <h2 className="ft-title" dir={translatedTitle?.direction}>{translatedTitle?.content ?? <ScientificText>{paper.title}</ScientificText>}</h2>
       {authors.length > 0 && (
         <p className="ft-authors">
           {authors.map((author, index) => {

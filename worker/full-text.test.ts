@@ -12,13 +12,15 @@ const params = (query: Record<string, string>) => new URLSearchParams(query);
 
 function upstream(answers: Record<string, () => Response>) {
   const calls: string[] = [];
-  const stub = (async (input: Parameters<typeof fetch>[0]) => {
+  const redirects: Array<RequestInit['redirect']> = [];
+  const stub = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    redirects.push(init?.redirect);
     const url = String(input);
     calls.push(url);
     const answer = Object.entries(answers).find(([prefix]) => url.startsWith(prefix));
     return answer ? answer[1]() : new Response('not found', { status: 404 });
   }) as typeof fetch;
-  return { calls, stub };
+  return { calls, redirects, stub };
 }
 
 test('keeps only well-formed identifiers, in the form sent upstream', () => {
@@ -123,4 +125,20 @@ test('a paper no provider has is a confirmed absence, and a failing renderer sti
   });
   const fromAr5iv = await withStubbedFetch(arxivDown, () => fetchFullText({ arxivId: '2401.00001', fullTextId: '', doi: '' }));
   assert.equal(fromAr5iv.source, 'ar5iv');
+});
+
+test('checks every arXiv HTML redirect before following it', async () => {
+  const { calls, redirects, stub } = upstream({
+    'https://arxiv.org/html/1706.03762': () => new Response(null, { status: 302, headers: { location: 'https://example.net/html/1706.03762' } }),
+    'https://ar5iv.labs.arxiv.org/html/1706.03762': () => new Response(null, { status: 302, headers: { location: 'https://ar5iv.org/html/1706.03762v2' } }),
+    'https://ar5iv.org/html/1706.03762v2': () => new Response(LATEXML),
+  });
+  const answer = await withStubbedFetch(stub, () => fetchFullText({ arxivId: '1706.03762', fullTextId: '', doi: '' }));
+  assert.equal(answer.url, 'https://ar5iv.org/html/1706.03762v2');
+  assert.deepEqual(redirects, ['manual', 'manual', 'manual']);
+  assert.deepEqual(calls, [
+    'https://arxiv.org/html/1706.03762',
+    'https://ar5iv.labs.arxiv.org/html/1706.03762',
+    'https://ar5iv.org/html/1706.03762v2',
+  ]);
 });

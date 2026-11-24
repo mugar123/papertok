@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import Anthropic, { type ClientOptions } from '@anthropic-ai/sdk';
 import type { WorkerEnv } from './env.ts';
 
 /**
@@ -40,8 +40,8 @@ export function anthropicModel(env: WorkerEnv) {
  * route's whole deadline waiting, and every retry is another paid request; the
  * reader's own retry button is the bounded one.
  */
-export function createAnthropicClient(env: WorkerEnv) {
-  return new Anthropic({ apiKey: setting(env?.ANTHROPIC_API_KEY, 300), maxRetries: 0 });
+export function createAnthropicClient(env: WorkerEnv, options?: Pick<ClientOptions, 'logLevel' | 'openTelemetry'>) {
+  return new Anthropic({ ...options, baseURL: 'https://api.anthropic.com', apiKey: setting(env?.ANTHROPIC_API_KEY, 300), maxRetries: 0 });
 }
 
 /**

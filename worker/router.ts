@@ -14,7 +14,7 @@ import {
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
 import { READ_ALOUD_PATH, handleReadAloud } from './read-aloud-tts.ts';
-import { handlePaperTranslation } from './ai-translation.ts';
+import { fullPaperTranslationAvailable, handleFullPaperTranslation } from './ai-full-paper-translation.ts';
 import {
   EmailNotificationError,
   handleEmailNotificationRequest,
@@ -31,7 +31,7 @@ import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAcces
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
 import { ZOTERO_PATHS, ZoteroError, handleZoteroRequest } from './zotero.ts';
 import { ORCID_PATHS, OrcidError, handleOrcidRequest } from './orcid.ts';
-import { allowedOrigins, corsHeaders, json } from './http.ts';
+import { allowedOrigins, corsHeaders, json, RESPONSE_SECURITY_HEADERS } from './http.ts';
 import { handleOpenAlex } from './openalex-api.ts';
 import { handleCitationGraph } from './citation-graph.ts';
 import { handleOpenAccess } from './open-access.ts';
@@ -421,30 +421,54 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       });
     }
   }
-  if (url.pathname === '/ai/annotate' || url.pathname === '/ai/translate') {
+  if (url.pathname === '/ai/translate-paper') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+    if (!allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    if (!fullPaperTranslationAvailable(env)) {
+      return json({ code: 'AI_NOT_CONFIGURED' }, 404, { ...corsHeaders(origin, env), 'cache-control': 'no-store' });
+    }
+    try {
+      const body = await handleFullPaperTranslation(request, env);
+      return new Response(body, { headers: {
+        ...corsHeaders(origin, env),
+        ...RESPONSE_SECURITY_HEADERS,
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'cache-control': 'private, no-store',
+      } });
+    } catch (error) {
+      const knownError = error instanceof AIExplanationError;
+      const code = knownError ? error.code : 'AI_UNAVAILABLE';
+      const status = knownError ? error.status : 502;
+      captureWorkerTranslationFailure(code, status);
+      return json(
+        { code, ...(knownError && error.quota ? { quota: error.quota } : {}) },
+        status,
+        { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+      );
+    }
+  }
+  // One passage, explained in place. Same daily allowance as /ai/rewrite —
+  // it is the same model doing the same kind of work, just less of it — so it
+  // is deliberately NOT free: a route that spends nothing is a route with no
+  // ceiling.
+  if (url.pathname === '/ai/annotate') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-    const translate = url.pathname === '/ai/translate';
     try {
-      const payload = translate
-        ? await handlePaperTranslation(request, env, context)
-        : await handlePassageAnnotation(request, env);
+      const payload = await handlePassageAnnotation(request, env);
       return json(payload, 200, {
         ...corsHeaders(origin, env),
         'cache-control': 'private, no-store',
       });
     } catch (error) {
+      captureWorkerException(error);
       const knownError = error instanceof AIExplanationError;
-      const code = knownError ? error.code : 'AI_UNAVAILABLE';
-      const status = knownError ? error.status : 502;
-      if (translate) captureWorkerTranslationFailure(code, status);
-      else captureWorkerException(error);
       return json(
         {
-          code,
+          code: knownError ? error.code : 'AI_UNAVAILABLE',
           ...(knownError && error.quota ? { quota: error.quota } : {}),
         },
-        status,
+        knownError ? error.status : 502,
         { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
       );
     }

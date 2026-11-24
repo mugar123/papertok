@@ -1,4 +1,5 @@
 import type { MouseEvent, ReactNode } from 'react';
+import type { TranslationLanguage } from '../../utils/full-paper-translation-contract.ts';
 import type { Block, Cell, FullText, Inline, Reference } from '../../utils/full-text.ts';
 import { blockInlines } from '../../utils/full-text.ts';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -101,7 +102,7 @@ function Ref({ target, cites, children }: { target: string; cites?: true; childr
 function Inlines({ content }: { content: Inline[] }) {
   return content.map((item, index) => {
     switch (item.t) {
-      case 'text': return item.text;
+      case 'text': return item.language ? <bdi key={index} lang={item.language} dir="auto" translate="no">{item.text}</bdi> : item.text;
       case 'math': return <Formula key={index} mathml={item.mathml} tex={item.tex} display={false} />;
       case 'formula-image': return <Formula key={index} image={item.src} display={false} />;
       case 'link': return <a key={index} href={item.href} target="_blank" rel="noopener noreferrer"><Inlines content={item.children} /></a>;
@@ -289,16 +290,16 @@ type FigureBlock = Extract<Block, { t: 'figure' }>;
 const figureAlt = (figure: FigureBlock, index: number) =>
   figure.images[index].alt ?? `${figure.label ?? 'Figure'}${figure.images.length > 1 ? `, part ${index + 1} of ${figure.images.length}` : ''}, described in the caption`;
 
-function BlockView({ block, figureWidth, passage, passageHint }: { block: Block; figureWidth: number; passage: string; passageHint?: string }): ReactNode {
+function BlockView({ block, figureWidth, passage, passageHint, dir }: { block: Block; figureWidth: number; passage: string; passageHint?: string; dir?: 'ltr' | 'rtl' }): ReactNode {
   const id = 'id' in block && block.id ? anchor(block.id) : undefined;
   const annotatable = passageHint ? { tabIndex: 0, 'aria-describedby': passageHint } : {};
   switch (block.t) {
     case 'heading': {
       const Tag = `h${Math.min(Math.max(block.level, 2), 4)}` as 'h2' | 'h3' | 'h4';
-      return <Tag id={id} tabIndex={-1} className={block.level <= 2 ? 'ft-section' : 'ft-subsection'}><Label text={block.label} /><Inlines content={block.children} /></Tag>;
+      return <Tag dir={dir} id={id} tabIndex={-1} className={block.level <= 2 ? 'ft-section' : 'ft-subsection'}><Label text={block.label} /><Inlines content={block.children} /></Tag>;
     }
     case 'p':
-      return <p className="ft-p" data-passage={passage} {...annotatable}><Inlines content={block.children} /></p>;
+      return <p dir={dir} className="ft-p" data-passage={passage} {...annotatable}><Inlines content={block.children} /></p>;
     case 'equation':
       return (
         <div id={id} tabIndex={-1} className="ft-equation">
@@ -309,7 +310,7 @@ function BlockView({ block, figureWidth, passage, passageHint }: { block: Block;
       );
     case 'list': {
       const List = block.ordered ? 'ol' : 'ul';
-      return <List className="ft-list" data-passage={passage} {...annotatable}>{block.items.map((item, index) => <li key={index}><Inlines content={item} /></li>)}</List>;
+      return <List dir={dir} className="ft-list" data-passage={passage} {...annotatable}>{block.items.map((item, index) => <li key={index}><Inlines content={item} /></li>)}</List>;
     }
     case 'figure':
       return (
@@ -356,11 +357,13 @@ const hasTex = (content: Inline[]): boolean =>
   content.some(item => (item.t === 'math' && Boolean(item.tex)) || ('children' in item && hasTex(item.children)));
 
 function needsMath(doc: FullText) {
-  return doc.notes.some(note => hasTex(note.content))
+  return Boolean(doc.title && hasTex(doc.title.children)) || doc.notes.some(note => hasTex(note.content))
     || [...doc.abstract, ...doc.body].some(block => (block.t === 'equation' ? Boolean(block.tex) : blockInlines(block).some(hasTex)));
 }
 
-export default function FullTextArticle({ doc, paper, showAbstract = true, passageHint }: { doc: FullText; paper: Paper; showAbstract?: boolean; passageHint?: string }) {
+type ArticleTranslation = { language: TranslationLanguage; blocks: ReadonlyMap<Block, Block> };
+
+export default function FullTextArticle({ doc, paper, showAbstract = true, passageHint, translation }: { doc: FullText; paper: Paper; showAbstract?: boolean; passageHint?: string; translation?: ArticleTranslation }) {
   const wantsMath = useMemo(() => needsMath(doc), [doc]);
   useEffect(() => {
     if (!wantsMath || mathReady()) return undefined;
@@ -392,26 +395,28 @@ export default function FullTextArticle({ doc, paper, showAbstract = true, passa
   };
 
   // Memoized apart, so showing the abstract or a citation's card does not re-render the whole paper.
+  const translatedTitle = doc.title && translation?.blocks.get(doc.title);
+  const direction = translation && (['ar', 'fa', 'he', 'ur'].includes(translation.language) ? 'rtl' : 'ltr');
   const head = useMemo(() => (
     <>
-        <PaperByline paper={paper} />
+        <PaperByline paper={paper} translatedTitle={translatedTitle?.t === 'heading' && direction ? { content: <Inlines content={translatedTitle.children} />, direction } : undefined} />
         {doc.conversionErrors > 0 && (
           <p className="ft-warning">
             {doc.conversionErrors === 1 ? 'One part' : `${doc.conversionErrors} parts`} of this paper could not be converted to text. Switch to the PDF if something looks wrong.
           </p>
         )}
     </>
-  ), [doc.conversionErrors, paper]);
+  ), [doc.conversionErrors, paper, translatedTitle, direction]);
   const abstract = useMemo(() => showAbstract && doc.abstract.length > 0 && (
     <section className="ft-abstract" aria-labelledby="ft-abstract-title">
       <h2 id="ft-abstract-title" className="ft-kicker" tabIndex={-1}>Abstract</h2>
-      <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={block} figureWidth={figureWidth} passage={`a${index}`} passageHint={passageHint} />)}</div>
+      <div lang={doc.lang}>{doc.abstract.map((block, index) => <BlockView key={index} block={translation?.blocks.get(block) ?? block} dir={translation?.blocks.has(block) ? direction : undefined} figureWidth={figureWidth} passage={`a${index}`} passageHint={passageHint} />)}</div>
     </section>
-  ), [doc, showAbstract, figureWidth, passageHint]);
+  ), [doc, showAbstract, figureWidth, passageHint, translation, direction]);
   const body = useMemo(() => (
     <>
         {/* The paper's language marks its own text, not the reader's labels. */}
-        <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={block} figureWidth={figureWidth} passage={`b${index}`} passageHint={passageHint} />)}</div>
+        <div lang={doc.lang}>{doc.body.map((block, index) => <BlockView key={index} block={translation?.blocks.get(block) ?? block} dir={translation?.blocks.has(block) ? direction : undefined} figureWidth={figureWidth} passage={`b${index}`} passageHint={passageHint} />)}</div>
         {doc.notes.length > 0 && (
           <section className="ft-notes" aria-labelledby="ft-notes-title">
             <h2 id="ft-notes-title" className="ft-section" tabIndex={-1}>Notes</h2>
@@ -438,7 +443,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true, passa
           </section>
         )}
     </>
-  ), [doc, figureWidth, passageHint]);
+  ), [doc, figureWidth, passageHint, translation, direction]);
 
   return (
     <article className="ft-article" onClickCapture={showReference}>
