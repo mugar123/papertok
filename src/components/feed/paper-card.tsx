@@ -553,7 +553,7 @@ const PaperCard = memo(function PaperCard({
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
   const { institution, user, readingPreferences, interestSettings } = useAuth();
-  const { language, locale } = useLanguage();
+  const { language } = useLanguage();
   const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(user?.uid));
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
@@ -1685,8 +1685,6 @@ const PaperCard = memo(function PaperCard({
       interestSettings,
       globalLevel: readingPreferences.aiExplanationLevel,
       isCached: level => Boolean(getCachedRewrite(readablePaper, level)),
-      quota: navigator.onLine ? quota : null,
-      locale,
     })
     : '';
 
