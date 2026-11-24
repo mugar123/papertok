@@ -51,7 +51,7 @@ test('shared reading tools: the round button opens the podcast and prepares the 
     const tree = (playable: boolean) => createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
       createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
         createElement(ReadingDock, {
-          title: 'Paper — In plain words', paper: paperLegacyAdapter({ id: '2611.00001', title: 'Paper' }), scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken: playable ? spoken : null,
+          title: 'Paper — AI summary', paper: paperLegacyAdapter({ id: '2611.00001', title: 'Paper' }), scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken: playable ? spoken : null,
           canListen: playable, originalUrl: 'https://doi.org/10.1234/paper',
           notes: { id: 'reader-notes', open: false, count: 2, onOpenChange: open => { notesOpened = open; } },
           children: createElement('button', {}, 'Explanation level'),

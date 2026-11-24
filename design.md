@@ -464,15 +464,10 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the panel is the first row to yield, down to 0px. When the rows above the
   action row are taller than the card, the head's rows give way after the
   panel and scroll, and the action row stays whole at the sheet's foot,
-  covering nothing. Beside `Read in plain words` the link is its
-  `ArrowSquareOut` glyph alone at every width, named and titled "Publisher's
-  page (opens in a new tab)", so Source and `Read in plain words` keep their
-  slots where the row has room for them, and that row draws no lock at any
-  width. On a phone it is also the glyph alone, with the same name, in a row
-  too narrow for its word beside Source. Beside Source it has no title: in
-  most rows its word shows, and a title would only repeat the name. On a
-  phone the three share a line when they fit;
-  otherwise Source takes the first line and the other two the second. On a
+  covering nothing. On a phone it is its `ArrowSquareOut` glyph alone, named
+  "Publisher's page (opens in a new tab)", in a row too narrow for its word
+  beside Source. It has no title: in most rows its word shows, and a title
+  would only repeat the name. On a
   screen short enough for the rail to reach the
   row, the row stops short of the rail. While the feed still asks a source
   for the abstract, the link holds its place in the row unseen, so the row
@@ -644,10 +639,11 @@ options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
 new tab. Both readers use `pdf/reading-dock.tsx` for Notes and the
 original-paper link. The paper viewer's top bar holds two tabs, Paper and
-Plain words, with a chip that slides to the one chosen (`pdf/reading-tabs.tsx`);
-Plain words opens the plain-words reader inside the viewer, under the same bar,
-and Paper goes back to the text. When the card has an inline paper target,
-Read in plain words opens this same viewer on its Plain words tab. Switching
+AI summary, with a chip that slides to the one chosen (`pdf/reading-tabs.tsx`);
+AI summary opens the AI summary inside the viewer, under the same bar, sliding
+in from its tab's side over the paper, and Paper goes back to the text as the
+summary fades out the same way. Cards have no AI summary button: the viewer's
+tab is the way in. Switching
 to Paper keeps the dialog and its history entry mounted; it does not reveal the feed. A round headphones button at the bar's end opens
 the podcast tab (`pdf/read-aloud-listen.tsx`), which reads the paper's text aloud:
 the paper's title over a particle visual, the sentence being read as a caption,
@@ -659,7 +655,7 @@ Play becomes available when it is ready, without starting automatically;
 system playback controls respect the same initial buffer. Two
 background requests keep loading the rest. A jump to uncached audio shows
 “Loading this passage…” while the controls remain available. The
-plain-words reader has no audio; it keeps its reading level and AI highlights
+AI summary has no audio; it keeps its reading level and AI highlights
 alongside the shared tools. When opened from a paper card, it also receives the card's options and
 Zotero action; saved-summary history has no card actions. Its
 notes are the full-text reader's notes panel and its selection opens the same

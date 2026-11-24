@@ -32,7 +32,7 @@ import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import UsesCount from '../reader/uses-count.tsx';
 import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-viewer-notes.ts';
 import { fullTextListen } from './read-aloud.ts';
-import { ReadingTabs, type ReadingView } from './reading-tabs.tsx';
+import { ReadingTabs } from './reading-tabs.tsx';
 import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
 import { passageQuote } from '../../services/user-highlight-service.ts';
 
@@ -51,7 +51,7 @@ const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/
  * also owns what the old overlay did by hand — the focus trap, Escape, the
  * scroll lock and the restore to the button that opened it.
  */
-export default function PDFViewer({ paper, menu, onClose, closeRef = null, initialView = 'paper', onPaperOpen }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null; initialView?: ReadingView; onPaperOpen?: () => void }) {
+export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
@@ -142,8 +142,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null, initi
   }, [open]);
 
   useEffect(() => {
-    if (initialView === 'paper') startTimeRef.current = Date.now();
-  }, [initialView]);
+    startTimeRef.current = Date.now();
+  }, []);
 
   /**
    * The same way out, published for the browser's Back button: the owner arms
@@ -179,9 +179,11 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null, initi
   // `consent` and `uid` drop it at once, and `analyticsSessionContext` checks again at each send.
   const { trackEvent, consent } = useAnalyticsConsent();
   const { user, readingPreferences } = useAuth();
-  // The plain-words reader as the viewer's second tab: it opens over the paper, and its Paper tab comes back.
-  const [plain, setPlain] = useState(initialView === 'plain');
-  const pendingPaperOpen = useRef(initialView === 'plain');
+  // The AI summary as the viewer's second tab: it opens over the paper, and its Paper tab comes back.
+  // Leaving it, it stays a moment while it fades out over the paper.
+  const [summary, setSummary] = useState<'shown' | 'leaving' | null>(null);
+  const plain = summary === 'shown';
+  const showPaper = () => setSummary(shown => shown && 'leaving');
   const canPlain = Boolean(user) && canRewritePaper(paper);
   const uid = user?.uid ?? '';
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
@@ -289,15 +291,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null, initi
 
             {/* The bar names the paper once the article's own title has scrolled
                 away, rising in from below; it leaves the way it came. Where the paper
-                can be read in plain words, the bar holds the two tabs instead. */}
-            {canPlain ? <ReadingTabs current={plain ? 'plain' : 'paper'} onChange={view => {
-              setPlain(view === 'plain');
-              if (view === 'paper' && pendingPaperOpen.current) {
-                pendingPaperOpen.current = false;
-                startTimeRef.current = Date.now();
-                onPaperOpen?.();
-              }
-            }} /> : <AnimatePresence initial={false}>
+                has an AI summary, the bar holds the two tabs instead. */}
+            {canPlain ? <ReadingTabs current={plain ? 'plain' : 'paper'} onChange={view => (view === 'plain' ? setSummary('shown') : showPaper())} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
                   key="title"
@@ -313,7 +308,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null, initi
             </AnimatePresence>}
           </div>
 
-          {/* Under the Plain words tab the paper stays mounted, so its place waits, but out of reach. */}
+          {/* Under the AI summary tab the paper stays mounted, so its place waits, but out of reach. */}
           <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} inert={plain}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
@@ -463,10 +458,14 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null, initi
             />}
           </div>
         </div>
-        {plain && (
-          <Suspense fallback={null}>
-            <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={() => setPlain(false)} />
-          </Suspense>
+        {summary && (
+          <div className="pdf-summary" data-leaving={summary === 'leaving' || undefined} inert={summary === 'leaving'} onAnimationEnd={(event) => {
+            if (event.target === event.currentTarget && summary === 'leaving') setSummary(null);
+          }}>
+            <Suspense fallback={null}>
+              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={showPaper} />
+            </Suspense>
+          </div>
         )}
       </DialogContent>
     </Dialog>

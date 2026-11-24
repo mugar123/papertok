@@ -15,11 +15,11 @@ import { LEVEL_DETAILS } from './reading-levels.ts';
 const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 
 const COPY = {
-  title: 'Plain-words summaries',
+  title: 'AI summaries',
   description: 'Saved summaries are free to reopen.',
   loading: 'Loading your summaries…',
   emptyTitle: 'No summaries yet',
-  empty: 'A paper you read in plain words is listed here.',
+  empty: 'A paper you read as an AI summary is listed here.',
   stalled: 'Your summaries are taking unusually long. Still trying.',
   stalledMore: 'More summaries are taking unusually long. Still trying.',
   failed: 'Your summaries could not be loaded.',

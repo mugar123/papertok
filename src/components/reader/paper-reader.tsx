@@ -13,7 +13,7 @@ interface PaperReaderProps {
   initialLevel?: ReadingLevel;
   /** Opens the paper itself, when the reader is one of two tabs with the paper viewer. */
   onPaperTab?: () => void;
-  /** Drawn inside the paper viewer as its Plain words tab, rather than as a dialog of its own. */
+  /** Drawn inside the paper viewer as its AI summary tab, rather than as a dialog of its own. */
   embedded?: boolean;
   /** Inside the viewer, how a menu action leaves: the viewer closes, then the action runs. */
   onLeave?: (then: () => void) => void;
@@ -109,7 +109,7 @@ const LEVEL_ICONS = { beginner: Plant, university: GraduationCap, researcher: Fl
 
 const COPY = {
   en: {
-    title: 'Read in plain words',
+    title: 'AI summary',
     close: 'Close reader',
     level: 'Level',
     writing: 'Rewriting the paper',
@@ -187,7 +187,7 @@ const ERROR_COPY = {
       body: 'Too many requests at once. Wait a moment and try again.',
     },
     AI_INVALID_PAPER: {
-      title: 'This paper cannot be put in plain words',
+      title: 'This paper cannot be summarized',
       body: 'The PDF does not carry enough text to rewrite. Usually a scan, or a one-page article.',
     },
     AI_INVALID_RESPONSE: {
@@ -1165,7 +1165,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
     clearAskError();
   }, [askError, clearAskError]);
 
-  /* As the viewer's Plain words tab, the reader is a region of the viewer's own dialog, which
+  /* As the viewer's AI summary tab, the reader is a region of the viewer's own dialog, which
      already owns the focus trap, Escape and the scrim; opened from a card, it is a dialog. */
   const shell = (body: ReactNode) => (embedded ? (
     <div className="rd rd--embedded" role="region" aria-label={copy.title}>{body}</div>
@@ -1503,7 +1503,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
         )}
 
         <ReadingDock
-          title={`${paper.title ?? 'Paper'} — In plain words`} paper={card?.paper}
+          title={`${paper.title ?? 'Paper'} — AI summary`} paper={card?.paper}
           scroll={scrollElement} spoken={null} canListen={false}
           notes={{ id: 'reader-notes', open: notesOpen, count: orderedAnnotations.length, onOpenChange: setNotesOpen }}
           originalUrl={originalUrl}

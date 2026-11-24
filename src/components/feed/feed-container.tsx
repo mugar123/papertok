@@ -1,4 +1,3 @@
-import type { ReadingView } from '../pdf/reading-tabs.tsx';
 import type { AnimationEvent, FocusEventHandler, PropsWithChildren, ReactNode, RefObject, UIEvent } from 'react';
 import type { MotionProps, Variants } from 'framer-motion';
 import type { ReaderMenu } from './paper-menu.tsx';
@@ -25,7 +24,7 @@ interface FeedSource {
   dismissal?: { hide: (paper: Paper) => void; restore: (paper: Paper) => void; label: string; hint: string };
 }
 interface FeedContainerProps {
-  onOpenPdf?: (paper: Paper, menu: ReaderMenu, initialView?: ReadingView, onPaperOpen?: () => void) => void;
+  onOpenPdf?: (paper: Paper, menu: ReaderMenu) => void;
   /** Opens the list picker; `surface` is the card's (PaperCard's `onPickList`). */
   onSaveToList?: (paper: Paper, surface?: string) => void;
   source?: FeedSource | null;
@@ -1042,9 +1041,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => clearTimeout(t);
   }, [heldEnd, pillOnScreen]);
 
-  const handleOpenPdf = useCallback((paper: Paper, surface: string | undefined, menu: ReaderMenu, initialView?: ReadingView) => {
-    if (initialView !== 'plain') void trackPdfOpened(paper, surface);
-    onOpenPdf!(paper, menu, initialView, initialView === 'plain' ? () => { void trackPdfOpened(paper, surface); } : undefined);
+  const handleOpenPdf = useCallback((paper: Paper, surface: string | undefined, menu: ReaderMenu) => {
+    void trackPdfOpened(paper, surface);
+    onOpenPdf!(paper, menu);
   }, [onOpenPdf, trackPdfOpened]);
 
   const handleSaveToList = useQuickSave(onSaveToList!, analyticsSurface);

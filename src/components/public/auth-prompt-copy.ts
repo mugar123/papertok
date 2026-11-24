@@ -7,8 +7,7 @@
  * for an account (audit 2026-09-23, issues 2, 9 and 10). A reason is one of
  * the keys below; anything else — a click event handed over by an
  * `onClick={requestAuthentication}`, a paper handed over by `onSaveToList` —
- * opens the general door. «Read in plain words» opens it too:
- * its reason, `paper_rewrite`, is no longer a key.
+ * opens the general door.
  */
 const COPY = Object.freeze({
   default: {

@@ -212,7 +212,7 @@
   cursor: not-allowed;
 }
 
-/* Plain-words summaries: the history's ruled rows (ListRow) in the page's
+/* AI summaries: the history's ruled rows (ListRow) in the page's
    panel, with its loading, empty and failed states set as a quiet line. */
 .settings-summaries {
   padding-block: calc(var(--space-5) - var(--space-2));

@@ -1,7 +1,7 @@
 /* My profile (profile-page.tsx): the settings pages' shell, sections and
    panels in one column, the ORCID iD set in mono as the machine data it is,
    and the publications as ruled rows in the panel, as Settings lists the
-   plain-words summaries (design.md). */
+   AI summaries (design.md). */
 
 .my-profile-shell {
   width: min(48rem, 100%);

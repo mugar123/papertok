@@ -22,7 +22,7 @@ export const isFollowsPath = (pathname: string) => pathname.replace(/\/+$/, '') 
 export const SETTINGS_PAGES: readonly SettingsPageEntry[] = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
   { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },
-  { slug: 'reading', label: 'Reading & AI', summary: 'AI level, the reader and your plain-words summaries', Icon: Sparkle },
+  { slug: 'reading', label: 'Reading & AI', summary: 'AI level, the reader and your AI summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics and author statistics', Icon: ShieldCheck },
   HELP_PAGE,

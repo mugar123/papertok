@@ -1168,15 +1168,6 @@ button.pc-topics-pop-item:focus-visible {
   height: min(100%, 860px);
 }
 
-.pc-rewrite-hint {
-  color: var(--text-secondary);
-  flex-basis: 100%;
-}
-
-.pc-rewrite-hint:empty {
-  position: absolute;
-}
-
 .pc-action-bar {
   display: flex;
   align-items: center;
@@ -1240,10 +1231,10 @@ button.pc-topics-pop-item:focus-visible {
   flex: 1 0 auto;
 }
 
-/* Two fixed slots, so neither reading action moves: the Read label can
-   change after the card is shown (a free copy found, the library's answer)
-   and "Read in plain words" can arrive with that copy, but a label only
-   changes the text inside its own slot. A label too long for its slot is
+/* Two fixed slots, so neither control moves: the Read label can change
+   after the card is shown (a free copy found, the library's answer), but a
+   label only changes the text inside its own slot. The publisher's page of
+   a card with no abstract takes the second. A label too long for its slot is
    cut with an ellipsis; the accessible name keeps it whole. */
 .pc-action-primary {
   display: grid;
@@ -1253,40 +1244,10 @@ button.pc-topics-pop-item:focus-visible {
   margin-right: auto;
 }
 
-/* The publisher's page of a card with no abstract is the row's last control
-   (paper-card.tsx): the second slot, or beside "Read in plain words" its
-   glyph alone in a 40px column at every width, named on the link. With its
-   label, as a third 14rem slot, the three shared the 40rem column, and a
-   visitor's "Read in plain words" with its lock was cut from 641px to about
-   1216px wide. Source and "Read in plain words" keep their 14rem slots
-   where the row has room for them; with large text in a narrower row they
-   share it with the glyph. The row draws no lock at any width: beside the
-   glyph it cut a visitor's "Read in plain words" at 200% text, and the
-   button keeps "Needs a free account" as its description. The link adds no
-   line to the row, except on a phone row too narrow for the three (below). */
-.pc-action-primary--three {
-  grid-template-columns: repeat(2, minmax(0, 14rem)) auto;
-}
-
-.pc-action-primary--three .pc-action-lock {
-  display: none;
-}
-
-.pc-action-primary--three > .pc-action-publisher {
-  width: 40px;
-  padding-inline: 0;
-}
-
-.pc-action-primary--three > .pc-action-publisher > :is(.pc-action-label, .pc-action-label--short) {
-  display: none;
-}
-
 /* While the feed still asks a source for the abstract, the publisher's page
    holds its place in the row unseen (paper-card.tsx), so the row and the
    rows that give way to it have the shape they keep when the wait ends with
-   none. Added only then, the link took a three-control row on a phone at
-   200% text to two lines, and "Read in plain words" landed where Source had
-   been. Hidden, it is out of the tab order, the accessibility tree and the
+   none. Hidden, it is out of the tab order, the accessibility tree and the
    reach of a tap. */
 .pc-action-publisher--pending {
   visibility: hidden;
@@ -1380,14 +1341,6 @@ button.pc-topics-pop-item:focus-visible {
     mask-image: none;
     opacity: 0.62;
   }
-}
-
-/* A guest's «Leer en simple» needs an account; the lock says so before the
-   press (the button also carries an aria-describedby hint). Decorative for
-   assistive tech, which hears the hint instead. */
-.pc-action-lock {
-  flex: none;
-  opacity: 0.8;
 }
 
 /* ── Side rail ──
@@ -3117,46 +3070,17 @@ button.pc-topics-pop-item:focus-visible {
      (paper-card.tsx): with its word it cut "Publisher" at 390px with text
      at 200%. */
   @container action-row (max-width: calc(94px + 9em)) {
-    .pc-action-primary:not(.pc-action-primary--three) {
+    .pc-action-primary {
       grid-template-columns: minmax(0, 1fr) auto;
     }
 
-    .pc-action-primary:not(.pc-action-primary--three) > .pc-action-publisher {
+    .pc-action-primary > .pc-action-publisher {
       width: 40px;
       padding-inline: 0;
     }
 
-    .pc-action-primary:not(.pc-action-primary--three) > .pc-action-publisher > .pc-action-label--short {
+    .pc-action-primary > .pc-action-publisher > .pc-action-label--short {
       display: none;
-    }
-  }
-
-  /* Beside "Read in plain words" the publisher's page is its glyph alone in
-     a 40px column, as on a wider screen: three equal slots cut "Simple" and
-     "Publisher" at 375px with text at 150%. In a row wide enough for the
-     three (124px plus 7.75em) they share one line. In a narrower one Source
-     is on the first line and the other two on the second, in the order the
-     keyboard reaches them: side by side, the two reading actions cut
-     "Simple" at 360px with text at 200%, and at 150% on a screen short
-     enough for the rail. Source keeps out of the glyph's column, which is
-     where the rail comes down beside a row that tall: across the whole
-     line, the rail covered its end at 360x640 with text at 150%. As on a
-     wider screen, the row draws no lock. */
-  .pc-action-primary--three {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .pc-action-primary--three > :is(.pc-action-read, .pc-action-simple) {
-    grid-column: 1;
-  }
-
-  @container action-row (width > calc(124px + 7.75em)) {
-    .pc-action-primary--three {
-      grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
-    }
-
-    .pc-action-primary--three > :is(.pc-action-read, .pc-action-simple) {
-      grid-column: auto;
     }
   }
 
