@@ -125,24 +125,26 @@
 .rd-podcast .rd-listen-part-fill,
 .rd-podcast .rd-listen-thumb { background: var(--podcast-accent); }
 .rd-podcast .rd-listen-thumb { border-color: var(--bg-primary); }
-/* While the first passages are prepared: a ring round the forms fills with them, and under it what is
-   being prepared, centred, with the player held back until there is something to play. */
-.rd-podcast-cover { position: relative; }
-.rd-podcast-ring { position: absolute; inset: 0; width: 100%; height: 100%; rotate: -90deg; overflow: visible; pointer-events: none; }
-.rd-podcast-ring circle { fill: none; stroke-width: 3px; vector-effect: non-scaling-stroke; }
-.rd-podcast-ring circle:first-child { stroke: color-mix(in srgb, var(--podcast-mesh) 35%, transparent); }
-.rd-podcast-ring circle:last-child { stroke: var(--podcast-accent); stroke-linecap: round; transition: stroke-dashoffset 500ms var(--ease-out); }
+/* While the first passages are prepared the forms fill the room the paper's title and the line at the
+   tab's foot leave them, flowing from form to form, and what is being prepared sits at the foot over
+   a running bar; the player is held back until there is something to play. Once it is there the
+   forms settle into their place from a larger size (`data-settle`, a transform, not a resize). */
 .rd-podcast-caption[hidden] { display: none; }
-.rd-podcast-wait { display: grid; gap: var(--space-2); text-align: center; }
+.rd-podcast[data-preparing] .rd-podcast-cover { width: min(92vw, 640px, max(160px, 100dvh - 340px)); margin-block: auto; }
+.rd-podcast-cover[data-settle] { animation: rd-podcast-cover-settle 400ms var(--ease-out) backwards; }
+@keyframes rd-podcast-cover-settle { from { opacity: 0.6; scale: 1.4; } }
+.rd-podcast-wait { display: grid; justify-items: center; gap: var(--space-3); padding-block: var(--space-4) var(--space-6); text-align: center; }
 .rd-podcast-wait p { margin: 0; }
 .rd-podcast-wait-what { font: 500 1rem/1.4 var(--font-body); color: var(--text-secondary); }
-.rd-podcast-wait-meta { font: 500 0.75rem/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-tertiary); }
-.rd-podcast[data-preparing] { justify-content: safe center; }
+.rd-podcast-wait-bar { position: relative; width: 180px; height: 3px; overflow: hidden; border-radius: var(--radius-full); background: color-mix(in srgb, var(--text-tertiary) 30%, transparent); }
+.rd-podcast-wait-bar::after { content: ''; position: absolute; inset: 0; width: 40%; border-radius: inherit; background: var(--text-primary); animation: rd-podcast-wait-run 1300ms var(--ease-in-out) infinite; }
+@keyframes rd-podcast-wait-run { from { translate: -100% 0; } to { translate: 250% 0; } }
 /* Once ready, the controls and the first words arrive under the forms. */
 .rd-podcast-dock, .rd-podcast-title { animation: rd-podcast-arrive 220ms var(--ease-out) backwards; }
 @keyframes rd-podcast-arrive { from { opacity: 0; translate: 0 6px; } }
 @media (prefers-reduced-motion: reduce) {
-  .rd-podcast-ring circle:last-child { transition: none; }
+  .rd-podcast-cover[data-settle] { animation: fadeIn 120ms linear backwards; }
+  .rd-podcast-wait-bar::after { animation: none; width: 100%; opacity: 0.5; }
   .rd-podcast-dock, .rd-podcast-title { animation-name: fadeIn; }
 }
 
@@ -366,9 +368,9 @@
   .rd-podcast-dock { width: 100%; }
 }
 @media (min-width: 901px) {
-  .rd-podcast[data-preparing] { grid-template-columns: auto; grid-template-areas: 'header' '.' 'cover' 'words' '.'; }
-  .rd-podcast[data-preparing] .rd-podcast-cover { margin-bottom: var(--space-6); }
-  .rd-podcast[data-preparing] .rd-podcast-words { margin-bottom: 0; }
+  .rd-podcast[data-preparing] { grid-template-columns: auto; grid-template-rows: auto 1fr auto 1fr auto; grid-template-areas: 'header' '.' 'cover' '.' 'words'; }
+  .rd-podcast[data-preparing] .rd-podcast-cover { justify-self: center; margin-bottom: 0; }
+  .rd-podcast[data-preparing] .rd-podcast-words { justify-self: center; margin-bottom: 0; }
 }
 /* Narrower, the section and the caption are the column's own items, as they were before the group. */
 @media (max-width: 900px) {

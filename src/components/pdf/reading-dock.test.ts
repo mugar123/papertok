@@ -102,7 +102,7 @@ test('shared reading tools: the Listen tab opens the podcast and prepares the vo
   }
 });
 
-test('the podcast tab rings the audio still to come, then lists the chapters to jump to and the sentence being read', async () => {
+test('the podcast tab says it is preparing the paper, then lists the chapters to jump to and the sentence being read', async () => {
   const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
   const worker = stubWorker();
   const audioRoute = worker.hold('/tts/paragraph');
@@ -129,10 +129,10 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
         }))));
     const tab = view.getByRole('region', { name: 'Paper' });
     const chapterList = () => within(view.getByRole('navigation', { name: 'All chapters' }));
-    assert.match(tab.textContent ?? '', /Preparing the first passages0% · 3 chapters/, 'what is prepared, how far, and how many chapters');
+    assert.match(tab.textContent ?? '', /Preparing your paper/, 'the tab says it is preparing the paper');
     assert.equal(within(tab).queryByRole('button', { name: 'Play' }), null, 'no player before there is something to play');
     const status = within(tab).getByRole('status');
-    await waitFor(() => assert.equal(status.textContent, 'Preparing the first passages', 'the player tells a screen reader it is preparing'));
+    await waitFor(() => assert.equal(status.textContent, 'Preparing your paper', 'the player tells a screen reader it is preparing'));
     assert.equal(chapterList().getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), true, 'no jumps before the audio is there');
     await audioRoute.requested();
     audioRoute.answer({});

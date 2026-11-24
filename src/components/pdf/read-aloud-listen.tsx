@@ -12,7 +12,7 @@ import './read-aloud-listen.css';
 const PHONE = '(max-width: 600px)';
 
 /** What the tab says, and tells a screen reader, while the first passages' audio is fetched. */
-const PREPARING = 'Preparing the first passages';
+const PREPARING = 'Preparing your paper';
 
 /** About three lines of the caption on a wide screen and five on a phone; a longer sentence is shown a piece at a time, as lyrics are. */
 const CAPTION_WORDS = 20;
@@ -60,10 +60,9 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
 }) {
   const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek } = player;
   const preparing = !startup.failed && startup.ready < startup.total;
-  const percent = startup.total ? Math.floor((startup.ready / startup.total) * 100) : 100;
-  // What the wait is for: the chapters and, at the chosen speed, about how long they last (left out when unknown).
-  const chapterCount = timeline.chapters.length;
-  const minutes = Math.round(timeline.duration / speed / 60);
+  // The visual settles from the full tab into its place once, after a preparation this tab showed.
+  const [showedPreparing, setShowedPreparing] = useState(preparing);
+  if (preparing && !showedPreparing) setShowedPreparing(true);
   // Where a drag along the line would move the voice, until it is let go.
   const [target, setTarget] = useState<number | null>(null);
   // The player's position moves when a clip reports its time, and with the browser's voice only
@@ -166,15 +165,8 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
       <header className="rd-podcast-header">
         <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
       </header>
-      <div className="rd-podcast-cover">
-        <ReadAloudForms progress={preparing ? startup.ready / startup.total : 1} playing={playing && !buffering} />
-        {/* While the first passages are prepared, a ring round the forms fills with them. */}
-        {preparing && (
-          <svg className="rd-podcast-ring" viewBox="0 0 100 100" aria-hidden="true">
-            <circle cx="50" cy="50" r="49" pathLength={100} />
-            <circle cx="50" cy="50" r="49" pathLength={100} strokeDasharray="100" strokeDashoffset={100 - percent} />
-          </svg>
-        )}
+      <div className="rd-podcast-cover" data-settle={(showedPreparing && !preparing) || undefined}>
+        <ReadAloudForms loading={preparing} playing={playing && !buffering} />
       </div>
 
       <div className="rd-podcast-words">
@@ -188,7 +180,7 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
         {preparing && (
           <div className="rd-podcast-wait">
             <p className="rd-podcast-wait-what">{PREPARING}</p>
-            <p className="rd-podcast-wait-meta">{[`${percent}%`, chapterCount > 1 && `${chapterCount} chapters`, minutes > 0 && `about ${minutes} min`].filter(Boolean).join(' · ')}</p>
+            <div className="rd-podcast-wait-bar" aria-hidden="true" />
           </div>
         )}
         <div ref={caption} className="rd-podcast-caption" hidden={preparing}>
