@@ -180,7 +180,11 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
                   aria-current={(!preparing && part.start === chapter.start) || undefined}
                   data-played={(!preparing && part.start < chapter.start) || undefined}
                   data-section={(Boolean(part.number) && !part.number.includes('.')) || undefined}
-                  onClick={() => { onSeek(part.start); closeDrawer(); }}
+                  onClick={() => {
+                    onSeek(part.start);
+                    // Beside the tab the panel stays open to pick again; full screen on a phone it gives way to the player.
+                    if (window.matchMedia('(max-width: 600px)').matches) closeDrawer();
+                  }}
                   aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, from ${clock(part.start)}`}
                 >
                   <span className="rd-podcast-drawer-time">{clock(part.start)}</span>
