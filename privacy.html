@@ -62,7 +62,7 @@
           <li>You can use PaperTok without an account. The feed, search and the public pages work signed out. Usage analytics uses a persistent browser identifier unless you turn it off.</li>
           <li>Usage analytics is on by default. It uses cookies and local storage to connect visits across days and links product activity to your account when you sign in. You can turn it off in Settings or, without an account, with the Privacy button at the top of the screen. Sessions are not recorded.</li>
           <li>Nothing is sold and nothing is shared for advertising. Only the providers that make the app work handle your data.</li>
-          <li>You can delete your account, and everything in it, from Settings → Account → Delete account. The feed order the server keeps for you is not deleted with it; it expires on its own, at most 2 hours after your last page. A count of the changes made to your email subscription, without your address, stays for 30 more days, or at most 60 if deleting your other email records keeps failing, and a deleted email subscription can remain in Cloudflare's storage history for up to 30 days (see Email updates). In rare cases, explained there, the count can stay with no end date, and a late write can leave a copy of your email subscription, with your address, in Cloudflare Workers KV for up to 120 days.</li>
+          <li>You can delete your account, and everything in it, from Settings → Account → Delete account. The feed order the server keeps for you is not deleted with it; it expires on its own, at most 2 hours after your last page. A count of the changes made to your email subscription, without your address, stays for 30 more days, or at most 60 if deleting your other email records keeps failing, and a deleted email subscription can remain in Cloudflare's storage history for up to 30 days (see Email updates). In rare cases, explained there, the count can stay with no end date, and a late write can leave a copy of your email subscription, with your address, in Cloudflare Workers KV for up to 120 days. These deletions are scheduled, and Cloudflare can run them late.</li>
           <li>For anything else, write to <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.</li>
         </ul>
       </section>
@@ -349,8 +349,7 @@
         citation lookup covered and the week of the latest lookup, so a late email or a
         retry does not skip papers. <strong>Resend</strong> sends
         the emails. To limit test emails, and to allow at most ten requests an hour to start
-        the email from the welcome, Cloudflare counts them under a hashed account identifier
-        that it keeps for up to three days. To limit citation lookups, Cloudflare
+        the email from the welcome, Cloudflare counts them under a hashed account identifier whose deletion is scheduled within three days. To limit citation lookups, Cloudflare
         counts one lookup per week under a hashed account identifier that expires at the
         end of that UTC week.
       </p>
@@ -379,8 +378,8 @@
         of the change that last ended it. If the email was started from the welcome screen,
         the object also keeps a mark that it was. Until PaperTok confirms it has deleted the
         subscription's other email records, the object also keeps their identifiers. After
-        you delete your account, the count stays for 30 days and is then deleted, with
-        everything else the object holds; deleting an account that never had the email
+        you delete your account, the count stays for 30 days, and then a scheduled deletion,
+        which Cloudflare can run late, removes it with everything else the object holds; deleting an account that never had the email
         leaves one for those 30 days too. If deleting the subscription's other email records
         is still failing then, the object waits for it, for at most 30 more days. The mark
         is kept and deleted with the count. In rare cases PaperTok cannot schedule this
@@ -391,9 +390,14 @@
         that Cloudflare's storage answers late while the email is being started, its
         settings saved or an email sent, entries can be written to <strong>Cloudflare
         Workers KV</strong> after you have unsubscribed or deleted your account: one with
-        your account identifier and the unsubscribe identifier and, after a save of your
-        settings, a copy of your email subscription with your address. They start no email,
-        and each is deleted within 120 days of being written. Cloudflare keeps a 30-day point-in-time history of the
+        your account identifier and the unsubscribe identifier, and one that the sending
+        schedule reads. If the email was started from the welcome screen, that second entry
+        holds only your account identifier, and the schedule removes it at its next run.
+        Otherwise, after a save of your settings, it can be a copy of your email
+        subscription with your address, name, sending preferences, subjects and follows,
+        which stays until you next change your email settings or delete your account, or
+        until PaperTok's schedule deletes it. These entries start no email, and each is
+        deleted at the latest 120 days after it was written. Cloudflare keeps a 30-day point-in-time history of the
         Durable Object's storage. A subscription deleted from it, with its address, name,
         subjects and follows, and reminder consent with its address, can therefore remain
         in that history for up to 30 more days after you unsubscribe, withdraw the consent
@@ -403,9 +407,11 @@
       </p>
       <p>
         If you subscribe to the weekly digest and verify your email, you can opt in to
-        digest reminders in Settings. With your consent, PaperTok keeps only the hour
-        of your last signed-in visit when the app is visible, in your account's
-        Cloudflare Durable Object. PaperTok keeps it to tell when you have been away
+        digest reminders in Settings. With your consent, PaperTok keeps in your account's Cloudflare
+        Durable Object that consent, with the email address and unsubscribe identifier it
+        applies to, and the hour of your last signed-in visit when the app is visible. The
+        consent is deleted when you turn reminders off, unsubscribe from the digest or
+        delete your account. PaperTok keeps it to tell when you have been away
         for seven days and prepare a future digest with papers published since your
         last visit. PaperTok uses the visit for 30 days from the hour it records, then
         deletes it, and deletes it sooner if you turn reminders off, unsubscribe from the
@@ -479,8 +485,7 @@
         You can turn off both services in <strong>Settings → Privacy</strong> or, without
         an account, with the <strong>Privacy</strong> button at the top of the welcome
         screens and of the public pages a shared link opens: a paper, a list, an author,
-        institution, journal, topic or project page, a conference calendar, edition or
-        Papers page, and the page for a link that no longer works. The choice is kept
+        institution, journal, topic or project page, a conference calendar or edition page, and the page for a link that no longer works. The choice is kept
         in this browser. Turning analytics off stops new
         browser events and removes PostHog's stored browser identity; previously
         queued events may still be delivered. On subsequent visits neither analytics
@@ -516,14 +521,12 @@
         intermediate server on Cloudflare, so those repositories never receive your IP
         address from a search or lookup (figures and PDFs are the exception, described
         below). That server counts requests to respect each source's limits. For a
-        signed-in reader it also counts them per account, under a hashed account identifier
-        it keeps for up to three days.
+        signed-in reader it also counts them per account, under a hashed account identifier whose deletion is scheduled within three days.
       </p>
       <p>
         When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to
         PaperTok's MCP server, or a public request looks up papers, paper figures,
-        open-access links or a shared page, or a translation needs a fresh arXiv lookup,
-        that server uses the IP address
+        open-access links or a shared page, that server uses the IP address
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
         the shared download allowance. It stores a protected identifier derived from
         the address and the current minute using a secret key, together with request
@@ -539,11 +542,7 @@
         minute and the daily one each day; neither is sent to analytics. People sharing a
         public IP, such as a campus
         network, share each route’s allowance. The PDF reader allows 30 requests per UTC minute,
-        and the MCP server 30 tool calls. Conference requests use separate per-address
-        limits of 30 status requests and 60 paper-list requests per UTC minute,
-        including when the server already has the answer. The Worker counts these
-        requests under protected identifiers derived from the address, route and
-        minute using a secret key.
+        and the MCP server 30 tool calls.
       </p>
       <p>
         The text of a paper comes through that server too. For an arXiv paper, the server
@@ -567,8 +566,7 @@
         deletion is scheduled for one minute after the counting window ends, at most
         two minutes after a request. They can remain longer if Cloudflare delays or
         fails to run that cleanup, but expired counters do not affect later windows.
-        The arXiv, paper-figure, open-access lookup, MCP and conference counters use
-        the same cleanup schedule.
+        The arXiv, paper-figure, open-access lookup and MCP counters use the same cleanup schedule.
         OpenAlex counters, both the per-minute and the daily identifiers, and shared-page
         lookup counters are stored with the day's allowance, except the counters for lookups
         by identifier: those sit in 16 separate stores a day that hold only the per-address
@@ -621,15 +619,6 @@
         level you choose, never your identity or your email.
       </p>
       <p>
-        <strong>Title and abstract translation.</strong>
-        When you request a translation, PaperTok sends the arXiv title, abstract and chosen
-        language to Anthropic without your identity or email. PaperTok keeps the translation
-        in memory while you read the card or use the in-app reader. Your browser remembers the language you chose
-        for your last successful translation on this account and device. PaperTok counts daily translation requests against
-        a hashed account identifier for up to three days to enforce usage limits.
-      </p>
-
-      <p>
         If you request a full-paper translation, PaperTok sends the article text needed for
         the translation and your chosen language to Anthropic. PaperTok does not include your
         account identifier or email. The article may itself name people. PaperTok keeps the
@@ -654,7 +643,7 @@
         <li><strong>PostHog</strong> — product-use analytics and error reports, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV, Durable Objects) — the intermediate server and email-update storage.</li>
         <li><strong>Resend</strong> — sending the emails.</li>
-        <li><strong>Anthropic</strong> — generating plain-words summaries, passage explanations and requested translations from paper text.</li>
+        <li><strong>Anthropic</strong> — generating plain-words summaries, passage explanations and requested full-paper translations from paper text.</li>
         <li><strong>Zotero</strong> — only if you connect it: the papers and highlights you send to your library.</li>
         <li><strong>ORCID</strong> — only if you connect it: signing in there to confirm your iD, and the public works of your ORCID record, which your browser loads from ORCID directly.</li>
         <li><strong>arXiv, PubMed Central, Europe PMC and Wikimedia</strong> — figures, PDFs, and Wikipedia summaries and pictures that your browser loads from them directly.</li>
@@ -679,18 +668,16 @@
         can remain in Cloudflare's 30-day storage history (see Email updates). In rare cases PaperTok
         cannot schedule the count's deletion, and the count, the number of the change that
         last ended the subscription and the mark then stay with no end date (see Email
-        updates). The mark that
-        the email was started from the welcome screen is kept and deleted with the count. Entries
-        that a late write can leave in Cloudflare Workers KV, one linking an unsubscribe
-        identifier to your account identifier and, after a save of your settings, a copy of
-        your email subscription with your address, are each deleted within 120 days of
-        being written. The
+        updates). The 30- and 60-day deletions are scheduled, and Cloudflare can run them late. The mark that
+        the email was started from the welcome screen is kept and deleted with the count. Entries that
+        a late write can leave in Cloudflare Workers KV, one linking an unsubscribe identifier
+        to your account identifier and, after a save of your settings, a copy of your email
+        subscription with your address, name, sending preferences, subjects and follows,
+        are each deleted at the latest 120 days after they were written. The
         request
         counts Cloudflare keeps under hashed account identifiers, to limit test emails,
         requests to start the email and citation lookups, are not deleted with the account
-        either: they expire on their own within three days, or at the end of their week for
-        citation lookups (see Email updates). Nor are the daily counters of AI explanations,
-        rewrites and translations, kept under a hashed account identifier: their deletion
+        either: their deletion is scheduled within three days, or at the end of their week for citation lookups, and Cloudflare can run it late (see Email updates). Nor are the daily counters of AI explanations, rewrites and full-paper translations, kept under a hashed account identifier: their deletion
         stays scheduled for within three days, and the recovery history described below
         applies to them.
       </p>
@@ -698,8 +685,7 @@
       <p id="request-counter-retention">
         The request counters this policy describes, whether kept under a hashed account
         identifier, a protected identifier derived from an IP address or a hashed recipient
-        identifier, are stored in Cloudflare Durable Objects. The times given for them are
-        when PaperTok deletes each counter from that storage. Cloudflare keeps a recovery
+        identifier, are stored in Cloudflare Durable Objects. The times given for them are when PaperTok schedules each counter's deletion from that storage; Cloudflare can run that deletion late. Cloudflare keeps a recovery
         history of that storage that reaches back 30 days, and its documentation does not say
         that deleting a counter removes it from that history, so a deleted counter may remain
         there for up to 30 days more. PaperTok has no feature that reads that history; it
@@ -758,8 +744,9 @@
         copy, and so does deleting the account from Settings in this browser.
       </p>
       <p>
-        This browser saves your welcome interests, area priorities and feed mix, and your
-        answer about the weekly email with the version of the welcome's wording you saw,
+        This browser saves your welcome interests, area priorities and feed mix, and, if you
+        said yes to the weekly email, that yes with the version of the welcome's wording you saw
+        (a no is not saved),
         until they are saved to a new account, an account with existing interests loads, or
         you sign out or switch accounts. A yes to the weekly email is used only for 24 hours
         after you give it. In a browser that never signs in, these answers stay until you
@@ -767,12 +754,7 @@
         It also keeps a copy of your signed-in interest preferences under your account
         identifier so they are ready when you return. Signing out clears that copy.
       </p>
-      <p>
-        This browser remembers the language you chose for your last successful translation
-        under your account identifier, in <code>papertok:paper-translation-language:${uid}</code>.
-        Signing out, deleting the account from Settings in this browser, or clearing
-        the site's data removes that choice.
-      </p>
+      
 
       <h2>Changes</h2>
       <p>
@@ -789,8 +771,7 @@
         accounts that had not seen it.
       </p>
       <p>
-        Revision 11 adds full-paper translation by Anthropic, per-minute limits on conference
-        requests, the weekly email started from the welcome screen and how long its records
+        Revision 11 adds full-paper translation by Anthropic, the reader's text from ar5iv, the weekly email started from the welcome screen and how long its records
         are kept, and opt-in digest reminders. Revision 10 added the daily per-address
         OpenAlex limit and the 30-day recovery history of deleted request counters.
       </p>
