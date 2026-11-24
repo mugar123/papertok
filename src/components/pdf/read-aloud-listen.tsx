@@ -7,8 +7,8 @@ import { ReadAloudTrack, ReadAloudTransport, SpeedButton } from './read-aloud-co
 import ReadAloudForms from './read-aloud-forms.tsx';
 import './read-aloud-listen.css';
 
-/** About four lines of the caption; a longer sentence is shown a piece at a time, as lyrics are. */
-const CAPTION_WORDS = 28;
+/** About three lines of the caption on a wide screen and five on a phone; a longer sentence is shown a piece at a time, as lyrics are. */
+const CAPTION_WORDS = 20;
 
 /** The piece of a sentence's words that holds the one being said, the pieces as even as they can be. */
 function captionPiece(words: string[], current: number) {

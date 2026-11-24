@@ -45,9 +45,11 @@
 .rd-podcast-player { flex: none; display: flex; flex-direction: column; align-items: center; width: min(100%, 640px); }
 .rd-podcast-player > .rd-podcast-dock, .rd-podcast-player > .rd-listen-track { width: 100%; margin-bottom: var(--space-6); }
 .rd-podcast-cover { flex: none; width: min(52vh, 420px, 100%); aspect-ratio: 1; }
-/* On a phone the forms gives way to the caption and the controls, which must fit without scrolling. */
+/* On a phone the forms are the cover at the top, large as a player's artwork, with room left for the caption. */
 @media (max-width: 600px) {
-  .rd-podcast-cover { width: min(34dvh, 72vw); margin-bottom: var(--space-5); }
+  /* The screen's height less what the bars, the section and about four lines of caption need, so a
+     short phone shrinks the forms rather than hiding the caption under the controls. */
+  .rd-podcast-cover { width: min(84vw, max(96px, 100dvh - 480px)); margin-bottom: var(--space-5); }
   .rd-podcast-caption { margin-bottom: var(--space-6); }
 }
 .rd-podcast-visual { display: block; width: 100%; height: 100%; }
@@ -298,10 +300,10 @@
   .rd-podcast-player > .rd-podcast-dock { margin-bottom: var(--space-2); }
 }
 
-/* On a phone the forms, the section and the caption sit in the middle of the room above the bar
-   rather than leaving a gap under them, and the bar's buttons take a thumb's 44px. */
+/* On a phone the forms and the section keep their place at the top while the caption grows and
+   shrinks under them, as lyrics do under a cover; the bar's buttons take a thumb's 44px. */
 @media (max-width: 600px) {
-  .rd-podcast-cover { margin-top: auto; }
+  .rd-podcast-cover { margin-top: var(--space-2); }
   .rd-podcast-caption { margin-bottom: auto; padding-bottom: var(--space-6); }
   .rd-podcast-player { margin-top: 0; }
   .rd-podcast-buttons :is(.rd-listen-skip, .rd-listen-speed),
