@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ListBullets, X } from '@phosphor-icons/react';
+import { Headphones, ListBullets, X } from '@phosphor-icons/react';
+import UsesCount from '../reader/uses-count.tsx';
+import '../ui/tag.css';
 import { Button } from '../ui/button.tsx';
 import type { SpokenPassage } from './read-aloud.ts';
 import type { useReadAloud } from './use-read-aloud.ts';
@@ -148,7 +150,14 @@ export default function ReadAloudListen({ title, queue, player, voiceLeft = null
       <span ref={statusRegion} className="visually-hidden" role="status" />
       <header className="rd-podcast-header">
         <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
-        {voiceLeft && <p className="rd-podcast-header-voice">PaperTok’s voice: {voiceLeft.papersLeft} of {voiceLeft.dailyPapers} new papers left today</p>}
+        {voiceLeft && (
+          <p className="rd-podcast-header-voice">
+            <span className="rd-tag rd-uses" title="New papers with PaperTok’s voice left today">
+              <Headphones size={12} aria-hidden="true" />
+              <UsesCount left={voiceLeft.papersLeft} limit={voiceLeft.dailyPapers} what="new papers with PaperTok’s voice" />
+            </span>
+          </p>
+        )}
       </header>
       <div className="rd-podcast-cover">
         <ReadAloudForms progress={preparing ? startup.ready / startup.total : 1} playing={playing && !buffering} />

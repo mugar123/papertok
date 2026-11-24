@@ -68,7 +68,7 @@
   text-wrap: balance;
 }
 /* Under the title, how many new papers the account may still hear in PaperTok's voice today. */
-.rd-podcast-header-voice { margin: var(--space-1) 0 0; font: 500 0.75rem/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-tertiary); text-align: center; }
+.rd-podcast-header-voice { margin: var(--space-2) 0 0; text-align: center; }
 /* The paper's title over everything, centred. */
 .rd-podcast-header { flex: none; width: 100%; margin-bottom: var(--space-6); text-align: center; }
 .rd-podcast-header-title { margin: 0; font: 600 1.125rem/1.3 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
