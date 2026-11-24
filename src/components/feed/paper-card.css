@@ -523,6 +523,9 @@
   color: var(--text-tertiary);
 }
 
+/* The AI uses tag keeps to the row's far end, and to its own line's when the row wraps. */
+.pc-uses { margin-inline-start: auto; }
+
 .pc-masthead-field {
   padding: 0;
   border: 0;

@@ -139,6 +139,8 @@ import { getRelatedResearchResources } from '../../services/data-cite-service.ts
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
 import { rewriteUseHint } from './rewrite-use-hint.ts';
+import UsesCount from '../reader/uses-count.tsx';
+import '../ui/tag.css';
 import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
@@ -2108,6 +2110,13 @@ const PaperCard = memo(function PaperCard({
               )}
             </>
           )}
+          {/* The day's AI uses, as the reader shows them, at the row's far end: what reading in plain words would spend. */}
+          {canRequestRewrite && !publicMode && user && quota?.dailyLimit && !quota.unlimited ? (
+            <span className="rd-tag rd-tag--ai rd-uses pc-uses">
+              <Sparkle size={12} aria-hidden="true" />
+              <UsesCount left={quota.remainingUses} limit={quota.dailyLimit} />
+            </span>
+          ) : null}
           {(studyTypeLabel || trialUrl) && (
             <div className="pc-evidence">
               {studyTypeLabel && <span>{studyTypeLabel}</span>}
