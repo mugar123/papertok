@@ -138,7 +138,7 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { rewriteUseHint } from './rewrite-use-hint.ts';
+import { currentAIUses, rewriteUseHint } from './rewrite-use-hint.ts';
 import UsesCount from '../reader/uses-count.tsx';
 import '../ui/tag.css';
 import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
@@ -842,8 +842,8 @@ const PaperCard = memo(function PaperCard({
       dot.toggleAttribute('data-line-end', !next || next.offsetTop > dot.offsetTop + dot.offsetHeight / 2);
     }
   }, []);
-  // Each render, as a late citation count or a new tag can move the break; the observer covers resizes.
-  useLayoutEffect(markLineEnds);
+  // When what the row holds changes, as a late citation count or the uses tag can move the break; the observer covers resizes.
+  useLayoutEffect(markLineEnds, [markLineEnds, paper.id, paper.citationCount, paper.year, quota]);
   useEffect(() => {
     const meta = metaRef.current;
     if (!meta) return undefined;
@@ -1696,6 +1696,9 @@ const PaperCard = memo(function PaperCard({
     openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
   } : paper, [paper, resolvedOpenCopy]);
   const canRequestRewrite = canRewritePaper(readablePaper);
+  const usesNow = currentAIUses(quota, { now: Date.now(), online: navigator.onLine });
+  const firstTarget = openTargetsForPaper(paper, resolvedOpenCopy, currentInstitutionAccess)[0];
+  const inlineTarget = firstTarget?.mode === 'inline' ? firstTarget : null;
   const rewriteHint = canRequestRewrite && !publicMode && user && isCardVisible
     ? rewriteUseHint({
       paper: readablePaper,
@@ -2145,10 +2148,10 @@ const PaperCard = memo(function PaperCard({
             )}
           </div>
           {/* The day's AI uses, as the reader shows them, at the first line's far end: what reading in plain words would spend. */}
-          {canRequestRewrite && !publicMode && user && quota?.dailyLimit && !quota.unlimited ? (
+          {canRequestRewrite && !publicMode && user && usesNow ? (
             <span className="rd-tag rd-tag--ai rd-uses pc-uses">
               <Sparkle size={12} aria-hidden="true" />
-              <UsesCount left={quota.remainingUses} limit={quota.dailyLimit} />
+              <UsesCount left={usesNow.left} limit={usesNow.limit} />
             </span>
           ) : null}
         </div>
@@ -2716,10 +2719,11 @@ const PaperCard = memo(function PaperCard({
             originRect={readerOrigin}
             closeRef={readerCloseRef}
             onClose={() => setShowReader(false)}
-            onPaperTab={() => {
+            // The Paper tab only where Read would open the paper in the viewer, and with the copy Read would open.
+            onPaperTab={inlineTarget ? () => {
               setShowReader(false);
-              void onOpenPdf(readablePaper, undefined, readerMenu);
-            }}
+              void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}), pdfUrl: inlineTarget.url, openAccess: true }, analyticsSurface, readerMenu);
+            } : undefined}
           />
         </Suspense>,
         document.body,

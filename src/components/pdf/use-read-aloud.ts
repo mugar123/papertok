@@ -297,7 +297,8 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
           if (current() && element.duration) setProgress(element.currentTime / element.duration);
         };
         element.onended = () => next(index + 1, 0);
-        element.onerror = () => fallBack(index, element.error, from);
+        // From where the clip had got to, so the browser's voice carries on rather than going back.
+        element.onerror = () => fallBack(index, element.error, Number.isFinite(element.duration) && element.duration > 0 ? element.currentTime / element.duration : from);
         if (element.src !== url) element.src = url;
         else if (Number.isFinite(element.duration)) element.currentTime = from * element.duration;
         element.playbackRate = speedNow.current;

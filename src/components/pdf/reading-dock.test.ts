@@ -29,21 +29,7 @@ function viewerFrame() {
   const scroll = document.createElement('div');
   viewer.append(topbar, scroll);
   document.body.append(viewer);
-  // The dock listens to the text with an AbortSignal, which jsdom's elements accept only from its own window.
-  const original = globalThis.AbortController;
-  globalThis.AbortController = (window as unknown as { AbortController: typeof AbortController }).AbortController;
-  // jsdom has no CSS namespace; the dock escapes passage ids with it.
-  const css = Object.getOwnPropertyDescriptor(globalThis, 'CSS');
-  Object.defineProperty(globalThis, 'CSS', { configurable: true, value: { escape: (value: string) => value } });
-  return {
-    scroll,
-    remove: () => {
-      viewer.remove();
-      globalThis.AbortController = original;
-      if (css) Object.defineProperty(globalThis, 'CSS', css);
-      else Reflect.deleteProperty(globalThis, 'CSS');
-    },
-  };
+  return { scroll, remove: () => viewer.remove() };
 }
 const LISTEN = 'Listen to the paper as a podcast';
 

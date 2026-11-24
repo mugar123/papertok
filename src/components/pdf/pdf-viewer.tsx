@@ -452,7 +452,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
         </div>
         {plain && (
           <Suspense fallback={null}>
-            <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onPaperTab={() => setPlain(false)} />
+            <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={() => setPlain(false)} />
           </Suspense>
         )}
       </DialogContent>

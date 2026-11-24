@@ -15,6 +15,8 @@ interface PaperReaderProps {
   onPaperTab?: () => void;
   /** Drawn inside the paper viewer as its Plain words tab, rather than as a dialog of its own. */
   embedded?: boolean;
+  /** Inside the viewer, how a menu action leaves: the viewer closes, then the action runs. */
+  onLeave?: (then: () => void) => void;
 }
 export type ReaderCopy = typeof COPY.en;
 import { useCallback, useEffect, useEffectEvent, useId, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -387,7 +389,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
   );
 }
 
-export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel, onPaperTab, embedded = false }: PaperReaderProps) {
+export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel, onPaperTab, embedded = false, onLeave }: PaperReaderProps) {
   const { user, readingPreferences, interestSettings } = useAuth();
   const uid = user?.uid;
   const { trackEvent, consent } = useAnalyticsConsent();
@@ -1506,7 +1508,11 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
           scroll={scrollElement} spoken={null} canListen={false}
           notes={{ id: 'reader-notes', open: notesOpen, count: orderedAnnotations.length, onOpenChange: setNotesOpen }}
           originalUrl={originalUrl}
-          menu={card ? { paper: card.paper, doc: null, fromCard: card.menu, onLeave: then => { afterClose.current = then; requestClose(); } } : undefined}
+          menu={card ? { paper: card.paper, doc: null, fromCard: card.menu, onLeave: then => {
+            if (embedded && onLeave) { onLeave(then); return; }
+            afterClose.current = then;
+            requestClose();
+          } } : undefined}
           contents={outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}
         >
           <Select

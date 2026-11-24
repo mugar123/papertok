@@ -81,15 +81,23 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
     return () => observer.disconnect();
   }, []);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Whether the open panel covers the tab, as it does on a phone: then the player behind it is out of reach.
+  const [drawerCovers, setDrawerCovers] = useState(false);
   const drawerButton = useRef<HTMLButtonElement | null>(null);
   const drawer = useRef<HTMLElement | null>(null);
   // Open, the panel takes the focus to the chapter being read; closed, it gives it back to its button.
+  // The focus goes back once the panel has closed, when the player behind it is no longer inert.
+  const returnFocus = useRef(false);
   const closeDrawer = () => {
+    returnFocus.current = true;
     setDrawerOpen(false);
-    drawerButton.current?.focus();
   };
   useEffect(() => {
-    if (!drawerOpen) return;
+    if (!drawerOpen) {
+      if (returnFocus.current) drawerButton.current?.focus();
+      returnFocus.current = false;
+      return;
+    }
     const panel = drawer.current;
     (panel?.querySelector<HTMLElement>('button[aria-current]') ?? panel?.querySelector<HTMLElement>('ol button'))?.focus({ preventScroll: true });
     panel?.querySelector('button[aria-current]')?.scrollIntoView({ block: 'center' });
@@ -130,9 +138,11 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
 
       <div className="rd-podcast-words">
         {/* The section the voice is in: small over the caption on a wide screen, the large title on a phone, as a player names a song. */}
-        <h2 className="rd-podcast-title">
-          {!preparing && <span key={chapter.start} className="rd-podcast-section">{[chapter.number, chapter.title].filter(Boolean).join(' ')}</span>}
-        </h2>
+        {!preparing && (
+          <h2 className="rd-podcast-title">
+            <span key={chapter.start} className="rd-podcast-section">{[chapter.number, chapter.title].filter(Boolean).join(' ')}</span>
+          </h2>
+        )}
 
         <div ref={caption} className="rd-podcast-caption">
           <p className="rd-podcast-text" lang="en">
@@ -151,7 +161,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
 
       {/* The controls: under the caption on a wide screen; on a phone, a bar fixed to the bottom of the
           tab, ruled off from the forms and the caption, which scroll behind it. */}
-      <div className="rd-podcast-player">
+      <div className="rd-podcast-player" inert={drawerOpen && drawerCovers}>
         {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
           <div className="rd-podcast-dock">
             {/* As a music player lays them out: the transport centred, the speed and the chapters at its sides. */}
@@ -159,7 +169,10 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
               <SpeedButton speed={speed} onSpeed={onSpeed} />
               <ReadAloudTransport position={now} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
               {timeline.chapters.length > 1 ? (
-                <Button ref={drawerButton} variant="ghost" size="icon" aria-label="All chapters" title="All chapters" aria-expanded={drawerOpen} aria-controls={drawerId} onClick={() => setDrawerOpen(open => !open)}>
+                <Button ref={drawerButton} variant="ghost" size="icon" aria-label="All chapters" title="All chapters" aria-expanded={drawerOpen} aria-controls={drawerId} onClick={() => {
+                  setDrawerCovers(window.matchMedia('(max-width: 600px)').matches);
+                  setDrawerOpen(open => !open);
+                }}>
                   <ListBullets size={20} aria-hidden="true" />
                 </Button>
               ) : <span />}
