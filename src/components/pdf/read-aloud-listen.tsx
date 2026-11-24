@@ -124,7 +124,6 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
     <section className="rd-podcast" aria-labelledby="rd-podcast-title" data-chapters-open={drawerOpen || undefined}>
       {/* On a phone the paper heads the tab, as a player names the album over its cover; wider, it is in the line over the caption. */}
       <header className="rd-podcast-header">
-        <p className="rd-podcast-header-label">Listening to</p>
         <p className="rd-podcast-header-title">{title}</p>
       </header>
       <div className="rd-podcast-cover"><ReadAloudForms ready={!preparing} playing={playing} /></div>

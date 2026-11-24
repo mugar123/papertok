@@ -295,8 +295,7 @@
   .rd-podcast-title { width: 100%; max-width: none; display: grid; gap: 2px; text-align: start; }
   /* The paper is the header's on a phone, so the line over the caption is the section alone. */
   .rd-podcast-paper { display: none; }
-  .rd-podcast-header { display: grid; gap: 2px; width: 100%; margin-bottom: var(--space-3); text-align: center; }
-  .rd-podcast-header-label { margin: 0; font: 600 0.75rem/1.3 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); }
+  .rd-podcast-header { display: block; width: 100%; margin-bottom: var(--space-3); text-align: center; }
   .rd-podcast-header-title { margin: 0; font: 600 0.9375rem/1.3 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
   .rd-podcast-section { font: 700 1.375rem/1.25 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
   .rd-podcast-section::before { content: none; }
