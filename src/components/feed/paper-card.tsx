@@ -1921,7 +1921,7 @@ const PaperCard = memo(function PaperCard({
               </ul>
             </section>
           )}
-          <AboutFollows paper={paper} onAuthRequired={() => requireAuthentication('follow')} onOpenSettings={(inReader) => { if (inReader) window.open('/settings/following', '_blank', 'noopener'); else navigate('/settings/following'); }} />
+          <AboutFollows paper={paper} onAuthRequired={() => requireAuthentication('follow')} />
     </>
   );
   useLayoutEffect(() => {

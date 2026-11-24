@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  FollowsUnavailableError,
-  JournalFollowLimitError,
   createFollowEntity,
   createFollowKey,
   followChangeEvent,
   followSnapshotAction,
   followsEntity,
+  isRetiredFollow,
   migrateLegacyAuthors,
+  splitRetiredFollows,
   normalizeFollowId,
   planFollowToggle,
 } from './following.ts';
@@ -185,88 +185,34 @@ test('a nameless entity is no follow, and a shared placeholder name would have b
   );
 });
 
-// ENG-123: a journal is followed by its OpenAlex source id. Its ISSN-L rides
-// along for display; a name or an ISSN alone is no journal to follow.
-test('a journal is followed by its OpenAlex source id, never by its name or ISSN', () => {
-  assert.deepEqual(createFollowEntity({
-    type: 'journal',
-    id: 'https://openalex.org/S23254222',
-    displayName: 'American Economic Review',
-    source: 'openalex',
-    externalIds: { issnl: '0002-8282' },
-  }), {
-    type: 'journal',
-    canonicalId: 'S23254222',
-    displayName: 'American Economic Review',
-    source: 'openalex',
-    externalIds: { issnl: '0002-8282' },
-    metadata: {},
-  });
-  assert.equal(createFollowKey('journal', 'S23254222'), 'journal_S23254222');
-  assert.equal(createFollowEntity({ type: 'journal', displayName: 'American Economic Review' }), null);
-  assert.equal(createFollowEntity({ type: 'journal', id: '0002-8282', displayName: 'American Economic Review' }), null);
-
-  // OpenAlex lists distinct sources under one name; only the id tells them apart.
-  const followed = [{ type: 'journal' as const, canonicalId: 'S23254222', displayName: 'Economic Review' }];
-  assert.equal(followsEntity(followed, { type: 'journal', id: 'S23254222', displayName: 'American Economic Review' }), true);
-  assert.equal(followsEntity(followed, { type: 'journal', id: 'S99999999', displayName: 'Economic Review' }), false);
+// Journal follows were retired (ENG-123's follow). A journal is still a
+// custom feed's ingredient, but no longer a follow, and a stored one is
+// retired: the follow list deletes it when it loads.
+test('a journal is no longer a follow, and a stored one is retired', () => {
+  assert.equal(createFollowEntity({ type: 'journal', id: 'https://openalex.org/S23254222', displayName: 'American Economic Review' }), null);
+  assert.equal(followsEntity([{ type: 'journal' as const, canonicalId: 'S23254222', displayName: 'American Economic Review' }],
+    { type: 'journal', id: 'S23254222', displayName: 'American Economic Review' }), false);
+  assert.equal(isRetiredFollow({ type: 'journal' }), true);
+  assert.deepEqual(['author', 'topic', 'institution', 'project'].filter(type => isRetiredFollow({ type })), []);
 });
 
-// D3 (Pablo, 2026-10-25): ten journals at most. A press of Follow plans the
-// list the provider shows and writes; an eleventh journal is refused before
-// anything is written, and unfollowing one, or following anything else, never is.
-test('a reader who follows ten journals cannot follow an eleventh, and can still unfollow one', () => {
-  const listed = { list: 'listed' as const };
-  const journals = Array.from({ length: 10 }, (_, index) => createFollowEntity({ type: 'journal', id: `S${1000 + index}`, displayName: `Journal ${index}` })!);
-  const another = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
+test('a stored journal follow is kept from the app and deleted once, by its document id, and again after a failed delete', () => {
+  const author = { type: 'author', canonicalId: 'A1', displayName: 'Ada' };
+  const journal = { type: 'journal', canonicalId: 'S23254222', displayName: 'American Economic Review' };
+  const docs = [{ id: 'author_A1', follow: author }, { id: 'journal_S23254222', follow: journal }];
+  const deleting = new Set<string>();
+  assert.deepEqual(splitRetiredFollows(docs, deleting), { kept: [author], toDelete: ['journal_S23254222'] });
+  assert.deepEqual(splitRetiredFollows(docs, deleting), { kept: [author], toDelete: [] }, 'a delete under way is not asked again');
+  deleting.delete('journal_S23254222');
+  assert.deepEqual(splitRetiredFollows(docs, deleting).toDelete, ['journal_S23254222'], 'a failed delete is asked again');
+  assert.deepEqual(splitRetiredFollows([{ id: 'author_A1', follow: author }], new Set()), { kept: [author], toDelete: [] });
+});
+
+test('a press of Follow adds what the list lacks and removes what it holds', () => {
   const author = createFollowEntity({ type: 'author', id: 'A1', displayName: 'Ada' })!;
-
-  assert.equal(planFollowToggle(journals.slice(0, 9), another, listed).next.at(-1)?.canonicalId, 'S23254222');
-  assert.throws(() => planFollowToggle(journals, another, listed), (error: unknown) => error instanceof JournalFollowLimitError && error.followed === 10);
-  // Two devices following at once can store an eleventh; the refusal counts it.
-  const eleven = [...journals, createFollowEntity({ type: 'journal', id: 'S2000', displayName: 'Journal 10' })!];
-  assert.throws(() => planFollowToggle(eleven, another, listed), (error: unknown) => error instanceof JournalFollowLimitError && error.followed === 11);
-  const unfollow = planFollowToggle(journals, journals[3], listed);
-  assert.equal(unfollow.existing, journals[3]);
-  assert.deepEqual(unfollow.next.map(follow => follow.canonicalId), ['S1000', 'S1001', 'S1002', 'S1004', 'S1005', 'S1006', 'S1007', 'S1008', 'S1009']);
-  assert.equal(planFollowToggle(journals, author, listed).next.length, 11);
-});
-
-// The journals are counted in the list Firestore sent. Before its first
-// snapshot the list is empty, and after a snapshot error it holds only the
-// legacy authors, so either would let an eleventh journal through.
-test('a journal is not followed while the follow list has not arrived', () => {
-  const unlisted = { list: 'waiting' as const };
-  const journal = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
-  assert.throws(() => planFollowToggle([], journal, unlisted), FollowsUnavailableError);
-  assert.throws(() => planFollowToggle(migrateLegacyAuthors(['Ada Lovelace']), journal, { list: 'failed' }), FollowsUnavailableError);
-  // Any other follow is written as before the list arrives.
-  const author = createFollowEntity({ type: 'author', id: 'A1', displayName: 'Ada' })!;
-  assert.deepEqual(planFollowToggle([], author, unlisted).next, [author]);
-});
-
-// The listener is still attached while the app waits for its first snapshot,
-// so trying again can succeed. A snapshot error ends it for the session: the
-// refusal says so, and the Explorer asks for a reload, not a second try.
-test('a journal refused after the follow list failed to load is not retryable; one refused while it loads is', () => {
-  const journal = createFollowEntity({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' })!;
-  const refusal = (list: 'waiting' | 'failed') => {
-    try { planFollowToggle([], journal, { list }); } catch (error) { return error as FollowsUnavailableError; }
-    return null;
-  };
-  assert.equal(refusal('waiting')?.retryable, true);
-  assert.equal(refusal('failed')?.retryable, false);
-});
-
-// Pablo, 2026-10-26: `follow_change` may say a journal was followed, never
-// which one. Detailed analytics keeps an author's id; it gets no journal's.
-test('a journal follow reaches analytics as its type alone, even with detailed analytics on', () => {
-  const journal = createFollowEntity({ type: 'journal', id: 'https://openalex.org/S23254222', displayName: 'American Economic Review' })!;
-  const author = createFollowEntity({ type: 'author', id: 'https://openalex.org/A5023888391', displayName: 'Wei Zhang' })!;
-  const detailed = (params: Record<string, unknown>) => sanitizeProductEventParams('follow_change', params, ANALYTICS_CONSENT.ENABLED);
-  assert.deepEqual(detailed(followChangeEvent(journal, false)), { entity_type: 'journal', action: 'add', surface: 'other' });
-  assert.deepEqual(detailed(followChangeEvent(journal, true)), { entity_type: 'journal', action: 'remove', surface: 'other' });
-  assert.deepEqual(detailed(followChangeEvent(author, false)), { entity_type: 'author', action: 'add', surface: 'other', entity_id: 'A5023888391' });
+  const topic = createFollowEntity({ type: 'topic', id: 'cs.LG', displayName: 'Machine Learning' })!;
+  assert.deepEqual(planFollowToggle([topic], author), { existing: undefined, next: [topic, author] });
+  assert.deepEqual(planFollowToggle([topic, author], author), { existing: author, next: [topic] });
 });
 
 // ENG-192: `follow_change` carries a verified provider id or none at all.
@@ -294,7 +240,6 @@ test('a follow reaches analytics with its id only when the id is a verified prov
   assert.equal(sentId({ type: 'author', id: 'T10604', displayName: 'Wei Zhang' }), undefined, 'a topic id is no author');
   assert.equal(sentId({ type: 'project', id: '101034344', displayName: 'A grant' }), undefined);
   assert.equal(sentId({ type: 'project', id: 'my-thesis-on-ada', displayName: 'Typed in the address bar' }), undefined, 'route text');
-  assert.equal(sentId({ type: 'journal', id: 'S23254222', displayName: 'American Economic Review' }), undefined);
 });
 
 test('a project name is its acronym and its title, or whichever of the two it has', () => {
@@ -331,12 +276,12 @@ test('two institutions with different ids and one name are two follows', () => {
   assert.equal(followsEntity(followed, second), false, 'following the first does not show the second as followed');
 
   // Pressing the second adds it; it does not remove the first.
-  const afterSecond = planFollowToggle(followed, createFollowEntity(second)!, { list: 'listed' });
+  const afterSecond = planFollowToggle(followed, createFollowEntity(second)!);
   assert.equal(afterSecond.existing, undefined);
   assert.deepEqual(afterSecond.next.map(follow => follow.canonicalId), ['I111', 'I222']);
 
   // Pressing the first again removes only the first.
-  const afterFirstAgain = planFollowToggle(afterSecond.next, createFollowEntity(first)!, { list: 'listed' });
+  const afterFirstAgain = planFollowToggle(afterSecond.next, createFollowEntity(first)!);
   assert.deepEqual(afterFirstAgain.next.map(follow => follow.canonicalId), ['I222']);
 });
 
@@ -362,7 +307,7 @@ test('an OpenAlex-id follow is recognised by a ROR-id control for the same name,
   const control = { type: 'institution' as const, id: '02f40zc51', displayName: 'Universidad de Salamanca', externalIds: { ror: '02f40zc51' } };
   assert.equal(followsEntity(stored, control), true);
 
-  const toggled = planFollowToggle(stored, createFollowEntity(control)!, { list: 'listed' });
+  const toggled = planFollowToggle(stored, createFollowEntity(control)!);
   assert.equal(toggled.existing?.canonicalId, 'I184999862');
   assert.deepEqual(toggled.next, [], 'unfollowed, with no second follow added');
 
@@ -373,7 +318,7 @@ test('an OpenAlex-id follow is recognised by a ROR-id control for the same name,
 test('two institutions with different ids in one namespace stay two follows, whichever namespace', () => {
   const rorOnly = [createFollowEntity({ type: 'institution', id: '02f40zc51', displayName: 'Institute of Physics' })!];
   assert.equal(followsEntity(rorOnly, { type: 'institution', id: '01ggx4157', displayName: 'Institute of Physics' }), false);
-  const toggled = planFollowToggle(rorOnly, createFollowEntity({ type: 'institution', id: '01ggx4157', displayName: 'Institute of Physics' })!, { list: 'listed' });
+  const toggled = planFollowToggle(rorOnly, createFollowEntity({ type: 'institution', id: '01ggx4157', displayName: 'Institute of Physics' })!);
   assert.deepEqual(toggled.next.map(follow => follow.canonicalId), ['02f40zc51', '01ggx4157']);
 
   // A shared id settles it even when the OpenAlex ids differ (a duplicate OpenAlex record).
@@ -390,7 +335,7 @@ test('a control with an OpenAlex id and a ROR id meets a follow by whichever id 
 
   assert.equal(followsEntity([byOpenAlex], control), false, 'a different OpenAlex id is a different institution');
   assert.equal(followsEntity([byRor], control), true);
-  const toggled = planFollowToggle([byOpenAlex, byRor], createFollowEntity(control)!, { list: 'listed' });
+  const toggled = planFollowToggle([byOpenAlex, byRor], createFollowEntity(control)!);
   assert.deepEqual(toggled.next.map(follow => follow.canonicalId), ['I1'], 'only the follow that agrees is removed');
 });
 
@@ -402,7 +347,7 @@ test('authors are matched by id, then by name, whatever other ids they carry', (
   // The reader's profile of a card author: an OpenAlex id of its own, no ORCID.
   const profile = { type: 'author' as const, id: 'A2', displayName: 'Josiah Carberry' };
   assert.equal(followsEntity(stored, profile), true);
-  const toggled = planFollowToggle(stored, createFollowEntity(profile)!, { list: 'listed' });
+  const toggled = planFollowToggle(stored, createFollowEntity(profile)!);
   assert.equal(toggled.existing?.canonicalId, 'A1');
   assert.deepEqual(toggled.next, [], 'unfollowed, with no second author added');
 

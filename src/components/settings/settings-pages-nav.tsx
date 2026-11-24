@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 import { Fragment, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { CaretDown, Check } from '@phosphor-icons/react';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
-import { SETTINGS_PAGES, type SettingsPageEntry } from './settings-pages.ts';
+import { SETTINGS_PAGES, isFollowsPath, type SettingsPageEntry } from './settings-pages.ts';
 
 const PAGES_LABEL = 'Settings pages';
 
@@ -71,6 +71,9 @@ export function SettingsSwitcher({ active }: { active: SettingsPageEntry }) {
  * entry named by `expanded`: the Help page puts its own contents there.
  */
 export function SettingsRail({ expanded, children }: { expanded?: string; children?: ReactNode }) {
+  // Discovery stays marked under the Follows dialog, whose route is not its own.
+  const followsOpen = isFollowsPath(useLocation().pathname);
+  const marked = (entry: SettingsPageEntry, isActive: boolean) => isActive || (followsOpen && entry.slug === 'discovery');
   return (
     <nav className="settings-index" aria-label={PAGES_LABEL}>
       <div className="settings-index-list">
@@ -79,13 +82,13 @@ export function SettingsRail({ expanded, children }: { expanded?: string; childr
             <NavLink
               to={pageHref(entry)}
               replace={!entry.to}
-              className={({ isActive }) => (isActive ? 'is-active' : '')}
+              className={({ isActive }) => (marked(entry, isActive) ? 'is-active' : '')}
             >
               {/* Filled on the page you are on: the shape changes, not
                   only the colour. */}
               {({ isActive }) => (
                 <>
-                  <entry.Icon size={18} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
+                  <entry.Icon size={18} weight={marked(entry, isActive) ? 'fill' : 'regular'} aria-hidden="true" />
                   {entry.label}
                 </>
               )}

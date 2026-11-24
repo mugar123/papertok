@@ -5,34 +5,57 @@ export type FollowMetadata = { labelEn?: string; query?: string; categoryIds?: s
 export type FollowEntity = Omit<PaperFollowMatch, 'metadata'> & { metadata?: FollowMetadata; categoryIds?: string[]; followKey?: string };
 export type FollowInput = Omit<Partial<FollowEntity>, 'type'> & { type?: PaperFollowMatch['type'] | 'concept'; id?: string; display_name?: string; name?: string };
 
-const SUPPORTED_FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project', 'journal']);
 /**
- * The follow types the weekly digest is built from. A journal is left out
- * (ENG-123, D6): the client sends none and the Worker keeps none, so neither
- * can take a follow slot or a preview from the others.
+ * What a reader can follow. A journal no longer can: its follows were
+ * retired, and the ones stored are deleted when the follow list loads
+ * (`isRetiredFollow`). A journal is still a custom feed's ingredient, which
+ * reaches the Worker's lanes as a `journal` follow (`corpusRequestOf`).
  */
-export const DIGEST_FOLLOW_TYPES: readonly string[] = ['author', 'topic', 'institution', 'project'];
+const SUPPORTED_FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project']);
+/**
+ * The follow types the weekly digest is built from: every type a reader can
+ * follow. The Worker keeps no other, so a journal sent by an app from before
+ * journal follows were retired takes no follow slot or preview.
+ */
+export const DIGEST_FOLLOW_TYPES: readonly string[] = [...SUPPORTED_FOLLOW_TYPES];
 export const isDigestFollow = (follow: unknown) => DIGEST_FOLLOW_TYPES.includes(String((follow as { type?: unknown } | null | undefined)?.type));
 
-// A journal is followed by its OpenAlex source id. Its name is not unique in
-// OpenAlex, and its ISSN-L only resolves to the id (ENG-123).
-const JOURNAL_ID = /^S\d+$/;
+/** A stored follow of a type no longer followed: a journal (ENG-123), deleted when the list loads. */
+export const isRetiredFollow = (follow: { type?: unknown }) => follow.type === 'journal';
 
 /**
- * The most journals a reader follows (D3, Pablo 2026-10-25). Each one is a
- * lane the nightly harvest lists for everyone who follows it. A session writes
- * no more than its follow list allows (`planFollowToggle`), though two devices
- * following at once can store an eleventh, and the Worker serves no more than
- * these per request (`servedFollows`) whatever a client stored.
+ * A snapshot's follows split into those the app keeps and the document ids of
+ * the retired ones to delete. `deleting` holds the ids whose delete is under
+ * way, which a later snapshot leaves alone; it gains this snapshot's, and an
+ * id taken out of it after a failed delete is deleted again on the next one.
+ */
+export function splitRetiredFollows<Follow extends { type?: unknown }>(docs: readonly { id: string; follow: Follow }[], deleting: Set<string>) {
+  const kept: Follow[] = [];
+  const toDelete: string[] = [];
+  for (const { id, follow } of docs) {
+    if (!isRetiredFollow(follow)) kept.push(follow);
+    else if (!deleting.has(id)) {
+      deleting.add(id);
+      toDelete.push(id);
+    }
+  }
+  return { kept, toDelete };
+}
+
+/**
+ * The most journals a request's lanes serve (D3, Pablo 2026-10-25). Each one
+ * is a lane the nightly harvest lists while a feed asks for it. A custom feed
+ * holds no more, and the Worker serves no more per request (`servedFollows`)
+ * whatever a client sent.
  */
 export const MAX_FOLLOWED_JOURNALS = 10;
 
 /**
- * The OpenAlex work types a followed journal's updates list (ENG-123): its
- * research articles and its reviews, which OpenAlex types `review` (every
- * paper of the Annual Review and Nature Reviews journals). Not its editorials,
- * letters, errata or paratext. The Worker's lane, the paper store's filing
- * and the Following page read the same list.
+ * The OpenAlex work types a journal's lane lists (ENG-123): its research
+ * articles and its reviews, which OpenAlex types `review` (every paper of the
+ * Annual Review and Nature Reviews journals). Not its editorials, letters,
+ * errata or paratext. The Worker's lane and the paper store's filing read the
+ * same list.
  */
 export const FOLLOWED_JOURNAL_WORK_TYPES: readonly string[] = ['article', 'review'];
 export const FOLLOWED_JOURNAL_TYPE_FILTER = `type:${FOLLOWED_JOURNAL_WORK_TYPES.join('|')}`;
@@ -80,7 +103,6 @@ export function createFollowEntity(input: FollowInput = {}): FollowEntity | null
   const displayName = String(input.displayName || input.display_name || input.name || '').trim();
   const canonicalId = normalizeFollowId(input.canonicalId || input.id || displayName);
   if (!canonicalId || !displayName) return null;
-  if (type === 'journal' && !JOURNAL_ID.test(canonicalId)) return null;
 
   return compactFollowData({
     type,
@@ -180,8 +202,7 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
     // stored by name: an OpenAlex id and a ROR id do not say they differ.
     const byIds = sameByIds(normalized, follow);
     if (byIds !== null) return byIds;
-    // No journal was ever stored by name, and two sources can share one.
-    if (!name || normalized.type === 'journal') return false;
+    if (!name) return false;
     const followName = normalizeFollowText(follow.displayName);
     if (followName === name) return true;
     return normalized.type === 'project' && isSameProjectNameSpelling(followName, name);
@@ -196,19 +217,13 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
  * its own. It lets consumers tell "we do not know what this account follows"
  * from "this account follows nobody" — a distinction that decides whether it
  * is safe to write notification preferences derived from the list.
- * `planFollowToggle` throws it for a new journal, which cannot be counted
- * against a list it does not have. After a snapshot error the listener has
- * ended and the list will not arrive in this session, so that error is not
- * `retryable`: only a reload attaches a new listener.
  */
 export class FollowsUnavailableError extends Error {
   declare code: string;
-  declare retryable: boolean;
-  constructor({ retryable = true }: { retryable?: boolean } = {}) {
-    super(retryable ? 'The follow list has not arrived yet.' : 'The follow list could not be loaded.');
+  constructor() {
+    super('The follow list has not arrived yet.');
     this.name = 'FollowsUnavailableError';
     this.code = 'FOLLOWS_UNAVAILABLE';
-    this.retryable = retryable;
   }
 }
 
@@ -240,44 +255,18 @@ export function followSnapshotAction(
 }
 
 /**
- * A journal follow refused by `planFollowToggle`; nothing was written.
- * `followed` is how many journals the list holds, which two devices following
- * at once can take past MAX_FOLLOWED_JOURNALS.
- */
-export class JournalFollowLimitError extends Error {
-  readonly followed: number;
-
-  constructor(followed: number) {
-    super(`A reader follows at most ${MAX_FOLLOWED_JOURNALS} journals.`);
-    this.name = 'JournalFollowLimitError';
-    this.followed = followed;
-  }
-}
-
-/**
  * What a press of Follow does to the follow list in hand: unfollows `entity`
- * when the list has it, and follows it otherwise. A new journal is counted
- * against the journals in the list, since Firestore rules cannot count them,
- * so it is refused, with nothing written, past MAX_FOLLOWED_JOURNALS (D3) and
- * while the list is not the one Firestore sent (`list`): before the first
- * snapshot, or once a snapshot error put the legacy authors in its place.
+ * when the list has it, and follows it otherwise.
  */
-export function planFollowToggle(followedEntities: FollowEntity[], entity: FollowEntity, { list }: { list: FollowListState }) {
+export function planFollowToggle(followedEntities: FollowEntity[], entity: FollowEntity) {
   const existing = followedEntities.find(follow => followsEntity([follow], entity));
   if (existing) return { existing, next: followedEntities.filter(follow => !followsEntity([follow], entity)) };
-  if (entity.type === 'journal') {
-    if (list !== 'listed') throw new FollowsUnavailableError({ retryable: list === 'waiting' });
-    const journals = followedEntities.filter(follow => follow.type === 'journal').length;
-    if (journals >= MAX_FOLLOWED_JOURNALS) throw new JournalFollowLimitError(journals);
-  }
   return { existing, next: [...followedEntities, entity] };
 }
 
 /**
  * The `follow_change` event of a press that followed or unfollowed `entity`.
- * Which journals a reader follows stays out of analytics, detailed analytics
- * included: a journal goes by its type alone, never its id (ENG-123, Pablo
- * 2026-10-26).
+ * It carries the entity's id only when the id is a verified provider id.
  */
 export function followChangeEvent(entity: FollowEntity, wasFollowing: boolean) {
   return {

@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { explorerAuthorIdentityUnverified, explorerFollowEntity } from './explorer-follow-entity.ts';
-import { createFollowEntity } from '../../utils/following.ts';
-import { feedShortcutPlan, ingredientFromFollow } from '../../utils/custom-feeds.ts';
+import { explorerAuthorIdentityUnverified, explorerFollowEntity, explorerJournalIngredient } from './explorer-follow-entity.ts';
+import { feedShortcutPlan } from '../../utils/custom-feeds.ts';
 
 /** The page's Follow for an author route, computed the way EntityExplorer does. */
 function authorFollow(routeId: string, entity: { id?: string; verified?: boolean; orcid?: string | null }, name: string) {
@@ -35,47 +34,30 @@ test('an author the route or the source paper identifies can be followed', () =>
   assert.equal(confirmed.follow?.id, 'https://openalex.org/A5023888391');
 });
 
-// ENG-123 (D2, D5): the Explorer's source page offers Follow for a journal,
-// by its OpenAlex id, with its ISSN-L for display. A repository's firehose,
-// a conference and the working-paper series OpenAlex types as journals do
-// not get one. Source records shaped as OpenAlex returns them; the ids are
-// real (AER from `/sources/issn:0002-8282` on 2026-10-25).
-test('a journal can be followed from its source page; a repository or a working-paper series cannot', () => {
-  const sourcePage = (entity: { id: string; type: string; issn_l?: string | null }, name: string) => explorerFollowEntity({
-    type: 'source', routeId: entity.id.split('/').pop()!, entity, authorIdentityUnverified: false, officialName: name, displayName: name,
-  });
-  const journal = sourcePage({ id: 'https://openalex.org/S23254222', type: 'journal', issn_l: '0002-8282' }, 'American Economic Review');
-  assert.deepEqual(createFollowEntity(journal!), {
-    type: 'journal',
-    canonicalId: 'S23254222',
-    displayName: 'American Economic Review',
-    source: 'openalex',
-    externalIds: { issnl: '0002-8282' },
-    metadata: {},
-  });
-  assert.equal(sourcePage({ id: 'https://openalex.org/S4306400194', type: 'repository' }, 'arXiv (Cornell University)'), null);
-  assert.equal(sourcePage({ id: 'https://openalex.org/S4210171147', type: 'journal' }, 'IMF Working Paper'), null);
+// Journal follows were retired: a source page offers no Follow. Its "Make it
+// a feed" still makes a feed of a journal, by its OpenAlex id. A repository's
+// firehose and the working-paper series OpenAlex types as journals make none
+// (D5). Source records shaped as OpenAlex returns them; the ids are real (AER
+// from `/sources/issn:0002-8282` on 2026-10-25).
+test('a source page offers no Follow', () => {
+  assert.equal(explorerFollowEntity({
+    type: 'source', routeId: 'S23254222', entity: { id: 'https://openalex.org/S23254222', type: 'journal' },
+    authorIdentityUnverified: false, officialName: 'American Economic Review', displayName: 'American Economic Review',
+  }), null);
 });
 
-// "Make it a feed" on a source page: the feed holds the journal the page
-// follows, named after it. A page with no Follow has no feed to make.
 test('a journal page makes a feed of that journal; a repository or a working-paper series makes none', () => {
-  const feedSource = (entity: { id: string; type: string }, name: string) => {
-    const follow = explorerFollowEntity({
-      type: 'source', routeId: entity.id.split('/').pop()!, entity, authorIdentityUnverified: false, officialName: name, displayName: name,
-    });
-    const followed = follow ? createFollowEntity(follow) : null;
-    const ingredient = followed ? ingredientFromFollow(followed) : null;
-    return followed && ingredient ? { ingredient, name: followed.displayName } : null;
-  };
-  const journal = feedSource({ id: 'https://openalex.org/S23254222', type: 'journal' }, 'American Economic Review');
-  assert.deepEqual(journal?.ingredient, { kind: 'journal', id: 'S23254222', label: 'American Economic Review' });
-  assert.deepEqual(feedShortcutPlan(journal.ingredient, journal.name, []), {
+  const ingredient = (entity: { id: string; type: string }, name: string) => explorerJournalIngredient({ entity, displayName: name });
+  const journal = ingredient({ id: 'https://openalex.org/S23254222', type: 'journal' }, 'American Economic Review');
+  assert.ok(journal);
+  assert.deepEqual(journal, { kind: 'journal', id: 'S23254222', label: 'American Economic Review' });
+  assert.deepEqual(feedShortcutPlan(journal, 'American Economic Review', []), {
     kind: 'create',
     input: { name: 'American Economic Review', order: 'newest', ingredients: [{ kind: 'journal', id: 'S23254222', label: 'American Economic Review' }] },
   });
-  assert.equal(feedSource({ id: 'https://openalex.org/S4306400194', type: 'repository' }, 'arXiv (Cornell University)'), null);
-  assert.equal(feedSource({ id: 'https://openalex.org/S4210171147', type: 'journal' }, 'IMF Working Paper'), null);
+  assert.equal(ingredient({ id: 'https://openalex.org/S4306400194', type: 'repository' }, 'arXiv (Cornell University)'), null);
+  assert.equal(ingredient({ id: 'https://openalex.org/S4210171147', type: 'journal' }, 'IMF Working Paper'), null);
+  assert.equal(explorerJournalIngredient({ entity: null, displayName: 'American Economic Review' }), null);
 });
 
 test('no entity yet is not an unverified author, and has no Follow', () => {

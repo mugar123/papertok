@@ -473,7 +473,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
 
   const supportsRewrite = canRewritePaper(paper);
   const paperId = paper?.id || paper?.doi || paper?.arxivId || '';
-  // The way to a journal's Follow (ENG-123): its name opens its Explorer page.
+  // The journal's name opens its Explorer page (ENG-123).
   const journal = journalExplorerLink(paper);
 
   const load = useCallback(async (targetLevel: string, {

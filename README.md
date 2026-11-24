@@ -59,8 +59,8 @@ Scroll or swipe through papers, or use the up and down arrow keys on desktop.
 
 Open search with **/** or **⌘K / Ctrl+K**. Search for papers, authors, topics, institutions
 or funded projects, then open a result to explore its publications. Follow the entities
-you want to revisit in **Following**. You can also follow up to ten journals from their
-journal pages; a journal name in the plain-words reader opens its page.
+you want to revisit in **Following**. A journal name in the plain-words reader opens the
+journal's page, where **Make it a feed** turns it into a feed tab.
 
 A paper can lead to your next one in two ways: **Similar papers** finds related work,
 and the **citation map** shows references and citing papers when those records are

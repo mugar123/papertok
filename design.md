@@ -552,6 +552,16 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   authors, journals and a keyword, and suggestions from the reader's own topics. The
   order is two radio cards, Newest first and Best match for you. A limit or a
   taken name is said in a line inside the form.
+- **The Follows window** (`settings/following-settings-page.tsx`): on a
+  desktop, a dialog over Settings › Discovery drawn like the interests editor,
+  with the follow types down a `pill` tab rail, each with its count, beside
+  the list. `/settings/following` opens it, so the email updates window's link
+  lands on it too. It keeps one height and only the list scrolls.
+  Closing it goes back where it was opened from, and a followed page opened
+  from the list waits for it to leave. While it is open, an unfollow's Undo
+  sits in a line held at the top of the list instead of a toast, which would
+  be outside the dialog's focus trap. On a phone the same list is a full
+  page from a link, and a sheet from Settings.
 - **Delete confirmation** (`custom-feeds/delete-feed-dialog.tsx`): an alert
   dialog titled with the feed's name and one sentence saying likes and saved
   papers stay, with `outline` Cancel and `destructive` Delete feed. While it
@@ -621,10 +631,9 @@ arrow above the title, with the reading time under the title when the paper's
 text can be read and the paper's links (DOI, code, data) to its right; below
 come the status chips, topics and funding that are not on the card face;
 topics and funding are ruled rows, the field's rule in its ink and its topics'
-in a lighter one. The journal OpenAlex identifies and the institutions of the authors that
-carry a verified id come as ruled rows, each name with the Follow control (the
-first five institutions, then `Show all`); a paper with neither has no such
-section. Its heading and sections come in from the right one after
+in a lighter one. The institutions of the authors that carry a verified id
+come as ruled rows, each name with the Follow control (the first five, then
+`Show all`); a paper with none has no such section. Its heading and sections come in from the right one after
 another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
@@ -638,13 +647,13 @@ notes are the full-text reader's notes panel and its selection opens the same
 highlight editor, whose second way out is Explain this to me.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
-institution, project, topic or journal can be followed: a row of About this paper, the Explorer header, beside a
+institution, project or topic can be followed: a row of About this paper, the Explorer header, beside a
 Share glyph drawn the same way in the neutral rail, and search results. It is
 an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
 40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press
 like Like and Save; "Follow" is its name and its `title` says Following once on.
 On pages a feed can be made from (an area, a topic, a keyword search, an author
-with an OpenAlex id, a followable journal), the Explorer header also carries a text button after
+with an OpenAlex id, a journal other than a working-paper series), the Explorer header also carries a text button after
 Share, `Make it a feed`: an `outline` `sm` button with a `Plus` glyph.
 
 ### Status Screens (signature)

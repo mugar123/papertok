@@ -123,7 +123,7 @@ export function authorExplorerPath(author: AuthorInput, paper: Partial<Paper> | 
 
 /**
  * The journal that published a paper, as the reader links it to the
- * journal's page in the Explorer, where it can be followed (ENG-123): a
+ * journal's page in the Explorer (ENG-123): a
  * journal OpenAlex identifies (`venueId`). It is named as OpenAlex names it
  * where the paper kept that name (`sourceName`, which `PaperBuilder` keeps
  * only beside the same `venueId`: an OpenAlex lane, search or Explorer result,

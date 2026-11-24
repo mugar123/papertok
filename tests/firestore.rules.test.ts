@@ -495,23 +495,24 @@ test('the owner writes the subjects they added, up to 150, and nobody else does'
   await assertFails(setDoc(doc(asBob(), 'users', ALICE), { addedPreferences: ['econ.EM'] }, { merge: true }));
 });
 
-test('the owner follows a journal by its OpenAlex source id, and nobody else writes it', async () => {
-  // ENG-123: the document FollowingProvider.toggleFollow writes for a journal.
+test('a journal is no longer followed, and the owner alone deletes one stored before', async () => {
+  // Journal follows were retired: FollowingProvider deletes the ones stored,
+  // by their document id, when the list loads.
   await reset();
-  const journal = createFollowEntity({
-    type: 'journal', id: 'https://openalex.org/S23254222', displayName: 'American Economic Review',
-    source: 'openalex', externalIds: { issnl: '0002-8282' },
-  })!;
-  const followDoc = (db: ReturnType<typeof asAlice>, key = createFollowKey(journal.type, journal.canonicalId)) => doc(db, 'users', ALICE, 'following', key);
-  await assertSucceeds(setDoc(followDoc(asAlice()), { ...journal, followedAt: serverTimestamp() }));
-  await assertFails(setDoc(followDoc(asBob()), { ...journal, followedAt: serverTimestamp() }));
-  // A journal is its source id: a name or an ISSN in its place is refused.
-  await assertFails(setDoc(followDoc(asAlice(), 'journal_0002-8282'), { ...journal, canonicalId: '0002-8282', followedAt: serverTimestamp() }));
-  await assertFails(setDoc(followDoc(asAlice(), 'journal_aer'), { ...journal, canonicalId: 'American Economic Review', followedAt: serverTimestamp() }));
+  const journal = {
+    type: 'journal', canonicalId: 'S23254222', displayName: 'American Economic Review',
+    source: 'openalex', externalIds: { issnl: '0002-8282' }, metadata: {},
+  };
+  const followDoc = (db: ReturnType<typeof asAlice>, key = 'journal_S23254222') => doc(db, 'users', ALICE, 'following', key);
+  await assertFails(setDoc(followDoc(asAlice()), { ...journal, followedAt: serverTimestamp() }));
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE, 'following', 'journal_S23254222'), journal);
+  });
+  await assertFails(deleteDoc(followDoc(asBob())));
+  await assertSucceeds(deleteDoc(followDoc(asAlice())));
   // The other kinds of follow are written as before.
   const author = createFollowEntity({ type: 'author', id: 'A5023888391', displayName: 'Wei Zhang', source: 'openalex' })!;
   await assertSucceeds(setDoc(followDoc(asAlice(), createFollowKey(author.type, author.canonicalId)), { ...author, followedAt: serverTimestamp() }));
-  await assertSucceeds(deleteDoc(followDoc(asAlice())));
 });
 
 test('a legacy field cannot be given a new value', async () => {

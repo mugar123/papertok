@@ -287,10 +287,8 @@ test('a follow becomes the ingredient it names, or none', () => {
   assert.deepEqual(ingredientFromFollow({ type: 'author', canonicalId: 'A5023888391', displayName: 'Aiko Sato' }), { kind: 'author', id: 'A5023888391', label: 'Aiko Sato' });
   assert.equal(ingredientFromFollow({ type: 'author', canonicalId: 'legacy:aiko sato', displayName: 'Aiko Sato' }), null);
   assert.equal(ingredientFromFollow({ type: 'institution', canonicalId: 'I1321305853', displayName: 'MIT' }), null);
-  assert.deepEqual(ingredientFromFollow({ type: 'journal', canonicalId: 'S137773608', displayName: 'Nature' }), { kind: 'journal', id: 'S137773608', label: 'Nature' });
-  assert.deepEqual(ingredientFromFollow({ type: 'journal', canonicalId: 'https://openalex.org/S137773608', displayName: 'Nature' }), { kind: 'journal', id: 'S137773608', label: 'Nature' });
-  assert.equal(ingredientFromFollow({ type: 'journal', canonicalId: '0028-0836', displayName: 'Nature' }), null);
-  assert.equal(ingredientFromFollow({ type: 'journal', displayName: 'Nature' }), null);
+  // A journal is no follow; a journal page's feed is the Explorer's (`explorerJournalIngredient`).
+  assert.equal(ingredientFromFollow({ type: 'journal', canonicalId: 'S137773608', displayName: 'Nature' }), null);
   assert.equal(ingredientFromFollow({ type: 'topic', canonicalId: 'query-1a2b3c4d', displayName: '?', metadata: { query: '?' } }), null);
 });
 

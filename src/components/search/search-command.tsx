@@ -476,12 +476,10 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
         <TabsContent value={activeSection} className="sc-panel">
           {/* Above the list, so it stays in view however far the list is
               scrolled. The status span is always there, so the message put
-              into it is announced; the action sits beside it, a Tab away. */}
+              into it is announced. */}
           <div className={refusal ? 'sc-status sc-status--warn sc-refusal' : undefined}>
             {refusal && <WarningCircle size={14} aria-hidden="true" />}
             <span role="status">{refusal?.message}</span>
-            {refusal?.action && <Button variant="ghost" size="sm" onClick={refusal.action.onClick}
-              onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}>{refusal.action.label}</Button>}
           </div>
           <CommandList className="sc-list">
             {!hasQuery && <>

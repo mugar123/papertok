@@ -2,7 +2,7 @@ import type { OpenAlexWork } from '../services/adapters/open-alex-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { formatOpenAlexWorkAsPaper, mapOpenAlexEnrichmentWork, mapOpenAlexWork } from './open-alex-work.ts';
-import { aboutFollowTargets } from '../components/feed/about-follow-targets.ts';
+import { journalExplorerLink } from './explorer-paths.ts';
 import { PaperBuilder } from '../services/paper-builder.ts';
 
 // Synthetic works shaped as OpenAlex returns them. The source ids are real:
@@ -39,29 +39,29 @@ test("a work keeps the OpenAlex id of the journal that published it, and no id w
   assert.equal(mapOpenAlexWork(repository)?.venueId, undefined, 'a repository is not a venue to follow');
   assert.equal(mapOpenAlexEnrichmentWork(repository)?.enrichment.venueId, undefined);
 
-  // OpenAlex types the IMF Working Paper series a journal; the Explorer does not offer to follow it.
+  // OpenAlex types the IMF Working Paper series a journal; the Explorer makes no journal feed of it.
   const series = work({ id: 'https://openalex.org/S4210171147', display_name: 'IMF Working Paper', type: 'journal' });
-  assert.equal(mapOpenAlexWork(series)?.venueId, undefined, 'a listed working-paper series is not a venue to follow');
+  assert.equal(mapOpenAlexWork(series)?.venueId, undefined, 'a listed working-paper series is not a journal venue');
 
   assert.equal(mapOpenAlexWork(work(null))?.venueId, undefined, 'no source, no venue');
   assert.equal(mapOpenAlexWork(work({ display_name: 'A journal without an id', type: 'journal' }))?.venueId, undefined);
 });
 
-test('the same OpenAlex work offers its journal to follow through every normalizer', () => {
+test('the same OpenAlex work links its journal\'s page through every normalizer', () => {
   const journal = work({ id: 'https://openalex.org/S23254222', display_name: 'American Economic Review', type: 'journal' });
-  const expected = { type: 'journal', id: 'S23254222', displayName: 'American Economic Review', source: 'openalex' };
+  const expected = { name: 'American Economic Review', path: '/explorer/source/S23254222' };
 
-  assert.deepEqual(aboutFollowTargets(mapOpenAlexWork(journal)).journal, expected);
-  assert.deepEqual(aboutFollowTargets(formatOpenAlexWorkAsPaper(journal)).journal, expected);
+  assert.deepEqual(journalExplorerLink(mapOpenAlexWork(journal)), expected);
+  assert.deepEqual(journalExplorerLink(formatOpenAlexWorkAsPaper(journal)), expected);
 
   // A card from another source (arXiv, with its own journal reference) takes
   // the id and OpenAlex's name together from the enrichment.
   const arxiv = PaperBuilder.create({ id: '2610.00001', sources: { primary: 'arxiv', enrichedBy: [] }, title: 'Monetary policy', journal: 'Am. Econ. Rev. 116, 1 (2026)' });
   const enriched = PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(journal)!.enrichment, 'openalex');
-  assert.deepEqual(aboutFollowTargets(enriched).journal, expected);
+  assert.deepEqual(journalExplorerLink(enriched), expected);
 
-  // No id, no name: a repository and a working-paper series offer nothing.
+  // No id: a repository links no journal.
   const repository = work({ id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' });
-  assert.equal(aboutFollowTargets(formatOpenAlexWorkAsPaper(repository)).journal, null);
-  assert.equal(aboutFollowTargets(mapOpenAlexWork(repository)).journal, null);
+  assert.equal(journalExplorerLink(formatOpenAlexWorkAsPaper(repository)), null);
+  assert.equal(journalExplorerLink(mapOpenAlexWork(repository)), null);
 });

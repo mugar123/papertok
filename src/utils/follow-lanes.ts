@@ -57,7 +57,7 @@ export function followLane(follow: FollowLaneInput) {
 
 /**
  * The follows a page of the corpus reads, in their order, each with its lane:
- * the first MAX_FOLLOWED_JOURNALS journals, whatever a client stored, since
+ * the first MAX_FOLLOWED_JOURNALS journals (a custom feed's), whatever a client sent, since
  * each is a lane the nightly harvest lists, and on top of them the first
  * FEED_MAX_FOLLOWS other follows with a lane.
  */
