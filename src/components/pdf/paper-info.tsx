@@ -151,9 +151,9 @@ function DockMenu({ paper, doc, fromCard, onLeave, viewActions = [], view, setVi
       actions={[...viewActions, ...paperActions({
         paper,
         isRead: card.isRead,
-        onAbout: () => setView('about'),
-        onToggleRead: () => { if (signedIn && card.isRead) card.toggleRead(); else onLeave(card.toggleRead); },
-        onNotInterested: () => onLeave(card.notInterested),
+        onAbout: card.about ? () => setView('about') : undefined,
+        onToggleRead: card.toggleRead && ((toggle) => () => { if (signedIn && card.isRead) toggle(); else onLeave(toggle); })(card.toggleRead),
+        onNotInterested: card.notInterested && ((dismiss) => () => onLeave(dismiss))(card.notInterested),
         notInterestedHint: card.notInterestedHint,
       })]}
       open={view === 'actions' || view === 'about'}

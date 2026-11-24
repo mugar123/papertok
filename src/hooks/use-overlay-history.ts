@@ -2,14 +2,14 @@ type OverlayHistory = Pick<History, 'pushState' | 'replaceState' | 'back'> & { s
 import { useEffect, useRef } from 'react';
 
 /**
- * A reader or a PDF viewer is local component state rendered through a
- * portal, not a route — it pushes nothing onto session history. Pressing
+ * A reader or the Similar layer is local component state rendered through a
+ * portal, not a route — it pushes nothing onto session history. (The paper
+ * viewer is a route of its own, paper-view.ts.) Pressing
  * Back while one is open therefore does not close it; it leaves PaperTok
  * entirely, straight to whatever the visitor had open before (the tester's
  * report). The router cannot help on its own, whichever router it is: it reads
- * the URL, and none of these five overlays (PaperCard's reader, the Similar
- * layer, and App's, EntityExplorer's and SearchPage's independently-mounted
- * PDF viewers) change it. Nothing below reads a URL either — the entry is cloned from
+ * the URL, and none of these overlays (the saved summaries' reader and the
+ * Similar layer) change it. Nothing below reads a URL either — the entry is cloned from
  * `history.state` and pushed at `location.href`, whatever that happens to be —
  * which is why the move off HashRouter (2026-09-18) went through this file
  * without a line changing.
@@ -51,8 +51,7 @@ import { useEffect, useRef } from 'react';
  * idx=k+1 (real) — with the overlay's own idx=k entry invisible in between.
  *
  * Overlays of DIFFERENT tags do stack: the Similar layer (`similar`) is a feed
- * of cards, and each card opens its reader (`reader`) or App's PDF viewer
- * (`pdf`) on top of it. Every armed owner hears every `popstate`, so `onPop`
+ * of cards, and each card opens the paper's viewer, a route, on top of it. Every armed owner hears every `popstate`, so `onPop`
  * ignores a pop that leaves its own tagged entry on top: that Back belonged
  * to an overlay above it. Without that check one Back press closed the reader
  * and the layer under it, and closing the reader with its X — a `history.back()`

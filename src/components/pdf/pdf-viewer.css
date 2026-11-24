@@ -1,36 +1,22 @@
-/* PDF Viewer Overlay — the popup of a full-screen Base UI Dialog
-   (ui/dialog.jsx). The primitive arrives centred with a hairline and a
-   shadow; the overrides below are the viewer claiming the whole viewport at
-   the z-index it has always had, above every other surface. */
+/* The paper viewer: the whole screen, or all of it under the app's bar, above the page it was
+   opened from. */
 .pdf-overlay {
   position: fixed;
   inset: 0;
   z-index: 12100;
-  width: auto;
-  max-width: none;
-  translate: none;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+  /* The viewer's own fixed parts (the podcast's chapters) are placed in it, not on the screen. */
+  contain: layout;
   background: var(--bg-primary);
 }
 
-/* The veil is the popup itself, so the primitive's scrim draws nothing. */
-.pdf-scrim {
-  z-index: 12099;
-  background: transparent;
-}
+/* The viewer is the paper's route over the page it was opened from: under the app's bar where
+   the page has one, so the bar stays at hand as on any other page (paper-view-route.tsx). */
+:root:has(.navbar) .pdf-overlay { top: var(--nav-total); }
 
-.pdf-scrim[data-open],
-.pdf-scrim[data-closed] {
-  animation: none;
-}
-
-/* `data-open` / `data-closed` are the primitive's: it holds the popup in the
-   document until the closing animation has finished, and only then tells
-   app.tsx to unmount the viewer. The paper arrives and leaves as a detail
-   page does, on the same keyframes and clocks as `enter` and `leave` in
-   page-transition.css (280ms in, 240ms out). */
+/* `data-open` / `data-closed` are the viewer's (pdf-viewer.tsx): it holds itself on screen until
+   its leave has played, then leaves its route. The paper arrives and leaves as a detail page
+   does, on the same keyframes and clocks as `enter` and `leave` in page-transition.css (280ms in,
+   240ms out). */
 .pdf-overlay[data-open] {
   animation:
     pageEnterTravel 280ms var(--ease-out-cubic) both,

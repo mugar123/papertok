@@ -1,6 +1,5 @@
 import type { MouseEvent, PropsWithChildren, ReactElement } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import type { FollowInput } from '../../utils/following.ts';
 import type { SearchProviders, SearchResults, SearchScope as SearchScopeId, SearchSnapshot } from '../../services/entity-search-service.ts';
 import { Children, useState, useEffect, useEffectEvent, useMemo, useRef, useCallback } from 'react';
@@ -37,7 +36,6 @@ import { useFeed } from '../../context/feed-context.tsx';
 import useQuickSave from '../../hooks/use-quick-save.ts';
 import { useLanguage } from '../../context/language-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
-import { useOverlayHistory } from '../../hooks/use-overlay-history.ts';
 import { getOpenAlexHealth } from '../../services/open-alex-client.ts';
 import {
   SECTION_SOURCES,
@@ -54,7 +52,7 @@ import { EmptyState } from '../ui/empty-state.tsx';
 import { Button } from '../ui/button.tsx';
 import { ListRow, ListRowAuthors, PaperListRow } from '../lists/list-row.tsx';
 import PaperOverlay from '../feed/paper-overlay.tsx';
-import PDFViewer from '../pdf/pdf-viewer.tsx';
+import { useOpenPaperView } from '../pdf/paper-view.ts';
 import { Input } from '../ui/input.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
@@ -292,20 +290,8 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   useEffect(() => {
     if (handedPaper) void navigate({ search: location.search }, { replace: true, state: null });
   }, [handedPaper, location.search, navigate]);
-  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null);
-  const pdfPaper = pdfOpen?.paper ?? null;
-  // Back closes this PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
-  // Through the viewer's own close, the one the X uses — it owns `open` and
-  // reports back only when its leave has played; `setPdfOpen(null)` is just
-  // the fallback for the sub-frame gap before PDFViewer's own
-  // `useImperativeHandle` has populated the ref — this import (above) is
-  // plain, not lazy, so there is no chunk boundary to blame it on here.
-  const pdfCloseRef = useRef<(() => void) | null>(null);
-  const requestPdfClose = useCallback(() => {
-    if (pdfCloseRef.current) pdfCloseRef.current();
-    else setPdfOpen(null);
-  }, []);
-  useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf');
+  // The paper's viewer opens on its own route, over this page, which stays mounted under it.
+  const openPaperView = useOpenPaperView();
   // The paper the reader came here for goes back where they chose it when it
   // closes. Left here they were shown a results list they never asked for:
   // they had picked the paper in the palette, over another page.
@@ -1045,7 +1031,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
             onNotInterested={(paper) => { void markNotInterested(paper); closeSelectedPaper(); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
-            onOpenPdf={(paper, _surface, menu) => setPdfOpen({ paper, menu })}
+            onOpenPdf={(paper, _surface, menu) => openPaperView(paper, menu)}
             onSaveToList={handleSaveToList}
             onPickList={onSaveToList}
             getInteractionState={getInteractionState}
@@ -1055,11 +1041,6 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
           />
         )}
       </PaperOverlay>
-
-      {/* PDF Viewer */}
-      {pdfOpen && (
-        <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
-      )}
     </main>
   );
 }
