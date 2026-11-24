@@ -69,13 +69,11 @@ custom_domain = true
 ALLOWED_ORIGINS = "https://papertok.app,https://www.papertok.app,https://papertok-ten.vercel.app,https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175,http://localhost:4175,http://127.0.0.1:4175"
 # Claude answers rewrite and annotation since 2026-11-19, when the NaN Builders key
 # expired (key: the ANTHROPIC_API_KEY secret; until it is set the routes answer
-# AI_NOT_CONFIGURED). "nan" and "gemini" switch rewrite and annotation
-# providers. Translation requires Anthropic.
+# AI_NOT_CONFIGURED). "nan" and "gemini" switch rewrite and annotation to those providers.
 AI_PROVIDER = "anthropic"
 # Claude Opus 5.5 for rewrite and annotation while AI_PROVIDER is "anthropic".
 # "claude-sonnet-5-5" and "claude-haiku-5-5" are cheaper (worker/README.md has the prices).
 ANTHROPIC_MODEL = "claude-opus-5-5"
-ANTHROPIC_TRANSLATION_MODEL = "claude-haiku-5-5"
 # NaN's DeepSeek V4 Flash for rewrite and annotation while AI_PROVIDER is "nan".
 NAN_MODEL = "deepseek-v4-flash"
 AI_MODEL = "gemini-3.5-flash"

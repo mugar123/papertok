@@ -612,7 +612,6 @@ function AppContent() {
             element={
               <PageTransition>
                 <EntityExplorer
-                  translationEnabled={false}
                   publicMode={!user}
                   onAuthRequired={requestAuthentication}
                   onSaveToList={user ? openSaveModal : requestAuthentication}

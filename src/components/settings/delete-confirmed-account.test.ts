@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { deleteConfirmedAccount } from './delete-confirmed-account.ts';
 import { readPrivacyNoticeAck, rememberPrivacyNotice } from '../../utils/nudges.ts';
 import { pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown } from '../../utils/pmf-survey.ts';
-import { preferredTranslationLanguage, rememberTranslationLanguage } from '../../utils/paper-translation.ts';
 
 const fakeStorage = () => {
   const map = new Map<string, string>();
@@ -49,8 +48,6 @@ test('this browser forgets the privacy notice of the deleted account only, even 
   const storage = fakeStorage();
   rememberPrivacyNotice('uid-a', '2026-10-26', storage);
   rememberPrivacyNotice('uid-b', '2026-10-26', storage);
-  rememberTranslationLanguage('uid-a', 'es', storage);
-  rememberTranslationLanguage('uid-b', 'ca', storage);
   await deleteConfirmedAccount({
     reauthenticate: () => Promise.resolve('uid-a'),
     onSignedIn: () => {},
@@ -60,8 +57,6 @@ test('this browser forgets the privacy notice of the deleted account only, even 
   });
   assert.equal(readPrivacyNoticeAck('uid-a', storage), null);
   assert.equal(readPrivacyNoticeAck('uid-b', storage), '2026-10-26', 'the account that holds the session now');
-  assert.equal(preferredTranslationLanguage('uid-a', [], storage), '');
-  assert.equal(preferredTranslationLanguage('uid-b', [], storage), 'ca');
 });
 
 test('this browser forgets which survey version the deleted account was shown, and only that account', async () => {

@@ -308,11 +308,10 @@ export default function EntityExplorer({
   onSaveToList = () => {},
   publicMode = false,
   onAuthRequired = () => {},
-  translationEnabled = true,
   // Under the app's own bar — app.tsx decides, the same way it decides to
   // render the bar — the page starts below it instead of at the top edge.
   appChrome = false,
-}: { onSaveToList?: (paper: Paper) => void; publicMode?: boolean; onAuthRequired?: (reason?: string) => void; appChrome?: boolean; translationEnabled?: boolean }) {
+}: { onSaveToList?: (paper: Paper) => void; publicMode?: boolean; onAuthRequired?: (reason?: string) => void; appChrome?: boolean }) {
   const { type, id } = useParams() as { type: string; id: string };
   // The visit this page resumes, if it was here before (`visitMemory`).
   // Read once per mount: the seeds below take it into state, and the two
@@ -2913,7 +2912,6 @@ export default function EntityExplorer({
             trackSkip={trackSkip}
             publicMode={publicMode}
             onAuthRequired={onAuthRequired}
-            translationEnabled={translationEnabled}
             analyticsSurface="explorer"
           />
         )}

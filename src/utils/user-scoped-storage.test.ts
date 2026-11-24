@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { preferredTranslationLanguage, rememberTranslationLanguage } from './paper-translation.ts';
 
 import {
   clearUserScopedStorage,
@@ -68,8 +67,6 @@ test('logout removes only the current user personal caches', () => {
   storage.setItem('papertok_following_user-a', '[]');
   storage.setItem('papertok_following_updates_user-a', '{}');
   storage.setItem('papertok_language', 'en');
-  rememberTranslationLanguage('user-a', 'es', storage);
-  rememberTranslationLanguage('user-b', 'ca', storage);
 
   clearUserScopedStorage('user-a', storage);
 
@@ -80,8 +77,6 @@ test('logout removes only the current user personal caches', () => {
   assert.equal(storage.getItem('papertok_seenIds:user-b'), '[]');
   assert.equal(storage.getItem('papertok_feed_snapshot_user-b_physics'), '{}');
   assert.equal(storage.getItem('papertok_language'), 'en');
-  assert.equal(preferredTranslationLanguage('user-a', [], storage), '');
-  assert.equal(preferredTranslationLanguage('user-b', [], storage), 'ca');
 });
 
 /**
@@ -102,6 +97,23 @@ test('signing out takes the legacy follow counters with everything else', () => 
   assert.equal(storage.getItem('papertok_followStats:user-g'), null);
   assert.ok(storage.getItem('papertok_followStats:user-h'), 'another account keeps its own key');
   assert.deepEqual([...readSeenPaperIds('user-g', storage)], []);
+});
+
+/**
+ * The retired translation pilot remembered the reader's last language under
+ * `papertok:paper-translation-language:{uid}`. Nothing writes that key any more.
+ */
+
+test('signing out takes the legacy translation language with everything else', () => {
+  const storage = createStorage();
+
+  storage.setItem('papertok:paper-translation-language:user-t', 'es');
+  storage.setItem('papertok:paper-translation-language:user-u', 'ca');
+
+  clearUserScopedStorage('user-t', storage);
+
+  assert.equal(storage.getItem('papertok:paper-translation-language:user-t'), null);
+  assert.equal(storage.getItem('papertok:paper-translation-language:user-u'), 'ca', 'another account keeps its own key');
 });
 
 /**

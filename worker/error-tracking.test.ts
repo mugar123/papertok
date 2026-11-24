@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { gunzipSync } from 'node:zlib';
-import { captureWorkerException, captureWorkerResponseFailure, captureWorkerTranslationFailure, trackErrors } from './error-tracking.ts';
+import { captureWorkerException, captureWorkerResponseFailure, trackErrors } from './error-tracking.ts';
 
 type SentEvent = { event: string; distinct_id: string; properties: Record<string, unknown> };
 
@@ -72,27 +72,4 @@ test('without a project token nothing is sent', async () => {
   const { thrown, events } = await reportsFrom({}, async () => { throw new Error('Provider failed'); });
   assert.ok(thrown instanceof Error);
   assert.deepEqual(events, []);
-});
-
-test('translation reports carry only a known reason with no exception data or reader identity', async () => {
-  const { events } = await reportsFrom({ POSTHOG_PROJECT_TOKEN: 'phc_test' }, async () => {
-    captureWorkerTranslationFailure('AI_AUTH_REQUIRED', 401);
-    captureWorkerTranslationFailure('AI_TIMEOUT', 504);
-    captureWorkerResponseFailure(504);
-  }, async () => {
-    captureWorkerTranslationFailure('AI_An abstract for reader-123', 502);
-  });
-  assert.deepEqual(events.map(event => event.properties.translation_failure).sort(), ['AI_TIMEOUT', 'AI_UNAVAILABLE']);
-  for (const event of events) {
-    assert.equal(event.event, '$exception');
-    assert.equal(event.distinct_id, 'papertok-worker');
-    const [exception] = event.properties.$exception_list as { type: string; value: string; stacktrace: { frames: unknown[] } }[];
-    assert.equal(exception.type, 'Error');
-    assert.equal(exception.value, 'Application error (message redacted)');
-    assert.deepEqual(exception.stacktrace.frames, []);
-    assert.equal(event.properties.$process_person_profile, false);
-    assert.equal(event.properties.$geoip_disable, true);
-    assert.equal(event.properties.http_status, undefined);
-  }
-  assert.doesNotMatch(JSON.stringify(events), /An abstract|reader-123|AI_AUTH_REQUIRED/);
 });
