@@ -130,6 +130,7 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, clos
   const startTimeRef = useRef<number | null>(null);
 
   // The X and Escape land here, so the bounce is counted once, whichever it was.
+  const leaveForLink = useCallback(() => undefined, []);
   const countBounce = useCallback(() => {
     if (startTimeRef.current !== null && Date.now() - startTimeRef.current < 5000) void trackPdfBounce(paper);
   }, [paper, trackPdfBounce]);
@@ -479,7 +480,9 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, clos
         {summaryOpen && (
           <div className="pdf-summary">
             <Suspense fallback={null}>
-              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={() => choose('paper')} />
+              {/* Embedded, the summary closes only for its journal link, whose own navigation leaves
+                  the viewer's route and so closes it: the route's close would go Back over it. */}
+              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={leaveForLink} onLeave={leaveThen} onPaperTab={() => choose('paper')} />
             </Suspense>
           </div>
         )}
