@@ -53,6 +53,10 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   const now = playing && voiceAt !== null ? voiceAt : position;
   const shown = target ?? now;
   const chapter = chapterAt(timeline, shown);
+  // The chapter the voice was in before, so the rail can run from there to the one it is in now.
+  const current = timeline.chapters.findIndex(part => part.start === chapter.start);
+  const [rail, setRail] = useState({ at: current, from: current });
+  if (rail.at !== current) setRail({ at: current, from: rail.at });
   // The caption's box follows the sentence's height with a transition (read-aloud-listen.css), so a
   // longer or shorter sentence eases the blob and the controls to their place instead of jumping.
   const caption = useRef<HTMLDivElement | null>(null);
@@ -173,9 +177,10 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
               <X size={16} aria-hidden="true" />
             </Button>
           </div>
-          <ol>
-            {timeline.chapters.map(part => (
-              <li key={part.start}>
+          {/* The whole run takes 240ms however many rows it crosses. */}
+          <ol style={{ '--from': rail.from, '--rail-step': 240 / Math.max(1, Math.abs(rail.at - rail.from)) }}>
+            {timeline.chapters.map((part, index) => (
+              <li key={part.start} style={{ '--row': index }}>
                 <button
                   type="button"
                   disabled={preparing}

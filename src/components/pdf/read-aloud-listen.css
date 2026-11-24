@@ -158,7 +158,8 @@
 }
 /* The chapters along a rail, each at its starting minute: the rail is inked as far as the voice
    has got, and the chapter it is in has the large dot. */
-.rd-podcast-drawer ol { display: grid; margin: 0; padding: 0; list-style: none; }
+.rd-podcast-drawer ol { --from: 0; --rail-step: 240; display: grid; margin: 0; padding: 0; list-style: none; }
+.rd-podcast-drawer li { --row: 0; }
 .rd-podcast-drawer ol button {
   --rail: var(--border-subtle);
   position: relative;
@@ -178,34 +179,52 @@
   cursor: pointer;
   transition: background-color 150ms ease;
 }
-.rd-podcast-drawer ol button::before {
+.rd-podcast-drawer ol button::before,
+.rd-podcast-drawer ol button::after {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
   left: calc(var(--space-1) + 3.25rem + var(--space-2) + 9px);
   width: 2px;
-  background: var(--rail);
+  background: var(--border-subtle);
 }
-.rd-podcast-drawer li:first-child button::before { top: 50%; }
-.rd-podcast-drawer li:last-child button::before { bottom: 50%; }
-.rd-podcast-drawer ol button[data-played] { --rail: var(--text-primary); }
-.rd-podcast-drawer ol button[aria-current]::before { background: linear-gradient(var(--text-primary) 50%, var(--border-subtle) 50%); }
+.rd-podcast-drawer li:first-child button::before,
+.rd-podcast-drawer li:first-child button::after { top: 50%; }
+.rd-podcast-drawer li:last-child button::before,
+.rd-podcast-drawer li:last-child button::after { bottom: 50%; }
+/* The ink over the rail. When the voice moves to another chapter it runs along the rows between,
+   one after another, so the rail reads as filling or emptying towards where the voice now is:
+   each row waits its distance from the chapter left, times one row's share of the whole run. */
+.rd-podcast-drawer ol button::after {
+  --rail-wait: calc(max(var(--row) - var(--from), var(--from) - var(--row)) * var(--rail-step) * 1ms);
+  background: var(--text-primary);
+  transform-origin: top;
+  scale: 1 0;
+  transition: scale calc(var(--rail-step) * 1ms) linear var(--rail-wait);
+}
+.rd-podcast-drawer ol button[data-played]::after { scale: 1 1; }
+.rd-podcast-drawer li:not(:first-child) button[aria-current]::after { scale: 1 0.5; }
 .rd-podcast-drawer-dot {
   position: relative;
+  z-index: 1;
   justify-self: center;
-  width: 9px;
-  height: 9px;
+  width: 13px;
+  height: 13px;
   border: 2px solid var(--bg-card);
   border-radius: 50%;
   box-sizing: content-box;
   background: var(--border-default);
+  scale: 0.7;
+  transition-property: scale, background-color, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+  transition-delay: calc(max(var(--row) - var(--from), var(--from) - var(--row)) * var(--rail-step) * 1ms);
 }
-.rd-podcast-drawer ol button[data-section] .rd-podcast-drawer-dot { width: 11px; height: 11px; }
+.rd-podcast-drawer ol button[data-section] .rd-podcast-drawer-dot { scale: 0.85; }
 .rd-podcast-drawer ol button[data-played] .rd-podcast-drawer-dot { background: var(--text-primary); }
 .rd-podcast-drawer ol button[aria-current] .rd-podcast-drawer-dot {
-  width: 13px;
-  height: 13px;
+  scale: 1;
   background: var(--podcast-accent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--podcast-accent) 20%, transparent);
 }
@@ -229,7 +248,7 @@
   .rd-podcast .rd-listen-play { transition: none; }
   .rd-podcast-drawer, .rd-podcast-drawer[data-open] { translate: 0 0; opacity: 0; transition: opacity 150ms ease, visibility 0s linear 150ms; }
   .rd-podcast-drawer[data-open] { opacity: 1; transition: opacity 150ms ease, visibility 0s; }
-  .rd-podcast-drawer ol button { transition: none; }
+  .rd-podcast-drawer ol button, .rd-podcast-drawer ol button::after, .rd-podcast-drawer-dot { transition: none; }
 }
 
 /* On a phone the controls are a bar fixed to the bottom of the tab, within the thumb's reach and
