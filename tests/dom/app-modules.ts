@@ -57,10 +57,6 @@ async function loadAppModule<T>(path: string, options?: Parameters<typeof startA
   }
 }
 
-export function loadPaperTranslationService() {
-  return loadAppModule<typeof import('../../src/services/paper-translation-service.ts')>('/src/services/paper-translation-service.ts');
-}
-
 interface AuthProviderModule {
   AuthProvider: (props: PropsWithChildren) => ReactNode;
   useAuth: () => { user: { uid: string } | null; loading: boolean };

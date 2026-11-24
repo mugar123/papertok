@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { preferredTranslationLanguage, rememberTranslationLanguage } from './paper-translation.ts';
+import { getTranslationLanguageStorageKey } from './paper-translation.ts';
 
 import {
   clearUserScopedStorage,
@@ -68,8 +68,8 @@ test('logout removes only the current user personal caches', () => {
   storage.setItem('papertok_following_user-a', '[]');
   storage.setItem('papertok_following_updates_user-a', '{}');
   storage.setItem('papertok_language', 'en');
-  rememberTranslationLanguage('user-a', 'es', storage);
-  rememberTranslationLanguage('user-b', 'ca', storage);
+  storage.setItem(getTranslationLanguageStorageKey('user-a'), 'es');
+  storage.setItem(getTranslationLanguageStorageKey('user-b'), 'ca');
 
   clearUserScopedStorage('user-a', storage);
 
@@ -80,8 +80,8 @@ test('logout removes only the current user personal caches', () => {
   assert.equal(storage.getItem('papertok_seenIds:user-b'), '[]');
   assert.equal(storage.getItem('papertok_feed_snapshot_user-b_physics'), '{}');
   assert.equal(storage.getItem('papertok_language'), 'en');
-  assert.equal(preferredTranslationLanguage('user-a', [], storage), '');
-  assert.equal(preferredTranslationLanguage('user-b', [], storage), 'ca');
+  assert.equal(storage.getItem(getTranslationLanguageStorageKey('user-a')), null);
+  assert.equal(storage.getItem(getTranslationLanguageStorageKey('user-b')), 'ca');
 });
 
 /**
