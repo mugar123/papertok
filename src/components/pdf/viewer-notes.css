@@ -15,6 +15,12 @@
 ::highlight(viewer-passage-active-sky) { background-color: color-mix(in srgb, var(--accent-sky) 35%, var(--accent-sky-soft)); color: inherit; }
 ::highlight(viewer-passage-active-violet) { background-color: color-mix(in srgb, var(--accent-violet) 35%, var(--accent-violet-soft)); color: inherit; }
 ::highlight(viewer-passage-active-rose) { background-color: color-mix(in srgb, var(--accent-rose) 35%, var(--accent-rose-soft)); color: inherit; }
+/* The highlight under the pointer, half as dark as the clicked one: a click on it opens its note. */
+::highlight(viewer-passage-hover-yellow) { background-color: color-mix(in srgb, var(--brand-yellow) 18%, var(--brand-yellow-soft)); color: inherit; }
+::highlight(viewer-passage-hover-teal) { background-color: color-mix(in srgb, var(--accent-teal) 18%, var(--accent-teal-soft)); color: inherit; }
+::highlight(viewer-passage-hover-sky) { background-color: color-mix(in srgb, var(--accent-sky) 18%, var(--accent-sky-soft)); color: inherit; }
+::highlight(viewer-passage-hover-violet) { background-color: color-mix(in srgb, var(--accent-violet) 18%, var(--accent-violet-soft)); color: inherit; }
+::highlight(viewer-passage-hover-rose) { background-color: color-mix(in srgb, var(--accent-rose) 18%, var(--accent-rose-soft)); color: inherit; }
 
 .pdf-stage { --notes-w: min(360px, 40vw); }
 .pdf-stage[data-notes-open] { padding-right: var(--notes-w); }
@@ -105,8 +111,14 @@
 .vn-quote[data-color="sky"] { --vn-mark: var(--accent-sky); }
 .vn-quote[data-color="violet"] { --vn-mark: var(--accent-violet); }
 .vn-quote[data-color="rose"] { --vn-mark: var(--accent-rose); }
-/* The entry of the clicked highlight: its dotted rule turns solid. */
+/* The entry of the clicked highlight: its dotted rule turns solid; the one under the pointer too,
+   on a faint wash, since a click takes you to the passage. */
 .vn-item[data-active] .vn-quote { border-left-style: solid; }
+.vn-quote { transition: background-color 150ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) {
+  .vn-item:has(.vn-goto:hover) .vn-quote { border-left-style: solid; background-color: var(--bg-secondary); }
+}
+@media (prefers-reduced-motion: reduce) { .vn-quote { transition: none; } }
 .vn-goto { all: unset; cursor: pointer; border-radius: var(--radius-sm); }
 .vn-goto:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) {

@@ -225,7 +225,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const [notesOpen, setNotesOpen] = useState(false);
   // The passage while its handles are dragged; it becomes the pending one when they are let go.
   const [dragged, setDragged] = useState<PassageSelection | null>(null);
-  usePaintedPassages(notesOn ? textScroll : null, notes.passages, dragged ?? notes.pending, notes.active);
+  // The highlight under the mouse, painted a shade darker.
+  const [hoveredPassage, setHoveredPassage] = useState<string | null>(null);
+  usePaintedPassages(notesOn ? textScroll : null, notes.passages, dragged ?? notes.pending, notes.active, hoveredPassage);
   // A note in the panel goes to its passage and marks it, as in the reader; on a phone the
   // notes cover the text, so they close to show it.
   const goToNote = (passage: PassageAnnotation) => {
@@ -238,7 +240,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // Over a highlight, a click opens the notes at it, so the pointer says so. The marks are
   // painted ranges, not elements, so the stylesheet cannot reach them.
   const pointAtHighlight = (event: ReactMouseEvent<HTMLDivElement>) => {
-    event.currentTarget.style.cursor = passageAt(event.target, notes.passages, event.clientX, event.clientY) ? 'pointer' : '';
+    const pointed = passageAt(event.target, notes.passages, event.clientX, event.clientY);
+    event.currentTarget.style.cursor = pointed ? 'pointer' : '';
+    setHoveredPassage(pointed?.id ?? null);
   };
   // A click on a highlight marks it and opens the notes at its entry. The text narrows as
   // the notes open, so the passage is brought back into view; on a phone the notes cover
@@ -312,7 +316,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             )}
 
             {fullText && showsText && (
-              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onMouseMove={notesOn && !coarsePointer ? pointAtHighlight : undefined} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
+              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onMouseMove={notesOn && !coarsePointer ? pointAtHighlight : undefined} onMouseLeave={() => setHoveredPassage(null)} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
                 const block = event.target as HTMLElement;
                 if (event.key !== 'Enter' || !block.matches('[data-passage]')) return;
                 event.preventDefault();

@@ -13,6 +13,7 @@ import { lastKnownAIUses, refreshAIUses, subscribeAIUses } from '../../services/
 const PAINT = 'viewer-passage';
 const PENDING = 'viewer-passage-pending';
 const ACTIVE = 'viewer-passage-active';
+const HOVER = 'viewer-passage-hover';
 export const SAVE_ERROR = 'Could not save. Check your connection and try again.';
 
 export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string) {
@@ -118,7 +119,7 @@ export function useTouchSelection(root: HTMLElement | null) {
   return root ? passage : null;
 }
 
-export function usePaintedPassages(root: HTMLElement | null, passages: Pick<PassageAnnotation, 'id' | 'sectionId' | 'quote' | 'color' | 'occurrence'>[], pending: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'> | null, active: string | null = null) {
+export function usePaintedPassages(root: HTMLElement | null, passages: Pick<PassageAnnotation, 'id' | 'sectionId' | 'quote' | 'color' | 'occurrence'>[], pending: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'> | null, active: string | null = null, hovered: string | null = null) {
   useEffect(() => {
     if (!root || typeof CSS === 'undefined' || !('highlights' in CSS)) return undefined;
     const ranges = (list: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'>[]) => list.flatMap((passage) => {
@@ -131,8 +132,12 @@ export function usePaintedPassages(root: HTMLElement | null, passages: Pick<Pass
         CSS.highlights.set(`${PAINT}-${color}`, new Highlight(...ranges(passages.filter(passage => highlightColor(passage) === color))));
         // The clicked passage is painted again, darker, above its colour's wash.
         const picked = new Highlight(...ranges(passages.filter(passage => passage.id === active && highlightColor(passage) === color)));
-        picked.priority = 1;
+        picked.priority = 2;
         CSS.highlights.set(`${ACTIVE}-${color}`, picked);
+        // The one under the pointer a shade darker too, as a click on it opens its note.
+        const pointed = new Highlight(...ranges(passages.filter(passage => passage.id === hovered && passage.id !== active && highlightColor(passage) === color)));
+        pointed.priority = 1;
+        CSS.highlights.set(`${HOVER}-${color}`, pointed);
       }
       CSS.highlights.set(PENDING, new Highlight(...ranges(pending ? [pending] : [])));
     };
@@ -149,8 +154,9 @@ export function usePaintedPassages(root: HTMLElement | null, passages: Pick<Pass
       for (const color of HIGHLIGHT_COLORS) {
         CSS.highlights.delete(`${PAINT}-${color}`);
         CSS.highlights.delete(`${ACTIVE}-${color}`);
+        CSS.highlights.delete(`${HOVER}-${color}`);
       }
       CSS.highlights.delete(PENDING);
     };
-  }, [root, passages, pending, active]);
+  }, [root, passages, pending, active, hovered]);
 }
