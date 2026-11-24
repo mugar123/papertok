@@ -1,5 +1,4 @@
-import type { ReactNode } from 'react';
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { CaretDown, Check } from '@phosphor-icons/react';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
@@ -84,11 +83,8 @@ export function SettingsSwitcher({ active }: { active: SettingsPageEntry }) {
   );
 }
 
-/**
- * The rail of pages beside the content, from 901px. `children` sits under the
- * entry named by `expanded`: the Help page puts its own contents there.
- */
-export function SettingsRail({ expanded, children }: { expanded?: string; children?: ReactNode }) {
+/** The rail of pages beside the content, from 901px. */
+export function SettingsRail() {
   const { pathname } = useLocation();
   // Discovery stays marked under the Follows dialog, whose route is not its own.
   const followsOpen = isFollowsPath(pathname);
@@ -97,24 +93,22 @@ export function SettingsRail({ expanded, children }: { expanded?: string; childr
     <nav className="settings-index" aria-label={PAGES_LABEL}>
       <div className="settings-index-list">
         {SETTINGS_PAGES.map(entry => (
-          <Fragment key={entry.slug}>
-            <NavLink
-              to={pageHref(entry)}
-              replace={!entry.to}
-              state={stepState(entry, pathname)}
-              className={({ isActive }) => (marked(entry, isActive) ? 'is-active' : '')}
-            >
-              {/* Filled on the page you are on: the shape changes, not
-                  only the colour. */}
-              {({ isActive }) => (
-                <>
-                  <entry.Icon size={18} weight={marked(entry, isActive) ? 'fill' : 'regular'} aria-hidden="true" />
-                  {entry.label}
-                </>
-              )}
-            </NavLink>
-            {entry.slug === expanded && children}
-          </Fragment>
+          <NavLink
+            key={entry.slug}
+            to={pageHref(entry)}
+            replace={!entry.to}
+            state={stepState(entry, pathname)}
+            className={({ isActive }) => (marked(entry, isActive) ? 'is-active' : '')}
+          >
+            {/* Filled on the page you are on: the shape changes, not
+                only the colour. */}
+            {({ isActive }) => (
+              <>
+                <entry.Icon size={18} weight={marked(entry, isActive) ? 'fill' : 'regular'} aria-hidden="true" />
+                {entry.label}
+              </>
+            )}
+          </NavLink>
         ))}
       </div>
     </nav>
