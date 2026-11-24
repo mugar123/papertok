@@ -50,6 +50,7 @@ import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
 import { connectZotero, disconnectZotero, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
+import { authorMetricsAnswer, zoteroAnswer } from '../../utils/profile-session-caches.ts';
 import { GithubMark } from '../ui/github-mark.tsx';
 import { Label } from '../ui/label.tsx';
 import { ZoteroMark } from '../pdf/zotero-mark.tsx';
@@ -171,17 +172,28 @@ function RowAction({ label, text = label, Icon, variant = 'outline', ...props }:
   );
 }
 
-/** Keyed by the account where it is used, so a new account starts from an unchecked state. */
+/**
+ * Keyed by the account where it is used, so a new account starts from its own
+ * last answer or from an unchecked state. The check runs on every visit; a
+ * failed one leaves the last answer on screen.
+ */
 function ZoteroSection({ uid }: { uid: string }) {
-  const [status, setStatus] = useState<ZoteroStatus | null>(null);
+  const [status, setStatus] = useState<ZoteroStatus | null>(() => zoteroAnswer.get(uid) ?? null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let live = true;
-    zoteroStatus().then(next => { if (live) setStatus(next); }, () => { if (live) setFailed(true); });
+    const keep = zoteroAnswer.startRead(uid);
+    zoteroStatus().then(next => {
+      // A left visit's check may be older than the next visit's.
+      if (!live) return;
+      // A disconnect that finished while this check was out is newer than its answer.
+      const shown = keep(next) ? next : zoteroAnswer.get(uid);
+      if (shown) setStatus(shown);
+    }, () => { if (live) setFailed(true); });
     return () => { live = false; };
-  }, []);
+  }, [uid]);
 
   usePageRestored(() => setBusy(false));
 
@@ -189,8 +201,11 @@ function ZoteroSection({ uid }: { uid: string }) {
     setBusy(true);
     try {
       if (status?.connected) {
+        const record = zoteroAnswer.startChange(uid);
         await disconnectZotero();
-        setStatus({ connected: false, username: null, sentAt: null });
+        const disconnected = { connected: false, username: null, sentAt: null };
+        record(disconnected);
+        setStatus(disconnected);
         toast.success('Zotero is disconnected.');
         setBusy(false);
       } else {
@@ -202,10 +217,10 @@ function ZoteroSection({ uid }: { uid: string }) {
     }
   }
 
-  const description = failed ? 'The Zotero connection could not be checked. You can still connect it.'
-    : !status ? 'Checking your Zotero connection…'
-      : status.connected ? `Connected${status.username ? ` as ${status.username}` : ''}. Papers you send while reading go to your personal library.`
-        : 'Send the papers you read, with your highlights, to your Zotero library.';
+  const description = status?.connected ? `Connected${status.username ? ` as ${status.username}` : ''}. Papers you send while reading go to your personal library.`
+    : status ? 'Send the papers you read, with your highlights, to your Zotero library.'
+      : failed ? 'The Zotero connection could not be checked. You can still connect it.'
+        : 'Checking your Zotero connection…';
 
   return (
     <section className="settings-section" aria-labelledby="settings-zotero-heading">
@@ -454,21 +469,31 @@ function PrivacyPage() {
   );
 }
 
+const LOADING_PREFERENCE = 'Loading your preference…';
+
+/** Shows the account's last answer at once and reads it again; a failed read leaves that answer on screen. */
 function AuthorMetricsSetting({ uid }: { uid: string }) {
   const hintId = useId();
-  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [enabled, setEnabled] = useState<boolean | null>(() => authorMetricsAnswer.get(uid) ?? null);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState('Loading your preference…');
+  const [status, setStatus] = useState(() => authorMetricsAnswer.get(uid) === undefined ? LOADING_PREFERENCE : '');
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
+    const keep = authorMetricsAnswer.startRead(uid);
     void readAuthorMetricsConsent(uid).then(value => {
+      // A left visit's read may be older than the next visit's.
       if (!active) return;
-      setEnabled(value);
-      setStatus('');
+      // A choice saved while this read was out is newer than its answer.
+      const shown = keep(value) ? value : authorMetricsAnswer.get(uid);
+      if (shown === undefined) return;
+      setEnabled(shown);
+      // Clears only the loading line; a save's own message stays.
+      setStatus(previous => previous === LOADING_PREFERENCE ? '' : previous);
     }, () => {
-      if (active) setStatus('Could not load your preference.');
+      // Only a section still waiting for its first answer reports the failure.
+      if (active) setStatus(previous => previous === LOADING_PREFERENCE ? 'Could not load your preference.' : previous);
     });
     return () => { active = false; };
   }, [uid, attempt]);
@@ -477,7 +502,9 @@ function AuthorMetricsSetting({ uid }: { uid: string }) {
     setSaving(true);
     setStatus('Saving your preference…');
     try {
+      const record = authorMetricsAnswer.startChange(uid);
       await writeAuthorMetricsConsent(uid, value);
+      record(value);
       setEnabled(value);
       setStatus('Preference saved.');
     } catch {
@@ -512,7 +539,7 @@ function AuthorMetricsSetting({ uid }: { uid: string }) {
         <div role="status">{status}</div>
         {enabled === null && status.startsWith('Could not') && (
           <Button variant="outline" onClick={() => {
-            setStatus('Loading your preference…');
+            setStatus(LOADING_PREFERENCE);
             setAttempt(previous => previous + 1);
           }}>Try again</Button>
         )}

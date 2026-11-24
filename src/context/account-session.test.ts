@@ -6,7 +6,7 @@ import { resetAccountWarmup } from '../services/account-warmup.ts';
 import { changeDismissed, readDismissed } from '../utils/custom-feed-dismissed.ts';
 import { customFeedPagesCache, feedPagesKey } from '../utils/custom-feed-pages.ts';
 import { readGuestInterests, saveGuestInterests } from '../utils/guest-interests.ts';
-import { ownListsCache } from '../utils/profile-session-caches.ts';
+import { authorMetricsAnswer, ownListsCache, zoteroAnswer } from '../utils/profile-session-caches.ts';
 import { recentPagesCache, recentPagesKey, recentRunsCache } from '../utils/recent-feed-pages.ts';
 import { readSeenPaperIds, readStoredLists, readStoredOnboarding, saveSeenPaperIds, saveStoredLists, saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
 
@@ -105,6 +105,22 @@ test('a sign-out takes the pages of the account\'s custom feeds out of the sessi
   customFeedPagesCache.set(key, { papers: [], page: 0, hasMore: false, loading: [] });
   closeAccountSession('account-a', deviceStorage());
   assert.equal(customFeedPagesCache.get(key), undefined);
+});
+
+test('a sign-out takes the settings answers of that account, and only that account, out of the session', t => {
+  freshSession(t);
+  zoteroAnswer.startRead('account-a')({ connected: true, username: 'reader-a', sentAt: null });
+  authorMetricsAnswer.startRead('account-a')(false);
+  zoteroAnswer.startRead('account-b')({ connected: false, username: null, sentAt: null });
+  authorMetricsAnswer.startRead('account-b')(true);
+  t.after(() => { closeAccountSession('account-b', deviceStorage()); });
+
+  closeAccountSession('account-a', deviceStorage());
+
+  assert.equal(zoteroAnswer.get('account-a'), undefined, 'A\'s Zotero name left the session');
+  assert.equal(authorMetricsAnswer.get('account-a'), undefined);
+  assert.deepEqual(zoteroAnswer.get('account-b'), { connected: false, username: null, sentAt: null });
+  assert.equal(authorMetricsAnswer.get('account-b'), true);
 });
 
 test('a sign-out takes the account\'s Most recent pages and run out of the session', t => {
