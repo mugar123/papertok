@@ -45,7 +45,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useSyncExternalStore, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -135,11 +135,9 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { currentAIUses } from './current-ai-uses.ts';
 import { markSeparatorLineEnds } from './separator-line-ends.ts';
-import UsesCount from '../reader/uses-count.tsx';
 import '../ui/tag.css';
-import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
+import { canRewritePaper, getCachedRewrite } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { acceptedConferenceText, accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
@@ -550,7 +548,6 @@ const PaperCard = memo(function PaperCard({
   const { followedByType, isFollowing } = useFollowing();
   const { institution, user, readingPreferences } = useAuth();
   const { language } = useLanguage();
-  const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(user?.uid));
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
   // (hooks/use-stable-navigate.ts says what it cost).
@@ -1674,11 +1671,9 @@ const PaperCard = memo(function PaperCard({
     openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
   } : paper, [paper, resolvedOpenCopy]);
   const canRequestRewrite = canRewritePaper(readablePaper);
-  const usesNow = currentAIUses(quota, { now: Date.now(), online: navigator.onLine });
   const firstTarget = openTargetsForPaper(paper, resolvedOpenCopy, currentInstitutionAccess)[0];
   const inlineTarget = firstTarget?.mode === 'inline' ? firstTarget : null;
   const rewriteHint = canRequestRewrite && !publicMode && user && isCardVisible
-    // The rail shows uses left; under the button only a saved version, which opens free.
     ? (getCachedRewrite(readablePaper, readingPreferences.aiExplanationLevel) ? 'Open this version for free.' : '')
     : '';
 
@@ -2445,12 +2440,6 @@ const PaperCard = memo(function PaperCard({
           `--read` classes stay: each names its own colour, and the stylesheet
           and its tests key the pop and the eye-to-tick morph on them. */}
       <div className="pc-side-actions">
-        {canRequestRewrite && !publicMode && user && usesNow ? (
-          <span className="rd-tag rd-tag--ai rd-uses pc-uses">
-            <Sparkle size={12} aria-hidden="true" />
-            <UsesCount left={usesNow.left} limit={usesNow.limit} />
-          </span>
-        ) : null}
         <Toggle
           className={`pc-side-btn pc-side-btn--like ${isLiked ? 'pc-side-btn--liked' : ''}`}
           pressed={isLiked}
