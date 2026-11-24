@@ -86,6 +86,16 @@
   color: var(--text-tertiary);
 }
 .rd-podcast-text [data-said] { color: var(--text-primary); }
+/* A new piece of caption and a new section enter softly: the piece, every few seconds, only rises and
+   fades in; the section, rarely, also comes out of a blur. Under reduced motion both only fade. */
+.rd-podcast-piece { display: block; animation: rd-podcast-piece-in 200ms var(--ease-out) both; }
+.rd-podcast-section { animation: rd-podcast-section-in 300ms var(--ease-out) both; }
+@keyframes rd-podcast-piece-in { from { opacity: 0; translate: 0 6px; } }
+@keyframes rd-podcast-section-in { from { opacity: 0; translate: 0 12px; filter: blur(4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .rd-podcast-piece, .rd-podcast-section { animation-name: rd-podcast-fade-in; }
+}
+@keyframes rd-podcast-fade-in { from { opacity: 0; } }
 .rd-podcast-text [data-current] {
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--podcast-accent) 28%, transparent);
@@ -96,7 +106,8 @@
    chapters, and under it the line with its minute at one end and what is left at the other. */
 .rd-podcast-dock { display: grid; gap: var(--space-2); width: min(100%, 640px); }
 .rd-podcast-buttons { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
-.rd-podcast-buttons > :first-child { justify-self: start; margin-inline-start: calc(-1 * var(--space-2)); }
+/* The speed's text starts where the minute under it does: its box reaches out by its own inset. */
+.rd-podcast-buttons > :first-child { justify-self: start; justify-content: flex-start; padding-inline-start: var(--space-2); margin-inline-start: calc(-1 * var(--space-2)); }
 .rd-podcast-buttons > :last-child { justify-self: end; margin-inline-end: calc(-1 * var(--space-2)); }
 .rd-podcast-buttons .rd-listen-transport { gap: var(--space-4); }
 .rd-podcast-line { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; }

@@ -14,7 +14,7 @@ const CAPTION_WORDS = 20;
 function captionPiece(words: string[], current: number) {
   const size = Math.ceil(words.length / Math.ceil(words.length / CAPTION_WORDS));
   const start = Math.floor(Math.max(0, current) / size) * size;
-  return { words: words.slice(start, start + size), current: current - start };
+  return { words: words.slice(start, start + size), current: current - start, first: start };
 }
 
 /** The sentence the voice is on, cut into words (only the piece being read, if it is long), and which of them it is saying. */
@@ -25,7 +25,9 @@ function spokenSentence(item: SpokenPassage, word: number) {
   for (const line of item.utterances) {
     if (at < start + line.length + 1) {
       const before = text.slice(0, start).split(/\s+/).filter(Boolean).length;
-      return captionPiece(line.split(/\s+/).filter(Boolean), word - before);
+      const piece = captionPiece(line.split(/\s+/).filter(Boolean), word - before);
+      // Where the piece starts in the passage, so each new piece is a new element and enters as one.
+      return { ...piece, first: before + piece.first };
     }
     start += line.length + 1;
   }
@@ -127,16 +129,20 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
             paper is the small label and the section the large title, as a player names a song. */}
         <h2 id="rd-podcast-title" className="rd-podcast-title">
           <span className="rd-podcast-paper">{title}</span>
-          {!preparing && <span className="rd-podcast-section">{[chapter.number, chapter.title].filter(Boolean).join(' ')}</span>}
+          {!preparing && <span key={chapter.start} className="rd-podcast-section">{[chapter.number, chapter.title].filter(Boolean).join(' ')}</span>}
         </h2>
 
         <div ref={caption} className="rd-podcast-caption">
           <p className="rd-podcast-text" lang="en">
             {preparing
               ? `Preparing the audio, ${percent}%`
-              : !sentence ? 'Press play to listen.' : sentence.words.map((text, index) => (
-                <span key={index} data-said={index < sentence.current || undefined} data-current={index === sentence.current || undefined}>{text} </span>
-              ))}
+              : !sentence ? 'Press play to listen.' : (
+                <span key={`${paragraph}:${sentence.first}`} className="rd-podcast-piece">
+                  {sentence.words.map((text, index) => (
+                    <span key={index} data-said={index < sentence.current || undefined} data-current={index === sentence.current || undefined}>{text} </span>
+                  ))}
+                </span>
+              )}
           </p>
         </div>
       </div>
