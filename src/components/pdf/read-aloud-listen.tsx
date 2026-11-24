@@ -48,7 +48,11 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   const percent = prepared.total ? Math.floor((prepared.ready / prepared.total) * 100) : 0;
   // Where a drag along the line would move the voice, until it is let go.
   const [target, setTarget] = useState<number | null>(null);
-  const shown = target ?? position;
+  // The player's position moves when a clip reports its time, and with the browser's voice only
+  // as each sentence ends; while it speaks, the tab reads where the voice is on every frame.
+  const [voiceAt, setVoiceAt] = useState<number | null>(null);
+  const now = playing && voiceAt !== null ? voiceAt : position;
+  const shown = target ?? now;
   const chapter = chapterAt(timeline, shown);
   const [chaptersOpen, setChaptersOpen] = useState(false);
   const drawerId = useId();
@@ -60,17 +64,21 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
     return wordStarts(text, timings[text] ?? null);
   }, [item, timings]);
   const [word, setWord] = useState(0);
+  const span = paragraph === null ? null : timeline.passages[paragraph] ?? null;
   useEffect(() => {
     if (!item) return undefined;
     const text = passageText(item);
     let frame = 0;
     const tick = () => {
-      setWord(spokenWordAt(text, starts, live()));
+      const voice = live();
+      setWord(spokenWordAt(text, starts, voice));
+      // A tenth of a second is finer than the clock shows and coarse enough not to render every frame.
+      if (span) setVoiceAt(Math.round((span.start + voice.fraction * (span.end - span.start)) * 10) / 10);
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [item, live, starts]);
+  }, [item, live, span, starts]);
   const sentence = item ? spokenSentence(item, word) : null;
   const unsaved = prepared.ready < prepared.total;
 
@@ -91,12 +99,12 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
           ))}
       </p>
 
-      {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={position} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
+      {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
         <div className="rd-podcast-dock">
           {/* As a music player lays them out: the transport centred, the speed and the chapters at its sides. */}
           <div className="rd-podcast-buttons">
             <SpeedButton speed={speed} onSpeed={onSpeed} />
-            <ReadAloudTransport position={position} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
+            <ReadAloudTransport position={now} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
             {timeline.chapters.length > 1 ? (
               <Button variant="ghost" size="icon" aria-label="Chapters" title="Chapters" aria-expanded={chaptersOpen} aria-controls={drawerId} onClick={() => setChaptersOpen(open => !open)}>
                 <ListBullets size={20} aria-hidden="true" />
@@ -106,7 +114,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
           {/* and under it the line, its minute at one end and what is left at the other. */}
           <div className="rd-podcast-line">
             <span className="rd-listen-time">{clock(shown)}</span>
-            <ReadAloudTrack timeline={timeline} prepared={prepared} position={position} target={target} onTarget={setTarget} onSeek={onSeek} />
+            <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} />
             <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
           </div>
         </div>
