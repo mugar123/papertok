@@ -90,7 +90,7 @@ import { DEGRADED_CACHE_SECONDS } from './provider-runtime.ts';
 // Bump when the prompt or output budget changes so cached rewrites use that policy.
 export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v3';
 const DEFAULT_REWRITE_MODEL = 'gemini-3.5-flash';
-const MAX_REQUEST_BYTES = 100_000;
+export const MAX_REQUEST_BYTES = 100_000;
 const MAX_SECTIONS = 14;
 const MAX_PARAGRAPHS_PER_SECTION = 14;
 const MAX_PARAGRAPH_CHARS = 6_000;

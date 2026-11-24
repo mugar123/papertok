@@ -1437,8 +1437,11 @@ regenerate values use the ordinary cache path.
 `/ai/rewrite` forwards each POST to a new `PaperRewriteSession` Durable Object through
 the `PAPER_REWRITE_SESSION` binding. The existing handler verifies identity, validates
 input, checks the shared cache and reserves quota inside that object. PDF conversion
-and provider stream parsing run there too; the edge Worker only checks method/origin
-and relays the response stream. This uses the Durable Object CPU allowance instead
+and provider stream parsing run there too; the edge Worker only checks method/origin,
+reads the request body (refusing one over 100,000 bytes with `413 AI_REQUEST_TOO_LARGE`)
+and relays the response stream. It reads the body before forwarding because the object
+can refuse before reading it, and a body still streaming into an object that has
+answered throws in the runtime (locally, it stops `wrangler dev`). This uses the Durable Object CPU allowance instead
 of the Workers Free 10 ms allowance. The object persists no state; the SQLite class
 registration keeps it available on the Free plan. Generation still consumes the
 account's daily Durable Object request and duration allowances.
