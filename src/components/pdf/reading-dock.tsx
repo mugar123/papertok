@@ -90,7 +90,6 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     scroll.toggleAttribute('inert', true);
     return () => { scroll.toggleAttribute('inert', false); };
   }, [podcast, scroll]);
-  const byline = (paper?.authors ?? []).map(author => (typeof author === 'string' ? author : author.name)).filter(Boolean);
 
   return <>
     {canListen && topbar && createPortal(
@@ -111,7 +110,6 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     </PaperDock></div>
     {podcast && spoken && <ReadAloudListen
       title={paper?.title ?? title}
-      byline={byline.length > 3 ? `${byline.slice(0, 3).join(', ')} and others` : byline.join(', ')}
       queue={spoken.queue}
       timeline={readAloud.timeline} prepared={readAloud.prepared} paragraph={readAloud.paragraph}
       position={readAloud.position} playing={readAloud.playing} speed={readAloud.speed}

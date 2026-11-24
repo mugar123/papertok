@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { DownloadSimple } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { CharacterTimings, ReadAloudTimeline, SpokenPassage } from './read-aloud.ts';
@@ -23,15 +23,13 @@ function spokenSentence(item: SpokenPassage, word: number) {
 }
 
 /**
- * The paper as a podcast, in a tab of the viewer beside its text: a turning
- * wireframe sphere, the line under it that shows how much of the audio has
- * arrived and then how far the voice has got, the sentence being read, the
- * controls, and the paper's sections as chapters to jump to.
+ * The paper as a podcast, in a tab of the viewer beside its text, always on night paper:
+ * a turning wireframe sphere, the sentence being read as a large caption, one row of
+ * controls round the timeline (which shows the audio still to come, then where the voice
+ * is), and the paper's sections as chapters in a drawer.
  */
-export default function ReadAloudListen({ title, byline, queue, timeline, prepared, paragraph, position, playing, speed, timings, live, onSpeed, onPlayPause, onSeek, onDownload }: {
+export default function ReadAloudListen({ title, queue, timeline, prepared, paragraph, position, playing, speed, timings, live, onSpeed, onPlayPause, onSeek, onDownload }: {
   title: string;
-  /** Who wrote it, under the title, as a show's name sits under an episode's. */
-  byline: string;
   queue: readonly SpokenPassage[];
   timeline: ReadAloudTimeline;
   prepared: { ready: number; total: number; failed: boolean };
@@ -52,6 +50,8 @@ export default function ReadAloudListen({ title, byline, queue, timeline, prepar
   const [target, setTarget] = useState<number | null>(null);
   const shown = target ?? position;
   const chapter = chapterAt(timeline, shown);
+  const [chaptersOpen, setChaptersOpen] = useState(false);
+  const drawerId = useId();
 
   const item = paragraph === null ? null : queue[paragraph] ?? null;
   const starts = useMemo(() => {
@@ -78,10 +78,10 @@ export default function ReadAloudListen({ title, byline, queue, timeline, prepar
     <section className="rd-podcast" aria-labelledby="rd-podcast-title">
       <div className="rd-podcast-cover"><ReadAloudSphere ready={!preparing} playing={playing} /></div>
 
-      <div className="rd-podcast-head">
-        <h2 id="rd-podcast-title" className="rd-podcast-title">{title}</h2>
-        {byline && <p className="rd-podcast-byline">{byline}</p>}
-      </div>
+      <h2 id="rd-podcast-title" className="rd-podcast-title">
+        {title}
+        {!preparing && <span>{` · ${[chapter.number, chapter.title].filter(Boolean).join(' ')}`}</span>}
+      </h2>
 
       <p className="rd-podcast-text" lang="en">
         {preparing
@@ -91,34 +91,41 @@ export default function ReadAloudListen({ title, byline, queue, timeline, prepar
           ))}
       </p>
 
-      <ReadAloudTrack timeline={timeline} prepared={prepared} position={position} target={target} onTarget={setTarget} onSeek={onSeek} />
+      {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={position} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
+        <div className="rd-podcast-dock">
+          <ReadAloudTransport position={position} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
+          <span className="rd-listen-time">{clock(shown)}</span>
+          <ReadAloudTrack timeline={timeline} prepared={prepared} position={position} target={target} onTarget={setTarget} onSeek={onSeek} />
+          <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
+          <SpeedButton speed={speed} onSpeed={onSpeed} />
+        </div>
+      )}
+
       {!preparing && (
-        <>
-          <div className="rd-podcast-times">
-            <span className="rd-listen-time">{clock(shown)}</span>
-            <span className="rd-listen-chapter-now">{[chapter.number, chapter.title].filter(Boolean).join(' ')}</span>
-            <span className="rd-listen-time">−{clock((timeline.duration - shown) / speed)}</span>
-          </div>
-          <div className="rd-podcast-controls">
-            <SpeedButton speed={speed} onSpeed={onSpeed} />
-            <ReadAloudTransport position={position} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onDownload}
-              disabled={unsaved}
-              focusableWhenDisabled
-              aria-label="Download the audio"
-              title={unsaved ? 'The audio cannot be saved: some paragraphs do not have PaperTok’s voice.' : 'Download the audio'}
-            >
-              <DownloadSimple size={18} aria-hidden="true" />
+        <div className="rd-podcast-tools">
+          {timeline.chapters.length > 1 && (
+            <Button variant="outline" size="sm" className="rd-podcast-chip" aria-expanded={chaptersOpen} aria-controls={drawerId} onClick={() => setChaptersOpen(open => !open)}>
+              Chapters
             </Button>
-          </div>
-        </>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="rd-podcast-chip"
+            onClick={onDownload}
+            disabled={unsaved}
+            focusableWhenDisabled
+            title={unsaved ? 'The audio cannot be saved: some paragraphs do not have PaperTok’s voice.' : 'Download the audio'}
+          >
+            <DownloadSimple size={16} aria-hidden="true" />
+            Download
+          </Button>
+        </div>
       )}
 
       {timeline.chapters.length > 1 && (
-        <nav className="rd-podcast-chapters" aria-label="Chapters">
+        <nav id={drawerId} className="rd-podcast-chapters" aria-label="Chapters" data-open={chaptersOpen || undefined} inert={!chaptersOpen}>
+          <p className="rd-podcast-chapters-title" aria-hidden="true">Chapters</p>
           <ol>
             {timeline.chapters.map(part => (
               <li key={part.start}>
@@ -126,7 +133,7 @@ export default function ReadAloudListen({ title, byline, queue, timeline, prepar
                   type="button"
                   disabled={preparing}
                   aria-current={(!preparing && part.start === chapter.start) || undefined}
-                  onClick={() => onSeek(part.start)}
+                  onClick={() => { onSeek(part.start); setChaptersOpen(false); }}
                   aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, ${clock(part.end - part.start)}`}
                 >
                   <span className="rd-podcast-chapter-number">{part.number}</span>
