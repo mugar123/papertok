@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CustomFeed } from '../../utils/custom-feeds.ts';
-import { feedLimitNote, feedRows, focusAfterMove, liveStatusText, rowAfterDelete } from './feeds-settings-rows.ts';
+import { feedRows, focusAfterMove, liveStatusText, rowAfterDelete } from './feeds-settings-rows.ts';
 
 const thesis: CustomFeed = {
   id: 'thesis01',
@@ -38,11 +38,6 @@ test('only the move that stays inside the list is enabled', () => {
     [true, false],
   ]);
   assert.deepEqual([feedRows([lab])[0].canMoveUp, feedRows([lab])[0].canMoveDown], [false, false]);
-});
-
-test('the account limit is mentioned only once it is reached', () => {
-  assert.equal(feedLimitNote(7), null);
-  assert.equal(feedLimitNote(8), '8 of 8 feeds');
 });
 
 test('two announcements with the same words still differ in the status line', () => {

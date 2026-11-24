@@ -58,8 +58,3 @@ test('a custom feed this account\'s list does not name is titled "Your feed", so
   assert.equal(routeTitle('/feeds/abcd1234', []), 'Your feed | PaperTok')
   assert.equal(routeTitle('/feeds/unknown', [{ id: 'abcd1234', name: 'Thesis' }]), 'Your feed | PaperTok')
 })
-
-test('the page that manages the feeds has a name of its own', () => {
-  assert.equal(routeLabel('/settings/feeds'), 'Feeds settings')
-  assert.equal(routeTitle('/settings/feeds'), 'Feeds settings | PaperTok')
-})

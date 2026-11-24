@@ -24,7 +24,6 @@ const LABELS: Record<string, string> = {
   '/settings/notifications': 'Notifications · Settings',
   '/settings/privacy': 'Privacy · Settings',
   '/settings/following': 'Following settings',
-  '/settings/feeds': 'Feeds settings',
   '/login': 'Sign in',
   '/onboarding': 'Welcome',
   '/institution/verify': 'Verify your university email',

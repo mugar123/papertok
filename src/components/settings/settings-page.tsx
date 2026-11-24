@@ -37,6 +37,7 @@ import EditInterestsModal from './edit-interests-modal.tsx';
 import SummaryHistory from './summary-history.tsx';
 import { LEVEL_DETAILS } from './reading-levels.ts';
 import { FollowingSheet } from './following-settings-page.tsx';
+import FeedsDialog from './feeds-dialog.tsx';
 import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
@@ -531,6 +532,7 @@ function DiscoveryPage() {
   const { feeds: customFeeds, status: feedsStatus } = useCustomFeeds();
   const [isInterestsOpen, setIsInterestsOpen] = useState(false);
   const [isFollowingOpen, setIsFollowingOpen] = useState(false);
+  const [isFeedsOpen, setIsFeedsOpen] = useState(false);
   const isPhone = useIsPhone();
   const selectedInterestCount = Array.isArray(userPreferences) ? userPreferences.length : 0;
 
@@ -568,7 +570,7 @@ function DiscoveryPage() {
               </h3>
               <p>{copy.feedsDescription}</p>
             </div>
-            <RowAction Icon={PencilSimple} label={copy.editFeeds} text={copy.edit} onClick={() => { void navigate('/settings/feeds'); }} />
+            <RowAction Icon={PencilSimple} label={copy.editFeeds} text={copy.edit} onClick={() => setIsFeedsOpen(true)} />
           </div>
 
           <div className="settings-row settings-row-side">
@@ -589,6 +591,7 @@ function DiscoveryPage() {
         </div>
       </section>
       <EditInterestsModal isOpen={isInterestsOpen} onClose={() => setIsInterestsOpen(false)} />
+      <FeedsDialog open={isFeedsOpen} onOpenChange={setIsFeedsOpen} />
       {/* On a phone the follows open in a sheet, like the interests above;
           wider than that they have their own page. */}
       {isPhone && <FollowingSheet open={isFollowingOpen} onOpenChange={setIsFollowingOpen} />}
