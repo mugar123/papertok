@@ -215,7 +215,10 @@ export function wordStarts(text: string, timings: CharacterTimings | null) {
  */
 function spokenLength(word: string) {
   const bare = word.replace(/[.,;:!?)\]"'’”]+$/, '').replace(/^[("'‘“[]+/, '');
-  const spelled = bare.length <= 1 || /[\d=+^_/<>|∑∫√≤≥±×·−∈∞]|[\u0370-\u03ff]/.test(bare) || /^[A-Z][A-Za-z]{0,3}$/.test(bare) && bare !== bare[0] + bare.slice(1).toLowerCase();
+  const symbolic = /[\d=+^_/<>|∑∫√≤≥±×·−∈∞]|[\u0370-\u03ff]/.test(bare);
+  const capitalized = bare[0] + bare.slice(1).toLowerCase();
+  const shortName = /^[A-Z][A-Za-z]{0,3}$/.test(bare) && bare !== capitalized;
+  const spelled = bare.length <= 1 || symbolic || shortName;
   const pause = /[.!?:;]["'’”)]*$/.test(word) ? 4 : /,["'’”)]*$/.test(word) ? 2 : 0;
   return (spelled ? Math.max(1, bare.length) * 3 : bare.length) + 1 + pause;
 }

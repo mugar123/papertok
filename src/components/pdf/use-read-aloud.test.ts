@@ -506,7 +506,7 @@ test('a paragraph heard before plays from the browser\'s cache when the paper is
     delete: async (address: string) => kept.delete(address),
     keys: async () => [...kept.keys()].map(address => new Request(address)),
   };
-  Object.defineProperty(globalThis, 'caches', { configurable: true, value: { open: async () => cache } });
+  Object.defineProperty(globalThis, 'caches', { configurable: true, value: { open: async () => cache, keys: async () => [], delete: async () => false } });
   const views: Array<() => void> = [];
   try {
     firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };

@@ -273,8 +273,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // A tab that is no longer offered (the text turned to the PDF, say) falls back to the paper.
   const shown = tabs.includes(tab.view) ? tab.view : 'paper';
   const summaryOpen = shown === 'summary';
-  // Each arrival swaps between two equal animations, so the next one plays again.
-  const arrival = tab.turn === 0 ? undefined : tab.turn % 2 ? 'odd' : 'even';
+  // A tab no longer offered once the paper's text is in (the text turned to the PDF) is left for the paper.
+  if (fullText !== undefined && shown !== tab.view) setTab({ view: 'paper', from: 0, turn: tab.turn });
 
   return (
     <Dialog
@@ -292,8 +292,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
         showClose={false}
         closeLabel={'Close paper'}
         aria-label={'Paper viewer'}
+        style={{ '--view-from': `${tab.from * 16}px` }}
       >
-        <div className="pdf-viewer" style={{ '--view-from': `${tab.from * 16}px` }}>
+        <div className="pdf-viewer">
           {/* Top bar */}
           <div className="pdf-topbar" ref={setTopbar}>
             <DialogClose render={<Button variant="ghost" size="icon-sm" />} aria-label={'Close paper'} title={'Close'}>
@@ -302,7 +303,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
 
             {/* The bar names the paper once the article's own title has scrolled
                 away, rising in from below; it leaves the way it came. Where the paper
-                has an AI summary, the bar holds the two tabs instead. */}
+                has other tabs (an AI summary, Listen), the bar holds them instead. */}
             {tabs.length > 1 ? <ReadingTabs current={shown} views={tabs} onChange={choose} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
@@ -320,7 +321,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
           </div>
 
           {/* Under the AI summary tab the paper stays mounted, so its place waits, but out of reach. */}
-          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} data-arrive={shown === 'paper' ? arrival : undefined} inert={summaryOpen}>
+          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} data-arrive={(shown === 'paper' && tab.turn > 0) || undefined} inert={summaryOpen}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
                 <p>The text of this paper could not be loaded right now.</p>

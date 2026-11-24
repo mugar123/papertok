@@ -71,8 +71,8 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
   const [voiceAt, setVoiceAt] = useState<number | null>(null);
   const reported = playing && voiceAt !== null ? voiceAt : position;
   // After a jump the voice takes a moment to get there (its clip loading, and Safari placing a clip
-  // only once its metadata is in) and meanwhile reports where it was, which pulled the line back
-  // and forth. The line holds the place asked for until the voice is near it, 4 seconds at most.
+  // only once its metadata is in) and meanwhile reports where it was. The line holds the place asked
+  // for until the voice is near it (LANDED_SECONDS), or for LANDING_MS at most.
   const [landing, setLanding] = useState<number | null>(null);
   if (landing !== null && Math.abs(reported - landing) < LANDED_SECONDS) setLanding(null);
   useEffect(() => {

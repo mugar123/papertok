@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowSquareOut, CircleNotch, DownloadSimple, Headphones, NotePencil } from '@phosphor-icons/react';
 import { toast } from 'sonner';
@@ -121,6 +121,8 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     return () => controller.abort();
   }, [podcast, startupDone, uid, voiceRead]);
   const unsaved = readAloud.prepared.ready < readAloud.prepared.total;
+  const downloadNoteId = useId();
+  const downloadNote = `${readAloud.prepared.ready} of ${readAloud.prepared.total} parts ready. The download needs PaperTok’s voice for all of them.`;
   // Every passage has stored audio: the Worker checks it and the feed shows the paper as voiced.
   const paperId = paper?.id;
   const voiced = Boolean(paperId) && readAloud.prepared.total > 0 && !unsaved;
@@ -147,19 +149,19 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
             <UsesCount left={voiceLeft.papersLeft} limit={voiceLeft.dailyPapers} what="new papers with PaperTok’s voice" />
           </span>
         )}
-        {(
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={downloadAudio}
-            disabled={unsaved}
-            focusableWhenDisabled
-            aria-label="Download the audio"
-            title={unsaved ? `${readAloud.prepared.ready} of ${readAloud.prepared.total} parts ready. The download needs PaperTok’s voice for all of them.` : 'Download the audio'}
-          >
-            <DownloadSimple size={18} aria-hidden="true" />
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={downloadAudio}
+          disabled={unsaved}
+          focusableWhenDisabled
+          aria-label="Download the audio"
+          aria-describedby={unsaved ? downloadNoteId : undefined}
+          title={unsaved ? downloadNote : 'Download the audio'}
+        >
+          <DownloadSimple size={18} aria-hidden="true" />
+        </Button>
+        {unsaved && <span id={downloadNoteId} className="visually-hidden">{downloadNote}</span>}
       </div>,
       topbar,
     )}

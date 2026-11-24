@@ -1,4 +1,4 @@
-/* The way into the podcast tab: a round button in the top bar's last corner, the podcast's download beside it. */
+/* In the bar's last corner while the Listen tab is open: the day's voice papers and the podcast's download. */
 .rd-listen-corner { grid-column: 3; justify-self: end; display: flex; gap: var(--space-1); align-items: center; }
 
 /* The podcast tab: over the paper's text in the viewer's stage, in the app's theme. The particles are

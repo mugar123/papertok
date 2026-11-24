@@ -222,14 +222,13 @@
    goes at once and the one arriving is opaque from the start, so two texts never show through
    each other; only its contents slide in and fade up. */
 @keyframes pdf-view-in { from { opacity: 0; translate: var(--view-from, 0) 0; } }
-@keyframes pdf-view-in-again { from { opacity: 0; translate: var(--view-from, 0) 0; } }
 .pdf-summary { position: absolute; inset: var(--pdf-topbar-h, 60px) 0 0; z-index: 5; background: var(--bg-primary); }
+/* The paper's own reading surfaces, not the dock or the notes beside them, which place themselves. */
 .pdf-summary > *,
-.pdf-stage[data-arrive='odd'] > :not(.rd-podcast),
+.pdf-stage[data-arrive] > :is(.ft-scroll, iframe, .pdf-pages, .pdf-loading, .pdf-fallback, .pdf-text-failed),
 .rd-podcast > :not(.rd-podcast-drawer) { animation: pdf-view-in 220ms var(--ease-out) backwards; }
-.pdf-stage[data-arrive='even'] > :not(.rd-podcast) { animation: pdf-view-in-again 220ms var(--ease-out) backwards; }
 @media (prefers-reduced-motion: reduce) {
   .pdf-summary > *,
-  .pdf-stage[data-arrive] > :not(.rd-podcast),
+  .pdf-stage[data-arrive] > :is(.ft-scroll, iframe, .pdf-pages, .pdf-loading, .pdf-fallback, .pdf-text-failed),
   .rd-podcast > :not(.rd-podcast-drawer) { animation: fadeIn 120ms linear backwards; }
 }
