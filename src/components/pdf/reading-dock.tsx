@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowSquareOut, CircleNotch, DownloadSimple, NotePencil } from '@phosphor-icons/react';
+import { ArrowSquareOut, CircleNotch, DownloadSimple, Headphones, NotePencil } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -17,6 +17,8 @@ import { useReadAloud } from './use-read-aloud.ts';
 import { useZoteroAction } from './use-zotero-action.ts';
 import { ZoteroMark } from './zotero-mark.tsx';
 import ReadAloudListen from './read-aloud-listen.tsx';
+import UsesCount from '../reader/uses-count.tsx';
+import '../ui/tag.css';
 
 const NO_PASSAGES: SpokenPassage[] = [];
 const NO_CHAPTERS: ReadAloudChapter[] = [];
@@ -136,7 +138,15 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   return <>
     {podcast && topbar && createPortal(
       <div className="rd-listen-corner">
-        {/* The podcast's download, in the bar's corner while the Listen tab is open; it waits for every paragraph's audio. */}
+        {/* The day's new papers with PaperTok's voice, as the reader shows its AI uses, then the
+            podcast's download, in the bar's corner while the Listen tab is open; the download waits
+            for every paragraph's audio. */}
+        {voiceLeft && (
+          <span className="rd-tag rd-tag--ai rd-uses" role="status">
+            <Headphones size={12} aria-hidden="true" />
+            <UsesCount left={voiceLeft.papersLeft} limit={voiceLeft.dailyPapers} what="new papers with PaperTok’s voice" />
+          </span>
+        )}
         {(
           <Button
             variant="ghost"
@@ -167,7 +177,6 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       title={paper?.title ?? title}
       queue={spoken.queue}
       player={readAloud}
-      voiceLeft={voiceLeft}
       onPlayPause={playPause}
     />}
   </>;
