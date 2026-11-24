@@ -273,7 +273,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
         closeLabel={'Close paper'}
         aria-label={'Paper viewer'}
       >
-        <div className="pdf-viewer">
+        {/* Under the Plain words tab the paper stays mounted, so its place and audio wait, but out of reach. */}
+        <div className="pdf-viewer" inert={plain}>
           {/* Top bar */}
           <div className="pdf-topbar">
             <DialogClose render={<Button variant="ghost" size="icon-sm" />} aria-label={'Close paper'} title={'Close'}>
@@ -451,7 +452,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
         </div>
         {plain && (
           <Suspense fallback={null}>
-            <PaperReader paper={paper} card={{ paper, menu }} onClose={() => { setPlain(false); onClose(); }} onPaperTab={() => setPlain(false)} />
+            <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onPaperTab={() => setPlain(false)} />
           </Suspense>
         )}
       </DialogContent>

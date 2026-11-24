@@ -13,6 +13,8 @@ interface PaperReaderProps {
   initialLevel?: ReadingLevel;
   /** Opens the paper itself, when the reader is one of two tabs with the paper viewer. */
   onPaperTab?: () => void;
+  /** Drawn inside the paper viewer as its Plain words tab, rather than as a dialog of its own. */
+  embedded?: boolean;
 }
 export type ReaderCopy = typeof COPY.en;
 import { useCallback, useEffect, useEffectEvent, useId, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -385,7 +387,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
   );
 }
 
-export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel, onPaperTab }: PaperReaderProps) {
+export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel, onPaperTab, embedded = false }: PaperReaderProps) {
   const { user, readingPreferences, interestSettings } = useAuth();
   const uid = user?.uid;
   const { trackEvent, consent } = useAnalyticsConsent();
@@ -452,7 +454,8 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   // than on whatever is under it once it is gone, and then hands over to the paper.
   const toPaper = useRef(false);
   const [open, setOpen] = useState(true);
-  const requestClose = useCallback(() => setOpen(false), []);
+  // Inside the viewer there is no dialog of its own to play a leave: closing is the viewer's.
+  const requestClose = useCallback(() => (embedded ? onClose() : setOpen(false)), [embedded, onClose]);
   const readerOpenTracked = useRef(false);
   useEffect(() => {
     if (readerOpenTracked.current) return;
@@ -476,6 +479,11 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   // Where focus lands on open: the way back, as it always was
   // (`data-dialog-initial-focus`, now the popup's `initialFocus`).
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Opened as the viewer's tab, the reader takes the focus a dialog would give its close button.
+  const embeddedRoot = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (embedded) closeButtonRef.current?.focus({ preventScroll: true });
+  }, [embedded]);
   // Where focus goes when "Write it again" takes its own button off the page.
   const titleRef = useRef<HTMLHeadingElement | null>(null);
 
@@ -1161,7 +1169,11 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
     clearAskError();
   }, [askError, clearAskError]);
 
-  return (
+  /* As the viewer's Plain words tab, the reader is a region of the viewer's own dialog, which
+     already owns the focus trap, Escape and the scrim; opened from a card, it is a dialog. */
+  const shell = (body: ReactNode) => (embedded ? (
+    <div ref={embeddedRoot} className="rd rd--embedded" role="region" aria-label={copy.title}>{body}</div>
+  ) : (
     /* A full-screen Base UI Dialog: modal (FeedContainer's scroll guard reads
        the `aria-modal` it sets), with pointer dismissal off because a surface
        that covers the viewport has no outside to press — and the selection
@@ -1183,6 +1195,12 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
         aria-label={copy.title}
         style={{ '--rd-origin': transformOrigin }}
       >
+        {body}
+      </DialogContent>
+    </Dialog>
+  ));
+
+  return shell(<>
           <header className="rd-topbar">
             <Button
               ref={closeButtonRef}
@@ -1197,7 +1215,12 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             {/* The bar names the paper once the document's own title has scrolled
                 away, rising in from below; it leaves the way it came. Opened as the
                 viewer's tab, the bar holds the two tabs instead. */}
-            {onPaperTab ? <ReadingTabs current="plain" onChange={(view) => { if (view !== 'paper') return; toPaper.current = true; requestClose(); }} /> : <AnimatePresence initial={false}>
+            {onPaperTab ? <ReadingTabs current="plain" onChange={(view) => {
+              if (view !== 'paper') return;
+              if (embedded) { onPaperTab(); return; }
+              toPaper.current = true;
+              requestClose();
+            }} /> : <AnimatePresence initial={false}>
               {!titleInView && (
                 <motion.p
                   key="title"
@@ -1551,7 +1574,5 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             onCancel={() => { setFailedNote(null); annotations.dismiss(); }}
           />
         )}
-      </DialogContent>
-    </Dialog>
-  );
+  </>);
 }
