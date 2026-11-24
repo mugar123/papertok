@@ -489,19 +489,17 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   each button and gesture does, in the Settings layout. It is a public page: a
   visitor reaches it from the Help icon in the welcome's bar, a signed-in reader
   from the last entry of the Settings menu. A signed-in reader keeps that menu,
-  rail and phone switcher alike, with the page's contents listed under Help on
-  the rail; a visitor gets the contents alone in the rail's column. The
-  contents mark the section being read with an ink rule and darker text. Under
-  901px, where the rail is hidden, the overview's row of section links stands
-  in for them. It is set in sections of ruled rows. A row with a
-  glyph puts it in a 40px tile beside the control's name, which is the row's
+  rail and phone switcher alike; a visitor gets the page alone, across the
+  settings column. It has no list of its sections: it is read from top to
+  bottom.
+  It is set in sections of ruled rows. A row with a glyph puts it in a 40px
+  tile beside the control's name, which is the row's
   heading, so the tile is decoration. A row with no glyph (text controls,
   gestures) takes the whole width. Under each sentence two mono stamps say what
   the control spends (amber for an AI use or a public-list change, neutral for
   nothing) and whether it needs an account. A section whose controls are all
   behind sign-in says so once under its intro instead. The page opens with a
-  legend of the stamps. A link to a section, in the contents or the row,
-  scrolls to that section's heading and moves focus to it.
+  legend of the stamps.
 
 ### Inputs / Fields
 - **Style:** a hairline frame on paper, near-square.
