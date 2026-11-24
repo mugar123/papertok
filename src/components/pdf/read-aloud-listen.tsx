@@ -97,9 +97,11 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
     <section className="rd-podcast" aria-labelledby="rd-podcast-title">
       <div className="rd-podcast-cover"><ReadAloudSphere ready={!preparing} playing={playing} /></div>
 
+      {/* The paper, then the section the voice is in: one line on a wide screen; on a phone the
+          paper is the small label and the section the large title, as a player names a song. */}
       <h2 id="rd-podcast-title" className="rd-podcast-title">
-        {title}
-        {!preparing && <span>{` · ${[chapter.number, chapter.title].filter(Boolean).join(' ')}`}</span>}
+        <span className="rd-podcast-paper">{title}</span>
+        {!preparing && <span className="rd-podcast-section">{[chapter.number, chapter.title].filter(Boolean).join(' ')}</span>}
       </h2>
 
       <div ref={caption} className="rd-podcast-caption">
