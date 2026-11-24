@@ -5,7 +5,7 @@ import { createElement } from 'react';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { loadAuthProvider } from '../../tests/dom/app-modules.ts';
 import type { StubUser } from '../../tests/dom/firebase-stub.ts';
-import { preferredTranslationLanguage, rememberTranslationLanguage } from '../utils/paper-translation.ts';
+import { getTranslationLanguageStorageKey } from '../utils/paper-translation.ts';
 
 test('the auth provider clears only the outgoing account translation language on sign-out and switch', async t => {
   const app = await loadAuthProvider();
@@ -37,17 +37,20 @@ test('the auth provider clears only the outgoing account translation language on
     assert.equal(screen.getByRole('status').textContent, user?.uid ?? 'Signed out');
   }
   function saved(uid: string) {
-    return preferredTranslationLanguage(uid, [], localStorage);
+    return localStorage.getItem(getTranslationLanguageStorageKey(uid));
+  }
+  function remember(uid: string, language: string) {
+    localStorage.setItem(getTranslationLanguageStorageKey(uid), language);
   }
 
-  rememberTranslationLanguage(b.uid, 'he', localStorage);
-  rememberTranslationLanguage('reader-c', 'ja', localStorage);
+  remember(b.uid, 'he');
+  remember('reader-c', 'ja');
   for (const next of [null, b]) {
     await changeAccount(a);
-    rememberTranslationLanguage(a.uid, 'es', localStorage);
+    remember(a.uid, 'es');
     assert.equal(saved(a.uid), 'es');
     await changeAccount(next);
-    assert.equal(saved(a.uid), '');
+    assert.equal(saved(a.uid), null);
     assert.equal(saved(b.uid), 'he');
     assert.equal(saved('reader-c'), 'ja');
   }

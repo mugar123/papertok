@@ -65,10 +65,6 @@ export function loadFullPaperTranslationHook() {
   return loadAppModule<typeof import('../../src/hooks/use-full-paper-translation.ts')>('/src/hooks/use-full-paper-translation.ts');
 }
 
-export function loadPaperTranslationService() {
-  return loadAppModule<typeof import('../../src/services/paper-translation-service.ts')>('/src/services/paper-translation-service.ts');
-}
-
 interface AuthProviderModule {
   AuthProvider: (props: PropsWithChildren) => ReactNode;
   useAuth: () => { user: { uid: string } | null; loading: boolean };

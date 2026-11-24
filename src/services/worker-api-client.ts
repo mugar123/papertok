@@ -137,8 +137,8 @@ async function tokenWithSignal(getToken: () => Promise<string>, signal: AbortSig
  * `timeoutMs` is the request's own budget. It starts once the ID token is in
  * hand: a token refresh can take seconds, and a deadline armed before it spent
  * the feed's 3.5 s on the refresh (ENG-116). The deadline covers the response
- * body too (request-deadline.ts). Callers that budget the token wait too opt in
- * with `abortTokenWait` and supply a signal for the whole operation.
+ * body too (request-deadline.ts). A caller that also budgets the token wait
+ * passes `abortTokenWait` and a signal for the whole operation.
  */
 export async function authenticatedWorkerFetch(
   input: string | URL,

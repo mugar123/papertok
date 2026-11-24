@@ -15,12 +15,13 @@ test('keeps the original selected across more chunks and drops late results on a
     else Reflect.deleteProperty(globalThis, 'DOMParser');
   });
   const abstract = 'Abstract source '.padEnd(5_995, 'a');
-  const doc = parseArxivHtml(
+  const parsed = parseArxivHtml(
     `<article class="ltx_document"><div class="ltx_abstract"><p>${abstract}</p></div>`
       + '<p class="ltx_p">Body &amp; source <span class="ltx_font_typewriter">pip install example</span></p></article>',
     'https://arxiv.org/html/1706.03762',
   );
-  assert.ok(doc);
+  assert.ok(parsed);
+  const doc = parsed;
   const { entry: { useFullPaperTranslation: useTranslation }, firebase, close } = await loadFullPaperTranslationHook();
   t.after(async () => {
     cleanup();

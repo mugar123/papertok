@@ -279,6 +279,21 @@ test('full-paper capabilities do not call the provider and submission requires a
   assert.equal(identity.lookups, 0);
 });
 
+test('enabling full-paper translation does not restore the retired abstract route', async t => {
+  const { env, calls, quotas, identity } = setUp(t);
+  enableFullPaper(env);
+  const response = await worker.fetch(new Request('https://api.papertok.app/ai/translate', {
+    method: 'POST',
+    headers: { origin: 'https://papertok.app', authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify({ arxivId: '1706.03762', language: 'es' }),
+  }), env);
+  assert.equal(response.status, 405);
+  assert.deepEqual(await response.json(), { error: 'Method not allowed' });
+  assert.equal(identity.lookups, 0);
+  assert.deepEqual(quotas, []);
+  assert.deepEqual(calls, []);
+});
+
 test('the real ledger limits cached source checks per account before any paid job', async t => {
   const { env, arxivRequests, calls } = setUp(t);
   enableFullPaper(env);
