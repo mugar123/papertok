@@ -32,13 +32,9 @@
   transform-origin: var(--rd-origin, 50% 62%);
 }
 
-.rd-doc-byline .list-row-authors-list {
-  align-self: stretch;
-}
-
-.rd-doc-byline .list-row-authors-list[data-open] {
-  margin-top: var(--space-3);
-}
+.rd-doc-byline :is(.ft-authors, .ft-affiliations) { justify-content: flex-start; }
+.rd-doc-byline .ft-authors { gap: var(--space-1) var(--space-4); font-size: 1rem; }
+.rd-doc-byline .ft-affiliations { font-size: 0.875rem; }
 
 .rd-doc-tags {
   display: flex;

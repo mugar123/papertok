@@ -70,7 +70,8 @@ import { OutlineList, OutlineRail } from '../pdf/full-text-outline.tsx';
 import { PassageHandles } from '../pdf/passage-handles.tsx';
 import { overlapping, quoteOffsets, replacingHighlights } from '../pdf/passage-range.ts';
 import { useOutlineActive } from '../pdf/use-outline.ts';
-import { ListRowAuthors } from '../lists/list-row.tsx';
+import { PaperAuthors } from '../pdf/paper-byline.tsx';
+import { acceptedConferenceText } from '../../utils/paper-status.ts';
 import HighlightedScientificText from './highlighted-scientific-text.tsx';
 import UsesCount from './uses-count.tsx';
 import ThinkingDots from './thinking-dots.tsx';
@@ -476,6 +477,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   const paperId = paper?.id || paper?.doi || paper?.arxivId || '';
   // The way to a journal's Follow (ENG-123): its name opens its Explorer page.
   const journal = journalExplorerLink(paper);
+  const acceptedAt = acceptedConferenceText(paper);
 
   const load = useCallback(async (targetLevel: string, {
     force = false,
@@ -1216,7 +1218,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
-            {(usesQuota || sections.length > 0 || paper?.year || journal) && (
+            {(usesQuota || sections.length > 0 || paper?.year || journal || acceptedAt) && (
               <div className="rd-doc-tags">
                 {usesQuota && (
                   <span className="rd-tag rd-tag--ai rd-uses" role="status">
@@ -1231,6 +1233,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
                   </InfoTag>
                 )}
                 {paper?.year && <span className="rd-tag">{paper.year}</span>}
+                {acceptedAt && <span className="rd-tag">{acceptedAt}</span>}
                 {journal && (
                   <Link
                     to={journal.path}
@@ -1258,7 +1261,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             {/* The rule under the byline closes the head even with no authors to
                 list, as when a summary reopens from the history. */}
             <div className="rd-doc-byline">
-              {(paper?.authors?.length ?? 0) > 0 && <ListRowAuthors paper={paper} />}
+              {paper && <PaperAuthors paper={paper} />}
             </div>
 
             {/* Pointed at by every paragraph's `aria-describedby` below,

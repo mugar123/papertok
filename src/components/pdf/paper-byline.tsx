@@ -14,6 +14,7 @@ import { PreviewCard, PreviewCardContent, PreviewCardTrigger } from '../ui/previ
 import ScientificText from '../scientific-text.ts';
 import { NewTabHint } from './new-tab-hint.tsx';
 import { compactCount } from '../../utils/format-count.ts';
+import './paper-byline.css';
 
 type Profile = { author: OpenAlexAuthor | null; wiki: WikiInfo | null };
 
@@ -94,7 +95,7 @@ function loadProfile(id: string): Promise<Profile | null> {
 // profile requests; the rest still load on hover.
 const PRELOAD = 12;
 
-function AuthorName({ author, paper, preload }: { author: PaperAuthor; paper: Paper; preload: boolean }) {
+function AuthorName({ author, paper, preload }: { author: PaperAuthor; paper: Partial<Paper>; preload: boolean }) {
   const id = openAlexAuthorId(author);
   const path = authorExplorerPath(author, paper);
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
@@ -125,13 +126,13 @@ function AuthorName({ author, paper, preload }: { author: PaperAuthor; paper: Pa
   );
 }
 
-export function PaperByline({ paper }: { paper: Paper }) {
-  const authors = paper.authors.map(author => (typeof author === 'string' ? { name: author } : author)).filter(author => author.name);
+/** The authors, each opening a card with their photo and work, and the places they list. */
+export function PaperAuthors({ paper }: { paper: Partial<Paper> }) {
+  const authors = (paper.authors ?? []).map(author => (typeof author === 'string' ? { name: author } : author)).filter(author => author.name);
   const affiliations = [...new Set(authors.map(author => author.affiliation?.trim()).filter((place): place is string => Boolean(place)))];
   const numbered = affiliations.length > 1;
   return (
-    <header className="ft-head">
-      <h2 className="ft-title"><ScientificText>{paper.title}</ScientificText></h2>
+    <>
       {authors.length > 0 && (
         <p className="ft-authors">
           {authors.map((author, index) => {
@@ -152,6 +153,15 @@ export function PaperByline({ paper }: { paper: Paper }) {
           ))}
         </p>
       )}
+    </>
+  );
+}
+
+export function PaperByline({ paper }: { paper: Paper }) {
+  return (
+    <header className="ft-head">
+      <h2 className="ft-title"><ScientificText>{paper.title}</ScientificText></h2>
+      <PaperAuthors paper={paper} />
     </header>
   );
 }
