@@ -226,3 +226,13 @@
 @media (max-width: 600px) {
   .rd-podcast-player > .rd-podcast-dock { margin-bottom: var(--space-2); }
 }
+
+/* On a phone the sphere, the section and the caption sit in the middle of the room above the bar
+   rather than leaving a gap under them, and the bar's buttons take a thumb's 44px. */
+@media (max-width: 600px) {
+  .rd-podcast-cover { margin-top: auto; }
+  .rd-podcast-caption { margin-bottom: auto; padding-bottom: var(--space-6); }
+  .rd-podcast-player { margin-top: 0; }
+  .rd-podcast-buttons :is(.rd-listen-skip, .rd-listen-speed),
+  .rd-podcast-buttons > button:last-child { min-width: 44px; min-height: 44px; }
+}
