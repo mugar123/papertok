@@ -659,7 +659,12 @@ so changing it does not invalidate styles across the paper. Summary styles load
 with the viewer, before a large article is laid out. With reduced motion, the
 podcast visual computes each static shape directly instead of simulating its
 arrival frames. Cards have no AI summary button: the
-viewer's tab is the way in. Switching
+viewer’s tab is the way in. The summary module loads during browser idle time after
+full text resolves; this does not mount the summary or request AI generation.
+Display equations with source MathML or an image retain that visual until they
+enter the viewport, then receive their typeset rendering. TeX-only equations
+render eagerly so their printed form is always available. Inline formulas also
+render eagerly because their text participates in saved annotation anchors. Switching
 to Paper keeps the dialog and its history entry mounted; it does not reveal the feed. The Listen tab
 opens the podcast (`pdf/read-aloud-listen.tsx`), with its download in the bar's corner, which reads the paper's text aloud:
 the paper's title over a particle visual, the sentence being read as a caption,

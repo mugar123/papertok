@@ -144,3 +144,12 @@ export async function loadPaperViewer() {
   ]>('/src/components/pdf/pdf-viewer.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');
   return { Viewer: viewer.default, ...contexts, firebase, close };
 }
+
+export async function loadFullTextArticle() {
+  const { modules: [article, contexts, katex], close } = await loadModules<[
+    { default: Component<{ doc: import('../../src/utils/full-text.ts').FullText; paper: Paper }> },
+    Record<'LanguageContext', Context<unknown>>,
+    { loadKatex: () => Promise<unknown> },
+  ]>('/src/components/pdf/full-text-article.tsx', '/src/context/contexts.ts', '/src/utils/katex-loader.ts');
+  return { Article: article.default, ...contexts, ...katex, close };
+}

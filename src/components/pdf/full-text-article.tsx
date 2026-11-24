@@ -62,12 +62,44 @@ const subscribeMath = (listener: () => void) => {
   return () => { mathListeners.delete(listener); };
 };
 
+const waitingFormulas = new Map<Element, () => void>();
+let formulaObserver: IntersectionObserver | null = null;
+
+function observeFormula(element: Element, reveal: () => void) {
+  formulaObserver ??= new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      waitingFormulas.get(entry.target)?.();
+      waitingFormulas.delete(entry.target);
+      formulaObserver?.unobserve(entry.target);
+    }
+  }, { rootMargin: '600px 0px' });
+  waitingFormulas.set(element, reveal);
+  formulaObserver.observe(element);
+  return () => {
+    waitingFormulas.delete(element);
+    formulaObserver?.unobserve(element);
+    if (waitingFormulas.size === 0) {
+      formulaObserver?.disconnect();
+      formulaObserver = null;
+    }
+  };
+}
+
 function Formula({ mathml, tex, image, display }: { mathml?: string; tex?: string; image?: string; display: boolean }) {
   useSyncExternalStore(subscribeMath, mathReady);
-  const html = formulaHtml(tex, display) ?? mathml;
+  const element = useRef<HTMLElement | null>(null);
+  const [seen, setSeen] = useState(false);
+  // Saved prose annotations depend on the typeset text of inline formulas.
+  const visible = !display || !(mathml || image) || seen;
+  useEffect(() => {
+    if (!tex || !element.current || visible) return;
+    return observeFormula(element.current, () => setSeen(true));
+  }, [tex, visible]);
+  const html = (visible ? formulaHtml(tex, display) : null) ?? mathml;
   // A formula is not words for a browser's translator to rewrite.
-  if (html) return <span className="ft-math" translate="no" dangerouslySetInnerHTML={{ __html: html }} />;
-  if (image) return <img className="ft-formula-image" src={image} alt={tex ?? 'Formula'} loading="lazy" referrerPolicy="no-referrer" />;
+  if (html) return <span ref={node => { element.current = node; }} className="ft-math" translate="no" dangerouslySetInnerHTML={{ __html: html }} />;
+  if (image) return <img ref={node => { element.current = node; }} className="ft-formula-image" src={image} alt={tex ?? 'Formula'} loading="lazy" referrerPolicy="no-referrer" />;
   return tex ? <code className="ft-tex" translate="no">{tex}</code> : null;
 }
 

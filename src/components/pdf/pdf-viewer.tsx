@@ -38,8 +38,9 @@ import { fullTextListen } from './read-aloud.ts';
 import { ReadingTabs, type ReadingView } from './reading-tabs.tsx';
 import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
 import { passageQuote } from '../../services/user-highlight-service.ts';
+import { connectionIsFrugal, lazyWithPreload } from '../../utils/lazy-preload.ts';
 
-const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
+const PaperReader = lazyWithPreload(() => import('../reader/paper-reader.tsx'));
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
@@ -279,6 +280,16 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, clos
   // A tab that is no longer offered (the text turned to the PDF, say) falls back to the paper.
   const shown = tabs.includes(tab.view) ? tab.view : 'paper';
   const summaryOpen = shown === 'summary';
+  useEffect(() => {
+    if (!canSummarize || fullText === undefined || connectionIsFrugal()) return;
+    const prepare = () => { void PaperReader.preload().catch(() => undefined); };
+    if ('requestIdleCallback' in window) {
+      const idle = window.requestIdleCallback(prepare);
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timer = setTimeout(prepare, 1000);
+    return () => clearTimeout(timer);
+  }, [canSummarize, fullText]);
   // A tab not offered once the paper's text is in (the text turned to the PDF, or Listen asked for
   // by a link without an account) leaves its route for the paper's.
   const leaveUnoffered = useEffectEvent(() => onViewChange('paper'));
