@@ -130,8 +130,11 @@ test('the reader offers only paper translation and describes the Anthropic trans
   });
   const onTranslate = t.mock.fn();
   const onCancel = t.mock.fn();
+  const languageKey = 'papertok:paper-translation-language:reader-one';
+  localStorage.setItem(languageKey, 'fr');
+  t.after(() => localStorage.removeItem(languageKey));
   const props = {
-    signedIn: true,
+    uid: 'reader-one',
     pending: false,
     message: '',
     onTranslate,
@@ -142,7 +145,8 @@ test('the reader offers only paper translation and describes the Anthropic trans
   const disclosure = summary.closest('details');
   assert.ok(disclosure);
   disclosure.open = true;
-  const language = screen.getByRole('combobox', { name: 'Translation language' });
+  const language = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Translation language' });
+  assert.equal(language.value, 'fr');
   assert.equal(screen.getAllByRole('combobox').length, 1);
   assert.equal(screen.queryByRole('option', { name: 'Title and abstract' }), null);
   assert.equal(screen.queryByRole('button', { name: 'Translate abstract' }), null);
@@ -158,6 +162,7 @@ test('the reader offers only paper translation and describes the Anthropic trans
   assert.ok(form);
   fireEvent.submit(form);
   assert.deepEqual(onTranslate.mock.calls.map(call => call.arguments), [['es']]);
+  assert.equal(localStorage.getItem(languageKey), 'fr');
 
   view.rerender(createElement(ReaderTranslationControls, { ...props, pending: true, progress: { completed: 1, total: 2 } }));
   assert.equal(screen.getByRole('progressbar', { name: 'Full-paper translation progress' }).getAttribute('value'), '1');

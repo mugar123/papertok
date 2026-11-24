@@ -101,7 +101,7 @@ type PaperDocument = PaperSelectors & {
 
 type PaperInstruction = PaperNode & { target: string; data: string };
 
-function parseBrowserDocument(source: string, format: 'text/html' | 'application/xml') {
+function parseBrowserDocument(source: string, format: 'text/html' | 'application/xml'): PaperDocument {
   const { DOMParser } = globalThis as typeof globalThis & {
     DOMParser: new () => { parseFromString(input: string, type: typeof format): PaperDocument };
   };

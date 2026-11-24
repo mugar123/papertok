@@ -1,10 +1,11 @@
-import { useCallback, useId, useRef } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { Button } from '../ui/button.tsx';
 import { isTranslationLanguage, TRANSLATION_LANGUAGES, type TranslationLanguage } from '../../utils/full-paper-translation-contract.ts';
+import { preferredTranslationLanguage } from '../../utils/paper-translation.ts';
 import './reader-translation-controls.css';
 
 type Props = {
-  signedIn: boolean;
+  uid: string;
   unavailable?: string;
   pending: boolean;
   progress?: { completed: number; total: number };
@@ -15,8 +16,9 @@ type Props = {
 };
 
 export function ReaderTranslationControls({
-  signedIn, unavailable, pending, progress, message, toggle, onTranslate, onCancel,
+  uid, unavailable, pending, progress, message, toggle, onTranslate, onCancel,
 }: Props) {
+  const [defaultLanguage] = useState(() => uid ? preferredTranslationLanguage(uid) : '');
   const language = useRef<HTMLSelectElement>(null);
   const submit = useRef<HTMLButtonElement>(null);
   const disclosure = useRef<HTMLDetailsElement>(null);
@@ -33,7 +35,7 @@ export function ReaderTranslationControls({
       <details ref={disclosure}>
         <summary ref={summary}>Translate paper</summary>
         <div className="reader-translation-panel">
-          {unavailable || !signedIn
+          {unavailable || !uid
             ? <p>{unavailable || 'Sign in to translate this paper.'}</p>
             : (
               <form ref={focusOnControlRemoval} onSubmit={event => {
@@ -43,7 +45,7 @@ export function ReaderTranslationControls({
               }}>
                 <label>
                   <span>Translation language</span>
-                  <select ref={language} defaultValue="" required disabled={pending}>
+                  <select ref={language} defaultValue={defaultLanguage} required disabled={pending}>
                     <option value="">Choose a language</option>
                     {Object.entries(TRANSLATION_LANGUAGES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
                   </select>
