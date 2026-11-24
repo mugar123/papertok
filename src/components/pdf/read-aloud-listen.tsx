@@ -106,7 +106,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
         <p className="rd-podcast-text" lang="en">
           {preparing
             ? `Preparing the audio, ${percent}%`
-            : sentence?.words.map((text, index) => (
+            : !sentence ? 'Press play to listen.' : sentence.words.map((text, index) => (
               <span key={index} data-said={index < sentence.current || undefined} data-current={index === sentence.current || undefined}>{text} </span>
             ))}
         </p>

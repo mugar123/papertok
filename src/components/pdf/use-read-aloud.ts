@@ -198,19 +198,21 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     }
     setPlaying(true);
 
-    const speakWithBrowser = (index: number, sentence: number) => {
+    /** Reads the passage from its sentence `sentence`, that sentence from its character `skip`. */
+    const speakWithBrowser = (index: number, sentence: number, skip = 0) => {
       const item = queue[index];
       if (sentence >= item.utterances.length) {
         next(index + 1, 0);
         return;
       }
-      const utterance = new SpeechSynthesisUtterance(item.utterances[sentence]);
+      const line = item.utterances[sentence].slice(skip);
+      const utterance = new SpeechSynthesisUtterance(line);
       utterance.lang = 'en-US';
       utterance.rate = speedNow.current;
-      const before = item.utterances.slice(0, sentence).reduce((sum, line) => sum + line.length + 1, 0);
+      const before = item.utterances.slice(0, sentence).reduce((sum, text) => sum + text.length + 1, 0) + skip;
       voice.current = 'browser';
       spokenChars.current = before;
-      const said = { before, length: item.utterances[sentence].length, startedAt: 0, heard: false };
+      const said = { before, length: line.length, startedAt: 0, heard: false };
       browserSentence.current = said;
       utterance.onstart = () => { said.startedAt = performance.now(); };
       utterance.onboundary = (event) => {
@@ -236,8 +238,12 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       window.speechSynthesis.speak(utterance);
     };
 
-    /** A passage without PaperTok's audio: the browser reads it, and the next one tries the stored audio again. */
-    const fallBack = (index: number, error: unknown) => {
+    /**
+     * A passage without PaperTok's audio: the browser reads it, and the next one tries the stored
+     * audio again. A jump into the passage (a skip of 15 seconds, a press on the timeline) starts
+     * the browser's voice at the word that holds the place, by handing it the text from there.
+     */
+    const fallBack = (index: number, error: unknown, from = 0) => {
       if (!current()) return;
       const first = !told.current;
       told.current = true;
@@ -247,8 +253,18 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
         return;
       }
       if (first) onFallback(error);
-      setProgress(0);
-      speakWithBrowser(index, 0);
+      const lines = queue[index].utterances;
+      const place = from * passageText(queue[index]).length;
+      let sentence = 0;
+      let start = 0;
+      while (sentence < lines.length - 1 && start + lines[sentence].length + 1 <= place) {
+        start += lines[sentence].length + 1;
+        sentence += 1;
+      }
+      // Back to the start of the word the place falls in, so the voice does not begin mid-word.
+      const skip = Math.max(0, lines[sentence].lastIndexOf(' ', Math.max(0, Math.floor(place - start))) + 1);
+      setProgress(from);
+      speakWithBrowser(index, sentence, skip);
     };
 
     function next(index: number, from: number) {
@@ -270,7 +286,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
           if (current() && element.duration) setProgress(element.currentTime / element.duration);
         };
         element.onended = () => next(index + 1, 0);
-        element.onerror = () => fallBack(index, element.error);
+        element.onerror = () => fallBack(index, element.error, from);
         if (element.src !== url) element.src = url;
         else if (Number.isFinite(element.duration)) element.currentTime = from * element.duration;
         element.playbackRate = speedNow.current;
@@ -291,7 +307,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
           onBlocked();
           return;
         }
-        fallBack(index, error);
+        fallBack(index, error, from);
       });
     }
 

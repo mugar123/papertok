@@ -15,7 +15,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* Centred while it fits; once taller than the stage (a phone), it starts at the top and scrolls. */
+  justify-content: safe center;
   gap: 0;
   padding: var(--space-6) var(--space-4) max(var(--space-10), env(safe-area-inset-bottom));
   overflow: hidden auto;
@@ -35,6 +36,11 @@
 /* The section's name labels the sentence under it; the controls stand apart from both. */
 .rd-podcast-dock, .rd-podcast > .rd-listen-track { margin-bottom: var(--space-6); }
 .rd-podcast-cover { flex: none; width: min(52vh, 420px, 100%); aspect-ratio: 1; }
+/* On a phone the sphere gives way to the caption and the controls, which must fit without scrolling. */
+@media (max-width: 600px) {
+  .rd-podcast-cover { width: min(34dvh, 72vw); margin-bottom: var(--space-5); }
+  .rd-podcast-caption { margin-bottom: var(--space-6); }
+}
 .rd-podcast-sphere { display: block; width: 100%; height: 100%; }
 
 /* The paper and the section the voice is in, small, over the caption. */
