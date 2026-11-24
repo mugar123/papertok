@@ -2,14 +2,14 @@
 .rd-listen-corner { grid-column: 3; justify-self: end; display: flex; gap: var(--space-1); align-items: center; }
 .rd-listen-toggle { border-radius: 50%; }
 
-/* The podcast tab: over the paper's text in the viewer's stage, in the app's theme. On paper
-   the mesh is ink with yellow points ringed in ink; at night it is all yellow. */
+/* The podcast tab: over the paper's text in the viewer's stage, in the app's theme. The blob runs
+   through the brand's yellow, rose and violet; the accent marks the timeline and the chapters. */
 .rd-podcast {
   --podcast-mesh: var(--text-tertiary);
   --podcast-accent: var(--accent-primary);
-  --podcast-edge: var(--accent-primary);
-  --podcast-node: var(--brand-yellow);
-  --podcast-node-ring: var(--accent-primary);
+  --podcast-blob-from: var(--brand-yellow);
+  --podcast-blob-via: var(--accent-rose);
+  --podcast-blob-to: var(--accent-violet);
   position: absolute;
   inset: 0;
   z-index: 2;
@@ -35,8 +35,6 @@
 
 :root[data-theme='dark'] .rd-podcast {
   --podcast-accent: var(--brand-yellow);
-  --podcast-edge: var(--brand-yellow);
-  --podcast-node-ring: transparent;
 }
 
 .rd-podcast-cover { margin-bottom: var(--space-8); }
@@ -44,12 +42,13 @@
 .rd-podcast-player { flex: none; display: flex; flex-direction: column; align-items: center; width: min(100%, 640px); }
 .rd-podcast-player > .rd-podcast-dock, .rd-podcast-player > .rd-listen-track { width: 100%; margin-bottom: var(--space-6); }
 .rd-podcast-cover { flex: none; width: min(52vh, 420px, 100%); aspect-ratio: 1; }
-/* On a phone the sphere gives way to the caption and the controls, which must fit without scrolling. */
+/* On a phone the blob gives way to the caption and the controls, which must fit without scrolling. */
 @media (max-width: 600px) {
   .rd-podcast-cover { width: min(34dvh, 72vw); margin-bottom: var(--space-5); }
   .rd-podcast-caption { margin-bottom: var(--space-6); }
 }
-.rd-podcast-sphere { display: block; width: 100%; height: 100%; }
+.rd-podcast-visual { display: block; width: 100%; height: 100%; }
+.rd-podcast-blob { filter: blur(14px); }
 
 /* The paper and the section the voice is in, small, over the caption; on a narrow screen it wraps rather than cutting the title short. */
 .rd-podcast-title {
@@ -109,7 +108,7 @@
 .rd-podcast .rd-listen-part-fill,
 .rd-podcast .rd-listen-thumb { background: var(--podcast-accent); }
 .rd-podcast .rd-listen-thumb { border-color: var(--bg-primary); }
-/* While the audio is prepared, the line is the mesh's grey, as the sphere is. */
+/* While the audio is prepared, the line is the mesh's grey, as the blob is. */
 .rd-podcast .rd-listen-progress { color: var(--podcast-mesh); }
 .rd-podcast .rd-listen-progress::-webkit-progress-value { background: var(--podcast-mesh); }
 .rd-podcast .rd-listen-progress::-moz-progress-bar { background: var(--podcast-mesh); }
@@ -234,7 +233,7 @@
 }
 
 /* On a phone the controls are a bar fixed to the bottom of the tab, within the thumb's reach and
-   ruled off from the sphere and the caption, which scroll behind it. */
+   ruled off from the blob and the caption, which scroll behind it. */
 @media (max-width: 600px) {
   .rd-podcast { justify-content: flex-start; padding-bottom: 0; }
   .rd-podcast-player {
@@ -275,7 +274,7 @@
   .rd-podcast-player > .rd-podcast-dock { margin-bottom: var(--space-2); }
 }
 
-/* On a phone the sphere, the section and the caption sit in the middle of the room above the bar
+/* On a phone the blob, the section and the caption sit in the middle of the room above the bar
    rather than leaving a gap under them, and the bar's buttons take a thumb's 44px. */
 @media (max-width: 600px) {
   .rd-podcast-cover { margin-top: auto; }
@@ -290,7 +289,7 @@
   .rd-podcast-drawer { width: 100%; border-left: 0; padding-inline: var(--space-4); }
 }
 
-/* On a wide screen the section and the caption sit beside the sphere, as a player sets a song's
+/* On a wide screen the section and the caption sit beside the blob, as a player sets a song's
    name beside its cover, and the controls run under both. */
 @media (min-width: 901px) {
   .rd-podcast {

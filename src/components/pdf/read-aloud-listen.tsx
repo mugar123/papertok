@@ -4,7 +4,7 @@ import { Button } from '../ui/button.tsx';
 import type { CharacterTimings, ReadAloudTimeline, SpokenPassage } from './read-aloud.ts';
 import { chapterAt, clock, passageText, spokenWordAt, wordSpans, wordStarts } from './read-aloud.ts';
 import { ReadAloudTrack, ReadAloudTransport, SpeedButton } from './read-aloud-controls.tsx';
-import ReadAloudSphere from './read-aloud-sphere.tsx';
+import ReadAloudBlob from './read-aloud-blob.tsx';
 import './read-aloud-listen.css';
 
 /** The sentence the voice is on, cut into words, and which of them it is saying. */
@@ -24,7 +24,7 @@ function spokenSentence(item: SpokenPassage, word: number) {
 
 /**
  * The paper as a podcast, in a tab of the viewer beside its text, always on night paper:
- * a turning wireframe sphere, the sentence being read as a large caption, one row of
+ * a breathing gradient blob, the sentence being read as a large caption, one row of
  * controls round the timeline (which shows the audio still to come, then where the voice
  * is), and the paper's sections as chapters in a drawer.
  */
@@ -54,7 +54,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   const shown = target ?? now;
   const chapter = chapterAt(timeline, shown);
   // The caption's box follows the sentence's height with a transition (read-aloud-listen.css), so a
-  // longer or shorter sentence eases the sphere and the controls to their place instead of jumping.
+  // longer or shorter sentence eases the blob and the controls to their place instead of jumping.
   const caption = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const box = caption.current;
@@ -106,7 +106,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
 
   return (
     <section className="rd-podcast" aria-labelledby="rd-podcast-title" data-chapters-open={drawerOpen || undefined}>
-      <div className="rd-podcast-cover"><ReadAloudSphere ready={!preparing} playing={playing} /></div>
+      <div className="rd-podcast-cover"><ReadAloudBlob ready={!preparing} playing={playing} /></div>
 
       {/* The paper, then the section the voice is in: one line on a wide screen; on a phone the
           paper is the small label and the section the large title, as a player names a song. */}
@@ -126,7 +126,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
       </div>
 
       {/* The controls: under the caption on a wide screen; on a phone, a bar fixed to the bottom of the
-          tab, ruled off from the sphere and the caption, which scroll behind it. */}
+          tab, ruled off from the blob and the caption, which scroll behind it. */}
       <div className="rd-podcast-player">
         {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
           <div className="rd-podcast-dock">
