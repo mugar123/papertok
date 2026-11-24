@@ -31,7 +31,7 @@ export function ReadAloudTransport({ position, playing, onPlayPause, onSeek, pla
         <ArrowCounterClockwise size={30} weight="light" aria-hidden="true" />
         <span aria-hidden="true">{SKIP_SECONDS}</span>
       </Button>
-      <Button ref={playButton} variant="ghost" size="icon" onClick={onPlayPause} aria-label={playing ? 'Pause' : 'Play'}>
+      <Button ref={playButton} variant="ghost" size="icon" className="rd-listen-play" onClick={onPlayPause} aria-label={playing ? 'Pause' : 'Play'}>
         <PlayIcon size={18} weight="fill" aria-hidden="true" />
       </Button>
       <Button variant="ghost" size="icon" className="rd-listen-skip" onClick={() => onSeek(position + SKIP_SECONDS)} aria-label={`Forward ${SKIP_SECONDS} seconds`} title={`Forward ${SKIP_SECONDS} seconds`}>

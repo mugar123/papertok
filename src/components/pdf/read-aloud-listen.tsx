@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { DownloadSimple } from '@phosphor-icons/react';
+import { DownloadSimple, ListBullets } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { CharacterTimings, ReadAloudTimeline, SpokenPassage } from './read-aloud.ts';
 import { chapterAt, clock, passageText, spokenWordAt, wordSpans, wordStarts } from './read-aloud.ts';
@@ -93,21 +93,27 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
 
       {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={position} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
         <div className="rd-podcast-dock">
-          <ReadAloudTransport position={position} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
-          <span className="rd-listen-time">{clock(shown)}</span>
-          <ReadAloudTrack timeline={timeline} prepared={prepared} position={position} target={target} onTarget={setTarget} onSeek={onSeek} />
-          <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
-          <SpeedButton speed={speed} onSpeed={onSpeed} />
+          {/* As a music player lays them out: the transport centred, the speed and the chapters at its sides. */}
+          <div className="rd-podcast-buttons">
+            <SpeedButton speed={speed} onSpeed={onSpeed} />
+            <ReadAloudTransport position={position} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
+            {timeline.chapters.length > 1 ? (
+              <Button variant="ghost" size="icon" aria-label="Chapters" title="Chapters" aria-expanded={chaptersOpen} aria-controls={drawerId} onClick={() => setChaptersOpen(open => !open)}>
+                <ListBullets size={20} aria-hidden="true" />
+              </Button>
+            ) : <span />}
+          </div>
+          {/* and under it the line, its minute at one end and what is left at the other. */}
+          <div className="rd-podcast-line">
+            <span className="rd-listen-time">{clock(shown)}</span>
+            <ReadAloudTrack timeline={timeline} prepared={prepared} position={position} target={target} onTarget={setTarget} onSeek={onSeek} />
+            <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
+          </div>
         </div>
       )}
 
       {!preparing && (
         <div className="rd-podcast-tools">
-          {timeline.chapters.length > 1 && (
-            <Button variant="outline" size="sm" className="rd-podcast-chip" aria-expanded={chaptersOpen} aria-controls={drawerId} onClick={() => setChaptersOpen(open => !open)}>
-              Chapters
-            </Button>
-          )}
           <Button
             variant="outline"
             size="sm"
