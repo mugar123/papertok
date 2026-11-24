@@ -23,7 +23,7 @@
   color: var(--text-primary);
 }
 @keyframes rd-podcast-in { from { opacity: 0; } }
-.rd-podcast > * { flex: none; width: min(100%, 26rem); }
+.rd-podcast > * { flex: none; width: min(100%, var(--ft-measure, 680px)); }
 
 .rd-podcast-cover { max-width: 260px; aspect-ratio: 1; }
 :root[data-theme='dark'] .rd-podcast {
@@ -33,7 +33,7 @@
 }
 .rd-podcast-sphere { display: block; width: 100%; height: 100%; }
 
-.rd-podcast-head { display: grid; gap: var(--space-1); }
+.rd-podcast-head { display: grid; gap: var(--space-1); text-align: center; }
 .rd-podcast-title {
   margin: 0;
   font: 700 1.375rem/1.25 var(--font-serif);
@@ -124,3 +124,23 @@
 .rd-podcast .rd-listen-progress { color: var(--podcast-mesh); }
 .rd-podcast .rd-listen-progress::-webkit-progress-value { background: var(--podcast-mesh); }
 .rd-podcast .rd-listen-progress::-moz-progress-bar { background: var(--podcast-mesh); }
+
+/* A taller reach for the line here, where it is the page's main control. */
+.rd-podcast .rd-listen-track { height: 32px; }
+
+/* The sections on the line are dots, as on a podcast's chapter bar; the one under the pointer grows. */
+.rd-podcast .rd-listen-mark {
+  width: 10px;
+  height: 10px;
+  translate: -50% -50%;
+  border: 2px solid var(--bg-primary);
+  border-radius: 50%;
+  background: var(--podcast-mesh);
+  opacity: 1;
+  transition: scale 150ms var(--ease-out);
+}
+.rd-podcast .rd-listen-mark[data-played] { background: var(--podcast-accent); }
+.rd-podcast .rd-listen-mark[data-near] { scale: 1.6; }
+@media (prefers-reduced-motion: reduce) {
+  .rd-podcast .rd-listen-mark { transition: none; }
+}

@@ -8,6 +8,8 @@ import { READ_ALOUD_SPEEDS } from './use-read-aloud.ts';
 import './read-aloud-player.css';
 
 const SKIP_SECONDS = 15;
+/** How far from a section's mark, in pixels, a press or a pointer still lands on it. */
+const MARK_REACH_PX = 12;
 
 
 function spokenClock(seconds: number) {
@@ -72,7 +74,10 @@ export function ReadAloudTrack({ timeline, prepared, position, target, onTarget,
   /** The moment under a pointer, over the full width of the line as drawn. */
   const pointAt = (event: { clientX: number; currentTarget: Element }) => {
     const { left, width } = event.currentTarget.getBoundingClientRect();
-    return Math.min(1, Math.max(0, (event.clientX - left) / width)) * timeline.duration;
+    const x = Math.min(width, Math.max(0, event.clientX - left));
+    // Near a section's mark, the pointer is on the section's start, so a mark is easy to hit.
+    const mark = timeline.chapters.slice(1).find(part => Math.abs((part.start / timeline.duration) * width - x) <= MARK_REACH_PX);
+    return mark ? mark.start : (x / width) * timeline.duration;
   };
   const commit = () => {
     if (target === null) return;
@@ -119,7 +124,7 @@ export function ReadAloudTrack({ timeline, prepared, position, target, onTarget,
         <div className="rd-listen-line" aria-hidden="true">
           <span className="rd-listen-fill" style={{ width: `${timeline.duration ? (shown / timeline.duration) * 100 : 0}%` }} />
           {timeline.chapters.slice(1).map(part => (
-            <span key={part.start} className="rd-listen-mark" data-played={part.start <= shown || undefined} style={{ left: `${(part.start / timeline.duration) * 100}%` }} />
+            <span key={part.start} className="rd-listen-mark" data-played={part.start <= shown || undefined} data-near={pointed === part.start || undefined} style={{ left: `${(part.start / timeline.duration) * 100}%` }} />
           ))}
         </div>
         <input

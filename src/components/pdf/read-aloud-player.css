@@ -72,7 +72,13 @@
   border-radius: 999px;
   background: var(--bg-secondary);
   pointer-events: none;
+  transition: height 150ms var(--ease-out);
 }
+/* The line thickens under a mouse and while it is dragged, so it is easier to aim at and hold. */
+@media (hover: hover) and (pointer: fine) {
+  .rd-listen-track:hover .rd-listen-line { height: 8px; }
+}
+.rd-listen-track[data-dragging] .rd-listen-line { height: 8px; }
 .rd-listen-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--text-primary); }
 .rd-listen-fill::after {
   content: '';
@@ -189,7 +195,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rd-listen-fill::after { transition: none; }
+  .rd-listen-fill::after, .rd-listen-line { transition: none; }
   .rd-listen { animation: rd-listen-fade 120ms linear; }
   @keyframes rd-listen-fade { from { opacity: 0; } }
 }
