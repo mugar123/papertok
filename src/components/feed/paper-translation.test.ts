@@ -63,7 +63,7 @@ test('the abstract sheet names both translation toggle states', async t => {
       translation: {
         scope: 'reader', eligible: true, signedIn: true,
         current: { scope: 'reader', showing, translation: { language: 'es', title: 'Distancias estelares', abstract: 'Medimos distancias con dos métodos.' } },
-        chooseLanguage: () => 'es',
+        chooseLanguage: () => 'es' as const,
         translate: async () => { setShowing(true); },
         showOriginal: () => setShowing(false),
       },
