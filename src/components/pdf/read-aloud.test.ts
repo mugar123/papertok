@@ -24,7 +24,7 @@ test('spoken text keeps inline maths as words and drops citation marks', () => {
 });
 
 test('the brackets a group of citations leaves behind are not read or shown', () => {
-  const cite = (n: number) => ({ t: 'ref' as const, target: `bib.bib${n}`, cites: true, children: [text(`${n}`)] });
+  const cite = (n: number) => ({ t: 'ref' as const, target: `bib.bib${n}`, cites: true as const, children: [text(`${n}`)] });
   const { queue } = fullTextListen(doc([
     p(text('Word vectors ['), cite(82), text(', '), cite(102), text('] fed models ['), cite(24), text(',,'), cite(81), text(' ] ('), cite(5), text(').')),
   ]), { withAbstract: false });
