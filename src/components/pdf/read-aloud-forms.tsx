@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react';
 
 type Vec3 = [number, number, number];
-type Form = 'atom' | 'dna' | 'lattice' | 'galaxy' | 'wave';
+type Form = 'node' | 'atom' | 'dna' | 'lattice' | 'galaxy' | 'wave';
 
-const FORMS: Form[] = ['atom', 'dna', 'lattice', 'galaxy', 'wave'];
+const FORMS: Form[] = ['node', 'atom', 'dna', 'lattice', 'galaxy', 'wave'];
 const SETTINGS = { particles: 1500, morph: 0.08, spin: 0.2, size: 0.36, dot: 1.4 };
+/** The forms' own motion (orbits, twists, arms) at half the playground's pace, calm enough for a voice. */
+const PACE = 0.5;
 const BANDS = 6;
 /** Seconds each form holds before the cloud moves on to the next. */
 const FORM_SECONDS = 10;
@@ -28,6 +30,55 @@ function rotZ([x, y, z]: Vec3, a: number): Vec3 {
 }
 function rotX([x, y, z]: Vec3, a: number): Vec3 {
   return [x, y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)];
+}
+
+/** A geodesic sphere: an icosahedron with each face cut in four, its points pushed out to the surface. */
+function geodesic() {
+  const g = (1 + Math.sqrt(5)) / 2;
+  const points: Vec3[] = [
+    [-1, g, 0], [1, g, 0], [-1, -g, 0], [1, -g, 0],
+    [0, -1, g], [0, 1, g], [0, -1, -g], [0, 1, -g],
+    [g, 0, -1], [g, 0, 1], [-g, 0, -1], [-g, 0, 1],
+  ];
+  const faces = [
+    [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+    [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+    [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+    [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+  ];
+  const middles = new Map<string, number>();
+  const middle = (a: number, b: number) => {
+    const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+    const known = middles.get(key);
+    if (known !== undefined) return known;
+    points.push([0, 1, 2].map(axis => (points[a][axis] + points[b][axis]) / 2) as Vec3);
+    middles.set(key, points.length - 1);
+    return points.length - 1;
+  };
+  const edges = new Set<string>();
+  for (const [a, b, c] of faces) {
+    const [ab, bc, ca] = [middle(a, b), middle(b, c), middle(c, a)];
+    for (const [x, y, z] of [[a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]]) {
+      for (const [p, q] of [[x, y], [y, z], [z, x]]) edges.add(p < q ? `${p}-${q}` : `${q}-${p}`);
+    }
+  }
+  const unit = points.map(point => point.map(value => value / Math.hypot(...point)) as Vec3);
+  return { points: unit, edges: [...edges].map(edge => edge.split('-').map(Number) as [number, number]) };
+}
+const MESH = geodesic();
+
+/** The geodesic sphere the podcast first had: a clump on every node and dots along every edge. */
+function node(i: number): Vec3 {
+  if (hash(i, 23) < 0.2) {
+    const [x, y, z] = MESH.points[Math.floor(hash(i, 24) * MESH.points.length)];
+    const j = 0.94 + hash(i, 25) * 0.04;
+    return [x * j * 0.9, y * j * 0.9, z * j * 0.9];
+  }
+  const [a, b] = MESH.edges[Math.floor(hash(i, 26) * MESH.edges.length)];
+  const f = hash(i, 27);
+  const p = [0, 1, 2].map(axis => MESH.points[a][axis] * (1 - f) + MESH.points[b][axis] * f) as Vec3;
+  const length = Math.hypot(...p);
+  return [(p[0] / length) * 0.9, (p[1] / length) * 0.9, (p[2] / length) * 0.9];
 }
 
 /** A nucleus and three tilted orbits, each with a clump of electrons racing round it. */
@@ -102,6 +153,7 @@ function wave(i: number, n: number, t: number, bands: number[]): Vec3 {
 
 function target(form: Form, i: number, n: number, t: number, level: number, bands: number[]): Vec3 {
   switch (form) {
+    case 'node': return node(i);
     case 'atom': return atom(i, n, t, level);
     case 'dna': return dna(i, t);
     case 'lattice': return lattice(i);
@@ -139,8 +191,9 @@ function step(scene: Scene, seconds: number, speaking: boolean) {
   const form = FORMS[scene.form];
   const n = SETTINGS.particles;
   for (let i = 0; i < n; i++) {
-    const [tx, ty, tz] = target(form, i, n, scene.t, scene.level, scene.bands);
-    const k = Math.min(1, SETTINGS.morph * (0.4 + hash(i, 99) * 1.2));
+    const [tx, ty, tz] = target(form, i, n, scene.t * PACE, scene.level, scene.bands);
+    // The morph is a share per sixtieth of a second, so a 120Hz screen does not run it twice as fast.
+    const k = 1 - Math.pow(1 - Math.min(1, SETTINGS.morph * (0.4 + hash(i, 99) * 1.2)), seconds * 60);
     const o = i * 3;
     scene.pos[o] += (tx - scene.pos[o]) * k;
     scene.pos[o + 1] += (ty - scene.pos[o + 1]) * k;
@@ -187,14 +240,14 @@ function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene,
 
 /**
  * The podcast tab's visualizer: a cloud of particles that flows from one scientific form to
- * the next (an atom, DNA, a crystal, a galaxy, a wave) while the voice speaks, swelling and
+ * the next (a geodesic sphere, an atom, DNA, a crystal, a galaxy, a wave) while the voice speaks, swelling and
  * settling with it, and holds its form while paused. It has a soft glow and a film grain;
- * with reduced motion it settles into the atom and holds still.
+ * pressing it shows the next form. With reduced motion it settles into each form and holds still.
  */
 export default function ReadAloudForms({ ready, playing }: { ready: boolean; playing: boolean }) {
   const sharp = useRef<HTMLCanvasElement | null>(null);
   const glow = useRef<HTMLCanvasElement | null>(null);
-  const grain = useRef<HTMLDivElement | null>(null);
+  const grain = useRef<HTMLSpanElement | null>(null);
   const scene = useRef<Scene>({ pos: new Float32Array(SETTINGS.particles * 3), form: 0, shownAt: 0, t: 0, level: 0.1, bands: [], pump: 1 });
   useEffect(() => {
     const [canvas, behind] = [sharp.current, glow.current];
@@ -202,7 +255,7 @@ export default function ReadAloudForms({ ready, playing }: { ready: boolean; pla
     const state = scene.current;
     const speaking = playing && ready;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      for (let settle = 0; settle < 120; settle++) step(state, 0, false);
+      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false);
       render(canvas, behind, state, ready);
       return undefined;
     }
@@ -220,11 +273,21 @@ export default function ReadAloudForms({ ready, playing }: { ready: boolean; pla
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [playing, ready]);
+  // A press moves the cloud on to the next form, as a beat does in the playground.
+  const next = () => {
+    const state = scene.current;
+    state.form = (state.form + 1) % FORMS.length;
+    state.shownAt = state.t;
+    if (sharp.current && glow.current && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false);
+      render(sharp.current, glow.current, state, ready);
+    }
+  };
   return (
-    <div className="rd-podcast-visual rd-podcast-forms" aria-hidden="true">
+    <button type="button" className="rd-podcast-visual rd-podcast-forms" onClick={next} aria-label="Show the next form" title="Next form">
       <canvas ref={glow} className="rd-podcast-forms-glow" />
       <canvas ref={sharp} />
-      <div ref={grain} className="rd-podcast-forms-grain" />
-    </div>
+      <span ref={grain} className="rd-podcast-forms-grain" />
+    </button>
   );
 }
