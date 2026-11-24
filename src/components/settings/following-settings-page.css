@@ -1,7 +1,7 @@
 .following-settings-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(var(--nav-total) + var(--space-10)) var(--space-6) var(--space-16);
+  padding: calc(var(--nav-total) + var(--space-6)) var(--space-4) var(--space-12);
   background: var(--bg-primary);
 }
 
@@ -12,8 +12,8 @@
 
 .following-settings-layout {
   display: grid;
-  grid-template-columns: 11rem minmax(0, 1fr);
-  gap: var(--space-12);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
   align-items: start;
 }
 
@@ -22,7 +22,7 @@
 }
 
 .following-settings-heading {
-  margin-bottom: var(--space-10);
+  margin-bottom: var(--space-5);
 }
 
 .following-settings-heading h1 {
@@ -43,20 +43,22 @@
   line-height: var(--lh-normal);
 }
 
+/* Only a phone shows this page (wider than that the follows are a dialog,
+   further down). Two columns while a label fits half the row, one at large
+   text sizes (9rem grows with the reader's text). A label that still does
+   not fit wraps instead of being cut to "Jo…" (WCAG 1.4.4, ENG-123). */
 .following-settings-tabs {
-  position: sticky;
-  top: calc(var(--nav-total) + var(--space-6));
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(9rem, calc((100% - var(--space-1)) / 2))), 1fr));
+  gap: var(--space-1);
 }
 
 .following-settings-tabs button {
   display: flex;
-  min-height: 40px;
+  min-height: 44px;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-3);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-lg);
   color: var(--text-tertiary);
   font-size: var(--fs-sm);
@@ -90,9 +92,7 @@
 .following-settings-tabs button span {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .following-settings-tabs button small {
@@ -111,17 +111,6 @@
   padding-top: 9px;
   color: var(--tint-red-fg);
   font-size: 12px;
-}
-
-/* More journals followed than the feeds read (journal-limit-note.ts). */
-.following-settings-note {
-  margin-bottom: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--tint-amber-line);
-  border-radius: var(--radius-sm);
-  background: var(--tint-amber-bg);
-  color: var(--tint-amber-fg);
-  font-size: var(--fs-sm);
 }
 
 .following-settings-list {
@@ -190,11 +179,6 @@
   background: rgba(245, 158, 11, 0.07);
 }
 
-.following-settings-initials.is-journal {
-  color: var(--tint-violet-fg);
-  background: var(--tint-violet-bg);
-}
-
 .following-settings-entity-name {
   display: -webkit-box;
   min-width: 0;
@@ -252,61 +236,6 @@
   animation: none;
 }
 
-@media (max-width: 900px) {
-  .following-settings-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-5);
-  }
-
-  /* The row wraps rather than scrolling under a hidden scrollbar: with five
-     tabs, or at 200% text, the last (Journals) would sit off-screen with
-     nothing to show it is there (ENG-123). Below 600px the tabs become a
-     grid (further down). */
-  .following-settings-tabs {
-    position: static;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: var(--space-1);
-  }
-
-  .following-settings-tabs button {
-    min-height: 44px;
-    flex: 0 0 auto;
-    gap: var(--space-2);
-  }
-}
-
-@media (max-width: 700px) {
-  .following-settings-page {
-    padding: calc(var(--nav-total) + var(--space-6)) var(--space-4) var(--space-12);
-  }
-
-  .following-settings-heading {
-    margin-bottom: var(--space-5);
-  }
-}
-
-/* Two columns while a label fits half the row, one at large text sizes
-   (9rem grows with the reader's text). A label that still does not fit wraps
-   instead of being cut to "Jo…" (WCAG 1.4.4, ENG-123). */
-@media (max-width: 600px) {
-  .following-settings-tabs {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, max(9rem, calc((100% - var(--space-1)) / 2))), 1fr));
-    gap: var(--space-1);
-  }
-
-  .following-settings-tabs button {
-    padding-block: var(--space-1);
-  }
-
-  .following-settings-tabs button span {
-    overflow: visible;
-    overflow-wrap: anywhere;
-    white-space: normal;
-  }
-}
-
 @media (max-width: 430px) {
   .following-settings-page {
     padding-right: 12px;
@@ -318,6 +247,133 @@
   .following-settings-unfollow {
     width: 44px;
     height: 44px;
+  }
+}
+
+/* ── Wider than a phone: the follows in a dialog over Settings ──
+   Drawn like the interests editor (edit-interests-modal.css): the same
+   sheet, header and rail. It keeps one height whichever type is open, so
+   switching types does not resize it; only the list scrolls. */
+.following-dialog-overlay {
+  background: var(--scrim);
+}
+
+.following-dialog {
+  display: flex;
+  flex-direction: column;
+  width: calc(100% - 2 * var(--space-4));
+  max-width: 760px;
+  height: min(640px, 90dvh);
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 64px rgba(17, 19, 24, 0.12), inset 0 1px 0 rgba(17, 19, 24, 0.06);
+}
+
+/* The X is the primitive's own, in the sheet's corner. */
+.following-dialog-header {
+  flex-shrink: 0;
+  padding: var(--space-6);
+  padding-right: calc(var(--space-6) + 40px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.following-dialog-header h2 {
+  margin: 0 0 var(--space-2);
+}
+
+.following-dialog-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+}
+
+.following-dialog-body {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--space-6);
+  min-height: 0;
+  padding: var(--space-6);
+}
+
+.following-dialog-rail {
+  flex-direction: column;
+  align-items: stretch;
+  width: auto;
+  height: max-content;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+/* A label that does not fit the rail, at large text sizes, wraps instead of
+   being cut to "Instit…" (WCAG 1.4.4), as on the phone page. */
+.following-dialog-tab {
+  justify-content: flex-start;
+  gap: 10px;
+  height: auto;
+  min-height: 38px;
+  padding: var(--space-1) 10px;
+  font-size: var(--fs-sm);
+  white-space: normal;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .following-dialog-tab:not([data-active]):hover {
+    background: color-mix(in srgb, var(--bg-card) 60%, transparent);
+  }
+}
+
+.following-dialog-tab-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.following-dialog-tab small {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.following-dialog-tab[data-active] small {
+  color: var(--text-primary);
+}
+
+.following-dialog-panel {
+  min-height: 0;
+  margin-right: calc(-1 * var(--space-2));
+  padding-right: var(--space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The empty state sits in the middle of the panel, not under its top edge. */
+.following-dialog-panel:has(> .following-settings-empty) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .following-dialog {
+    width: calc(100% - 2 * var(--space-2));
+    height: calc(100dvh - 2 * var(--space-2));
+    border-radius: var(--radius-lg);
+  }
+
+  .following-dialog-header,
+  .following-dialog-body {
+    padding: var(--space-4);
+  }
+
+  .following-dialog-body {
+    grid-template-columns: 168px minmax(0, 1fr);
+    gap: var(--space-4);
   }
 }
 
@@ -364,11 +420,6 @@
 .following-unfollow-petri.is-project {
   --balloon-fill: rgba(245, 158, 11, 0.07);
   --balloon-ink: var(--tint-amber-fg);
-}
-
-.following-unfollow-petri.is-journal {
-  --balloon-fill: var(--tint-violet-bg);
-  --balloon-ink: var(--tint-violet-fg);
 }
 
 /* Closed by a button rather than a swipe, the question leaves the way

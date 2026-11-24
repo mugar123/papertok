@@ -23,7 +23,7 @@ const LABELS: Record<string, string> = {
   '/settings/reading': 'Reading & AI · Settings',
   '/settings/notifications': 'Notifications · Settings',
   '/settings/privacy': 'Privacy · Settings',
-  '/settings/following': 'Following settings',
+  '/settings/following': 'Follows · Settings',
   '/login': 'Sign in',
   '/onboarding': 'Welcome',
   '/institution/verify': 'Verify your university email',

@@ -722,10 +722,10 @@ test('a page ranks its lanes by the liked papers, says what each was found under
   assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.00001'").length, 1, 'past its date, still ranked by');
 });
 
-// D3 (Pablo, 2026-10-25): at most 10 followed journals a reader. A journal's
-// lane costs the harvest a list call a night whoever follows it, so the cap
-// holds where the lanes are made, whatever a client stored.
-test('a request serves at most 10 followed journals, and still its other follows', () => {
+// D3 (Pablo, 2026-10-25): at most 10 journals a request. A journal's lane
+// costs the harvest a list call a night whichever feed asks for it, so the cap
+// holds where the lanes are made, whatever a client sent.
+test('a request serves at most 10 journals, and still its other follows', () => {
   const journals = Array.from({ length: 12 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
   const author = { type: 'author', canonicalId: 'A5023888391', displayName: 'Wei Zhang' };
   const { follows } = parseFeedRequest({ categories: [], follows: [...journals, author] });

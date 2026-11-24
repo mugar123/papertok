@@ -1,4 +1,4 @@
-/* Journal and institutions in "About this paper": ruled rows like Topics and
+/* Institutions in "About this paper": ruled rows like Topics and
    Funding, the name on the left and the Follow control (ui/follow-toggle.css)
    on the right. */
 .pc-follow-list {
@@ -30,10 +30,6 @@
 }
 
 .pc-follow-refusal {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
   margin: 0;
   color: var(--text-primary);
   font: var(--fs-sm)/1.4 var(--font-body);

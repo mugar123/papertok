@@ -38,7 +38,6 @@ import {
   X,
 } from '@phosphor-icons/react';
 import { MAX_ACCOUNT_ENTITIES, MAX_ACCOUNT_KEYWORDS, MAX_CUSTOM_FEEDS, MAX_FEED_INGREDIENTS } from '../../utils/custom-feeds.ts';
-import { MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 import type { AIUses } from '../../services/paper-rewrite-service.ts';
 
 /**
@@ -236,7 +235,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('most-recent', 'Most recent', ClockCounterClockwise,
         'Papers on your topics that you have not seen yet, newest first.'),
       entry('following', 'Following', UserCheck,
-        'Papers from the authors, institutions, topics, projects and journals you follow.'),
+        'Papers from the authors, institutions, topics and projects you follow.'),
       entry('own-feeds', 'Your own feeds', undefined,
         `Feeds you made from topics, authors, journals and keywords show as tabs after Following. You can have up to ${MAX_CUSTOM_FEEDS}, each with up to ${MAX_FEED_INGREDIENTS} ingredients. Edit feed, Move left, Move right and Delete feed are in the tab’s menu, and as buttons in the Feeds window, which Edit feeds in Settings under Discovery opens.`),
       entry('new-feed', 'New feed', Plus,
@@ -253,12 +252,12 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('explorer-back', 'Back', ArrowLeft,
         'Returns to the page you came from.'),
       entry('follow', 'Follow', UserCirclePlus,
-        `Follows this author, institution, topic, project or journal, so its papers show in Following. The icon fills in once followed; press again to unfollow. You can follow up to ${MAX_FOLLOWED_JOURNALS} journals.`,
+        'Follows this author, institution, topic or project, so its papers show in Following. The icon fills in once followed; press again to unfollow.',
         { needsAccount: true }),
       entry('explorer-share', 'Share', ShareNetwork,
         'Copies the page’s link or shares it to a network.'),
       entry('make-feed', 'Make it a feed', Plus,
-        `Turns this page into a feed tab. Shows on areas, topics, keyword searches, authors and journals that can be followed. Across its feeds an account can hold ${MAX_ACCOUNT_ENTITIES} authors, topics and journals and ${MAX_ACCOUNT_KEYWORDS} keywords.`,
+        `Turns this page into a feed tab. Shows on areas, topics, keyword searches, authors with an OpenAlex profile and journals. Across its feeds an account can hold ${MAX_ACCOUNT_ENTITIES} authors, topics and journals and ${MAX_ACCOUNT_KEYWORDS} keywords.`,
         { needsAccount: true }),
       entry('explorer-search', 'Search this page', MagnifyingGlass,
         'Searches the papers or authors on this page. The Papers and Authors buttons beside it choose which list; Authors is there only on pages that have authors to list.',

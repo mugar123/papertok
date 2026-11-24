@@ -2,7 +2,7 @@ import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/user-settings.ts';
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   CircleNotch,
   GearSix,
@@ -36,7 +36,7 @@ import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import EditInterestsModal from './edit-interests-modal.tsx';
 import SummaryHistory from './summary-history.tsx';
 import { LEVEL_DETAILS } from './reading-levels.ts';
-import { FollowingSheet } from './following-settings-page.tsx';
+import { FollowingDialog, FollowingSheet } from './following-settings-page.tsx';
 import FeedsDialog from './feeds-dialog.tsx';
 import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
@@ -51,7 +51,7 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
 import { Switch } from '../ui/switch.tsx';
 import { readShowAbstract, saveShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
 import useIsPhone from '../../hooks/use-is-phone.ts';
-import { SETTINGS_PAGES } from './settings-pages.ts';
+import { SETTINGS_PAGES, isFollowsPath } from './settings-pages.ts';
 import { SettingsRail, SettingsSwitcher } from './settings-pages-nav.tsx';
 import usePopupReady from '../../hooks/use-popup-ready.ts';
 import './settings-page.css';
@@ -527,6 +527,7 @@ function AuthorMetricsSetting({ uid }: { uid: string }) {
 
 function DiscoveryPage() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { userPreferences } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const { feeds: customFeeds, status: feedsStatus } = useCustomFeeds();
@@ -593,8 +594,11 @@ function DiscoveryPage() {
       <EditInterestsModal isOpen={isInterestsOpen} onClose={() => setIsInterestsOpen(false)} />
       <FeedsDialog open={isFeedsOpen} onOpenChange={setIsFeedsOpen} />
       {/* On a phone the follows open in a sheet, like the interests above;
-          wider than that they have their own page. */}
-      {isPhone && <FollowingSheet open={isFollowingOpen} onOpenChange={setIsFollowingOpen} />}
+          wider than that in a dialog, which /settings/following opens over
+          this page so a link from elsewhere lands on it too. */}
+      {isPhone
+        ? <FollowingSheet open={isFollowingOpen} onOpenChange={setIsFollowingOpen} />
+        : <FollowingDialog open={isFollowsPath(pathname)} />}
     </>
   );
 }
@@ -733,17 +737,19 @@ export default function SettingsPage({ page = 'profile' }) {
   const activeIndex = Math.max(0, SETTINGS_PAGES.findIndex(entry => entry.slug === page));
   const active = SETTINGS_PAGES[activeIndex];
   const Page = PAGE_COMPONENTS[active.slug as keyof typeof PAGE_COMPONENTS];
+  // The Follows dialog over Discovery has a route of its own and names the tab
+  // while it is open, as RouteAnnouncer does (route-metadata.ts).
+  const title = `${isFollowsPath(useLocation().pathname) ? 'Follows' : active.label} · Settings | PaperTok`;
 
   // The tab keeps saying which page this is; restored on the way out so the
   // pages that manage their own metadata are not affected.
   useEffect(() => {
     const previous = document.title;
-    const ours = `${active.label} · Settings | PaperTok`;
-    document.title = ours;
+    document.title = title;
     // Only restore if nothing claimed the title since (the outgoing route
     // stays mounted ~200ms into the next one under AnimatePresence).
-    return () => { if (document.title === ours) document.title = previous; };
-  }, [active]);
+    return () => { if (document.title === title) document.title = previous; };
+  }, [title]);
 
   return (
     <main className="settings-page">

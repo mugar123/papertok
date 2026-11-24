@@ -36,6 +36,7 @@ import {
   followsEntity,
   migrateLegacyAuthors,
   planFollowToggle,
+  splitRetiredFollows,
 } from '../utils/following.ts';
 import { finishLegacyAuthorsMigration } from '../utils/following-migration.ts';
 
@@ -140,13 +141,29 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     // With metadata changes, so the server confirming the same documents the
     // cache gave (none, for an account that follows nothing) still reaches
     // the callback (`followSnapshotAction`), and `confirmed` can turn true.
+    // Journal follows were retired: the ones stored never reach the app and
+    // are deleted once, by their own document id (`createFollowKey` no
+    // longer names a journal's).
+    const retiring = new Set<string>();
     const unsubscribe = onSnapshot(followsCollection, { includeMetadataChanges: true }, (snapshot) => {
       const action = followSnapshotAction(snapshot, followList.current);
       if (action === 'wait') return;
       window.clearTimeout(loadingTimeout);
       followList.current = 'listed';
       setSnapshotFromServer(!snapshot.metadata.fromCache);
-      if (action === 'list') setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
+      if (action === 'list') {
+        const { kept, toDelete } = splitRetiredFollows(
+          snapshot.docs.map(item => ({ id: item.id, follow: { ...item.data(), followKey: item.id } })),
+          retiring,
+        );
+        for (const id of toDelete) {
+          deleteDoc(doc(followsCollection, id)).catch((deleteError: unknown) => {
+            retiring.delete(id);
+            console.warn('Could not delete a retired journal follow', deleteError);
+          });
+        }
+        setFollowedEntities(kept);
+      }
       // Whatever went wrong before, this is an answer worth acting on.
       timeoutFailure = null;
       setFailure(null);
@@ -284,7 +301,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     const pendingKey = createFollowKey(entity.type, entity.canonicalId);
     if (pendingFollowKeys.has(pendingKey)) return followsEntity(followedEntities, entity);
 
-    const { existing: existingFollow, next } = planFollowToggle(followedEntities, entity, { list: followList.current });
+    const { existing: existingFollow, next } = planFollowToggle(followedEntities, entity);
     const wasFollowing = Boolean(existingFollow);
     const previous = followedEntities;
     setFollowedEntities(next);

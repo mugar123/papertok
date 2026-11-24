@@ -13,6 +13,12 @@ export const HELP_PAGE: SettingsPageEntry = { slug: 'help', label: 'Help', summa
  * which a visitor without an account can open too, and which draws this same
  * rail for a signed-in reader.
  */
+/**
+ * Whether `pathname` is the Follows dialog's route. Wider than a phone it
+ * opens over Discovery (app.tsx), which stays the page the rail marks.
+ */
+export const isFollowsPath = (pathname: string) => pathname.replace(/\/+$/, '') === '/settings/following';
+
 export const SETTINGS_PAGES: readonly SettingsPageEntry[] = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
   { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },

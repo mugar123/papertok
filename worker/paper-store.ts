@@ -284,7 +284,7 @@ const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
 // The entities whose lanes hold papers only while a reader follows them: a
 // paper names many, readers follow few, and no page reads the rest. Their
 // unfollowed lanes held about 3.4M of the corpus's 4.2M lane rows (2026-10-24).
-// A paper names one journal (`source:S…`, ENG-123), and readers follow few of them.
+// A paper names one journal (`source:S…`, ENG-123), and few feeds hold one.
 const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution', 'source'] as const;
 // A journal's lane holds only the types its own listing asks for: an editorial
 // or letter that an author's lane brings stays out of it, and a row the lane

@@ -53,7 +53,9 @@ test('a save without confirmed categories leaves the field out', () => {
   assert.equal('interests' in buildNotificationPreferencesPayload({ enabled: true }, [], [], { sync: true }), false);
 });
 
-test('the digest leaves journals out before it cuts follows and previews', () => {
+// Journal follows were retired, and the follow list drops a stored one; the
+// digest still keeps only the types a reader can follow.
+test('the digest leaves a journal out before it cuts follows, and keeps only followable matches in a preview', () => {
   const author = (index: number) => ({ type: 'author' as const, canonicalId: `A${index}`, displayName: `Author ${index}` });
   const topic = (index: number) => ({ type: 'topic' as const, canonicalId: `T${index}`, displayName: `Topic ${index}` });
   const journal = (index: number) => ({ type: 'journal' as const, canonicalId: `S${index}`, displayName: `Journal ${index}` });
@@ -66,22 +68,21 @@ test('the digest leaves journals out before it cuts follows and previews', () =>
   assert.equal(sent.filter(follow => follow.type === 'topic').length, 9);
   assert.equal(sent.some(follow => follow.type === 'journal'), false);
 
-  const journalOnly = (index: number) => ({ id: `j${index}`, title: `J${index}`, _followedEntityMatches: [journal(index)] });
   const byAuthor = { id: 'a1', title: 'A1', _followedEntityMatches: [journal(1), author(1)] };
-  const { previewItems } = buildNotificationPreferencesPayload({ enabled: true }, [], [...Array.from({ length: 20 }, (_, index) => journalOnly(index)), byAuthor] as never);
+  const { previewItems } = buildNotificationPreferencesPayload({ enabled: true }, [], [byAuthor] as never);
   assert.deepEqual(previewItems.map(item => item.id), ['a1']);
   assert.deepEqual(previewItems[0].matches.map(match => match.type), ['author']);
 
   // `_followedEntityMatches` may still hold a legacy string match: the paper
-  // stays a preview, as it did before journals.
+  // stays a preview.
   const legacy = { id: 'p3', title: 'P3', _followedEntityMatches: ['project-3'] };
   assert.deepEqual(buildNotificationPreferencesPayload({ enabled: true }, [], [legacy]).previewItems.map(item => item.id), ['p3']);
 });
 
-// ENG-123 (D6): the email settings, the guest opt-in and the background sync
-// ask whether the reader has follows before they write. Journals alone are
-// none: the save would send `follows: []` and the Worker answers 409.
-test('a reader who follows only journals has no follows for the digest', () => {
+// The email settings, the guest opt-in and the background sync ask whether
+// the reader has follows before they write. A journal is none: the save would
+// send `follows: []` and the Worker answers 409.
+test('a journal is no follow for the digest', () => {
   const journal = { type: 'journal' as const, canonicalId: 'S23254222', displayName: 'American Economic Review' };
   const author = { type: 'author' as const, canonicalId: 'A5023888391', displayName: 'Ana Pérez' };
   assert.equal(hasDigestFollows([]), false);

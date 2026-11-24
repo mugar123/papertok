@@ -12,6 +12,7 @@ import { primeAIUses } from './services/paper-rewrite-service.ts'
 import PageTransition from './components/layout/page-transition.tsx'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/use-page-transition-custom.ts'
 import { useOverlayHistory } from './hooks/use-overlay-history.ts'
+import useIsPhone from './hooks/use-is-phone.ts'
 import { INITIAL_ACCOUNT_SCOPE, accountScopeKey, nextAccountScope } from './utils/account-scope.ts'
 import { feedResumeMemory } from './utils/feed-resume-memory.ts'
 import { clearAuthReturn, isInAppPath, offerAuthReturn, takeAuthReturn } from './utils/auth-return.ts'
@@ -193,6 +194,7 @@ function AppContent() {
   // which cannot work it out for itself, because it is kept mounted inside a
   // <Routes> still providing the location it was rendered for.
   const pageTransitionCustom = usePageTransitionCustom()
+  const isPhone = useIsPhone()
   const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/feed', '/lists', '/profile', '/recent', '/following', '/search', '/settings', '/help', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
@@ -566,7 +568,9 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <FollowingSettingsPage />
+                  {/* Wider than a phone the follows are a dialog over
+                      Discovery, which stays mounted as it opens and closes. */}
+                  {isPhone ? <FollowingSettingsPage /> : <SettingsPage page="discovery" />}
                 </PageTransition>
               </ProtectedRoute>
             }
