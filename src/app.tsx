@@ -1,3 +1,4 @@
+import type { ReadingView } from './components/pdf/reading-tabs.tsx';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react'
 import type { Paper } from './models/paper.ts'
 import type { ReaderMenu } from './components/feed/paper-menu.tsx'
@@ -127,7 +128,7 @@ function LoginRedirect() {
 }
 
 function AppContent() {
-  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu } | null>(null)
+  const [pdfOpen, setPdfOpen] = useState<{ paper: Paper; menu: ReaderMenu; initialView?: ReadingView; onPaperOpen?: () => void } | null>(null)
   const pdfPaper = pdfOpen?.paper ?? null
   // Back closes the PDF viewer instead of leaving PaperTok: see use-overlay-history.ts.
   // Through the viewer's own close, the one the X uses — it owns `open` and
@@ -144,7 +145,7 @@ function AppContent() {
   // crippled there (2026-08-29); the viewer now draws the pages itself on a
   // touch screen (pdf-pages.tsx), so the paper stays in PaperTok on a phone as
   // it does on a desktop (2026-10-09).
-  const openPdf = useCallback((paper: Paper, menu: ReaderMenu) => setPdfOpen({ paper, menu }), [])
+  const openPdf = useCallback((paper: Paper, menu: ReaderMenu, initialView?: ReadingView, onPaperOpen?: () => void) => setPdfOpen({ paper, menu, initialView, onPaperOpen }), [])
   // The paper the list picker is open for, with the surface of the card that
   // opened it: the picker's save carries it (forYouCardNotable). The lists
   // page also says where focus goes on close (`finalFocus`).
@@ -682,7 +683,7 @@ function AppContent() {
           the screen stays interactive. */}
       <Suspense fallback={null}>
         {pdfOpen && (
-          <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
+          <PDFViewer paper={pdfOpen.paper} menu={pdfOpen.menu} initialView={pdfOpen.initialView} onPaperOpen={pdfOpen.onPaperOpen} closeRef={pdfCloseRef} onClose={() => setPdfOpen(null)} />
         )}
       </Suspense>
 

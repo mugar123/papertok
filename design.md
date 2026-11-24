@@ -642,7 +642,9 @@ new tab. Both readers use `pdf/reading-dock.tsx` for Notes and the
 original-paper link. The paper viewer's top bar holds two tabs, Paper and
 Plain words, with a chip that slides to the one chosen (`pdf/reading-tabs.tsx`);
 Plain words opens the plain-words reader inside the viewer, under the same bar,
-and Paper goes back to the text. A round headphones button at the bar's end opens
+and Paper goes back to the text. When the card has an inline paper target,
+Read in plain words opens this same viewer on its Plain words tab. Switching
+to Paper keeps the dialog and its history entry mounted; it does not reveal the feed. A round headphones button at the bar's end opens
 the podcast tab (`pdf/read-aloud-listen.tsx`), which reads the paper's text aloud:
 the paper's title over a particle visual, the sentence being read as a caption,
 and a player with speed, 15-second skips and a timeline cut into the paper's

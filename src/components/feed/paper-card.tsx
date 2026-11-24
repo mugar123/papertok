@@ -1,3 +1,4 @@
+import type { ReadingView } from '../pdf/reading-tabs.tsx';
 import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
 import type { Icon, IconWeight } from '@phosphor-icons/react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/paper.ts';
@@ -20,7 +21,7 @@ export interface PaperCardProps {
   onUnmarkAsRead?: (paper: Paper | string) => void | Promise<void>;
   trackViewTime?: (paper: Paper, seconds: number, surface?: string) => void | Promise<void>;
   trackSkip?: (paper: Paper, surface?: string) => void | Promise<void>;
-  onOpenPdf?: (paper: Paper, surface: string | undefined, menu: ReaderMenu) => void | Promise<void>;
+  onOpenPdf?: (paper: Paper, surface: string | undefined, menu: ReaderMenu, initialView?: ReadingView) => void | Promise<void>;
   /** `surface` overrides the one a quick-save handler reports its saves under. */
   onSaveToList?: (paper: Paper, surface?: string) => void | Promise<void>;
   /**
@@ -2394,6 +2395,10 @@ const PaperCard = memo(function PaperCard({
                     requireAuthentication('paper_rewrite');
                     return;
                   }
+                  if (inlineTarget) {
+                    void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}), pdfUrl: inlineTarget.url, openAccess: true }, analyticsSurface, readerMenu, 'plain');
+                    return;
+                  }
                   const bounds = event.currentTarget.getBoundingClientRect();
                   setReaderOrigin({
                     left: bounds.left,
@@ -2656,11 +2661,6 @@ const PaperCard = memo(function PaperCard({
             originRect={readerOrigin}
             closeRef={readerCloseRef}
             onClose={() => setShowReader(false)}
-            // The Paper tab only where Read would open the paper in the viewer, and with the copy Read would open.
-            onPaperTab={inlineTarget ? () => {
-              setShowReader(false);
-              void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}), pdfUrl: inlineTarget.url, openAccess: true }, analyticsSurface, readerMenu);
-            } : undefined}
           />
         </Suspense>,
         document.body,

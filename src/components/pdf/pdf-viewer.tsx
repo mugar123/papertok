@@ -32,7 +32,7 @@ import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import UsesCount from '../reader/uses-count.tsx';
 import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-viewer-notes.ts';
 import { fullTextListen } from './read-aloud.ts';
-import { ReadingTabs } from './reading-tabs.tsx';
+import { ReadingTabs, type ReadingView } from './reading-tabs.tsx';
 import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
 import { passageQuote } from '../../services/user-highlight-service.ts';
 
@@ -51,7 +51,7 @@ const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/
  * also owns what the old overlay did by hand — the focus trap, Escape, the
  * scroll lock and the restore to the button that opened it.
  */
-export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null }) {
+export default function PDFViewer({ paper, menu, onClose, closeRef = null, initialView = 'paper', onPaperOpen }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null; initialView?: ReadingView; onPaperOpen?: () => void }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
@@ -129,8 +129,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // The X and Escape land here, so the bounce is counted once, whichever it was.
   const handleClose = useCallback(() => {
     if (!open) return;
-    const elapsed = (Date.now() - startTimeRef.current!) / 1000;
-    if (elapsed < 5) {
+    if (startTimeRef.current !== null && Date.now() - startTimeRef.current < 5000) {
       void trackPdfBounce(paper);
     }
     setOpen(false);
@@ -143,8 +142,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   }, [open]);
 
   useEffect(() => {
-    startTimeRef.current = Date.now();
-  }, []);
+    if (initialView === 'paper') startTimeRef.current = Date.now();
+  }, [initialView]);
 
   /**
    * The same way out, published for the browser's Back button: the owner arms
@@ -181,7 +180,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const { trackEvent, consent } = useAnalyticsConsent();
   const { user, readingPreferences } = useAuth();
   // The plain-words reader as the viewer's second tab: it opens over the paper, and its Paper tab comes back.
-  const [plain, setPlain] = useState(false);
+  const [plain, setPlain] = useState(initialView === 'plain');
+  const pendingPaperOpen = useRef(initialView === 'plain');
   const canPlain = Boolean(user) && canRewritePaper(paper);
   const uid = user?.uid ?? '';
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
@@ -290,7 +290,14 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {/* The bar names the paper once the article's own title has scrolled
                 away, rising in from below; it leaves the way it came. Where the paper
                 can be read in plain words, the bar holds the two tabs instead. */}
-            {canPlain ? <ReadingTabs current={plain ? 'plain' : 'paper'} onChange={view => setPlain(view === 'plain')} /> : <AnimatePresence initial={false}>
+            {canPlain ? <ReadingTabs current={plain ? 'plain' : 'paper'} onChange={view => {
+              setPlain(view === 'plain');
+              if (view === 'paper' && pendingPaperOpen.current) {
+                pendingPaperOpen.current = false;
+                startTimeRef.current = Date.now();
+                onPaperOpen?.();
+              }
+            }} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
                   key="title"
