@@ -2,23 +2,15 @@ import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/user-settings.ts';
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  Bell,
-  CaretDown,
-  Check,
   CircleNotch,
-  Compass,
   GearSix,
   GraduationCap,
   LinkBreak,
   LinkSimple,
   PencilSimple,
-  Question,
-  ShieldCheck,
-  Sparkle,
   Trash,
-  UserCircle,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { toastError } from '../ui/toast.ts';
@@ -56,31 +48,15 @@ import { ZoteroMark } from '../pdf/zotero-mark.tsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
 import { Switch } from '../ui/switch.tsx';
 import { readShowAbstract, saveShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
-import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
+import { SETTINGS_PAGES } from './settings-pages.ts';
+import { SettingsRail, SettingsSwitcher } from './settings-pages-nav.tsx';
 import usePopupReady from '../../hooks/use-popup-ready.ts';
 import './settings-page.css';
-
-/**
- * The settings pages, one route each: a page carries one subject, so there is
- * no scroll position to track and nothing to spy on. Order is the rail's.
- * Help is the last entry but not a settings page: `to` sends it to /help,
- * which a visitor without an account can open too.
- */
-const SETTINGS_PAGES: { slug: string; label: string; summary: string; Icon: Icon; to?: string }[] = [
-  { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
-  { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },
-  { slug: 'reading', label: 'Reading & AI', summary: 'AI level, the reader and your plain-words summaries', Icon: Sparkle },
-  { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
-  { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics and author statistics', Icon: ShieldCheck },
-  { slug: 'help', label: 'Help', summary: 'What each button and gesture does', Icon: Question, to: '/help' },
-];
 
 const SETTINGS_COPY = {
   title: 'Settings',
   subtitle: 'Your account, discovery preferences, and reading tools.',
-  pagesLabel: 'Settings pages',
-  settingsPage: 'Settings page',
   discovery: 'Discovery',
   discoveryDescription: 'Signals PaperTok uses to build your feeds.',
   followedContent: 'Follows',
@@ -727,7 +703,6 @@ export default function SettingsPage({ page = 'profile' }) {
   const activeIndex = Math.max(0, SETTINGS_PAGES.findIndex(entry => entry.slug === page));
   const active = SETTINGS_PAGES[activeIndex];
   const Page = PAGE_COMPONENTS[active.slug as keyof typeof PAGE_COMPONENTS];
-  const [pagesOpen, setPagesOpen] = useState(false);
 
   // The tab keeps saying which page this is; restored on the way out so the
   // pages that manage their own metadata are not affected.
@@ -750,72 +725,8 @@ export default function SettingsPage({ page = 'profile' }) {
 
         <div className="settings-layout">
 
-          <button
-            type="button"
-            className="settings-switcher"
-            aria-haspopup="dialog"
-            aria-expanded={pagesOpen}
-            onClick={() => setPagesOpen(true)}
-          >
-            <span className="settings-switcher-icon"><active.Icon size={18} weight="fill" aria-hidden="true" /></span>
-            <span className="settings-switcher-copy">
-              <small>{copy.settingsPage}</small>
-              <strong>{active.label}</strong>
-            </span>
-            <CaretDown size={16} aria-hidden="true" />
-          </button>
-          <Drawer open={pagesOpen} onOpenChange={setPagesOpen}>
-            <DrawerContent className="settings-pages-sheet">
-              <DrawerHandle />
-              <DrawerTitle render={<h3 />} className="settings-pages-title">{copy.title}</DrawerTitle>
-              <nav aria-label={copy.pagesLabel}>
-                <ul className="settings-pages-list">
-                  {SETTINGS_PAGES.map(entry => (
-                    <li key={entry.slug}>
-                      <NavLink
-                        to={entry.to ?? `/settings/${entry.slug}`}
-                        replace={!entry.to}
-                        className={({ isActive }) => (isActive ? 'is-active' : '')}
-                        onClick={() => setPagesOpen(false)}
-                      >
-                        {({ isActive }) => (
-                          <>
-                            <entry.Icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
-                            <span className="settings-pages-copy">
-                              <strong>{entry.label}</strong>
-                              <small>{entry.summary}</small>
-                            </span>
-                            {isActive && <Check size={16} aria-hidden="true" />}
-                          </>
-                        )}
-                      </NavLink>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            </DrawerContent>
-          </Drawer>
-          <nav className="settings-index" aria-label={copy.pagesLabel}>
-            <div className="settings-index-list">
-              {SETTINGS_PAGES.map(entry => (
-                <NavLink
-                  key={entry.slug}
-                  to={entry.to ?? `/settings/${entry.slug}`}
-                  replace={!entry.to}
-                  className={({ isActive }) => (isActive ? 'is-active' : '')}
-                >
-                  {/* Filled on the page you are on: the shape changes, not
-                      only the colour. */}
-                  {({ isActive }) => (
-                    <>
-                      <entry.Icon size={18} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
-                      {entry.label}
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
-          </nav>
+          <SettingsSwitcher active={active} />
+          <SettingsRail />
 
           <div className="settings-content">
             <Page />
