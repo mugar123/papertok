@@ -39,6 +39,7 @@ test('prepared passages update with clip metadata and queue changes, while seeki
       title: 'Results paper',
       onFallback: () => assert.fail('audio should be available'),
       onError: () => assert.fail('audio should play'),
+      onBlocked: () => assert.fail('the start should not be blocked'),
     }), { initialProps: { passages: queue } });
     unmount = view.unmount;
     assert.equal(view.result.current.prepared.ready, 0);
@@ -85,10 +86,12 @@ test('a refused passage is asked for again once the voice is back, and a blocked
     firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
     const queue: SpokenPassage[] = [{ passage: 'b0', utterances: ['The only result.'] }];
     const failures: string[] = [];
+    let stopsForPress = 0;
     const view = renderHook(() => useReadAloud(queue, [], {
       title: 'Results paper',
       onFallback: () => failures.push('fallback'),
       onError: () => failures.push('error'),
+      onBlocked: () => { stopsForPress += 1; },
     }));
     unmount = view.unmount;
     act(() => view.result.current.play(0));
@@ -107,11 +110,52 @@ test('a refused passage is asked for again once the voice is back, and a blocked
     await waitFor(() => assert.equal(view.result.current.playing, false));
     assert.equal(view.result.current.paragraph, 0);
     assert.equal(failures.length, 1);
+    assert.equal(stopsForPress, 1);
   } finally {
     unmount();
     worker.stop();
     await close();
     Clip.prototype.play = play;
+    if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
+    else Reflect.deleteProperty(globalThis, 'Audio');
+    Clip.instances = [];
+  }
+});
+
+test('the voice starts once every passage has arrived, and plays at the chosen speed', async () => {
+  const { useReadAloud, firebase, close } = await loadReadAloud();
+  const worker = stubWorker();
+  const route = worker.hold('/tts/paragraph');
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  let unmount = () => {};
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const queue: SpokenPassage[] = [
+      { passage: 'b0', utterances: ['The first result.'] },
+      { passage: 'b1', utterances: ['The second result.'] },
+    ];
+    const view = renderHook(() => useReadAloud(queue, [], {
+      title: 'Results paper',
+      onFallback: () => assert.fail('audio should be available'),
+      onError: () => assert.fail('audio should play'),
+      onBlocked: () => assert.fail('the start should not be blocked'),
+    }));
+    unmount = view.unmount;
+    act(() => { view.result.current.setSpeed(1.5); });
+    act(() => view.result.current.play(0));
+    await route.requested();
+    const playing = () => Clip.instances.find(clip => clip.src.startsWith('blob:'));
+    assert.equal(playing(), undefined, 'nothing plays while the audio is being prepared');
+    route.answer({});
+    await waitFor(() => assert.ok(playing()));
+    assert.equal((playing() as Clip & { playbackRate?: number }).playbackRate, 1.5);
+    act(() => { view.result.current.setSpeed(0.75); });
+    assert.equal((playing() as Clip & { playbackRate?: number }).playbackRate, 0.75);
+  } finally {
+    unmount();
+    worker.stop();
+    await close();
     if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
     else Reflect.deleteProperty(globalThis, 'Audio');
     Clip.instances = [];
@@ -154,6 +198,7 @@ test('system controls resume and seek the paper, and hidden playback advances to
       title,
       onFallback: () => assert.fail('audio should be available'),
       onError: () => assert.fail('audio should play'),
+      onBlocked: () => assert.fail('the start should not be blocked'),
     }), { initialProps: { title: 'A podcast paper' } });
     unmount = view.unmount;
     assert.equal(session.metadata, null);
@@ -235,6 +280,7 @@ test('the browser voice\'s place moves with time when it reports no words, and f
       title: 'Agents paper',
       onFallback: () => {},
       onError: () => assert.fail('the browser voice should read'),
+      onBlocked: () => assert.fail('the start should not be blocked'),
     }));
     unmount = view.unmount;
     act(() => view.result.current.play(0));

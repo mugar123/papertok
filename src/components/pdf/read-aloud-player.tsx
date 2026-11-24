@@ -4,10 +4,10 @@ import { ArrowClockwise, ArrowCounterClockwise, DownloadSimple, Pause, Play, X }
 import { Button } from '../ui/button.tsx';
 import type { ReadAloudTimeline } from './read-aloud.ts';
 import { chapterAt } from './read-aloud.ts';
+import { READ_ALOUD_SPEEDS } from './use-read-aloud.ts';
 import './read-aloud-player.css';
 
 const SKIP_SECONDS = 15;
-const PREPARING_DELAY_MS = 1_200;
 
 function clock(seconds: number) {
   const whole = Math.max(0, Math.floor(seconds));
@@ -25,12 +25,14 @@ function spokenClock(seconds: number) {
  * and play, pause and skip. Dragging the track names the chapter it would
  * land in; letting go moves the voice there.
  */
-export default function ReadAloudPlayer({ timeline, prepared, position, playing, onPlayPause, onSeek, onClose, onDownload, openedFrom }: {
+export default function ReadAloudPlayer({ timeline, prepared, position, playing, speed, onSpeed, onPlayPause, onSeek, onClose, onDownload, openedFrom }: {
   timeline: ReadAloudTimeline;
   /** Passages whose audio exists; until all do, the track shows what is left to prepare. */
   prepared: { ready: number; total: number; failed: boolean };
   position: number;
   playing: boolean;
+  speed: number;
+  onSpeed: (speed: number) => void;
   onPlayPause: () => void;
   onSeek: (seconds: number) => void;
   onClose: () => void;
@@ -42,20 +44,15 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
   const [target, setTarget] = useState<number | null>(null);
   // Where a mouse over the track points, before any press.
   const [hover, setHover] = useState<number | null>(null);
-  // A paper already stored is all there within a moment; only a wait past that shows what is left.
-  const [slow, setSlow] = useState(false);
-  const missing = !prepared.failed && prepared.ready < prepared.total;
-  useEffect(() => {
-    if (!missing) return undefined;
-    const timer = setTimeout(() => setSlow(true), PREPARING_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [missing]);
+  // The voice starts once the paper's audio is all there; until then the player shows only how much is.
+  const preparing = !prepared.failed && prepared.ready < prepared.total;
   const root = useRef<HTMLDivElement | null>(null);
   const playButton = useRef<HTMLButtonElement | null>(null);
+  const closeButton = useRef<HTMLButtonElement | null>(null);
   const shown = target ?? position;
   const chapter = chapterAt(timeline, shown);
 
-  useEffect(() => { playButton.current?.focus(); }, []);
+  useEffect(() => { (playButton.current ?? closeButton.current)?.focus(); }, []);
 
   useLayoutEffect(() => {
     const bar = root.current?.closest<HTMLElement>('.pdf-dock');
@@ -96,7 +93,6 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
   const pointed = target ?? hover;
   const pointedChapter = pointed === null ? null : chapterAt(timeline, pointed);
   const PlayIcon = playing ? Pause : Play;
-  const preparing = missing && slow;
   const percent = prepared.total ? Math.floor((prepared.ready / prepared.total) * 100) : 0;
   // Why the audio cannot be saved yet, or at all once some paragraphs will not get PaperTok's voice.
   const downloadNoteId = useId();
@@ -130,7 +126,19 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
           <DownloadSimple size={16} aria-hidden="true" />
         </Button>
         {unsaved && <span id={downloadNoteId} className="visually-hidden">{downloadNote}</span>}
-        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close player" title="Close player">
+        {!preparing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rd-listen-speed"
+            onClick={() => onSpeed(READ_ALOUD_SPEEDS[(READ_ALOUD_SPEEDS.indexOf(speed as typeof READ_ALOUD_SPEEDS[number]) + 1) % READ_ALOUD_SPEEDS.length])}
+            aria-label={`Speed ${speed}×`}
+            title="Change the speed"
+          >
+            {speed}×
+          </Button>
+        )}
+        <Button ref={closeButton} variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close player" title="Close player">
           <X size={16} aria-hidden="true" />
         </Button>
       </div>
@@ -141,6 +149,7 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
       ) : (
       <div
         className="rd-listen-track"
+        data-dragging={target !== null || undefined}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -196,6 +205,9 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
         )}
       </div>
       )}
+      {preparing ? (
+        <p className="rd-listen-preparing">Preparing the audio, {percent}%</p>
+      ) : (
       <div className="rd-listen-controls">
         <span className="rd-listen-time">{clock(shown)}</span>
         <div className="rd-listen-transport">
@@ -211,10 +223,9 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
             <span aria-hidden="true">{SKIP_SECONDS}</span>
           </Button>
         </div>
-        <span className="rd-listen-time rd-listen-left">
-          {preparing ? `Preparing ${percent}%` : `−${clock(timeline.duration - shown)}`}
-        </span>
+        <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
       </div>
+      )}
     </div>
   );
 }

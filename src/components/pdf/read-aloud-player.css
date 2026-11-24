@@ -86,7 +86,13 @@
   border-radius: 999px;
   background: var(--text-primary);
   z-index: 1;
+  transition: scale 150ms var(--ease-out);
 }
+/* The dot grows under a press, so it is easy to see and hold while it is dragged. */
+@media (hover: hover) and (pointer: fine) {
+  .rd-listen-track:hover .rd-listen-fill::after { scale: 1.25; }
+}
+.rd-listen-track[data-dragging] .rd-listen-fill::after { scale: 1.6; }
 .rd-listen-mark {
   position: absolute;
   top: 50%;
@@ -156,6 +162,18 @@
   color: var(--text-primary);
 }
 .rd-listen-left { justify-self: end; padding-right: var(--space-1); color: var(--text-tertiary); }
+.rd-listen-speed {
+  min-width: 44px;
+  font: 600 0.75rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.rd-listen-preparing {
+  padding-bottom: var(--space-2);
+  font: 500 0.75rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  text-align: center;
+}
 
 /* The seconds written inside the circular arrow. */
 .rd-listen-skip { position: relative; }
@@ -171,6 +189,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .rd-listen-fill::after { transition: none; }
   .rd-listen { animation: rd-listen-fade 120ms linear; }
   @keyframes rd-listen-fade { from { opacity: 0; } }
 }

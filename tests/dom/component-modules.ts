@@ -59,6 +59,7 @@ export async function loadReadAloud() {
       title: string;
       onFallback: (error: unknown) => void;
       onError: () => void;
+      onBlocked: () => void;
     }) => {
       playing: boolean;
       prepared: { ready: number; total: number; failed: boolean };
@@ -69,6 +70,7 @@ export async function loadReadAloud() {
       pause: () => void;
       seek: (seconds: number) => void;
       live: () => { seconds: number | null; fraction: number };
+      setSpeed: (speed: number) => void;
     } },
     import('./firebase-stub.ts').FirebaseStub,
   ]>('/src/components/pdf/use-read-aloud.ts', '/src/services/firebase.ts');

@@ -6,6 +6,12 @@ import { ReadAloudError, fetchParagraphAudio, fetchParagraphTimings } from '../.
 const hasBrowserVoice = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 /** Passages one listener asks for at once, well inside the plan's concurrent generations shared by every listener. */
 const WORKERS = 3;
+// A moment of silence played within the press: Safari on iOS lets an audio element that has
+// played once from a press play again later, when its clip arrives after the network wait.
+const SILENCE = 'data:audio/wav;base64,UklGRjQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YRAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+/** The speeds the player offers, slowest first. */
+export const READ_ALOUD_SPEEDS = [0.75, 1, 1.25, 1.5, 2] as const;
 const BUSY_RETRIES = 3;
 /** A sentence shorter than this is mostly the voice starting and stopping, so it does not time the pace. */
 const TIMED_SENTENCE_CHARS = 40;
@@ -35,10 +41,12 @@ function clipSeconds(url: string) {
  * a passage without audio is read by the browser's own voice, which can only
  * start a passage from its beginning.
  */
-export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, onFallback, onError }: {
+export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, onFallback, onError, onBlocked }: {
   title: string;
   onFallback: (error: unknown) => void;
   onError: () => void;
+  /** The browser would not start the audio without another press; the voice is paused. */
+  onBlocked: () => void;
 }) {
   const [paragraph, setParagraph] = useState<number | null>(null);
   const [progress, setProgress] = useState(0);
@@ -68,6 +76,11 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   const told = useRef(false);
   // The queue whose passages are being fetched in full; a new queue starts over.
   const fetchingAll = useRef<SpokenPassage[] | null>(null);
+  // Settles once that queue's passages have all been asked for, or the asking stopped.
+  const preparation = useRef<Promise<void>>(Promise.resolve());
+  const [speed, setSpeedState] = useState<number>(1);
+  // Read when a clip or sentence starts, so a change made meanwhile applies to it.
+  const speedNow = useRef(1);
 
   const timeline = useMemo(() => readAloudTimeline(queue, chapters, item => lengths[passageText(item)]), [chapters, lengths, queue]);
   const ready = useMemo(() => queue.reduce((count, item) => count + Number(lengths[passageText(item)] !== undefined), 0), [lengths, queue]);
@@ -141,10 +154,12 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
    * (the Worker down, a timeout) stops the rest.
    */
   const fetchAll = (start: number) => {
-    if (fetchingAll.current === queue) return;
+    if (fetchingAll.current === queue) return preparation.current;
     const items = queue;
     fetchingAll.current = items;
     setPrepareDone(false);
+    let settle = () => {};
+    preparation.current = new Promise<void>((resolve) => { settle = resolve; });
     const order = [...items.slice(start), ...items.slice(0, start)];
     let next = 0;
     let stopped = false;
@@ -158,13 +173,16 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
             stopped = true;
             fetchingAll.current = null;
             setPrepareDone(true);
+            settle();
           }
         }
       }
       working -= 1;
       if (working === 0 && fetchingAll.current === items) setPrepareDone(true);
+      if (working === 0) settle();
     };
     for (let count = 0; count < WORKERS; count += 1) void work();
+    return preparation.current;
   };
 
   const play = (start: number, fraction = 0) => {
@@ -173,10 +191,12 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     // A jump while either voice is speaking silences it before the new place starts.
     audio.current?.pause();
     if (hasBrowserVoice()) window.speechSynthesis.cancel();
-    // Made within the press, so a browser that needs a gesture lets it play once its clip arrives.
-    audio.current ??= new Audio();
+    if (!audio.current) {
+      audio.current = new Audio();
+      audio.current.src = SILENCE;
+      audio.current.play().catch(() => undefined);
+    }
     setPlaying(true);
-    fetchAll(start);
 
     const speakWithBrowser = (index: number, sentence: number) => {
       const item = queue[index];
@@ -186,6 +206,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       }
       const utterance = new SpeechSynthesisUtterance(item.utterances[sentence]);
       utterance.lang = 'en-US';
+      utterance.rate = speedNow.current;
       const before = item.utterances.slice(0, sentence).reduce((sum, line) => sum + line.length + 1, 0);
       voice.current = 'browser';
       spokenChars.current = before;
@@ -252,6 +273,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
         element.onerror = () => fallBack(index, element.error);
         if (element.src !== url) element.src = url;
         else if (Number.isFinite(element.duration)) element.currentTime = from * element.duration;
+        element.playbackRate = speedNow.current;
         voice.current = 'audio';
         const text = passageText(queue[index]);
         if (!timed.current.has(text)) {
@@ -264,14 +286,17 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       }).catch((error: unknown) => {
         // The browser refused to start audio without a fresh press: the clip is fine, so wait for one.
         if (error instanceof DOMException && error.name === 'NotAllowedError') {
-          if (current()) pause();
+          if (!current()) return;
+          pause();
+          onBlocked();
           return;
         }
         fallBack(index, error);
       });
     }
 
-    next(start, fraction);
+    // The whole paper's audio is prepared before the voice starts, so it plays through without waits.
+    void fetchAll(start).then(() => next(start, fraction));
   };
 
   const at = paragraph === null ? null : timeline.passages[paragraph];
@@ -382,6 +407,14 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     position,
     /** Starts at `start` when nothing is under way yet, otherwise carries on from where it paused. */
     play: (start: number) => (paragraph === start ? play(start, progress) : play(start)),
+    speed,
+    /** The audio changes at once; the browser's voice from its next sentence. */
+    setSpeed: (next: number) => {
+      speedNow.current = next;
+      setSpeedState(next);
+      pace.current = { chars: 0, seconds: 0 };
+      if (audio.current) audio.current.playbackRate = next;
+    },
     pause,
     reset,
     seek,

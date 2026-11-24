@@ -41,6 +41,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       ? 'Parts of this paper have no PaperTok audio yet, so this browser’s voice reads them.'
       : 'PaperTok’s voice is not available right now, so this browser’s voice reads instead.'),
     onError: () => toast.error('Reading aloud stopped. This browser could not play the voice.'),
+    onBlocked: () => toast('The audio is ready. Press play to listen.'),
   });
   const { paragraph: speaking, reset: resetReadAloud } = readAloud;
   useSpokenWord({ root: scroll, queue: spoken?.queue ?? NO_PASSAGES, speaking, timings: readAloud.timings, live: readAloud.live, playing: readAloud.playing, position: readAloud.position });
@@ -144,7 +145,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     <PaperDock scroll={scroll} pinned={playerOpen} menu={playerOpen ? undefined : menu} contents={playerOpen ? null : contents}>
       {playerOpen ? <ReadAloudPlayer
         timeline={readAloud.timeline} prepared={readAloud.prepared} position={readAloud.position}
-        playing={readAloud.playing} onPlayPause={playPause} onSeek={readAloud.seek}
+        playing={readAloud.playing} speed={readAloud.speed} onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek}
         onClose={closePlayer} onDownload={downloadAudio} openedFrom={playerFrom}
       /> : <>
         {children}
