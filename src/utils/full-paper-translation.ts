@@ -1,9 +1,9 @@
 import type { Block, FullText, Inline } from './full-text.ts';
-import type { TranslationLanguage } from './paper-translation-contract.ts';
 import {
   PAPER_TRANSLATION_CHUNK_BYTES,
   PAPER_TRANSLATION_MAX_CHUNKS,
   translationJsonBytes,
+  type TranslationLanguage,
 } from './full-paper-translation-contract.ts';
 
 type TextInline = Extract<Inline, { t: 'text' }>;

@@ -57,3 +57,10 @@ test('a keyword route keeps the text its search uses', () => {
   });
   assert.equal(path, '/explorer/topic/query-1234abcd?name=ondas');
 });
+
+test('a taxonomy route opens under the canonical English label', () => {
+  const path = getFollowedEntityPath({
+    type: 'topic', canonicalId: 'physics', displayName: 'Física', metadata: { labelEn: 'Physical sciences' },
+  });
+  assert.equal(path, '/explorer/topic/physics?name=Physics');
+});

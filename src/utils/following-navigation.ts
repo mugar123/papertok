@@ -1,6 +1,5 @@
 import type { PaperFollowMatch } from '../models/paper.ts';
 import { getFollowDisplayName } from './follow-display-name.ts';
-import { isQueryTopicId } from './topic-navigation.ts';
 
 const FOLLOW_PATH_TYPES = new Set(['author', 'topic', 'institution', 'project', 'journal']);
 // The Explorer serves a journal as the OpenAlex source it is.
@@ -24,10 +23,7 @@ export function getFollowedEntityPath(entity: Partial<PaperFollowMatch>) {
   if (!navigationId) return '/settings/following';
 
   const query = new URLSearchParams();
-  // A query-topic route uses its name as the search text.
-  const displayName = entity.type === 'topic' && isQueryTopicId(entity.canonicalId)
-    ? entity.displayName?.trim()
-    : getFollowDisplayName(entity)?.trim();
+  const displayName = getFollowDisplayName(entity).trim();
   const funder = String(entity.metadata?.funder || '').trim();
   const arxivId = String(entity.metadata?.arxivId || '').trim();
 

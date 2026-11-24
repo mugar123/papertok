@@ -6,7 +6,7 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 import { Button } from '../ui/button.tsx';
-import { ZoteroMark } from '../pdf/zotero-button.tsx';
+import { ZoteroMark } from '../pdf/zotero-mark.tsx';
 import {
   HELP_ALLOWANCE_RULES,
   HELP_OVERVIEW,

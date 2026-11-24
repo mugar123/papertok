@@ -214,6 +214,43 @@ export function arxivRecordPaper(record: ArxivRecord): Paper {
   return paper;
 }
 
+async function rederiveConferenceMarks(db: D1Database, records: ArxivRecord[]) {
+  const input = records.map(record => ({
+    key: `arxiv:${record.arxivId.toLowerCase()}`,
+    mark: conferenceInText(record.comments, record.categories[0], 'arxiv-comment') ?? null,
+  }));
+  // An explicit JSON null votes alongside the marks when two arXiv IDs share a work.
+  const { results } = await db.prepare(`WITH desired AS (
+      SELECT k.work_id, CASE WHEN count(DISTINCT j.value -> 'mark') = 1 THEN min(j.value ->> 'mark') END AS mark
+      FROM json_each(?) j JOIN work_keys k ON k.key = j.value ->> 'key' GROUP BY k.work_id
+    )
+    SELECT w.id, d.mark, w.paper ->> 'acceptedConference' AS previous, w.paper ->> 'corpusUpdatedAt' AS stamp
+    FROM desired d JOIN works w ON w.id = d.work_id
+    WHERE (previous IS NULL OR previous ->> 'evidence' = 'arxiv-comment')
+      AND json_extract(previous, '$.id', '$.label', '$.year', '$.evidence')
+        IS NOT json_extract(d.mark, '$.id', '$.label', '$.year', '$.evidence')`)
+    .bind(JSON.stringify(input)).all<{ id: number; mark: string | null; previous: string | null; stamp: number | null }>();
+  const counts = { set: 0, changed: 0, cleared: 0 };
+  if (!results.length) return counts;
+  // A listing that changed the mark or confirmed it with a newer stamp wins.
+  const written = await db.prepare(`UPDATE works AS w SET paper = json_set(
+      CASE WHEN j.value ->> 'mark' IS NULL THEN json_remove(w.paper, '$.acceptedConference')
+        ELSE json_set(w.paper, '$.acceptedConference', json(j.value ->> 'mark')) END,
+      '$.corpusUpdatedAt', max(CAST(? AS INTEGER), coalesce(w.paper ->> 'corpusUpdatedAt', 0) + 1))
+    FROM json_each(?) j WHERE w.id = j.value ->> 'id'
+      AND w.paper ->> 'acceptedConference' IS j.value ->> 'previous'
+      AND w.paper ->> 'corpusUpdatedAt' IS j.value ->> 'stamp'
+    RETURNING id`).bind(Date.now(), JSON.stringify(results)).all<{ id: number }>();
+  const updated = new Set(written.results.map(row => row.id));
+  for (const row of results) {
+    if (!updated.has(row.id)) continue;
+    if (!row.mark) counts.cleared++;
+    else if (!row.previous) counts.set++;
+    else counts.changed++;
+  }
+  return counts;
+}
+
 /**
  * One OAI-PMH page of an arXiv set, filed under its categories. Only papers
  * first submitted within CORPUS_DAYS are kept: the set also lists revisions of
@@ -238,26 +275,15 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
   // next seat the harvest may take; without a ledger binding (local runs) the
   // page goes unpaced.
   const seat = await takeArxivSeat(env.REQUEST_QUOTA_LEDGER, 'harvest');
-  if (!seat.accepted && !seat.code) return { stored: 0, listed: 0, resumptionToken: resumptionToken || '', retryAfterSeconds: nextOwnSeatSeconds(Date.now()) };
+  const retryCounts = conferenceBackfillUntil ? { set: 0, changed: 0, cleared: 0 } : {};
+  if (!seat.accepted && !seat.code) return { ...retryCounts, stored: 0, listed: 0, resumptionToken: resumptionToken || '', retryAfterSeconds: nextOwnSeatSeconds(Date.now()) };
   const response = await fetchWithDeadline(url, { headers: { 'user-agent': USER_AGENT } }, OAI_TIMEOUT_MS);
-  if (response.status === 503) return { stored: 0, listed: 0, resumptionToken: resumptionToken || '', retryAfterSeconds: Number(response.headers.get('retry-after')) || 30 };
+  if (response.status === 503) return { ...retryCounts, stored: 0, listed: 0, resumptionToken: resumptionToken || '', retryAfterSeconds: Number(response.headers.get('retry-after')) || 30 };
   if (!response.ok) throw new PaperStoreError(`OAI_HTTP_${response.status}`, 502);
   const page = parseOaiPage(await response.text());
   if (conferenceBackfillUntil) {
-    const marks = page.papers.flatMap(record => {
-      const mark = conferenceInText(record.comments, record.categories[0], 'arxiv-comment');
-      return mark ? [{ key: `arxiv:${record.arxivId.toLowerCase()}`, mark }] : [];
-    });
-    const db = database(env);
-    const { results } = await db.prepare(`SELECT w.id, j.value -> 'mark' AS mark, w.paper ->> 'corpusUpdatedAt' AS stamp
-      FROM json_each(?) j JOIN work_keys k ON k.key = j.value ->> 'key' JOIN works w ON w.id = k.work_id
-      WHERE w.paper -> 'acceptedConference' IS NULL`).bind(JSON.stringify(marks)).all<{ id: number; mark: string; stamp: number | null }>();
-    // Recheck the row at write time so a concurrent listing keeps its decision.
-    const answer = results.length && await db.prepare(`UPDATE works AS w SET paper = json_set(w.paper,
-      '$.acceptedConference', json(j.value ->> 'mark'), '$.corpusUpdatedAt', max(CAST(? AS INTEGER), coalesce(w.paper ->> 'corpusUpdatedAt', 0) + 1))
-      FROM json_each(?) j WHERE w.id = j.value ->> 'id' AND w.paper -> 'acceptedConference' IS NULL
-      AND w.paper ->> 'corpusUpdatedAt' IS j.value ->> 'stamp'`).bind(Date.now(), JSON.stringify(results)).run();
-    return { stored: answer ? answer.meta.changes : 0, listed: page.papers.length, resumptionToken: page.resumptionToken, retryAfterSeconds: 0 };
+    const counts = await rederiveConferenceMarks(database(env), page.papers);
+    return { ...counts, stored: counts.set + counts.changed + counts.cleared, listed: page.papers.length, resumptionToken: page.resumptionToken, retryAfterSeconds: 0 };
   }
   const since = daysFromNow(-CORPUS_DAYS);
   const announced = daysFromNow(-LATE_ARRIVAL_DAYS);
@@ -495,7 +521,7 @@ const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?
 // before a paper was enriched, so the nightly refresh of followed lanes has a
 // part of 700. Category and notable lanes run before it every night, so they
 // stop at 3,000, leaving 700 under the nightly cap. Enrichment has no part
-// cap. After enrichment, author lookups can spend up to 2,500 of the units
+// cap. At the end of the nightly run, author lookups can spend up to 2,500 of the units
 // remaining under both the nightly share and the feed tier's ceiling.
 type HarvestPart = 'categories' | 'nightly' | 'new';
 const HARVEST_OPENALEX_PARTS: Record<HarvestPart, HarvestAsk> = {

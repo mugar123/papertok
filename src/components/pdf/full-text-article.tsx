@@ -1,6 +1,6 @@
-import type { MouseEvent, ReactNode, RefObject } from 'react';
-import type { TranslationLanguage } from '../../utils/paper-translation-contract.ts';
-import type { Block, FullText, Inline, Reference } from '../../utils/full-text.ts';
+import type { MouseEvent, ReactNode } from 'react';
+import type { TranslationLanguage } from '../../utils/full-paper-translation-contract.ts';
+import type { Block, Cell, FullText, Inline, Reference } from '../../utils/full-text.ts';
 import { blockInlines } from '../../utils/full-text.ts';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getKatex, loadKatex } from '../../utils/katex-loader.ts';
@@ -9,8 +9,9 @@ import { safeDoiUrl } from '../../utils/external-url.ts';
 import { getPaperKey, getPublicPaperPath } from '../../utils/public-navigation.ts';
 import { useLanguage } from '../../context/language-context.tsx';
 import { useReferencePaper } from './use-reference-paper.ts';
-import { copyText } from '../../utils/clipboard.ts';
-import { ArrowRight, ArrowSquareOut, Check, Copy, X } from '@phosphor-icons/react';
+import { copyImage, copyText } from '../../utils/clipboard.ts';
+import { searchPaperDestination } from '../../utils/search-destinations.ts';
+import { ArrowSquareOut, Check, Copy, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { Popover, PopoverClose, PopoverPopup, PopoverPortal, PopoverPositioner, PopoverTitle } from '../ui/popover.tsx';
 import type { Paper } from '../../models/paper.ts';
@@ -71,24 +72,27 @@ function Formula({ mathml, tex, image, display }: { mathml?: string; tex?: strin
   return tex ? <code className="ft-tex" translate="no">{tex}</code> : null;
 }
 
-function CopyFormula({ tex, mathml }: { tex?: string; mathml?: string }) {
+function CopyButton({ label, done, failed, copy }: { label: string; done: string; failed: string; copy: () => Promise<void> }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   useEffect(() => {
     if (state === 'idle') return;
     const timer = setTimeout(() => setState('idle'), 1500);
     return () => clearTimeout(timer);
   }, [state]);
-  const text = tex ?? mathml;
-  if (!text) return null;
-  const label = tex ? 'Copy formula as LaTeX' : 'Copy formula as MathML';
   return (
     <>
-      <Button variant="ghost" size="icon-sm" className="ft-copy" data-copied={state === 'copied' || undefined} aria-label={label} title={label} onClick={() => { void copyText(text).then(() => setState('copied'), () => setState('failed')); }}>
+      <Button variant="ghost" size="icon-sm" className="ft-copy" data-copied={state === 'copied' || undefined} aria-label={label} title={label} onClick={() => { void copy().then(() => setState('copied'), () => setState('failed')); }}>
         {state === 'copied' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
       </Button>
-      <span className="visually-hidden" role="status">{state === 'copied' ? 'Formula copied' : state === 'failed' ? 'Could not copy the formula' : ''}</span>
+      <span className="visually-hidden" role="status">{state === 'copied' ? done : state === 'failed' ? failed : ''}</span>
     </>
   );
+}
+
+function CopyFormula({ tex, mathml }: { tex?: string; mathml?: string }) {
+  const text = tex ?? mathml;
+  if (!text) return null;
+  return <CopyButton label={tex ? 'Copy formula as LaTeX' : 'Copy formula as MathML'} done="Formula copied" failed="Could not copy the formula" copy={() => copyText(text)} />;
 }
 
 function Ref({ target, cites, children }: { target: string; cites?: true; children: ReactNode }) {
@@ -119,6 +123,15 @@ function Label({ text }: { text?: string }) {
 function isNumeric(content: Inline[]) {
   const text = content.map(item => (item.t === 'text' ? item.text : item.t === 'math' ? '0' : '')).join('').trim();
   return /^[-+−±~≈<>]?\s*\d[\d.,\s]*(%|\s*±\s*[\d.,]+)?$/.test(text);
+}
+
+// The columns whose every body cell is a number, so their headers line up with them. Not
+// worked out for a table with spans, whose cells do not map to columns by position.
+function numericColumns(rows: Cell[][]) {
+  if (rows.some(row => row.some(cell => cell.colSpan > 1 || cell.rowSpan > 1))) return new Set<number>();
+  const body = rows.filter(row => row.some(cell => !cell.header));
+  return new Set((rows[0] ?? []).map((_, index) => index)
+    .filter(index => body.length > 0 && body.every(row => row[index] && !row[index].header && isNumeric(row[index].content))));
 }
 
 const referenceTitle = (reference: Reference) => reference.title || reference.text || reference.venue || '';
@@ -166,38 +179,21 @@ function ReferenceLinks({ reference }: { reference: Reference }) {
 
 function ReferenceEntry({ reference }: { reference: Reference }) {
   const primary = referenceLinks(reference)[0];
+  // With no identifier to open, the card searches PaperTok for its title instead of leading nowhere.
+  const search = !primary && reference.title ? searchPaperDestination({ title: reference.title }).path : null;
   return (
     <>
       <span className="ft-ref-meta">{referenceMeta(reference)}</span>
       <span className="ft-ref-title">
         {primary
           ? <a className="ft-ref-card-link" href={primary.href} target="_blank" rel="noopener noreferrer">{referenceTitle(reference)}<NewTabHint /></a>
-          : referenceTitle(reference)}
+          : search
+            ? <a className="ft-ref-card-link" href={search} target="_blank" rel="noopener noreferrer" title="Search PaperTok for this title">{referenceTitle(reference)}<span className="visually-hidden">, search PaperTok</span><NewTabHint /></a>
+            : referenceTitle(reference)}
       </span>
       <ReferenceSource reference={reference} />
       <ReferenceLinks reference={reference} />
     </>
-  );
-}
-
-function ReferenceDetails({ paperKey }: { paperKey: string }) {
-  const { paper, loading, failed } = useReferencePaper(paperKey);
-  const { locale } = useLanguage();
-  if (loading) return <p className="ft-peek-loading">Loading details…</p>;
-  if (failed) return <p className="ft-peek-loading">Could not load the details. Open the citation again to retry.</p>;
-  if (!paper) return null;
-  const facts = [
-    paper.year ? String(paper.year) : null,
-    paper.journal || null,
-    paper.citationCountKnown ? `${new Intl.NumberFormat(locale).format(paper.citationCount ?? 0)} citations` : null,
-  ].filter(Boolean);
-  const abstract = paper.abstract?.trim();
-  if (!facts.length && !abstract) return null;
-  return (
-    <div className="ft-peek-details">
-      {facts.length > 0 && <p className="ft-peek-facts">{facts.join(' · ')}</p>}
-      {abstract && <p className="ft-peek-abstract">{abstract}</p>}
-    </div>
   );
 }
 
@@ -207,29 +203,37 @@ function ReferenceCard({ reference, lang, title, close }: { reference: Reference
     ? getPaperKey({ arxivId: reference.arxiv, doi: reference.doi, pmid: reference.pmid })
     : null;
   const path = paperKey ? getPublicPaperPath(paperKey) : null;
+  const { paper, loading, failed, retry } = useReferencePaper(paperKey);
+  const { locale } = useLanguage();
+  const facts = [
+    authorLine(reference.authors, 4),
+    reference.year,
+    paper?.citationCountKnown ? `${new Intl.NumberFormat(locale).format(paper.citationCount ?? 0)} citations` : null,
+  ].filter(Boolean).join(' · ');
+  const abstract = paper?.abstract?.trim();
+  const links = referenceLinks(reference);
   return (
     <div className="ft-peek-card" lang={lang}>
       <div className="ft-peek-head">
-        <span className="ft-ref-meta">{referenceMeta(reference)}</span>
+        {title(referenceTitle(reference))}
         {close}
       </div>
-      {title(path
-        ? <a className="ft-peek-title-link" href={path} target="_blank" rel="noopener noreferrer">{referenceTitle(reference)}<ArrowRight size={14} aria-hidden="true" /><NewTabHint /></a>
-        : referenceTitle(reference))}
-      <ReferenceSource reference={reference} />
-      {paperKey && <ReferenceDetails paperKey={paperKey} />}
-      {referenceLinks(reference).length > 0 && (
-        <ul className="ft-peek-links">
-          {referenceLinks(reference).map(link => (
-            <li key={link.href}><a href={link.href} target="_blank" rel="noopener noreferrer"><span>{link.text}</span><ArrowSquareOut size={14} aria-hidden="true" /><NewTabHint /></a></li>
-          ))}
-        </ul>
+      {facts && <p className="ft-peek-facts">{facts}</p>}
+      {loading && <p className="ft-peek-status" role="status">Loading details<span className="ft-peek-dots" aria-hidden="true"><i /><i /><i /></span></p>}
+      {failed && <p className="ft-peek-status" role="status">Details did not load. <button type="button" className="ft-peek-retry" onClick={retry}>Try again</button></p>}
+      {/* Cut at three lines; the whole abstract is on the paper's page. */}
+      {abstract && <div className="ft-peek-abstract"><p>{abstract}</p></div>}
+      {(path || links.length > 0) && (
+        <p className="ft-peek-links">
+          {path && <a href={path} target="_blank" rel="noopener noreferrer">Open in PaperTok<NewTabHint /></a>}
+          {links.map(link => <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer">{link.text}<ArrowSquareOut size={14} aria-hidden="true" /><NewTabHint /></a>)}
+        </p>
       )}
     </div>
   );
 }
 
-function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: { reference: Reference | null; open: boolean; onOpenChange: (open: boolean) => void; anchor: RefObject<HTMLElement | null>; scroll: HTMLElement | null; lang?: string }) {
+function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: { reference: Reference | null; open: boolean; onOpenChange: (open: boolean) => void; anchor: HTMLElement | null; scroll: HTMLElement | null; lang?: string }) {
   const isPhone = useIsPhone();
   // Closed by scrolling away, focus stays where the reader is instead of pulling the text back.
   const scrolledAway = useRef(false);
@@ -237,7 +241,7 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: 
     if (open) scrolledAway.current = false;
   }, [open]);
   useScrollFrame(open && !isPhone ? scroll : null, () => {
-    const place = anchor.current?.getBoundingClientRect();
+    const place = anchor?.getBoundingClientRect();
     const view = scroll?.getBoundingClientRect();
     if (!place || !view || (place.bottom > view.top && place.top < view.bottom)) return;
     scrolledAway.current = true;
@@ -247,7 +251,7 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: 
   if (isPhone) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent className="ft-sheet" overlayClassName="ft-sheet-backdrop" forceOverlay viewportClassName="ft-sheet-viewport" finalFocus={anchor}>
+        <DrawerContent className="ft-sheet" overlayClassName="ft-sheet-backdrop" forceOverlay viewportClassName="ft-sheet-viewport" finalFocus={() => anchor}>
           <DrawerHandle />
           {reference && (
             <ReferenceCard
@@ -265,7 +269,7 @@ function ReferencePeek({ reference, open, onOpenChange, anchor, scroll, lang }: 
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverPortal>
         <PopoverPositioner anchor={anchor} side="top" align="center" sideOffset={8} collisionPadding={12} className="ft-peek-positioner">
-          <PopoverPopup className="ft-peek" finalFocus={() => (scrolledAway.current ? false : anchor.current)}>
+          <PopoverPopup className="ft-peek" finalFocus={() => (scrolledAway.current ? false : anchor)}>
             {reference && (
               <ReferenceCard
                 reference={reference}
@@ -312,12 +316,16 @@ function BlockView({ block, figureWidth, passage, passageHint, dir }: { block: B
       return (
         <figure id={id} tabIndex={-1} className="ft-figure">
           {block.images.map((image, index) => (
-            <img key={index} src={image.src} alt={figureAlt(block, index)} width={image.width} height={image.height} style={image.width ? { '--ft-share': image.width / figureWidth } : undefined} loading="lazy" referrerPolicy="no-referrer" />
+            <div key={index} className="ft-figure-frame" style={image.width ? { '--ft-share': image.width / figureWidth } : undefined}>
+              <img src={image.src} alt={figureAlt(block, index)} width={image.width} height={image.height} loading="lazy" referrerPolicy="no-referrer" />
+              <CopyButton label="Copy image" done="Image copied" failed="Could not copy the image" copy={() => copyImage(image.src)} />
+            </div>
           ))}
           <figcaption><Label text={block.label} /><Inlines content={block.caption} /></figcaption>
         </figure>
       );
-    case 'table':
+    case 'table': {
+      const numeric = numericColumns(block.rows);
       return (
         <figure id={id} tabIndex={-1} className="ft-table">
           {block.caption.length > 0 && <figcaption><Label text={block.label} /><Inlines content={block.caption} /></figcaption>}
@@ -329,7 +337,7 @@ function BlockView({ block, figureWidth, passage, passageHint, dir }: { block: B
                     {row.map((cell, cellIndex) => {
                       const Cell = cell.header ? 'th' : 'td';
                       return (
-                        <Cell key={cellIndex} colSpan={cell.colSpan} rowSpan={cell.rowSpan} data-numeric={!cell.header && isNumeric(cell.content) ? '' : undefined}>
+                        <Cell key={cellIndex} colSpan={cell.colSpan} rowSpan={cell.rowSpan} data-numeric={!cell.header && isNumeric(cell.content) ? '' : undefined} data-numeric-column={cell.header && numeric.has(cellIndex) ? '' : undefined}>
                           <Inlines content={cell.content} />
                         </Cell>
                       );
@@ -341,6 +349,7 @@ function BlockView({ block, figureWidth, passage, passageHint, dir }: { block: B
           </div>
         </figure>
       );
+    }
   }
 }
 
@@ -370,7 +379,8 @@ export default function FullTextArticle({ doc, paper, showAbstract = true, passa
 
   const [shownReference, setShownReference] = useState<Reference | null>(null);
   const [referenceOpen, setReferenceOpen] = useState(false);
-  const citation = useRef<HTMLElement | null>(null);
+  // State, not a ref: a click on another citation must move the open card to it.
+  const [citation, setCitation] = useState<HTMLElement | null>(null);
   const [citationScroll, setCitationScroll] = useState<HTMLElement | null>(null);
   const showReference = (event: MouseEvent<HTMLElement>) => {
     const link = (event.target as Element).closest<HTMLAnchorElement>('a[data-cites]');
@@ -378,7 +388,7 @@ export default function FullTextArticle({ doc, paper, showAbstract = true, passa
     if (!reference) return;
     event.preventDefault();
     event.stopPropagation();
-    citation.current = link;
+    setCitation(link);
     setCitationScroll(link.closest<HTMLElement>('.ft-scroll'));
     setShownReference(reference);
     setReferenceOpen(true);

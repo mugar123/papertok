@@ -13,7 +13,9 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
-import { fullPaperTranslationAvailable, handleFullPaperTranslation, handlePaperTranslation } from './ai-translation.ts';
+import { READ_ALOUD_PATH, handleReadAloud } from './read-aloud-tts.ts';
+import { handlePaperTranslation } from './ai-translation.ts';
+import { fullPaperTranslationAvailable, handleFullPaperTranslation } from './ai-full-paper-translation.ts';
 import {
   EmailNotificationError,
   handleEmailNotificationRequest,
@@ -420,24 +422,37 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       });
     }
   }
-  if (url.pathname === '/ai/annotate' || url.pathname === '/ai/translate' || url.pathname === '/ai/translate-paper') {
+  if (url.pathname === '/ai/translate-paper') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
-    const fullPaper = url.pathname === '/ai/translate-paper';
-    if ((fullPaper || origin) && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-    if (fullPaper && !fullPaperTranslationAvailable(env)) {
+    if (!allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    if (!fullPaperTranslationAvailable(env)) {
       return json({ code: 'AI_NOT_CONFIGURED' }, 404, { ...corsHeaders(origin, env), 'cache-control': 'no-store' });
     }
-    const translate = fullPaper || url.pathname === '/ai/translate';
     try {
-      if (fullPaper) {
-        const body = await handleFullPaperTranslation(request, env);
-        return new Response(body, { headers: {
-          ...corsHeaders(origin, env),
-          ...RESPONSE_SECURITY_HEADERS,
-          'content-type': 'application/x-ndjson; charset=utf-8',
-          'cache-control': 'private, no-store',
-        } });
-      }
+      const body = await handleFullPaperTranslation(request, env);
+      return new Response(body, { headers: {
+        ...corsHeaders(origin, env),
+        ...RESPONSE_SECURITY_HEADERS,
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'cache-control': 'private, no-store',
+      } });
+    } catch (error) {
+      const knownError = error instanceof AIExplanationError;
+      const code = knownError ? error.code : 'AI_UNAVAILABLE';
+      const status = knownError ? error.status : 502;
+      captureWorkerTranslationFailure(code, status);
+      return json(
+        { code, ...(knownError && error.quota ? { quota: error.quota } : {}) },
+        status,
+        { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+      );
+    }
+  }
+  if (url.pathname === '/ai/annotate' || url.pathname === '/ai/translate') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    const translate = url.pathname === '/ai/translate';
+    try {
       const payload = translate
         ? await handlePaperTranslation(request, env, context)
         : await handlePassageAnnotation(request, env);
@@ -457,6 +472,27 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
           ...(knownError && error.quota ? { quota: error.quota } : {}),
         },
         status,
+        { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+      );
+    }
+  }
+  if (url.pathname === READ_ALOUD_PATH) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    try {
+      const { body, type } = await handleReadAloud(request, env, context ? work => context.waitUntil(work) : undefined);
+      return new Response(body, {
+        headers: { ...corsHeaders(origin, env), 'content-type': type, 'cache-control': 'private, no-store' },
+      });
+    } catch (error) {
+      captureWorkerException(error);
+      const knownError = error instanceof AIExplanationError;
+      return json(
+        {
+          code: knownError ? error.code : 'AI_UNAVAILABLE',
+          ...(knownError && error.quota ? { quota: error.quota } : {}),
+        },
+        knownError ? error.status : 502,
         { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
       );
     }

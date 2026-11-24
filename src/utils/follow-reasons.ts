@@ -4,13 +4,9 @@ import { getFollowDisplayName } from './follow-display-name.ts';
 
 type FollowType = PaperFollowMatch['type'];
 
-export function paperAuthorKey(author: PaperAuthor | string) {
-  return typeof author === 'string' ? author : author.id || author.name;
-}
-
 export type CardFollow =
   | { type: FollowType; name: string; source: 'request' }
-  | { type: 'author'; name: string; source: 'card'; authorKey: string };
+  | { type: 'author'; name: string; source: 'card' };
 
 // The order a card with several follows names one in.
 const TYPES: FollowType[] = ['author', 'topic', 'institution', 'project', 'journal'];
@@ -37,14 +33,15 @@ export function followedOnCard(
     const match = followed.find(candidate => candidate.type === type);
     if (match) {
       const stored = storedFollow?.(match);
-      const namedMatch = match.displayName.trim() !== match.canonicalId ? match : null;
-      const follow = stored ?? namedMatch;
-      const name = follow ? getFollowDisplayName(follow).trim() : '';
+      let name = stored ? getFollowDisplayName(stored).trim() : '';
+      if ((!name || name === match.canonicalId) && match.displayName.trim() !== match.canonicalId) {
+        name = getFollowDisplayName(match).trim();
+      }
       return { type, name: name === match.canonicalId ? '' : name, source: 'request' };
     }
     if (type === 'author' && followedAuthor) {
       const name = typeof followedAuthor === 'string' ? followedAuthor : followedAuthor.name;
-      return { type, name, source: 'card', authorKey: paperAuthorKey(followedAuthor) };
+      return { type, name, source: 'card' };
     }
   }
   return null;

@@ -34,10 +34,7 @@ const presentationFormatsByConference = new Map<string, readonly string[]>([
   ['S4306418318', ['oral']], // ECCV
 ]);
 
-// Any mention of a format in a sentence of its own counts ("Poster paper",
-// "Oral talk", "Best poster award"): a mark missed for "oral histories" is
-// acceptable, a poster at CHI called an accepted paper is not.
-const presentationFormat = /\b(poster|oral|spotlight)s?\b/g;
+const presentationNote = /^(poster|oral|spotlight)(?: presentation)?$/i;
 const acceptancePhrase = /\b(?:accepted\s+(?:and\s+presented\s+at|for\s+(?:presentation|publication)\s+(?:at|in)|at|to|by|in|for|@)|to\s+appear\s+(?:in|at)|appears\s+in|published\s+(?:as\s+(?:a\s+)?conference\s+paper\s+)?(?:in|at)|accepted(?=\s+\()|presented\s+at|camera[- ]ready\s+(?:for|of)|(oral|spotlight|poster)(?:\s+presentation)?\s+at)\s+/i;
 const paperSubject = /^(?:(?:(?:this|our|the) )?(?:paper|work|article|manuscript) )?(?:has been |was |is )?$/i;
 const uncertain = /\b(?:versions?|extend\w*|extensions?|preliminary|earlier|full|journal|review\w*|reject\w*|retract\w*|declin\w*|withdr\w*|not presented|submitted|pending|conditionally)\b/i;
@@ -57,7 +54,7 @@ const workshopAcronyms = new Set(terms.filter(({ term }) => term.match !== 'phra
 
 const count = /(?:\d+(?:\s*\+\s*\d+)*|X+)\s*(?:pages?|figures?|tables?)(?:\s*\(\d+(?:\s*\+\s*\d+)+\))?/i.source;
 const countPrefix = new RegExp(`^(?:${count},\\s*)+`, 'i');
-const countsOnly = new RegExp(`^${count}(?:(?:,\\s*| and )${count})*(?:, including (?:the )?appendi(?:x|ces))?$`, 'i');
+const countsOnly = new RegExp(`^${count}(?:(?:,\\s*| and )${count})*(?:, including (?:references and )?(?:the )?appendi(?:x|ces))?$`, 'i');
 const labelledLink = /^(?:code(?: and data)?|project page|data|website):\s*\uFFFC$/i;
 
 function isResourceNote(note: string) {
@@ -65,16 +62,20 @@ function isResourceNote(note: string) {
     const label = /^(?:code(?:base)?(?: and data)?|(?:project )?(?:home\s?page|web\s?page|website)|project (?:page|site)|data(?:set)?|video|implementation|supplementary material)(?: link)?\b/i.exec(part);
     if (!label) return false;
     const target = part.slice(label[0].length).trim();
-    return /^:\s*[\w./+-]+(?:\s+\uFFFC)?$/.test(target)
-      || /^(?:available\s*)?(?:(?:at|on)\s*)?:?\s*\uFFFC$/i.test(target);
+    return /^:\s*GitHub(?:\s+\uFFFC)?$/i.test(target)
+      || /^(?:is )?(?:available\s*)?(?:(?:at|on)\s*)?:?\s*\uFFFC$/i.test(target);
   });
+}
+
+function isCorrespondingAuthor(note: string) {
+  const name = /^corresponding author:\s*(.+)$/i.exec(note)?.[1];
+  return name && /^\p{Lu}[\p{L}\p{M}'’-]*(?: \p{Lu}[\p{L}\p{M}'’-]*){1,3}$/u.test(name);
 }
 
 // An unrecognised subject or a second destination makes the attribution ambiguous.
 function arxivDestination(comment: string) {
   let destination: string | undefined;
   const formats: string[] = [];
-  const notes: string[] = [];
   for (const sentence of comment.split(/;|[.!](?=\s|$)/)) {
     const clause = sentence.trim();
     if (!clause || /^camera[- ]ready version$/i.test(clause)) continue;
@@ -96,16 +97,18 @@ function arxivDestination(comment: string) {
       venue = clause;
     } else {
       if (clause === '\uFFFC' || countsOnly.test(clause) || isResourceNote(clause) || /^equal contribution$/i.test(clause)
-        || /^corresponding author:\s*[^,;!?()]+$/i.test(clause)) continue;
-      for (const [, format] of clause.toLowerCase().matchAll(presentationFormat)) formats.push(format);
-      notes.push(clause);
+        || /^code and data available$/i.test(clause)
+        || isCorrespondingAuthor(clause)) continue;
+      const format = presentationNote.exec(clause);
+      if (!format) return;
+      formats.push(format[1].toLowerCase());
       continue;
     }
     if (destination === venue) continue;
     if (destination || /[?\uFFFC]/.test(venue)) return;
     destination = venue;
   }
-  return destination && { venue: destination, formats, notes };
+  return destination && { venue: destination, formats };
 }
 
 function isOrganisation(token: string) {
@@ -115,16 +118,6 @@ function isOrganisation(token: string) {
 function eventToken(token: string) {
   return /[a-z][A-Z]|[A-Z]{2}[a-z]|[A-Za-z]\d[A-Za-z]|@/.test(token)
     || (/^[A-Z0-9+-]{3,}$/.test(token) && /[A-Z].*[A-Z]/.test(token) && !rules.plain_uppercase_words.includes(token));
-}
-
-function ambiguousNote(note: string, conference: Conference) {
-  // An author may give the presentation format separately. Its venue still has to allow it.
-  if (/^(?:oral|poster|spotlight)(?: presentation)?$/i.test(note)) return false;
-  const words = note.match(/[\p{L}\p{N}@+-]+/gu) ?? [];
-  if (words.length <= 3 || words.filter(word => /^[a-z]+$/.test(word)).length < 3) return true;
-  if (/\b(?:tracks?|presented|talks?|sessions?)\b/i.test(note)) return true;
-  if (/^(?:19|20)\d{2}$/.test(words.at(-1) ?? '') && !/\b(?:is|are|was|were|has|have|had)\b/.test(note)) return true;
-  return words.some(word => eventToken(word) && !isOrganisation(word) && !conference.terms.some(term => term.text === word));
 }
 
 function otherEventBefore(prefix: string, term: Term) {
@@ -214,25 +207,34 @@ function tieBreak(term: Term, lower: string, category: string) {
 
 export function conferenceInText(text: string | null | undefined, category: string | undefined, evidence: 'arxiv-comment' | 'openreview', venueId?: string): Mark | undefined {
   if (!text) return;
+  let linkText = '';
   if (evidence === 'arxiv-comment') {
     // Keep a placeholder so a link cannot supply or join parts of a venue.
     let ambiguousLink = false;
     text = text.replace(/\b(?:[a-z][a-z\d+.-]*:\/\/|www\.)\S+/gi, url => {
+      try {
+        const decoded = decodeURIComponent(url);
+        linkText += ' ' + decoded + ' ' + decoded.replace(/[^\p{L}\p{N}]+/gu, ' ');
+      } catch {
+        ambiguousLink = true;
+      }
       // A run-on comma or semicolon can start a qualifier outside the link.
       if (/[,;]\S/.test(url)) ambiguousLink = true;
       return '\uFFFC' + (url.match(/[.,;!]$/)?.[0] ?? '');
     });
-    if (ambiguousLink) return;
-    if (text.toLowerCase().match(/\b[a-z0-9]+w(?=\d{2,4}\b|\b)/g)?.some(token => workshopAcronyms.has(token))) return;
+    if (ambiguousLink || reject.test(linkText) || uncertain.test(linkText) || /\b(?:findings|symposium)\b/i.test(linkText)) return;
+    if ((text + linkText).toLowerCase().match(/\b[a-z0-9]+w(?=\d{2,4}\b|\b)/g)?.some(token => workshopAcronyms.has(token))) return;
   }
   const rejectText = venueId ? `${text} ${venueId}` : text;
   const lower = text.toLowerCase();
   if (evidence === 'openreview' && uncertain.test(text)) return;
-  const attribution = evidence === 'openreview' ? { venue: text, formats: [], notes: [] } : arxivDestination(text);
+  const commentAndLinks = lower + linkText.toLowerCase();
+  const attribution = evidence === 'openreview' ? { venue: text, formats: [] } : arxivDestination(text);
   if (!attribution) return;
-  const { venue: destination, formats, notes } = attribution;
+  const { venue: destination, formats } = attribution;
   const years = new Set(destination.match(/\b(?:19|20)\d{2}\b/g));
-  if (years.size > 1) return;
+  const latestYear = new Date().getUTCFullYear() + 1;
+  if (years.size > 1 || [...years].some(year => Number(year) > latestYear)) return;
   const destinationLower = destination.toLowerCase();
   const strictArchive = rules.strict_archives.includes((category ?? '').split('.')[0]);
   if (rejectExceptWorkshop.test(rejectText)) return;
@@ -243,7 +245,7 @@ export function conferenceInText(text: string | null | undefined, category: stri
     if (!destinationLower.includes(needle) || (mentionsWorkshop && !conference.workshop)) continue;
     if (term.match === 'strict' && !strictArchive) continue;
     if (term.only_arxiv_categories && !term.only_arxiv_categories.includes(category ?? '')) continue;
-    if (term.not_arxiv_categories?.includes(category ?? '') || term.reject_if_comment_has?.some(value => lower.includes(value.toLowerCase()))) continue;
+    if (term.not_arxiv_categories?.includes(category ?? '') || term.reject_if_comment_has?.some(value => commentAndLinks.includes(value.toLowerCase()))) continue;
     const withYear = dated.exec(destination);
     const match = withYear ?? (term.match !== 'strict' ? bare.exec(destination) : null);
     if (!match || otherEventBefore(destination.slice(0, match.index), term)) continue;
@@ -258,7 +260,6 @@ export function conferenceInText(text: string | null | undefined, category: stri
     || (other.term.text === m.term.text && other.priority > m.priority)));
   const first = candidates[0];
   if (!first || candidates.some(candidate => candidate.conference.id !== first.conference.id)) return;
-  if (notes.some(note => ambiguousNote(note, first.conference))) return;
   if (/\bsymposium\b/.test(lower)) {
     // A symposium can itself be the catalogued venue (VTS, ISWC).
     const named = venueWords(lower.replace(`(${first.term.text.toLowerCase()})`, ''));
@@ -267,10 +268,10 @@ export function conferenceInText(text: string | null | undefined, category: stri
   if (/\bfindings\b/i.test(text) && !first.conference.label.endsWith(' Findings')) return;
   if (!namesAcceptanceVenue(destination, first.conference, formats)) return;
   const year = candidates.find(candidate => candidate.year)?.year;
-  if (year && years.size && !years.has(String(year))) return;
+  if (year && (year > latestYear || (years.size && !years.has(String(year))))) return;
   if (evidence === 'openreview') {
     const venue = /^([^/]+)\.cc\/((?:19|20)\d{2})\/(Conference|Datasets_and_Benchmarks_Track)$/i.exec(venueId ?? '');
-    if (!venue || (years.size && !years.has(venue[2])) || (year && year !== Number(venue[2]))
+    if (!venue || Number(venue[2]) > latestYear || (years.size && !years.has(venue[2])) || (year && year !== Number(venue[2]))
       || !first.conference.terms.some(term => term.text.toLowerCase() === venue[1].toLowerCase())
       || (venue[3] !== 'Conference' && first.conference.label !== 'NeurIPS')) return;
   }

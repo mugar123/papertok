@@ -1,6 +1,6 @@
 import type { WorkerEnv } from './env.ts';
 
-import { fullPaperTranslationAvailable } from './ai-translation.ts';
+import { fullPaperTranslationAvailable } from './ai-full-paper-translation.ts';
 import { activeAIProvider, checkAIProviderHealth, isAIProviderConfigured } from './ai-explanation.ts';
 import { isCallerQuotaSecretConfigured } from './caller-quota.ts';
 import { checkEmailProviderHealth, configuredEmailProvider, configuredEmailSubscriptionStore, getEmailDeliveryLedgerHealth, getEmailScheduleHealth } from './email-notifications.ts';

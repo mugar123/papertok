@@ -8,13 +8,6 @@ import type { TestGlobals, TestNamespace } from './test-types.ts';
 import type { LedgerTransaction } from './ledger-storage.ts';
 import { RequestQuotaLedger } from './request-quota-ledger.ts';
 
-import { PAPER_TRANSLATION_DEADLINE_MS } from '../src/utils/full-paper-translation-contract.ts';
-
-const FULL_ABSTRACT = 'We study sequence models. '.padEnd(5_995, 'a');
-const FULL_ARTICLE = `<html><body><article class="ltx_document"><div class="ltx_abstract"><p>${FULL_ABSTRACT}</p></div>`
-  + '<section id="s1"><h2 class="ltx_title">Results</h2><p class="ltx_p">Accuracy increased &amp; held.</p></section>'
-  + '</article></body></html>';
-
 const TRANSLATION_URL = 'https://api.papertok.app/ai/translate';
 const tokenFor = (uid: string) => `e30.${Buffer.from(JSON.stringify({ sub: uid, exp: Math.floor(Date.now() / 1_000) + 3_600 })).toString('base64url')}.fixture`;
 const TOKEN = tokenFor('reader-1');
@@ -76,8 +69,6 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
   const globals = globalThis as TestGlobals;
   const caches = globals.caches;
   const arxiv = { beforeRead: async () => {} };
-  const arxivRequests: string[] = [];
-  const source = { url: 'https://arxiv.org/html/1706.03762', renderer: 'arxiv', document: FULL_ARTICLE, malformed: false };
   globals.caches = {
     default: {
       match: async key => {
@@ -87,13 +78,6 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
         if (url.pathname === '/cache/arxiv' && url.searchParams.get('id_list') === INPUT.arxivId) {
           await arxiv.beforeRead();
           return new Response(ARXIV_ATOM, { headers: { 'content-type': 'application/atom+xml' } });
-        }
-        if (url.pathname === '/cache/resources/full-text') {
-          arxivRequests.push(url.search);
-          if (source.malformed) return new Response('{');
-          return Response.json({
-            source: source.renderer, format: 'latexml', url: source.url, document: source.document,
-          });
         }
         return null;
       },
@@ -120,7 +104,7 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 9 }) {
     calls.push(JSON.parse(String(init.body)));
     return provider.reply(init.signal);
   });
-  return { env, calls, quotas, days, provider, providerUrls, identity, arxiv, ledger, source, arxivRequests };
+  return { env, calls, quotas, days, provider, providerUrls, identity, arxiv, ledger };
 }
 
 function translationTimers(t: TestContext) {
@@ -248,12 +232,6 @@ test('revoked credentials cannot spend even while the identity cache still has t
 
 test('translates the title and abstract in one private call with a separate quota', async t => {
   const { env, calls, quotas, days, providerUrls } = setUp(t);
-  const previousBase = process.env.ANTHROPIC_BASE_URL;
-  process.env.ANTHROPIC_BASE_URL = 'https://example.net';
-  t.after(() => {
-    if (previousBase === undefined) delete process.env.ANTHROPIC_BASE_URL;
-    else process.env.ANTHROPIC_BASE_URL = previousBase;
-  });
   const response = await worker.fetch(request(), env);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
@@ -357,37 +335,25 @@ test('refunds a provider outage to the reader while retaining the global attempt
   assert.equal(quotas[1].partKey, undefined);
 });
 
-function useTestQuotaLedger(env: WorkerEnv) {
-  const ledgers = new Map<unknown, RequestQuotaLedger>();
-  const namespace: TestNamespace = {
-    idFromName: day => day,
-    get: id => {
-      let ledger = ledgers.get(id);
-      if (!ledger) {
-        const values = new Map<string, unknown>();
-        const storage = {
-          transaction: <T>(fn: (txn: LedgerTransaction) => Promise<T>) => fn({
-            get: <V>(key: string) => values.get(key) as V | undefined,
-            put: (key, value) => values.set(key, value),
-            delete: key => values.delete(key),
-          }),
-          getAlarm: async () => null,
-          setAlarm: async () => undefined,
-          deleteAll: async () => values.clear(),
-        };
-        ledger = new RequestQuotaLedger({ storage });
-        ledgers.set(id, ledger);
-      }
-      const current = ledger;
-      return { fetch: (input: RequestInfo | URL, init?: RequestInit) => current.fetch(new Request(input, init)) };
-    },
-  };
-  env.REQUEST_QUOTA_LEDGER = namespace as WorkerEnv['REQUEST_QUOTA_LEDGER'];
-}
-
 test('one account can spend only its attempt allowance during a provider outage', async t => {
   const { env, provider, calls } = setUp(t);
-  useTestQuotaLedger(env);
+  const values = new Map<string, unknown>();
+  const storage = {
+    transaction: <T>(fn: (txn: LedgerTransaction) => Promise<T>) => fn({
+      get: <V>(key: string) => values.get(key) as V | undefined,
+      put: (key, value) => values.set(key, value),
+      delete: key => values.delete(key),
+    }),
+    getAlarm: async () => null,
+    setAlarm: async () => undefined,
+    deleteAll: async () => values.clear(),
+  };
+  const ledger = new RequestQuotaLedger({ storage });
+  const namespace: TestNamespace = {
+    idFromName: day => day,
+    get: () => ({ fetch: (input: RequestInfo | URL, init?: RequestInit) => ledger.fetch(new Request(input, init)) }),
+  };
+  env.REQUEST_QUOTA_LEDGER = namespace as WorkerEnv['REQUEST_QUOTA_LEDGER'];
   provider.reply = () => Response.json({ error: { type: 'overloaded_error', message: 'busy' } }, { status: 529 });
   for (let attempt = 0; attempt < 20; attempt++) {
     assert.equal((await worker.fetch(request(), env)).status, 502);
@@ -425,231 +391,4 @@ test('a refusal, truncated response or malformed answer cannot become a translat
     assert.equal(refund.globalAmount, 0);
     assert.equal(refund.partKey, undefined);
   }
-});
-
-const FULL_INPUT = {
-  query: 'arxiv_id=1706.03762',
-  language: 'es',
-  fingerprint: createHash('sha256').update(JSON.stringify([
-    [FULL_ABSTRACT], ['Results', 'Accuracy increased & held.'],
-  ])).digest('hex'),
-};
-
-function enableFullPaper(env: WorkerEnv) {
-  env.FULL_PAPER_TRANSLATION_ENABLED = 'true';
-}
-
-function fullRequest(body: unknown = FULL_INPUT, token = TOKEN) {
-  return new Request('https://api.papertok.app/ai/translate-paper', {
-    method: 'POST',
-    headers: { origin: 'https://papertok.app', authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
-  });
-}
-
-function translatedSegments(segments: string[]) {
-  return Response.json({
-    stop_reason: 'end_turn',
-    content: [{ type: 'text', text: JSON.stringify({ segments }) }],
-  });
-}
-
-test('approved full text spends one atomic slot before sending any approved chunk', async t => {
-  const { env, calls, quotas, provider, days, arxivRequests } = setUp(t);
-  enableFullPaper(env);
-  provider.reply = () => {
-    assert.deepEqual(quotas.map(({ action, subjectLimit, globalAmount }) => [action, subjectLimit, globalAmount]), [
-      ['reserve', 2, 0], ['peek', 5, undefined], ['reserve', 5, undefined],
-    ]);
-    assert.equal(quotas[2].globalLimit, 25);
-    return translatedSegments(calls.length === 1 ? ['Estudiamos modelos de secuencias.'] : ['Resultados', 'La precisión aumentó.']);
-  };
-  const response = await worker.fetch(fullRequest({ ...FULL_INPUT, query: FULL_INPUT.query + '&doi=10.1000/test&fulltext_id=PMC123' }), env);
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('cache-control'), 'private, no-store');
-  assert.deepEqual((await response.text()).trim().split('\n').map(line => JSON.parse(line)), [
-    { type: 'chunk', index: 0, segments: ['Estudiamos modelos de secuencias.'] },
-    { type: 'chunk', index: 1, segments: ['Resultados', 'La precisión aumentó.'] },
-    { type: 'done', count: 2 },
-  ]);
-  assert.match(days[1], /^translate-paper:\d{4}-\d{2}-\d{2}$/);
-  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
-  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
-  assert.equal(response.headers.get('permissions-policy'), 'camera=(), microphone=(), geolocation=()');
-  assert.deepEqual(calls.map(call => call.messages), [
-    [{ role: 'user', content: JSON.stringify([FULL_ABSTRACT]) }],
-    [{ role: 'user', content: '["Results","Accuracy increased & held."]' }],
-  ]);
-  assert.equal(calls[0].max_tokens, 6_000);
-  assert.deepEqual(arxivRequests, ['?arxiv_id=1706.03762']);
-});
-
-test('an off flag, altered text, revoked identity, and exhausted quotas spend nothing', async t => {
-  const { env, calls, quotas, ledger, identity, arxivRequests } = setUp(t);
-  env.FULL_PAPER_TRANSLATION_ENABLED = 'false';
-  const disabled = await worker.fetch(fullRequest(), env);
-  assert.equal(disabled.status, 404);
-  assert.deepEqual(await disabled.json(), { code: 'AI_NOT_CONFIGURED' });
-  assert.equal(identity.lookups, 0);
-  assert.deepEqual(arxivRequests, []);
-  assert.deepEqual(quotas, []);
-  assert.deepEqual(calls, []);
-  enableFullPaper(env);
-  assert.equal((await worker.fetch(fullRequest({ ...FULL_INPUT, fingerprint: 'a'.repeat(64) }), env)).status, 400);
-  assert.equal((await worker.fetch(fullRequest({ ...FULL_INPUT, query: 'x'.repeat(1_025) }), env)).status, 413);
-  identity.revoked = true;
-  assert.equal((await worker.fetch(fullRequest(), env)).status, 401);
-  assert.deepEqual(quotas.map(({ action }) => action), ['reserve', 'peek']);
-  identity.revoked = false;
-  ledger.reply = () => Response.json({ accepted: false, scope: 'user' });
-  assert.equal((await worker.fetch(fullRequest(), env)).status, 429);
-  for (const scope of ['user', 'global']) {
-    ledger.reply = action => Response.json({
-      accepted: true,
-      ...(action === 'peek' && (scope === 'user' ? { subjectUsage: 5 } : { globalUsage: 25 })),
-    });
-    const response = await worker.fetch(fullRequest(), env);
-    assert.equal(response.status, 429);
-    assert.equal((await response.json<{ quota: { scope: string } }>()).quota.scope, scope);
-  }
-  assert.equal(calls.length, 0);
-  assert.deepEqual(arxivRequests, ['?arxiv_id=1706.03762']);
-});
-
-test('a bad later chunk leaves the first chunk and spends no retry or refund', async t => {
-  const { env, calls, quotas, provider } = setUp(t);
-  enableFullPaper(env);
-  provider.reply = () => translatedSegments(calls.length === 1 ? ['Estudiamos modelos de secuencias.'] : ['Missing a segment']);
-  const response = await worker.fetch(fullRequest(), env);
-  assert.deepEqual((await response.text()).trim().split('\n').map(line => JSON.parse(line)), [
-    { type: 'chunk', index: 0, segments: ['Estudiamos modelos de secuencias.'] },
-    { type: 'error', code: 'AI_INVALID_RESPONSE' },
-  ]);
-  assert.equal(calls.length, 2);
-  assert.deepEqual(quotas.map(({ action }) => action), ['reserve', 'peek', 'reserve']);
-});
-
-test('cancelling after one chunk prevents a later provider call', async t => {
-  const { env, calls, provider } = setUp(t);
-  enableFullPaper(env);
-  provider.reply = () => translatedSegments(['Estudiamos modelos de secuencias.']);
-  const response = await worker.fetch(fullRequest(), env);
-  assert.ok(response.body);
-  const reader = response.body.getReader();
-  assert.deepEqual(JSON.parse(new TextDecoder().decode((await reader.read()).value)),
-    { type: 'chunk', index: 0, segments: ['Estudiamos modelos de secuencias.'] });
-  await reader.cancel();
-  assert.equal(calls.length, 1);
-});
-
-test('ar5iv is eligible and source redirects must keep the arXiv id', async t => {
-  const { env, calls, quotas, source, arxivRequests, provider } = setUp(t);
-  enableFullPaper(env);
-  source.renderer = 'ar5iv';
-  source.url = 'https://ar5iv.org/html/1706.03763';
-  const mismatched = await worker.fetch(fullRequest(), env);
-  assert.equal(mismatched.status, 400);
-  assert.deepEqual(await mismatched.json(), { code: 'AI_INVALID_PAPER' });
-  assert.deepEqual(quotas.map(({ action }) => action), ['reserve', 'peek']);
-  assert.equal(calls.length, 0);
-
-  source.url = 'https://ar5iv.org/html/1706.03762v2';
-  provider.reply = () => translatedSegments(['Estudiamos modelos de secuencias.']);
-  const accepted = await worker.fetch(fullRequest(), env);
-  assert.equal(accepted.status, 200);
-  assert.ok(accepted.body);
-  const reader = accepted.body.getReader();
-  const chunk = await reader.read();
-  await reader.cancel();
-  assert.deepEqual(JSON.parse(new TextDecoder().decode(chunk.value)),
-    { type: 'chunk', index: 0, segments: ['Estudiamos modelos de secuencias.'] });
-  assert.deepEqual(arxivRequests, Array(2).fill('?arxiv_id=1706.03762'));
-});
-
-test('full-paper capabilities do not call the provider and submission requires an allowed Origin', async t => {
-  const { env, providerUrls, identity, quotas } = setUp(t);
-  const capabilities = () => worker.fetch(new Request('https://api.papertok.app/health/ai?capabilities=1'), env);
-  assert.deepEqual(await (await capabilities()).json(), { capabilities: { fullPaperTranslation: false } });
-  enableFullPaper(env);
-  assert.deepEqual(await (await capabilities()).json(), { capabilities: { fullPaperTranslation: true } });
-  for (const origin of ['', 'https://example.net']) {
-    const request = fullRequest();
-    if (origin) request.headers.set('origin', origin);
-    else request.headers.delete('origin');
-    assert.equal((await worker.fetch(request, env)).status, 403);
-  }
-  assert.deepEqual(providerUrls, []);
-  assert.deepEqual(quotas, []);
-  assert.equal(identity.lookups, 0);
-});
-
-test('the real ledger limits cached source checks per account before any paid job', async t => {
-  const { env, arxivRequests, calls } = setUp(t);
-  enableFullPaper(env);
-  useTestQuotaLedger(env);
-  const now = Date.now();
-  t.mock.method(Date, 'now', () => now);
-  const mismatched = { ...FULL_INPUT, fingerprint: 'a'.repeat(64) };
-  for (let attempt = 0; attempt < 2; attempt++) {
-    assert.equal((await worker.fetch(fullRequest(mismatched), env)).status, 400);
-  }
-  const limited = await worker.fetch(fullRequest(mismatched), env);
-  assert.equal(limited.status, 429);
-  assert.deepEqual(await limited.json(), { code: 'AI_BUSY' });
-  assert.equal(arxivRequests.length, 2);
-  assert.equal((await worker.fetch(fullRequest(mismatched, OTHER_TOKEN), env)).status, 400);
-  assert.equal(arxivRequests.length, 3);
-  assert.equal(calls.length, 0);
-});
-
-test('rejects malformed relay JSON, oversized HTML and a seventeenth packed chunk before charging', async t => {
-  const { env, calls, quotas, source } = setUp(t);
-  enableFullPaper(env);
-
-  source.malformed = true;
-  const malformed = await worker.fetch(fullRequest(), env);
-  assert.equal(malformed.status, 400);
-  assert.deepEqual(await malformed.json(), { code: 'AI_INVALID_PAPER' });
-
-  source.malformed = false;
-  source.document = '<article class="ltx_document">' + 'a'.repeat(2 * 1024 * 1024) + '</article>';
-  const oversized = await worker.fetch(fullRequest(), env);
-  assert.equal(oversized.status, 400);
-  assert.deepEqual(await oversized.json(), { code: 'AI_INVALID_PAPER' });
-
-  const paragraphs = Array.from({ length: 17 }, () => ['A'.repeat(5_990)]);
-  source.document = '<article class="ltx_document">'
-    + paragraphs.map(([paragraph]) => `<p class="ltx_p">${paragraph}</p>`).join('') + '</article>';
-  const fingerprint = createHash('sha256').update(JSON.stringify(paragraphs)).digest('hex');
-  const tooMany = await worker.fetch(fullRequest({ ...FULL_INPUT, fingerprint }), env);
-  assert.equal(tooMany.status, 400);
-  assert.deepEqual(await tooMany.json(), { code: 'AI_INVALID_PAPER' });
-  assert.deepEqual(quotas.filter(quota => quota.subjectLimit === 5).map(quota => quota.action), ['peek', 'peek', 'peek']);
-  assert.equal(calls.length, 0);
-});
-
-test('a total deadline after the first translated chunk retains the partial result and the daily charge', { timeout: 10_000 }, async t => {
-  const { env, calls, quotas, provider } = setUp(t);
-  enableFullPaper(env);
-  const deadline = new AbortController();
-  const originalTimeout = AbortSignal.timeout;
-  t.mock.method(AbortSignal, 'timeout', (ms: number) => ms === PAPER_TRANSLATION_DEADLINE_MS ? deadline.signal : originalTimeout(ms));
-  const second = Promise.withResolvers<void>();
-  provider.reply = signal => {
-    if (calls.length === 1) return translatedSegments(['Primer fragmento']);
-    second.resolve();
-    return new Promise<Response>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true }));
-  };
-  const response = await worker.fetch(fullRequest(), env);
-  assert.ok(response.body);
-  const reader = response.body.getReader();
-  const decode = (value: Uint8Array | undefined) => JSON.parse(new TextDecoder().decode(value));
-  assert.deepEqual(decode((await reader.read()).value), { type: 'chunk', index: 0, segments: ['Primer fragmento'] });
-  const next = reader.read();
-  await second.promise;
-  deadline.abort(new DOMException('Deadline exceeded', 'TimeoutError'));
-  assert.deepEqual(decode((await next).value), { type: 'error', code: 'AI_TIMEOUT' });
-  assert.equal((await reader.read()).done, true);
-  assert.equal(calls.length, 2);
-  assert.deepEqual(quotas.filter(quota => quota.subjectLimit === 5).map(quota => quota.action), ['peek', 'reserve']);
 });

@@ -84,6 +84,16 @@ AI_DAILY_USER_LIMIT = "10"
 AI_DAILY_GLOBAL_LIMIT = "1000"
 # Paper rewrites stream from this model. Falls back to AI_MODEL when unset.
 AI_REWRITE_MODEL = "gemini-3.5-flash"
+# Characters /tts/paragraph may send to each voice provider per UTC day
+# (worker/read-aloud-tts.ts): Cartesia first, ElevenLabs when Cartesia
+# cannot. Both bill by the character, and audio already in TTS_AUDIO costs
+# nothing. ElevenLabs' day is a 31st of a month of its Startup Grant
+# (33,000,000 characters over 12 months); Cartesia's is a 31st of 8,000,000
+# credits a month. An account's day at each is one new full paper (about
+# 35,000 characters).
+TTS_DAILY_USER_CHARS = "44000"
+TTS_DAILY_ELEVENLABS_CHARS = "88000"
+TTS_DAILY_CARTESIA_CHARS = "258000"
 FIREBASE_WEB_API_KEY = "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0"
 # Not a secret: the project id is in every client bundle already. The service
 # account email and its private key are wrangler secrets, never in this file.
@@ -209,6 +219,13 @@ id = "a6b32a20ed4748139e828f1cbeff5b93"
 # [[kv_namespaces]]
 # binding = "AI_REWRITE_STORE"
 # id = "<id from wrangler kv namespace create>"
+
+# Read-aloud audio, one MP3 and its character timings per paragraph text, shared by every reader
+# (worker/read-aloud-tts.ts). Create it before deploying:
+# `npx wrangler r2 bucket create papertok-tts-audio`.
+[[r2_buckets]]
+binding = "TTS_AUDIO"
+bucket_name = "papertok-tts-audio"
 
 # Workers AI: toMarkdown turns a paper's PDF into the text NaN reads in
 # /ai/rewrite (worker/paper-text.ts), and the paper store embeds papers with

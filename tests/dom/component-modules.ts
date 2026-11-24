@@ -1,5 +1,7 @@
 import './dom-environment.ts';
-import type { ReactNode } from 'react';
+import type { Context, ReactNode } from 'react';
+import type { Paper } from '../../src/models/paper.ts';
+import type { ReadAloudChapter, ReadAloudTimeline, SpokenPassage } from '../../src/components/pdf/read-aloud.ts';
 import type { usePaperTranslation as UsePaperTranslation } from '../../src/hooks/use-paper-translation.ts';
 import { startAppModules } from './app-modules.ts';
 
@@ -12,6 +14,13 @@ import { startAppModules } from './app-modules.ts';
  * `render-feed.ts`).
  */
 type Component<Props> = (props: Props) => ReactNode;
+
+export async function loadPaperByline() {
+  const { modules: [byline], close } = await loadModules<[
+    { PaperByline: Component<{ paper: Paper }> },
+  ]>('/src/components/pdf/paper-byline.tsx');
+  return { ...byline, close };
+}
 
 async function loadModules<Modules extends unknown[]>(...paths: string[]) {
   const app = await startAppModules();
@@ -42,6 +51,28 @@ export async function loadReaderText() {
     { getKatex: () => unknown; loadKatex: () => Promise<unknown> },
   ]>('/src/components/reader/highlighted-scientific-text.tsx', '/src/utils/katex-loader.ts');
   return { HighlightedScientificText: text.default, ...katex, close };
+}
+
+export async function loadReadAloud() {
+  const { modules: [hook, firebase], close } = await loadModules<[
+    { useReadAloud: (queue: SpokenPassage[], chapters: ReadAloudChapter[], callbacks: {
+      title: string;
+      onFallback: (error: unknown) => void;
+      onError: () => void;
+    }) => {
+      playing: boolean;
+      prepared: { ready: number; total: number; failed: boolean };
+      timeline: ReadAloudTimeline;
+      paragraph: number | null;
+      position: number;
+      play: (start: number) => void;
+      pause: () => void;
+      seek: (seconds: number) => void;
+      live: () => { seconds: number | null; fraction: number };
+    } },
+    import('./firebase-stub.ts').FirebaseStub,
+  ]>('/src/components/pdf/use-read-aloud.ts', '/src/services/firebase.ts');
+  return { ...hook, firebase, close };
 }
 
 interface WelcomeAction { label: string; onClick?: () => void }
@@ -75,6 +106,22 @@ export async function loadWelcomeShell() {
 export async function loadWelcomeProjectSupport() {
   const { modules: [preferences], close } = await loadModules<[{ WelcomeProjectSupport: Component<object> }]>('/src/components/public/guest-welcome-preferences.tsx');
   return { WelcomeProjectSupport: preferences.WelcomeProjectSupport, close };
+}
+
+
+export async function loadReadingDock() {
+  const { modules: [dock, contexts, firebase], close } = await loadModules<[
+    { ReadingDock: Component<{
+      title: string; paper?: Paper; scroll: HTMLElement | null; contents: null;
+      spoken: { queue: SpokenPassage[]; chapters: ReadAloudChapter[] } | null;
+      canListen: boolean; originalUrl: string;
+      notes: { id: string; open: boolean; count: number; onOpenChange: (open: boolean) => void } | null;
+      children?: ReactNode;
+    }> },
+    Record<'AuthContext' | 'AnalyticsContext', Context<unknown>>,
+    import('./firebase-stub.ts').FirebaseStub,
+  ]>('/src/components/pdf/reading-dock.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');
+  return { ...dock, ...contexts, firebase, close };
 }
 
 export async function loadPaperTranslation() {

@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/user-settings.ts';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -49,12 +49,13 @@ import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
-import { ZoteroMark } from '../pdf/zotero-button.tsx';
 import { connectZotero, disconnectZotero, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
 import { GithubMark } from '../ui/github-mark.tsx';
 import { Label } from '../ui/label.tsx';
+import { ZoteroMark } from '../pdf/zotero-mark.tsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
 import { Switch } from '../ui/switch.tsx';
+import { readShowAbstract, saveShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import usePopupReady from '../../hooks/use-popup-ready.ts';
@@ -69,7 +70,7 @@ import './settings-page.css';
 const SETTINGS_PAGES: { slug: string; label: string; summary: string; Icon: Icon; to?: string }[] = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
   { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },
-  { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
+  { slug: 'reading', label: 'Reading & AI', summary: 'AI level, the reader and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics and author statistics', Icon: ShieldCheck },
   { slug: 'help', label: 'Help', summary: 'What each button and gesture does', Icon: Question, to: '/help' },
@@ -99,6 +100,9 @@ const SETTINGS_COPY = {
   aiLevelLabel: 'Default AI level, preselected when you ask AI to explain a paper',
   levelSaved: (label: string) => ({ title: 'Explanation level set', description: `New AI explanations start at the ${label} level.` }),
   levelError: { title: 'Level not saved', description: 'Your previous level is still in use. Try again.' },
+  readAloudFromPosition: 'Start reading aloud from where I am',
+  readAloudFromPositionHint: 'When off, the voice starts at the top of the paper.',
+  readAloudError: { title: 'Setting not saved', description: 'Reading aloud still starts where it did. Try again.' },
   notifications: 'Notifications',
   notificationsDescription: 'Choose whether to receive updates while PaperTok is closed.',
   emailUpdates: 'Email updates',
@@ -209,7 +213,7 @@ function ZoteroSection({ uid }: { uid: string }) {
       <div className="settings-list">
         <div className="settings-row settings-row-side">
           <div className="settings-row-content">
-            <h3 className="settings-method-name"><ZoteroMark size={16} />Zotero</h3>
+            <h3 className="settings-method-name"><span className="settings-brand-plate"><ZoteroMark size={18} /></span>Zotero</h3>
           </div>
           {(status || failed) && (
             <RowAction
@@ -642,10 +646,45 @@ function ReadingPage() {
           })}
         </RadioGroup>
       </section>
+      <ReaderSection />
       {/* Keyed by account: another account starts from an empty list, and a
           page still loading for the previous one is dropped with it. */}
       {user && <SummaryHistory key={user.uid} uid={user.uid} />}
     </>
+  );
+}
+
+function ReaderSection() {
+  const { readingPreferences, updateReadingPreferences } = useAuth();
+  const showAbstract = useSyncExternalStore(subscribeShowAbstract, readShowAbstract);
+  const label = 'Show the abstract';
+  return (
+    <section className="settings-section" aria-labelledby="settings-reader-heading">
+      <SectionHeading id="settings-reader-heading" title="Reader" description="How a paper's full text opens and is read aloud." />
+      <div className="profile-fields">
+        <Label className="profile-switch">
+          <span className="profile-switch-copy">
+            <span className="profile-switch-label">{label}</span>
+            <span className="profile-switch-hint" id="settings-reader-abstract-hint">Start each paper with its abstract, above the first section. Saved in this browser.</span>
+          </span>
+          <Switch className="settings-toggle" checked={showAbstract} aria-label={label} aria-describedby="settings-reader-abstract-hint" onCheckedChange={saveShowAbstract} />
+        </Label>
+        <Label className="profile-switch">
+          <span className="profile-switch-copy">
+            <span className="profile-switch-label">{copy.readAloudFromPosition}</span>
+            <span className="profile-switch-hint">{copy.readAloudFromPositionHint}</span>
+          </span>
+          <Switch
+            className="settings-toggle"
+            checked={readingPreferences.readAloudFromPosition}
+            aria-label={copy.readAloudFromPosition}
+            onCheckedChange={(checked) => {
+              updateReadingPreferences({ readAloudFromPosition: checked }).catch(() => notify('error', copy.readAloudError));
+            }}
+          />
+        </Label>
+      </div>
+    </section>
   );
 }
 

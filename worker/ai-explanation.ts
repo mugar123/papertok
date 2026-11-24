@@ -610,7 +610,11 @@ export async function preflightFullPaperTranslationQuota(env: WorkerEnv, uid: st
   }
 }
 
-export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = false, translation = false, fullPaperTranslation = false } = {}) {
+export async function reserveFullPaperTranslationQuota(env: WorkerEnv, uid: string) {
+  await reserveQuota(env, fullPaperDailyQuota(uid));
+}
+
+export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = false, translation = false } = {}) {
   const globalLimit = translation
     ? 100
     : safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
@@ -618,7 +622,7 @@ export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = 
   // The day is fixed once and travels with the reservation: recomputing it at
   // release time would refund against tomorrow's ledger for a request that
   // straddles UTC midnight.
-  const ledgerRequest = fullPaperTranslation ? fullPaperDailyQuota(uid) : {
+  const ledgerRequest = {
     periodKey: `${namespace}:${todayKey()}`,
     subject: `${namespace}:${uid}`,
     subjectLimit: translation
@@ -627,6 +631,10 @@ export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = 
     globalLimit,
     ...(translation && { part: { subject: `translate-attempt:${uid}`, limit: 20 } }),
   };
+  return reserveQuota(env, ledgerRequest);
+}
+
+async function reserveQuota(env: WorkerEnv, ledgerRequest: QuotaRequest) {
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
     // A ledger that is merely unreachable is a transient outage worth retrying;

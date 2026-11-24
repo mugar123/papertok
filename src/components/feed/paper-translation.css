@@ -21,9 +21,29 @@
 }
 
 .paper-translation-button {
+  display: inline-grid;
+  grid-auto-flow: column;
+  align-content: center;
+  block-size: auto;
   min-inline-size: 24px;
-  min-block-size: 24px;
+  min-block-size: max(24px, var(--space-8));
   margin-inline-start: auto;
+  padding-inline: var(--space-1);
+}
+
+.paper-translation-button > span {
+  /* The label supplies the button's baseline in both states. */
+  align-self: baseline;
+}
+
+.paper-translation-button,
+.pc-abstract-tools:has(> .paper-translation-button) > .pc-abstract-toggle {
+  max-inline-size: 100%;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-normal);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .paper-translation-picker {
@@ -49,13 +69,13 @@
 .pc-abstract-tools {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-1) var(--space-2);
 }
 
 .pc-abstract-tools > .pc-abstract-toggle {
-  align-self: center;
+  align-self: baseline;
 }
 
 .abstract-sheet-body > .paper-translation-picker {

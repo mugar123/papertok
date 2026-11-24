@@ -32,21 +32,22 @@ const authorOnCard = followedOnCard([], yann, () => true);
 test('the request can explain a follow only on the surface that used it', () => {
   const fromRequest = followedOnCard([authorLane], yann, () => true);
   const topic = followedOnCard([{ type: 'topic', canonicalId: 'T123', displayName: 'T123' }], null, () => true);
-  for (const surface of ['feed', 'following', 'custom_feed']) {
+  for (const surface of ['feed', 'following']) {
     assert.equal(reason(paper, fromRequest, surface)?.text, 'Because you follow Yann LeCun');
     assert.equal(reason(paper, topic, surface)?.text, 'Because you follow this topic');
     assert.equal(reason(paper, authorOnCard, surface)?.text, 'You follow Yann LeCun');
   }
-  for (const surface of ['recent', 'search', 'lists', 'explorer', 'other', 'connections', 'similar']) {
+  for (const surface of ['custom_feed', 'recent', 'search', 'lists', 'explorer', 'other', 'connections', 'similar']) {
     assert.equal(reason(paper, fromRequest, surface)?.text, 'You follow Yann LeCun');
     assert.equal(reason(paper, null, surface), null);
   }
 });
 
-test('only a For You boost for the named author explains the placement', () => {
+test('a score boost alone does not credit a follow with fetching the card', () => {
   const card = { ...paper, authors: [yann, { name: 'Ada Lovelace' }] };
   const ranked = scored(card, { followedEntities: [authorLane] });
-  assert.equal(reason(ranked, authorOnCard, 'feed')?.text, 'Because you follow Yann LeCun');
+  assert.ok(ranked._debugScore.followBoost > 0);
+  assert.equal(reason(ranked, authorOnCard, 'feed')?.text, 'You follow Yann LeCun');
   assert.equal(reason(ranked, authorOnCard, 'custom_feed')?.text, 'You follow Yann LeCun');
   assert.equal(reason(ranked, authorOnCard, 'recent')?.text, 'You follow Yann LeCun');
   assert.equal(reason({ ...ranked, _notable: true }, authorOnCard, 'feed')?.text, 'You follow Yann LeCun');

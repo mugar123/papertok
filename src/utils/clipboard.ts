@@ -36,3 +36,24 @@ export async function copyText(value: string) {
   input.remove();
   if (!copied) throw new Error('Clipboard access is unavailable.');
 }
+
+/**
+ * Copy an image to the clipboard as PNG, the one image type every browser's
+ * clipboard accepts. The image host must allow CORS. The write starts at once
+ * with a pending blob, so Safari still counts it as part of the click.
+ */
+export async function copyImage(src: string) {
+  if (!globalThis.ClipboardItem || !globalThis.navigator?.clipboard?.write) throw new Error('Image copy is unavailable.');
+  const png = fetch(src)
+    .then(response => (response.ok ? response.blob() : Promise.reject(new Error(`Image request failed: ${response.status}`))))
+    .then(async (blob) => {
+      if (blob.type === 'image/png') return blob;
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+      return new Promise<Blob>((resolve, reject) => canvas.toBlob(out => (out ? resolve(out) : reject(new Error('Image could not be converted.'))), 'image/png'));
+    });
+  await globalThis.navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+}

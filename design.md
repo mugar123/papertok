@@ -212,7 +212,9 @@ that only the data is allowed to pick.
   the rail's own states.
   The reader may also pick `accent-teal`, `accent-sky`, `accent-violet` or
   `accent-rose` for a highlight in a paper's full text, as an alternative to
-  the default yellow; their `-soft` surfaces paint the mark.
+  the default yellow; their `-soft` surfaces paint the mark. A clicked
+  highlight is painted with its ink mixed 35% into that wash, and the dashed
+  rule of its entry in the notes sidebar turns solid.
 - **Link Blue** (`link-blue`): the secondary accent, for links in running text.
 
 ### Tertiary
@@ -323,9 +325,9 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   taxonomy leaf and it has at least 100 known citations. Otherwise it shows
   "You follow [name]" if a follow matches, or no reason.
   On other cards a matching follow comes first. "Because you follow [name]"
-  credits a follow used to fetch the card in Following, a custom feed or For
-  You. For You can also credit the author whose follow boosted the card's
-  score. All other matches read "You follow [name]".
+  credits only a follow that fetched the card in Following or For You.
+  All other matches read "You follow [name]", including matches in custom
+  feeds and follows that only boosted the card's score.
   On a scored For You card, "Similar to papers you liked" (saved, liked or
   saved, engaged with) names the examples sent with its page. It needs a
   cosine of at least 0.65 to the closest example, and similarity must outweigh
@@ -514,8 +516,6 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the search page's own field and scope instead, and the shortcut focuses it;
   below 768px that field takes the tabs' place, and the tabs move into a
   "Search" picker beside the mark: a drawer on a phone, a menu up to 768px.
-  The Conference calendar icon sits beside Search and opens `/conferences`.
-  It fills in on the calendar and its edition pages at `/conferences/:editionId`.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
   Sunken Paper when highlighted.
 - **A feed tab's menu** (`custom-feeds/feed-tab-menu.tsx`): Edit feed, Move
@@ -550,7 +550,7 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   open sends the reader to For you.
 - **`drawer.tsx`:** the bottom sheet a thumb dismisses (swipe, snap points). On
   a phone a menu becomes a drawer of 52px rows.
-- **`popover.tsx`**, **`sheet.tsx`**, **`tooltip.tsx`**, **`tabs.tsx`**
+- **`popover.tsx`**, **`tooltip.tsx`**, **`tabs.tsx`**
   (`line` with the yellow underline, `pill` on a sunken track), and the form
   controls (`switch`, `checkbox`, `radio-group`, `select`, `input`,
   `textarea`).
@@ -618,9 +618,11 @@ another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
-new tab. The plain-words reader uses the same dock (`pdf/paper-info.tsx`) with
-Contents, the reading level, Annotations, AI highlights and the original
-paper, and without the card's options, which it has no card to take from. Its
+new tab. Both readers use `pdf/reading-dock.tsx` for Notes and the
+original-paper link. Voice and the audio player appear only in the full-text
+reader. The plain-words reader keeps its reading level and AI highlights
+alongside them. When opened from a paper card, it also receives the card's options and
+Zotero action; saved-summary history has no card actions. Its
 notes are the full-text reader's notes panel and its selection opens the same
 highlight editor, whose second way out is Explain this to me.
 

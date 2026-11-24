@@ -66,6 +66,7 @@ export default function AbstractSheet({ paper, onClose, translation }: {
               variant="ghost"
               size="sm"
               translate="no"
+              aria-label={translatedText ? 'Show original title and abstract' : 'Show translation of title and abstract'}
               aria-disabled={translation.current.pending}
               onClick={() => {
                 if (translation.current.pending) return;

@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 23 November 2026 (revision 10).</p>
+      <p class="lp-updated">Last updated 23 November 2026 (revision 11).</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -375,7 +375,8 @@
         counts, and the outcome of sign-in and AI explanation requests. When you open a
         paper in the app's viewer, they record whether it showed the paper's text (and from
         which archive), its PDF, a link or nothing, why a PDF could not be shown, and how
-        long the viewer stays on screen. Product events also record
+        long the viewer stays on screen. Starting to read a paper aloud records
+        only that it happened, not which paper. Product events also record
         when you open a paper's connections or its similar papers, and what you do in the
         connections map, such as switching to the list or centring the graph on another
         paper. Creating or opening one of your feeds records the order it uses; creating
@@ -487,7 +488,8 @@
       </p>
       <p>
         Pages for an author, an institution, a journal or a topic, and an author's preview in
-        the reader, ask <strong>Wikidata</strong> and <strong>Wikipedia</strong> from your
+        the reader, ask <strong>Wikidata</strong>, <strong>Wikipedia</strong> and
+        <strong>Wikimedia Commons</strong> from your
         browser for a short summary and a picture of what they show, and the picture loads from
         Wikimedia's servers. Wikimedia receives your IP address and the name or identifier looked
         up, as with any visit to Wikipedia; PaperTok sends nothing about your account.
@@ -557,6 +559,15 @@
         for your last successful translation on this account and device. PaperTok counts daily translation requests against
         a hashed account identifier for up to three days to enforce usage limits.
       </p>
+      <p>
+        When you listen to a paper in the reader, the text of each paragraph is sent to
+        Cartesia, in the United States, which turns it into speech. When Cartesia cannot
+        answer, the text goes instead to ElevenLabs, also in the United States, which
+        keeps the text in its request history. Both receive the text, never your identity or your
+        email. PaperTok's server stores the audio, with the time each word is spoken when
+        ElevenLabs read it, and plays it to anyone who listens to the same paragraph. When
+        neither can answer, your browser's own voice reads the paragraph instead.
+      </p>
 
       <h2>Who it is shared with</h2>
       <p>
@@ -567,7 +578,8 @@
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
         <li><strong>PostHog</strong> — product-use analytics and error reports, on servers in the European Union.</li>
-        <li><strong>Cloudflare</strong> (Workers, KV, Durable Objects) — the intermediate server and email-update storage.</li>
+        <li><strong>Cloudflare</strong> (Workers, KV, Durable Objects, R2) — the intermediate server, email-update storage and read-aloud audio.</li>
+        <li><strong>Cartesia</strong> and <strong>ElevenLabs</strong> — the paragraph text they turn into speech when you listen to a paper in the reader.</li>
         <li><strong>Resend</strong> — sending the emails.</li>
         <li><strong>Anthropic</strong> — generating plain-words summaries, passage explanations and requested translations from paper text.</li>
         <li><strong>Zotero</strong> — only if you connect it: the papers and highlights you send to your library.</li>

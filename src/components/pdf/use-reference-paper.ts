@@ -1,5 +1,5 @@
 import type { Paper } from '../../models/paper.ts';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { loadPaperByIdentity } from '../../services/paper-lookup.ts';
 import { parsePaperKey } from '../../utils/public-navigation.ts';
 
@@ -22,6 +22,8 @@ function lookup(key: string) {
 
 export function useReferencePaper(key: string | null) {
   const [result, setResult] = useState<Lookup | null>(null);
+  // A failed lookup leaves the cache, so asking again fetches again.
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!key) return undefined;
     let active = true;
@@ -30,7 +32,11 @@ export function useReferencePaper(key: string | null) {
       () => { if (active) setResult({ key, paper: null, failed: true }); },
     );
     return () => { active = false; };
-  }, [key]);
+  }, [key, attempt]);
   const current = result?.key === key ? result : null;
-  return { paper: current?.paper ?? null, loading: Boolean(key) && !current, failed: current?.failed ?? false };
+  const retry = useCallback(() => {
+    setResult(null);
+    setAttempt(count => count + 1);
+  }, []);
+  return { paper: current?.paper ?? null, loading: Boolean(key) && !current, failed: current?.failed ?? false, retry };
 }

@@ -8,6 +8,13 @@
 [data-passage-color="sky"]::highlight(viewer-passage-pending) { background-color: var(--accent-sky-soft); }
 [data-passage-color="violet"]::highlight(viewer-passage-pending) { background-color: var(--accent-violet-soft); }
 [data-passage-color="rose"]::highlight(viewer-passage-pending) { background-color: var(--accent-rose-soft); }
+/* The clicked highlight: its colour's ink mixed into its wash, dark enough to
+   stand out, light enough to keep the text at AA in both themes. */
+::highlight(viewer-passage-active-yellow) { background-color: color-mix(in srgb, var(--brand-yellow) 35%, var(--brand-yellow-soft)); color: inherit; }
+::highlight(viewer-passage-active-teal) { background-color: color-mix(in srgb, var(--accent-teal) 35%, var(--accent-teal-soft)); color: inherit; }
+::highlight(viewer-passage-active-sky) { background-color: color-mix(in srgb, var(--accent-sky) 35%, var(--accent-sky-soft)); color: inherit; }
+::highlight(viewer-passage-active-violet) { background-color: color-mix(in srgb, var(--accent-violet) 35%, var(--accent-violet-soft)); color: inherit; }
+::highlight(viewer-passage-active-rose) { background-color: color-mix(in srgb, var(--accent-rose) 35%, var(--accent-rose-soft)); color: inherit; }
 
 .pdf-stage { --notes-w: min(360px, 40vw); }
 .pdf-stage[data-notes-open] { padding-right: var(--notes-w); }
@@ -25,6 +32,24 @@
   .pdf-stage[data-notes-open] .pdf-dock-root { transition: left 240ms var(--ease-drawer), translate 220ms var(--ease-out-expo), opacity 150ms linear; }
 }
 
+/* On wide screens the text and the notes sit together, centred. Each stage names its
+   text's measure (--ft-measure) and the scroll's inline padding (--stage-pad): the
+   viewer's article here, the reader's document in paper-reader.css. The edge is a
+   registered length, computed on the stage, so a measure in `ch` is the text's and
+   not re-read in the notes' own font. */
+@property --notes-edge { syntax: '<length>'; inherits: true; initial-value: 0px; }
+.pdf-stage { --stage-pad: var(--space-16); }
+@media (min-width: 1024px) {
+  .pdf-stage { --notes-edge: max(0px, (100vw - var(--notes-w) - var(--ft-measure) - 2 * var(--stage-pad)) / 2); }
+  .pdf-stage[data-notes-open] { padding-right: calc(var(--notes-w) + var(--notes-edge)); }
+  .pdf-stage[data-notes-open] :is(.ft-scroll, .rd-scroll) { padding-left: calc(var(--stage-pad) + var(--notes-edge)); }
+  .pdf-stage .vn-side { right: var(--notes-edge); }
+}
+@media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+  .pdf-stage :is(.ft-scroll, .rd-scroll) { transition: padding-left 180ms var(--ease-out); }
+  .pdf-stage[data-notes-open] :is(.ft-scroll, .rd-scroll) { transition: padding-left 240ms var(--ease-drawer); }
+}
+
 .vn-side {
   position: absolute;
   inset-block: 0;
@@ -34,7 +59,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-4) var(--space-4) var(--space-8);
-  border-left: 1px solid var(--border-subtle);
   background: var(--bg-primary);
   transition: opacity 150ms linear, visibility 0s;
 }
@@ -70,7 +94,7 @@
   min-width: 0;
   margin: 0;
   padding: 0 0 0 var(--space-3);
-  border-left: 1px dashed var(--vn-mark, var(--brand-yellow));
+  border-left: 2px dashed var(--vn-mark, var(--brand-yellow));
   font-family: var(--font-serif);
   font-style: italic;
   font-size: var(--fs-sm);
@@ -81,12 +105,13 @@
 .vn-quote[data-color="sky"] { --vn-mark: var(--accent-sky); }
 .vn-quote[data-color="violet"] { --vn-mark: var(--accent-violet); }
 .vn-quote[data-color="rose"] { --vn-mark: var(--accent-rose); }
+/* The entry of the clicked highlight: its dotted rule turns solid. */
+.vn-item[data-active] .vn-quote { border-left-style: solid; }
 .vn-goto { all: unset; cursor: pointer; border-radius: var(--radius-sm); }
 .vn-goto:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) {
   .vn-goto:hover { color: var(--text-primary); }
 }
-.vn-origin { display: inline-flex; margin-right: var(--space-1); vertical-align: -2px; color: var(--tint-violet-fg); }
 .vn-thinking { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); color: var(--text-secondary); }
 .vn-note { margin: var(--space-2) 0 0; padding-left: calc(1px + var(--space-3)); font-size: var(--fs-sm); line-height: 1.5; color: var(--text-primary); white-space: pre-wrap; }
 
@@ -108,14 +133,17 @@
   .vn-pop[data-starting-style] { scale: 0.96; translate: 0 -6px; }
 }
 .vn-pop-error { margin: var(--space-2) 0 0; font-size: var(--fs-sm); color: var(--tint-red-fg); }
-.vn-pop-input { min-height: 0; max-height: min(16rem, 40dvh); overflow-y: auto; font-size: var(--fs-sm); }
-.vn-pop-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-3); }
-.vn-pop-more { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); }
-.vn-pop-ask { width: 100%; justify-content: flex-start; padding-inline: var(--space-2); }
-.vn-pop-price { margin-inline-start: auto; font: var(--mono-label); color: var(--text-tertiary); }
-.vn-swatches { display: flex; gap: var(--space-1); margin: 0; padding: 0; border: 0; }
-.vn-swatch { position: relative; display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-sm); cursor: pointer; }
-.vn-swatch::before { content: ''; width: 16px; height: 16px; border-radius: var(--radius-sm); background: var(--swatch); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 25%, transparent); }
+.vn-pop[data-ask] { width: min(400px, calc(100vw - 2 * var(--space-4))); }
+/* The field is the popover's body, not a box inside it. */
+.vn-pop-input.vn-pop-input { min-height: 0; max-height: min(16rem, 40dvh); overflow-y: auto; padding: var(--space-1) var(--space-1) 0; border: 0; background: transparent; box-shadow: none; resize: none; font-size: var(--fs-sm); }
+.vn-pop-bar { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+.vn-pop-modes [data-variant="pill"] { border-radius: 999px; }
+.vn-pop-modes [data-variant="pill"] * { border-radius: 999px; }
+.vn-pop-actions { display: flex; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
+.vn-pop-send.vn-pop-send { border-radius: 999px; }
+.vn-swatches { display: flex; gap: 2px; margin: 0; padding: 0; border: 0; }
+.vn-swatch { position: relative; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; }
+.vn-swatch::before { content: ''; width: 16px; height: 16px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 25%, transparent); }
 .vn-swatch[data-color="yellow"] { --swatch: var(--brand-yellow); }
 .vn-swatch[data-color="teal"] { --swatch: var(--accent-teal); }
 .vn-swatch[data-color="sky"] { --swatch: var(--accent-sky); }
@@ -124,7 +152,8 @@
 .vn-swatch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
 .vn-swatch:has(input:checked) { box-shadow: 0 0 0 2px var(--text-primary); }
 .vn-swatch:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.pdf-dock-count { font: var(--mono-label); color: var(--text-tertiary); }
+/* Beside a 500 label, the count is the quieter of the two: same weight, mono, tertiary. */
+.pdf-dock-count { margin-inline-start: 0.375rem; font: 500 0.6875rem/1 var(--font-mono); color: var(--text-tertiary); }
 
 .vn-touch-highlight {
   position: absolute;
@@ -146,6 +175,49 @@
 @media (pointer: coarse) {
   .vn-swatch { width: 40px; height: 40px; }
   .vn-swatch::before { width: 24px; height: 24px; }
-  .vn-side :is(.vn-delete, .vn-side-head button) { min-width: 44px; min-height: 44px; }
+  .vn-side :is(.vn-delete, .vn-side-head > button) { min-width: 44px; min-height: 44px; }
 }
 .vn-sheet .vn-pop-bar { flex-wrap: wrap; }
+
+/* Drag handles on the passage being highlighted, flush with its edges: a stem the height
+   of the line, with a dot above the first character and below the last. The hit area is
+   wider than the stem and takes in the dot. */
+.vn-handle {
+  position: absolute;
+  z-index: 3;
+  width: 24px;
+  margin-left: -12px;
+  cursor: grab;
+  touch-action: none;
+  --vn-handle: var(--brand-yellow);
+}
+.vn-handle[data-edge="start"] { padding-top: 10px; translate: 0 -10px; box-sizing: content-box; }
+.vn-handle[data-edge="end"] { padding-bottom: 10px; box-sizing: content-box; }
+.vn-handle::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--vn-handle);
+}
+.vn-handle::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--vn-handle);
+}
+.vn-handle[data-edge="start"]::after { top: 0; }
+.vn-handle[data-edge="end"]::after { bottom: 0; }
+.vn-handle:active { cursor: grabbing; }
+[data-passage-color="teal"] .vn-handle { --vn-handle: var(--accent-teal); }
+[data-passage-color="sky"] .vn-handle { --vn-handle: var(--accent-sky); }
+[data-passage-color="violet"] .vn-handle { --vn-handle: var(--accent-violet); }
+[data-passage-color="rose"] .vn-handle { --vn-handle: var(--accent-rose); }
+/* The chosen mode is filled, like the send button beside it. */
+.vn-pop-modes [data-slot="tabs-indicator"] { background: var(--accent-primary); box-shadow: none; }
+.vn-pop-modes [data-slot="tabs-trigger"][data-active] { color: var(--text-inverse); }

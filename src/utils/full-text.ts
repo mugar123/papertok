@@ -1,6 +1,5 @@
 // Nothing from the source is rendered as markup except MathML, rebuilt from an allowlist.
-import { PAPER_TRANSLATION_HTML_BYTES } from './full-paper-translation-contract.ts';
-import type { TranslationLanguage } from './paper-translation-contract.ts';
+import { PAPER_TRANSLATION_HTML_BYTES, type TranslationLanguage } from './full-paper-translation-contract.ts';
 import type { FullTextSource } from '../models/full-text.ts';
 import { safeCatalogUrl, safeExternalUrl } from './external-url.ts';
 

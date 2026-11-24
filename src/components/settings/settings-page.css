@@ -334,6 +334,19 @@
   gap: var(--space-2);
 }
 
+/* A service's mark on a white plate in its own colour, so it reads the same on either theme. */
+.settings-brand-plate {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: #cc2936;
+}
+
 .settings-account-id {
   position: relative;
   max-width: 100%;
@@ -388,6 +401,10 @@
 }
 
 /* ── Default AI level: three choices in the panel, the chosen one on paper ── */
+.settings-levels + .profile-fields {
+  margin-top: var(--space-4);
+}
+
 .settings-levels {
   display: grid;
   gap: var(--space-1);

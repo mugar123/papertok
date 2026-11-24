@@ -5,8 +5,8 @@ import {
   fullPaperTranslationRevision,
   PAPER_TRANSLATION_DEADLINE_MS,
   parseTranslatedChunk,
+  type TranslationLanguage,
 } from '../utils/full-paper-translation-contract.ts';
-import type { TranslationLanguage } from '../utils/paper-translation-contract.ts';
 
 export async function fetchFullPaperTranslationAvailability(signal: AbortSignal) {
   try {

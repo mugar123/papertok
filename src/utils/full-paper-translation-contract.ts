@@ -1,4 +1,36 @@
-import { isTranslationLanguage, type TranslationLanguage } from './paper-translation-contract.ts';
+export const TRANSLATION_LANGUAGES = {
+  ar: 'Arabic',
+  eu: 'Basque',
+  bn: 'Bengali',
+  ca: 'Catalan',
+  'zh-Hans': 'Chinese (Simplified)',
+  'zh-Hant': 'Chinese (Traditional)',
+  nl: 'Dutch',
+  fr: 'French',
+  gl: 'Galician',
+  de: 'German',
+  he: 'Hebrew',
+  hi: 'Hindi',
+  id: 'Indonesian',
+  it: 'Italian',
+  ja: 'Japanese',
+  ko: 'Korean',
+  fa: 'Persian',
+  pl: 'Polish',
+  pt: 'Portuguese',
+  ru: 'Russian',
+  es: 'Spanish',
+  tr: 'Turkish',
+  uk: 'Ukrainian',
+  ur: 'Urdu',
+  vi: 'Vietnamese',
+} as const;
+
+export type TranslationLanguage = keyof typeof TRANSLATION_LANGUAGES;
+
+export function isTranslationLanguage(value: unknown): value is TranslationLanguage {
+  return typeof value === 'string' && Object.hasOwn(TRANSLATION_LANGUAGES, value);
+}
 
 export const PAPER_TRANSLATION_MAX_CHUNKS = 16;
 export const PAPER_TRANSLATION_CHUNK_BYTES = 6_000;

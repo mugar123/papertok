@@ -150,6 +150,14 @@ test('serializes a compact paper preview with follow reasons', () => {
   assert.equal(preview.matches[0].displayName, 'Physics');
 });
 
+test('a digest ignores a non-string or blank English topic label', () => {
+  for (const labelEn of [42, '   ']) {
+    const metadata: Record<string, unknown> = { labelEn };
+    const follow = { type: 'topic' as const, canonicalId: 'T123', displayName: 'Optics', metadata };
+    assert.equal(serializeFollowForNotifications(follow).displayName, 'Optics');
+  }
+});
+
 test('localizes followed topics and institutions for English digests', () => {
   assert.equal(serializeFollowForNotifications({
     type: 'topic',

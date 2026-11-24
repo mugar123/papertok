@@ -79,17 +79,26 @@ export function isAnnotationLevel(level: unknown): level is keyof typeof LEVEL_V
  *
  * The product is English-only: any incoming `language` is ignored here.
  */
-export function buildAnnotationPrompt({ paper, quote, context, level }: {
+export function buildAnnotationPrompt({ paper, quote, context, level, question = '' }: {
   paper: Pick<Paper, 'title'>;
   quote: string;
   context: string;
+  /** What the reader typed about the passage. Without one, the passage is explained. */
+  question?: string;
   level: keyof typeof LEVEL_VOICE;
   language?: string;
 }) {
   const voice = LEVEL_VOICE[level];
   const title = cleanText(paper?.title, 500);
 
-  return `A reader is working through a plain-language version of the paper "${title}" and has pointed at a passage they do not follow.
+  const task = question
+    ? `THEIR QUESTION ABOUT IT:
+${question}
+
+Answer THAT QUESTION about the passage. ${voice}`
+    : `Explain WHAT THAT PASSAGE MEANS. ${voice}`;
+
+  return `A reader is working through the paper "${title}" and has pointed at a passage ${question ? 'with a question about it' : 'they do not follow'}.
 
 FULL PARAGRAPH (context only — do not summarise it):
 ${context}
@@ -97,11 +106,11 @@ ${context}
 THE PASSAGE THEY POINTED AT:
 ${quote}
 
-Explain WHAT THAT PASSAGE MEANS. ${voice}
+${task}
 
 Rules:
 - Between two and four sentences. No more.
-- Open with what the passage means, not with "this passage says that".
+- ${question ? 'Open with the answer, not with a restatement of the question.' : 'Open with what the passage means, not with "this passage says that".'}
 - If the passage depends on something said earlier in the paragraph, say so explicitly.
 - If it cannot be explained without facts that are not here, say that in one sentence rather than inventing them.
 - Plain text. No lists, no headings, no markdown, no quotation marks around the answer.`;
@@ -274,7 +283,7 @@ export async function handlePassageAnnotation(request: Request, env: WorkerEnv) 
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   const account = await verifyFirebaseAccount(request, env);
   const payload = await readBoundedJson<{
-    level?: unknown; language?: unknown; quote?: unknown; context?: unknown; paper?: Partial<Record<keyof Paper, unknown>>;
+    level?: unknown; language?: unknown; quote?: unknown; context?: unknown; question?: unknown; paper?: Partial<Record<keyof Paper, unknown>>;
   }>(request, MAX_REQUEST_BYTES, {
     tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
     invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
@@ -289,6 +298,7 @@ export async function handlePassageAnnotation(request: Request, env: WorkerEnv) 
   // quote does not identify a passage, so there is nothing to explain.
   if (quote.length < 8) throw new AIExplanationError('AI_INVALID_REQUEST', 400);
   const context = cleanText(payload.context, 4_000) || quote;
+  const question = cleanText(payload.question, 500);
   const paper = { title: cleanText(payload?.paper?.title, 1_000) };
   const provider = activeAIProvider(env);
   if (!isAIProviderConfigured(env, provider)) {
@@ -308,7 +318,7 @@ export async function handlePassageAnnotation(request: Request, env: WorkerEnv) 
       provider,
       env,
       model,
-      prompt: buildAnnotationPrompt({ paper, quote, context, level }),
+      prompt: buildAnnotationPrompt({ paper, quote, context, level, question }),
       language,
       timeoutMs: ANNOTATION_BUDGET_MS,
     });

@@ -14,6 +14,7 @@ import {
   indexHighlightsByParagraph,
   listUserHighlights,
   MAX_HIGHLIGHTS_PER_PAPER,
+  MAX_QUOTE_LENGTH,
   normalizeUserHighlight,
   passageQuote,
   passageSegments,
@@ -204,10 +205,10 @@ test('a whole paragraph with a spaced font command still marks after it is saved
 });
 
 // Font commands that paint nothing sit beside the words a reader sees. A quote
-// that took them along passed the 400 characters a quote is stored at, and the
+// that took them along passed the characters a quote is stored at, and the
 // cut left only them: the highlight was saved and never painted.
 test('a selection beside font commands that paint nothing still marks after it is saved', () => {
-  const empty = '\\emph{}'.repeat(60);
+  const empty = '\\emph{}'.repeat(Math.ceil(MAX_QUOTE_LENGTH / 7) + 1);
   for (const [paragraph, words] of [
     [`prefix ${empty} \\textbf{selected words} suffix`, 'selected words'],
     [`prefix \\textbf{${empty} selected words} suffix`, 'selected words'],
@@ -341,15 +342,15 @@ test('a passage across paragraphs prints each end as painted', () => {
   assert.equal(marginText(stored), 'harness for tasks … We then test the');
 });
 
-// A quote is stored at 400 characters, which can end inside a font command:
-// after its opener, or inside its name.
-test('a passage stored at 400 characters prints the words painted before the cut', () => {
+// A quote is stored at MAX_QUOTE_LENGTH characters, which can end inside a font
+// command: after its opener, or inside its name.
+test('a passage stored at the quote limit prints the words painted before the cut', () => {
   for (let cut = 1; cut <= 13; cut += 1) {
-    const filler = `${'x'.repeat(399 - cut)} `;
+    const filler = `${'x'.repeat(MAX_QUOTE_LENGTH - 1 - cut)} `;
     const paragraph = `${filler}\\textbf{beta} and the rest of the sentence goes on`;
     const stored = normalizeUserHighlight({ ...SPAN, quote: buildRangeAnchor(paragraph, 0, normalizeLatexText(paragraph).length)?.quote });
     assert.ok(stored, String(cut));
-    assert.equal(stored.quote.length, 400);
+    assert.equal(stored.quote.length, MAX_QUOTE_LENGTH);
     assert.equal(passageQuote(stored), cut > 8 ? `${filler}${'beta'.slice(0, cut - 8)}` : filler.trim(), String(cut));
   }
 });

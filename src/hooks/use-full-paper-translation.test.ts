@@ -118,43 +118,54 @@ test('keeps the original selected across more chunks and drops late results on a
   assert.equal(requests.length, 3);
 });
 
-test('the full-paper action describes the Anthropic transfer and links to the privacy policy', async t => {
+test('the reader offers only paper translation and describes the Anthropic transfer', async t => {
   const { entry: { ReaderTranslationControls }, close } = await loadReaderTranslationControls();
   t.after(async () => {
     cleanup();
     await close();
   });
+  const onTranslate = t.mock.fn();
+  const onCancel = t.mock.fn();
   const props = {
     signedIn: true,
-    abstractAvailable: true,
-    paperAvailable: true,
-    paperUnavailable: '',
-    defaultLanguage: 'es' as const,
     pending: false,
     message: '',
-    onTranslate: () => {},
-    onCancel: () => {},
+    onTranslate,
+    onCancel,
   };
   const view = render(createElement(ReaderTranslationControls, props));
-  const disclosure = screen.getByText('Translate', { selector: 'summary' }).closest('details');
+  const summary = screen.getByText('Translate paper', { selector: 'summary' });
+  const disclosure = summary.closest('details');
   assert.ok(disclosure);
   disclosure.open = true;
-  assert.equal(screen.queryByRole('link', { name: 'Privacy policy' }), null);
-  fireEvent.change(screen.getByRole('combobox', { name: 'Translate' }), { target: { value: 'paper' } });
-  const button = screen.getByRole('button', { name: 'Translate full paper' });
+  const language = screen.getByRole('combobox', { name: 'Translation language' });
+  assert.equal(screen.getAllByRole('combobox').length, 1);
+  assert.equal(screen.queryByRole('option', { name: 'Title and abstract' }), null);
+  assert.equal(screen.queryByRole('button', { name: 'Translate abstract' }), null);
+  const button = screen.getByRole('button', { name: 'Translate paper' });
   const link = screen.getByRole('link', { name: 'Privacy policy' });
   assert.equal(link.getAttribute('href'), '/privacy.html');
   assert.equal(link.getAttribute('target'), '_blank');
   assert.equal(link.getAttribute('rel'), 'noopener noreferrer');
   assert.equal(link.parentElement?.id, button.getAttribute('aria-describedby'));
   assert.equal(link.parentElement?.textContent, 'Sends the article text to Anthropic. Privacy policy');
-  view.rerender(createElement(ReaderTranslationControls, { ...props, paperAvailable: false }));
-  assert.equal(screen.queryByRole('option', { name: 'Full paper' }), null);
-  assert.equal(screen.queryByRole('button', { name: 'Translate full paper' }), null);
-  assert.ok(screen.getByRole('button', { name: 'Translate abstract' }));
+  fireEvent.change(language, { target: { value: 'es' } });
+  const form = button.closest('form');
+  assert.ok(form);
+  fireEvent.submit(form);
+  assert.deepEqual(onTranslate.mock.calls.map(call => call.arguments), [['es']]);
 
-  view.rerender(createElement(ReaderTranslationControls, { ...props, abstractAvailable: false }));
-  screen.getByRole('button', { name: 'Translate full paper' }).focus();
-  view.rerender(createElement(ReaderTranslationControls, { ...props, abstractAvailable: false, paperAvailable: false }));
-  assert.equal(document.activeElement, screen.getByText('Translate', { selector: 'summary' }));
+  view.rerender(createElement(ReaderTranslationControls, { ...props, pending: true, progress: { completed: 1, total: 2 } }));
+  assert.equal(screen.getByRole('progressbar', { name: 'Full-paper translation progress' }).getAttribute('value'), '1');
+  fireEvent.submit(form);
+  assert.equal(onTranslate.mock.callCount(), 1);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel translation' }));
+  assert.equal(onCancel.mock.callCount(), 1);
+  assert.equal(document.activeElement, button);
+
+  view.rerender(createElement(ReaderTranslationControls, { ...props, unavailable: 'Full-paper translation is currently unavailable.' }));
+  assert.equal(screen.queryByRole('button', { name: 'Translate paper' }), null);
+  assert.equal(screen.queryByRole('link', { name: 'Privacy policy' }), null);
+  assert.ok(screen.getByText('Full-paper translation is currently unavailable.'));
+  assert.equal(document.activeElement, summary);
 });

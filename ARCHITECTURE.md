@@ -97,8 +97,9 @@ flowchart TD
   restoration and revalidates in the background. A confirmed missing list clears
   that entry; a failed refresh leaves the already-read list visible. Reloads
   and new history entries read afresh.
-- The navbar calendar icon opens the public `/conferences` route.
-  `/conferences/:editionId` opens a public event page. Both routes use the
+- `/conferences` is the public conference calendar and
+  `/conferences/:editionId` a public event page. Nothing in the app links to
+  them until after the 0.4 release; they open by direct link. Both routes use the
   static [edition registry](src/data/conferences.ts) and the Vercel SPA rewrite.
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
@@ -202,7 +203,7 @@ flowchart TD
     Trigger --> Harvest --> Sources --> Corpus
     Harvest --> Vectors --> Corpus
     Corpus --> Vectors
-    Harvest -->|Nightly, after enrichment| Quality
+    Harvest -->|Nightly, after filing area papers| Quality
     Corpus --> API --> Feed --> UI
     API --> Custom --> UI
     API --> Recent --> UI
@@ -225,7 +226,7 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 [paper-enrichment.ts](worker/paper-enrichment.ts) populate it using the shared
 [Paper](src/models/paper.ts) contract and
 [PaperBuilder](src/services/paper-builder.ts). Harvesting and embedding have
-separate bounded steps. After enrichment, [paper-quality.ts](worker/paper-quality.ts)
+separate bounded steps. After area filing, [paper-quality.ts](worker/paper-quality.ts)
 computes the stored signals from the paper bylines, OpenAlex author metrics
 and Hugging Face votes.
 
@@ -233,7 +234,7 @@ The Worker records a conference when the arXiv author attributes the paper to it
 or OpenReview assigns it a matching venue. OpenAlex source IDs can span main and
 companion proceedings, so OpenAlex attribution is deferred. The corpus, feed and
 library copies carry the resulting `acceptedConference`. The [harvest contract](worker/README.md#conference-evidence)
-covers event years, measured coverage and the one-off arXiv reload.
+covers event years, measured coverage and the arXiv reload after recognizer changes.
 Every save of a corpus paper also writes `corpusUpdatedAt`. Deploy compatible
 Firestore rules before the app and retain them through an app rollback so
 documents that carry this field can still be saved.

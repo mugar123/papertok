@@ -3,7 +3,7 @@ import type { FullText, Block } from '../utils/full-text.ts';
 import { applyTranslatedPassages, planFullPaperTranslation } from '../utils/full-paper-translation.ts';
 import { requestFullPaperTranslation } from '../services/full-paper-translation-service.ts';
 import { auth } from '../services/firebase.ts';
-import type { TranslationLanguage } from '../utils/paper-translation-contract.ts';
+import type { TranslationLanguage } from '../utils/full-paper-translation-contract.ts';
 
 type Session = {
   language: TranslationLanguage;
