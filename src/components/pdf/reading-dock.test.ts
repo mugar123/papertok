@@ -128,9 +128,10 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
     const spoken = {
       queue: [
         { passage: 'b0', utterances: ['1. Method.', 'We fit the model.'], heading: '1. Method.' },
+        { passage: 'b1', utterances: ['1.1. Data.', 'The data is public.'], heading: '1.1. Data.' },
         { passage: 'b2', utterances: ['2. Results.', 'It fits.'], heading: '2. Results.' },
       ],
-      chapters: [{ number: '1', title: 'Method', first: 0 }, { number: '2', title: 'Results', first: 1 }],
+      chapters: [{ number: '1', title: 'Method', first: 0 }, { number: '1.1', title: 'Data', first: 1 }, { number: '2', title: 'Results', first: 2 }],
     };
     const view = render(createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
       createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
@@ -148,6 +149,8 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
     });
     await waitFor(() => assert.equal(view.getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), false));
     assert.match(tab.textContent ?? '', /1\. Method\./);
+    assert.equal(tab.querySelectorAll('.rd-listen-part').length, 2, 'the line has a block per section, the subsection inside its section');
+    assert.ok(view.getByRole('button', { name: /^1\.1 Data, / }), 'the chapter list still names the subsection');
     assert.equal(view.getByRole('button', { name: /^1 Method, / }).getAttribute('aria-current'), 'true');
     fireEvent.click(view.getByRole('button', { name: /^2 Results, / }));
     await waitFor(() => assert.equal(view.getByRole('button', { name: /^2 Results, / }).getAttribute('aria-current'), 'true'));

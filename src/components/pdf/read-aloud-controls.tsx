@@ -51,7 +51,17 @@ export function SpeedButton({ speed, onSpeed }: { speed: number; onSpeed: (speed
 }
 
 /**
- * The line through the paper, cut into one segment per section as a video's chapters are:
+ * The paper's top-level sections, each running until the next one starts: the timeline's
+ * blocks, so a paper with many short subsections is not cut into slivers.
+ */
+function sections(timeline: ReadAloudTimeline) {
+  const tops = timeline.chapters.filter(part => !part.number.includes('.'));
+  if (tops.length === 0) return timeline.chapters;
+  return tops.map((part, index) => ({ ...part, start: index === 0 ? 0 : part.start, end: tops[index + 1]?.start ?? timeline.duration }));
+}
+
+/**
+ * The line through the paper, cut into one block per top-level section as a video's chapters are:
  * until the audio is all there, how much of it is; then where the voice is. The segment under
  * the pointer grows, the tip names its minute and section, and letting go moves the voice
  * there; a range input on top carries it for the keyboard.
@@ -82,6 +92,12 @@ export function ReadAloudTrack({ timeline, prepared, position, target, onTarget,
   const pointed = target ?? hover;
   const pointedChapter = pointed === null ? null : chapterAt(timeline, pointed);
   const share = (seconds: number) => (timeline.duration ? (seconds / timeline.duration) * 100 : 0);
+  const blocks = sections(timeline);
+  const pointedBlock = pointed === null ? null : blocks.find(part => pointed < part.end) ?? blocks[blocks.length - 1];
+  // A subsection is named after its section, which is the block it falls in.
+  const tipText = !pointedChapter ? '' : !pointedBlock || pointedBlock.start === pointedChapter.start
+    ? pointedChapter.title
+    : `${pointedBlock.title} · ${[pointedChapter.number, pointedChapter.title].filter(Boolean).join(' ')}`;
   if (preparing) {
     return (
       <div className="rd-listen-track">
@@ -118,11 +134,11 @@ export function ReadAloudTrack({ timeline, prepared, position, target, onTarget,
       onPointerLeave={() => setHover(null)}
     >
       <div className="rd-listen-line" aria-hidden="true">
-        {timeline.chapters.map(part => (
+        {blocks.map(part => (
           <span
             key={part.start}
             className="rd-listen-part"
-            data-pointed={(pointedChapter !== null && pointedChapter.start === part.start) || undefined}
+            data-pointed={pointedBlock === part || undefined}
             style={{ flexGrow: part.end - part.start }}
           >
             <span className="rd-listen-part-fill" style={{ width: `${Math.min(100, Math.max(0, ((shown - part.start) / Math.max(1e-6, part.end - part.start)) * 100))}%` }} />
@@ -150,7 +166,7 @@ export function ReadAloudTrack({ timeline, prepared, position, target, onTarget,
       {pointed !== null && pointedChapter && (
         <span className="rd-listen-tip" aria-hidden="true" style={{ '--at': `${share(pointed)}%` }}>
           {clock(pointed)}
-          <span>{pointedChapter.title}</span>
+          <span>{tipText}</span>
         </span>
       )}
     </div>
