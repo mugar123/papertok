@@ -98,11 +98,13 @@ test('a refused passage is asked for again once the voice is back, and a blocked
     await route.requested();
     route.refuse(503, 'AI_UNAVAILABLE');
     await waitFor(() => assert.equal(failures.length, 1));
+    assert.deepEqual(view.result.current.withoutVoice, { passages: [0], reason: 'failed' }, 'the passage is the browser\'s, to be tried again');
 
     route.answer({});
     act(() => view.result.current.play(0));
     await waitFor(() => assert.ok(Clip.instances.some(clip => clip.src.startsWith('blob:'))));
     assert.equal(view.result.current.playing, true);
+    assert.deepEqual(view.result.current.withoutVoice.passages, [], 'and PaperTok\'s once its audio came');
 
     act(() => view.result.current.pause());
     blocked = true;

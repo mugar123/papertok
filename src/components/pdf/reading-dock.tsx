@@ -140,7 +140,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
             disabled={unsaved}
             focusableWhenDisabled
             aria-label="Download the audio"
-            title={unsaved ? 'The audio cannot be saved yet: some paragraphs do not have PaperTok’s voice.' : 'Download the audio'}
+            title={unsaved ? `${readAloud.prepared.ready} of ${readAloud.prepared.total} parts ready. The download needs PaperTok’s voice for all of them.` : 'Download the audio'}
           >
             <DownloadSimple size={18} aria-hidden="true" />
           </Button>

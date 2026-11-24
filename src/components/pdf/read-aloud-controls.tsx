@@ -74,8 +74,10 @@ function sections(timeline: ReadAloudTimeline) {
  * the pointer grows, the tip names its minute and section, and letting go moves the voice
  * there; a range input on top carries it for the keyboard.
  */
-export function ReadAloudTrack({ timeline, position, speed, target, onTarget, onSeek }: {
+export function ReadAloudTrack({ timeline, position, speed, target, onTarget, onSeek, unvoiced = [] }: {
   timeline: ReadAloudTimeline;
+  /** Stretches the browser's voice reads, PaperTok's audio refused for them: drawn striped on the line. */
+  unvoiced?: readonly { start: number; end: number }[];
   position: number;
   /** Times are told in listening time, the paper's divided by the speed. */
   speed: number;
@@ -145,6 +147,9 @@ export function ReadAloudTrack({ timeline, position, speed, target, onTarget, on
           >
             <span className="rd-listen-part-fill" style={{ width: `${Math.min(100, Math.max(0, ((shown - part.start) / Math.max(1e-6, part.end - part.start)) * 100))}%` }} />
           </span>
+        ))}
+        {unvoiced.map(part => (
+          <span key={part.start} className="rd-listen-unvoiced" style={{ left: `${share(part.start)}%`, width: `${share(part.end - part.start)}%` }} />
         ))}
         <span className="rd-listen-thumb" style={{ left: `${share(shown)}%` }} />
       </div>

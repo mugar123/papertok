@@ -75,13 +75,29 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   const waitingRequests = useRef<Array<() => void>>([]);
   const told = useRef(false);
   // The queue whose passages are being fetched in full; a new queue starts over.
-  const fetchingAll = useRef<{ items: SpokenPassage[]; remaining: SpokenPassage[] } | null>(null);
+  /**
+   * The paper's audio being fetched: what is left, in the order wanted, what has settled, and the
+   * first passages the tab opened at, which its progress counts.
+   */
+  const fetchingAll = useRef<{
+    items: SpokenPassage[];
+    remaining: SpokenPassage[];
+    settled: Set<SpokenPassage>;
+    start: number;
+    initial: SpokenPassage[];
+    opening: boolean;
+  } | null>(null);
   const [speed, setSpeedState] = useState<number>(1);
   // Read when a clip or sentence starts, so a change made meanwhile applies to it.
   const speedNow = useRef(1);
 
   const timeline = useMemo(() => readAloudTimeline(queue, chapters, item => lengths[passageText(item)]), [chapters, lengths, queue]);
   const ready = useMemo(() => queue.reduce((count, item) => count + Number(lengths[passageText(item)] !== undefined), 0), [lengths, queue]);
+  // Passages PaperTok's audio was refused for, which the browser's voice reads, and why: `quota`
+  // for the day's papers or the providers' characters (it can be made another day), `failed` otherwise.
+  const [refused, setRefused] = useState<Record<string, 'quota' | 'failed'>>({});
+  const withoutVoice = useMemo(() => queue.flatMap((item, index) => (refused[passageText(item)] ? [index] : [])), [queue, refused]);
+  const refusedFor = Object.values(refused).includes('quota') ? 'quota' : withoutVoice.length ? 'failed' : null;
 
   const pause = useCallback(() => {
     run.current += 1;
@@ -148,6 +164,12 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     const pending = request(text).then(({ blob, key }) => {
       fetches.current?.signal.throwIfAborted();
       if (key) audioKeys.current.set(text, key);
+      setRefused((refused) => {
+        if (!(text in refused)) return refused;
+        const rest = { ...refused };
+        delete rest[text];
+        return rest;
+      });
       const url = URL.createObjectURL(blob);
       void clipSeconds(url).then((seconds) => {
         setLengths(lengths => ({ ...lengths, [text]: seconds ?? readAloudTimeline([item], []).duration }));
@@ -157,24 +179,36 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     // A passage that failed for now is asked for again the next time it is needed.
     pending.catch((error: unknown) => {
       if (!skippable(error) && clips.current.get(text) === pending) clips.current.delete(text);
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setRefused(refused => ({ ...refused, [text]: skippable(error) ? 'quota' : 'failed' }));
+      }
     });
     clips.current.set(text, pending);
     return pending;
   };
 
+  const reportStartup = (batch: NonNullable<typeof fetchingAll.current>, failed = false) => {
+    if (!batch.opening) return;
+    const ready = batch.initial.filter(item => batch.settled.has(item)).length;
+    setStartup({ start: batch.start, ready, total: batch.initial.length, failed });
+  };
+
   const fetchAll = (start: number, opening = false) => {
-    if (fetchingAll.current?.items === queue) {
-      const pending = new Set(fetchingAll.current.remaining);
-      fetchingAll.current.remaining = [...queue.slice(start), ...queue.slice(0, start)].filter(item => pending.has(item));
+    const order = (items: SpokenPassage[]) => [...items.slice(start), ...items.slice(0, start)];
+    const running = fetchingAll.current;
+    // Already fetching this paper: what is left comes from the new place, and a tab opened there
+    // counts its own first passages, those already settled included, not the last opening's.
+    if (running?.items === queue) {
+      const pending = new Set(running.remaining);
+      running.remaining = order(queue).filter(item => pending.has(item));
+      if (opening) Object.assign(running, { opening, start, initial: queue.slice(start, start + STARTUP_PASSAGES) });
+      reportStartup(running);
       return;
     }
-    const items = queue;
-    const batch = { items, remaining: [...items.slice(start), ...items.slice(0, start)] };
+    const batch = { items: queue, remaining: order(queue), settled: new Set<SpokenPassage>(), start, initial: queue.slice(start, start + STARTUP_PASSAGES), opening };
     fetchingAll.current = batch;
     setPrepareDone(false);
-    const initial = items.slice(start, start + STARTUP_PASSAGES);
-    if (opening) setStartup({ start, ready: 0, total: initial.length, failed: false });
-    let settled = 0;
+    reportStartup(batch);
     let stopped = false;
     let working = WORKERS;
     const work = async () => {
@@ -189,12 +223,12 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
             if (fetchingAll.current === batch) {
               fetchingAll.current = null;
               setPrepareDone(true);
-              if (opening) setStartup({ start, ready: settled, total: initial.length, failed: true });
+              reportStartup(batch, true);
             }
           }
         }
-        if (initial.includes(item)) settled += 1;
-        if (opening && fetchingAll.current === batch) setStartup({ start, ready: settled, total: initial.length, failed: false });
+        batch.settled.add(item);
+        if (fetchingAll.current === batch) reportStartup(batch);
       }
       working -= 1;
       if (working === 0 && fetchingAll.current === batch) setPrepareDone(true);
@@ -473,6 +507,8 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     live,
     /** How much of the paper's audio exists yet; `failed` once a passage was refused and the rest will not come. */
     prepared: { ready, total: queue.length, failed: prepareDone && ready < queue.length },
+    /** The passages the browser's voice reads, PaperTok's audio refused for them, and why. */
+    withoutVoice: { passages: withoutVoice, reason: refusedFor },
     paragraph,
     playing,
     position,

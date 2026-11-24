@@ -656,7 +656,11 @@ player and the caption arrive once it is done. The percentage covers only that i
 Play becomes available when it is ready, without starting automatically;
 system playback controls respect the same initial buffer. Two
 background requests keep loading the rest. A jump to uncached audio shows
-“Loading this passage…” while the controls remain available. The
+“Loading this passage…” while the controls remain available. Passages PaperTok's audio was refused for, which the browser's voice reads,
+are striped on the timeline, and a line under it says how many parts have
+PaperTok's voice and whether the rest can be made tomorrow (the day's papers or
+characters) or is tried again on the next open; the download button's tooltip
+says how many parts are ready. The
 AI summary has no audio; it keeps its reading level and AI highlights
 alongside the shared tools. When opened from a paper card, it also receives the card's options and
 Zotero action; saved-summary history has no card actions. Its

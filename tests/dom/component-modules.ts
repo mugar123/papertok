@@ -61,6 +61,7 @@ export async function loadReadAloud() {
       onBlocked: () => void;
     }) => {
       playing: boolean;
+      withoutVoice: { passages: number[]; reason: 'quota' | 'failed' | null };
       buffering: boolean;
       startup: { start: number; ready: number; total: number; failed: boolean };
       prepare: (start: number) => void;
@@ -112,6 +113,14 @@ export async function loadWelcomeProjectSupport() {
   return { WelcomeProjectSupport: preferences.WelcomeProjectSupport, close };
 }
 
+
+/** The podcast tab alone, handed a player the test drives. */
+export async function loadReadAloudListen() {
+  const { modules: [listen], close } = await loadModules<[
+    { default: Component<{ title: string; queue: SpokenPassage[]; player: Record<string, unknown>; onPlayPause: () => void }> },
+  ]>('/src/components/pdf/read-aloud-listen.tsx');
+  return { ReadAloudListen: listen.default, close };
+}
 
 export async function loadReadingDock() {
   const { modules: [dock, contexts, firebase], close } = await loadModules<[
