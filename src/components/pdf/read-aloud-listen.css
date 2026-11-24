@@ -336,12 +336,13 @@
   .rd-podcast {
     display: grid;
     grid-template-columns: auto minmax(0, 560px);
-    grid-template-areas: 'header header' 'cover words' 'player player';
+    /* The title keeps to the top, under the bar; the room left centres the visual, the caption and the controls. */
+    grid-template-rows: auto 1fr auto auto 1fr;
+    grid-template-areas: 'header header' '. .' 'cover words' 'player player' '. .';
     justify-content: center;
-    align-content: safe center;
     column-gap: var(--space-6);
   }
-  .rd-podcast-header { grid-area: header; margin-bottom: var(--space-8); }
+  .rd-podcast-header { grid-area: header; margin-bottom: var(--space-6); }
   .rd-podcast-cover { grid-area: cover; width: min(44vh, 360px); margin-bottom: var(--space-10); }
   .rd-podcast-words { grid-area: words; align-self: center; margin-bottom: var(--space-10); }
   .rd-podcast-title { text-align: start; }
