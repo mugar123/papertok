@@ -651,7 +651,8 @@ and a player with speed, 15-second skips and a timeline cut into the paper's
 sections; its chapters open in a panel beside it, full screen on a phone. Opening
 the tab prepares three passages from the starting position (or the remaining
 passages for a shorter ending). The percentage covers only that initial buffer;
-Play becomes available when it is ready, without starting automatically. Two
+Play becomes available when it is ready, without starting automatically;
+system playback controls respect the same initial buffer. Two
 background requests keep loading the rest. A jump to uncached audio shows
 “Loading this passage…” while the controls remain available. The
 plain-words reader has no audio; it keeps its reading level and AI highlights

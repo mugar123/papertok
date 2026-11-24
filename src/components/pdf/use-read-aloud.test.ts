@@ -359,6 +359,19 @@ test('opening prepares only the startup progress, playback starts before the res
   const { useReadAloud, firebase, close } = await loadReadAloud();
   const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
   Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  const originalSession = Object.getOwnPropertyDescriptor(navigator, 'mediaSession');
+  const originalMetadata = Object.getOwnPropertyDescriptor(globalThis, 'MediaMetadata');
+  const handlers = new Map<string, () => void>();
+  Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: {
+    metadata: null, playbackState: 'none', setPositionState() {},
+    setActionHandler(action: string, handler: (() => void) | null) {
+      if (handler) handlers.set(action, handler);
+      else handlers.delete(action);
+    },
+  } });
+  Object.defineProperty(globalThis, 'MediaMetadata', { configurable: true, value: class {
+    constructor(data: object) { Object.assign(this, data); }
+  } });
   const waiting = new Map<string, (response: Response) => void>();
   let active = 0;
   let peak = 0;
@@ -388,12 +401,16 @@ test('opening prepares only the startup progress, playback starts before the res
     assert.deepEqual(view.result.current.startup, { start: 0, ready: 0, total: 3, failed: false });
     await answer(0);
     await waitFor(() => assert.equal(view.result.current.startup.ready, 1));
+    assert.ok(handlers.has('play'));
+    await act(async () => handlers.get('play')?.());
+    assert.equal(view.result.current.playing, false, 'system Play waits for the same initial buffer as the on-screen controls');
+    assert.equal(Clip.instances.some(clip => clip.preload !== 'metadata'), false);
     await answer(1);
     await answer(2);
     await waitFor(() => assert.deepEqual(view.result.current.startup, { start: 0, ready: 3, total: 3, failed: false }));
     assert.equal(view.result.current.playing, false, 'opening never starts the voice');
     assert.equal(Clip.instances.some(clip => clip.preload !== 'metadata'), false);
-    act(() => view.result.current.play(0));
+    act(() => handlers.get('play')?.());
     await waitFor(() => assert.equal(view.result.current.buffering, false));
     const player = Clip.instances.find(clip => clip.preload !== 'metadata');
     assert.ok(player);
@@ -425,6 +442,10 @@ test('opening prepares only the startup progress, playback starts before the res
     await close();
     if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
     else Reflect.deleteProperty(globalThis, 'Audio');
+    if (originalSession) Object.defineProperty(navigator, 'mediaSession', originalSession);
+    else Reflect.deleteProperty(navigator, 'mediaSession');
+    if (originalMetadata) Object.defineProperty(globalThis, 'MediaMetadata', originalMetadata);
+    else Reflect.deleteProperty(globalThis, 'MediaMetadata');
     Clip.instances = [];
   }
 });

@@ -204,6 +204,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   };
 
   const play = (start: number, fraction = 0) => {
+    if (startup && !startup.failed && startup.ready < startup.total) return;
     const token = ++run.current;
     const current = () => token === run.current;
     // A jump while either voice is speaking silences it before the new place starts.
