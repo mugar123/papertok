@@ -81,7 +81,7 @@ test('shared reading tools open the voice player, restore focus, and stop when t
   }
 });
 
-test('the listening view rings the audio still to come, then the sections to jump to and the sentence being read', async () => {
+test('the podcast tab rings the audio still to come, then lists the chapters to jump to and the sentence being read', async () => {
   const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
   const worker = stubWorker();
   const audioRoute = worker.hold('/tts/paragraph');
@@ -93,8 +93,11 @@ test('the listening view rings the audio still to come, then the sections to jum
   try {
     firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
     const spoken = {
-      queue: [{ passage: 'b0', utterances: ['1. Method.', 'We fit the model.'], heading: '1. Method.' }],
-      chapters: [{ number: '1', title: 'Method', first: 0 }],
+      queue: [
+        { passage: 'b0', utterances: ['1. Method.', 'We fit the model.'], heading: '1. Method.' },
+        { passage: 'b2', utterances: ['2. Results.', 'It fits.'], heading: '2. Results.' },
+      ],
+      chapters: [{ number: '1', title: 'Method', first: 0 }, { number: '2', title: 'Results', first: 1 }],
     };
     const view = render(createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
       createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
@@ -103,17 +106,19 @@ test('the listening view rings the audio still to come, then the sections to jum
         }))));
     fireEvent.click(view.getByRole('button', { name: 'Voice, read aloud' }));
     fireEvent.click(view.getByRole('button', { name: 'Open the listening view' }));
-    const dialog = await waitFor(() => view.getByRole('dialog', { name: 'Paper' }));
-    assert.match(dialog.textContent ?? '', /Preparing the audio, 0%/);
-    assert.equal(view.queryByRole('button', { name: 'Go to 1 Method' }), null, 'no jumps before the audio is there');
+    const tab = view.getByRole('region', { name: 'Paper' });
+    assert.match(tab.textContent ?? '', /Preparing the audio, 0%/);
+    assert.equal(view.getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), true, 'no jumps before the audio is there');
     await audioRoute.requested();
     audioRoute.answer({});
     await act(async () => {
       for (const clip of Clip.instances.filter(clip => clip.preload === 'metadata')) clip.onloadedmetadata?.();
     });
-    await waitFor(() => assert.ok(view.getByRole('button', { name: 'Go to 1 Method' })));
-    assert.match(dialog.textContent ?? '', /1\. Method\./);
-    assert.ok(view.getAllByRole('button', { name: 'Pause' }).length > 0);
+    await waitFor(() => assert.equal(view.getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), false));
+    assert.match(tab.textContent ?? '', /1\. Method\./);
+    assert.equal(view.getByRole('button', { name: /^1 Method, / }).getAttribute('aria-current'), 'true');
+    fireEvent.click(view.getByRole('button', { name: /^2 Results, / }));
+    await waitFor(() => assert.equal(view.getByRole('button', { name: /^2 Results, / }).getAttribute('aria-current'), 'true'));
   } finally {
     cleanup();
     worker.stop();

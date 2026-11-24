@@ -143,23 +143,31 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     requestAnimationFrame(() => readAloudButton.current?.focus());
   };
 
-  // The listening view's own way in, round in the top bar's corner.
+  // The podcast tab's way in and out, round in the top bar's corner. The text under it is left
+  // out of the keyboard's way while the tab covers it.
   const topbar = scroll?.closest('.pdf-viewer, .rd')?.querySelector('.pdf-topbar, .rd-topbar');
-  const listen = () => {
-    if (!playerOpen) openPlayer();
-    else if (!readAloud.playing) playPause();
-    setListening(true);
+  const listen = (open: boolean) => {
+    if (open && !playerOpen) openPlayer();
+    else if (open && !readAloud.playing) playPause();
+    setListening(open);
   };
+  const podcast = listening && playerOpen;
+  useEffect(() => {
+    if (!scroll || !podcast) return undefined;
+    scroll.toggleAttribute('inert', true);
+    return () => { scroll.toggleAttribute('inert', false); };
+  }, [podcast, scroll]);
+  const byline = (paper?.authors ?? []).map(author => (typeof author === 'string' ? author : author.name)).filter(Boolean);
 
   return <>
     {scroll && createPortal(<div className="rd-word" hidden aria-hidden="true" />, scroll)}
     {canListen && topbar && createPortal(
-      <Button variant="outline" size="icon" className="rd-listen-corner" onClick={listen} aria-label="Listen to the paper" title="Listen to the paper">
-        <Headphones size={18} aria-hidden="true" />
-      </Button>,
+      <Toggle className="rd-listen-corner" pressed={podcast} onPressedChange={listen} aria-label="Listen to the paper as a podcast" title={podcast ? 'Back to the text' : 'Listen as a podcast'}>
+        <Headphones size={18} weight={podcast ? 'fill' : 'regular'} aria-hidden="true" />
+      </Toggle>,
       topbar,
     )}
-    <PaperDock scroll={scroll} pinned={playerOpen} menu={playerOpen ? undefined : menu} contents={playerOpen ? null : contents}>
+    {!podcast && <PaperDock scroll={scroll} pinned={playerOpen} menu={playerOpen ? undefined : menu} contents={playerOpen ? null : contents}>
       {playerOpen ? <ReadAloudPlayer
         timeline={readAloud.timeline} prepared={readAloud.prepared} position={readAloud.position}
         playing={readAloud.playing} speed={readAloud.speed} onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek}
@@ -176,13 +184,15 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       </>}
       {paper && <ZoteroControl paper={paper} hidden={playerOpen} />}
       {!playerOpen && originalUrl && <Button role="link" variant="ghost" size="icon" aria-label="Open in a new tab" title="Open in a new tab" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}><ArrowSquareOut size={18} aria-hidden="true" /></Button>}
-    </PaperDock>
-    {playerOpen && spoken && <ReadAloudListen
-      open={listening} onOpenChange={setListening} title={title} queue={spoken.queue}
+    </PaperDock>}
+    {podcast && spoken && <ReadAloudListen
+      title={paper?.title ?? title}
+      byline={byline.length > 3 ? `${byline.slice(0, 3).join(', ')} and others` : byline.join(', ')}
+      queue={spoken.queue}
       timeline={readAloud.timeline} prepared={readAloud.prepared} paragraph={readAloud.paragraph}
       position={readAloud.position} playing={readAloud.playing} speed={readAloud.speed}
       timings={readAloud.timings} live={readAloud.live}
-      onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek}
+      onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek} onDownload={downloadAudio}
     />}
   </>;
 }
