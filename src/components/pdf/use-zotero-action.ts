@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { toastError } from '../ui/toast.ts';
 import type { Paper } from '../../models/paper.ts';
@@ -23,14 +23,18 @@ export type ZoteroAction = PaperMenuAction & { busy: boolean; sent: boolean };
  */
 export function useZoteroAction(paper: Paper, uid: string | null | undefined, wanted: boolean): ZoteroAction | null {
   const { trackEvent } = useAnalyticsConsent();
-  const [status, setStatus] = useState<ZoteroStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const asked = useRef('');
-  // A toast's Try again holds an older render's state; this one is current.
-  const working = useRef(false);
-  // When Zotero said it may be asked again, after it answered busy.
-  const busyUntil = useRef(0);
   const key = uid && paper.id ? `${uid}:${paper.id}` : '';
+  const [state, setState] = useState<{ key: string; status: ZoteroStatus | null; busy: boolean }>({ key, status: null, busy: false });
+  if (state.key !== key) setState({ key, status: null, busy: false });
+  const { status, busy } = state.key === key ? state : { status: null, busy: false };
+  const setStatus = useCallback((status: ZoteroStatus) => setState(current => current.key === key ? { ...current, status } : current), [key]);
+  const setBusy = useCallback((busy: boolean) => setState(current => current.key === key ? { ...current, busy } : current), [key]);
+  const scope = useMemo(() => ({ active: Boolean(key), working: false, busyUntil: 0 }), [key]);
+  const asked = useRef('');
+  useEffect(() => {
+    scope.active = Boolean(key);
+    return () => { scope.active = false; };
+  }, [scope, key]);
 
   useEffect(() => {
     if (!wanted || !key || asked.current === key) return undefined;
@@ -38,61 +42,67 @@ export function useZoteroAction(paper: Paper, uid: string | null | undefined, wa
     let live = true;
     zoteroStatus(paper.id).then(next => { if (live) setStatus(next); }, () => {});
     return () => { live = false; };
-  }, [key, wanted, paper.id]);
+  }, [key, wanted, paper.id, setStatus]);
 
   usePageRestored(() => {
-    working.current = false;
+    scope.working = false;
     setBusy(false);
   });
 
   if (!key || !uid) return null;
 
   async function connect() {
-    working.current = true;
+    if (!scope.active) return;
+    scope.working = true;
     setBusy(true);
     try {
       await connectZotero(uid!, zoteroCitation(paper));
     } catch (error) {
-      working.current = false;
+      if (!scope.active) return;
+      scope.working = false;
       setBusy(false);
       toastError(getUiErrorMessage(error, 'ZOTERO_FAILED'));
     }
   }
 
   function busyMessage() {
-    const seconds = Math.max(1, Math.ceil((busyUntil.current - Date.now()) / 1000));
+    const seconds = Math.max(1, Math.ceil((scope.busyUntil - Date.now()) / 1000));
     return `Zotero is busy right now. Try again in ${seconds} ${seconds === 1 ? 'second' : 'seconds'}.`;
   }
 
   /** A retry is offered once: a send that fails again only says why. */
   async function send(retry = false) {
-    if (working.current) return;
-    if (Date.now() < busyUntil.current) { toastError(busyMessage()); return; }
+    if (!scope.active || scope.working) return;
+    if (Date.now() < scope.busyUntil) { toastError(busyMessage()); return; }
     if (status?.connected === false) { await connect(); return; }
-    working.current = true;
+    scope.working = true;
     setBusy(true);
     const sending = toast.loading('Sending to Zotero…');
     try {
       const { sentAt, highlights } = await sendToZotero(zoteroCitation(paper));
+      if (!scope.active) { toast.dismiss(sending); return; }
       setStatus({ connected: true, username: status?.username ?? null, sentAt });
       void trackEvent('zotero_send', { result: 'sent' });
       toast.success(highlights ? `Sent to Zotero with ${highlights} ${highlights === 1 ? 'highlight' : 'highlights'}.` : 'Sent to Zotero.', { id: sending });
     } catch (error) {
       toast.dismiss(sending);
+      if (!scope.active) return;
       void trackEvent('zotero_send', { result: 'failed' });
       const code = (error as { code?: string }).code;
       if (code === 'ZOTERO_NOT_CONNECTED') {
         setStatus({ connected: false, username: null, sentAt: null });
         toastError(getUiErrorMessage(code), { action: { label: 'Reconnect Zotero', onClick: () => { void connect(); } } });
       } else if (code === 'ZOTERO_RATE_LIMITED') {
-        busyUntil.current = Date.now() + ((error as { retryAfter?: number | null }).retryAfter ?? 60) * 1000;
+        scope.busyUntil = Date.now() + ((error as { retryAfter?: number | null }).retryAfter ?? 60) * 1000;
         toastError(busyMessage());
       } else {
         toastError(getUiErrorMessage(error, 'ZOTERO_FAILED'), retry ? {} : { action: { label: 'Try again', onClick: () => { void send(true); } } });
       }
     } finally {
-      working.current = false;
-      setBusy(false);
+      if (scope.active) {
+        scope.working = false;
+        setBusy(false);
+      }
     }
   }
 

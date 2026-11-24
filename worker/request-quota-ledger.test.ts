@@ -761,3 +761,26 @@ test('the quota client sends the subjects a request is counted apart from as has
   assert.notEqual(apartFrom.subjectKeys[0], apartFrom.subjectKeys[1]);
   assert.doesNotMatch(JSON.stringify(body), /harvest|caller-day/, 'no subject leaves the client unhashed');
 });
+
+
+test('shared work expires after a crash and a stale owner cannot release the successor', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const first = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const next = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  const claim = async (owner: string, action = 'claim') => {
+    const response = await ledger.fetch(new Request('https://ledger/claim', { method: 'POST', body: JSON.stringify({ action, owner }) }));
+    assert.equal(response.status, 200);
+    return response.json<{ accepted: boolean }>();
+  };
+  assert.deepEqual(await claim(first), { accepted: true });
+  assert.deepEqual(await claim(next), { accepted: false });
+  assert.deepEqual(await claim(next, 'release-claim'), { accepted: false });
+  t.mock.timers.tick(120_001);
+  assert.deepEqual(await claim(next), { accepted: true });
+  assert.deepEqual(await claim(first, 'release-claim'), { accepted: false });
+  assert.deepEqual(await claim(first), { accepted: false });
+  assert.deepEqual(await claim(next, 'release-claim'), { accepted: true });
+  assert.deepEqual(await claim(first), { accepted: true });
+});

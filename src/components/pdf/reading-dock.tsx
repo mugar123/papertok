@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { ArrowSquareOut, CircleNotch, NotePencil, SpeakerHigh } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
@@ -135,8 +135,8 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   };
   const closePlayer = () => {
     readAloud.pause();
-    setPlayerFrom(null);
-    requestAnimationFrame(() => readAloudButton.current?.focus());
+    flushSync(() => setPlayerFrom(null));
+    readAloudButton.current?.focus();
   };
 
   return <>

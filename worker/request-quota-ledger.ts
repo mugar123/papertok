@@ -222,6 +222,24 @@ export class RequestQuotaLedger {
   async fetch(request: Request) {
     if (request.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
     const payload = await request.json<Record<string, unknown>>().catch(() => null);
+    if (payload?.action === 'claim' || payload?.action === 'release-claim') {
+      const owner = payload.owner;
+      if (typeof owner !== 'string' || !/^[a-f0-9-]{36}$/.test(owner)) return json({ code: 'INVALID_REQUEST' }, 400);
+      const expiresAt = Date.now() + 120_000;
+      // Claims live in their own objects; a crashed caller cannot hold one forever.
+      await this.state.storage.setAlarm(expiresAt);
+      const result = await this.state.storage.transaction(async transaction => {
+        const claim = await transaction.get<{ owner: string; expiresAt: number }>('claim');
+        if (payload.action === 'release-claim') {
+          if (claim?.owner === owner) await transaction.delete('claim');
+          return { accepted: claim?.owner === owner };
+        }
+        if (claim && claim.expiresAt > Date.now()) return { accepted: false };
+        await transaction.put('claim', { owner, expiresAt });
+        return { accepted: true };
+      });
+      return json(result);
+    }
     const subjectKey = safeSubjectKey(payload?.subjectKey);
     const subjectLimit = positiveInteger(payload?.subjectLimit);
     const globalLimit = positiveInteger(payload?.globalLimit);
@@ -528,4 +546,18 @@ export function observeRequestQuota(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER']
  */
 export function releaseRequestQuota(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, options: QuotaRequest) {
   return callRequestQuotaLedger(namespace, 'release', options);
+}
+
+/** A short lease for shared work, independent of the paid daily counters. */
+export async function requestWorkClaim(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, key: string, owner: string, action: 'claim' | 'release-claim') {
+  if (!isRequestQuotaLedgerConfigured(namespace)) throw new Error('QUOTA_LEDGER_NOT_CONFIGURED');
+  const id = namespace.idFromName(`work:${key}`);
+  const response = await namespace.get(id, { locationHint: LEDGER_LOCATION_HINT }).fetch('https://papertok.internal/quota/claim', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action, owner }),
+  });
+  if (!response.ok) throw new Error('QUOTA_LEDGER_UNAVAILABLE');
+  const result = await response.json<{ accepted: boolean }>();
+  return result.accepted;
 }

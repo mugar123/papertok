@@ -57,9 +57,12 @@ test('shared reading tools open the voice player, restore focus, and stop when t
     await waitFor(() => assert.equal(Clip.instances.length, 2));
     assert.equal(view.queryByRole('button', { name: 'Explanation level' }), null);
     fireEvent.keyDown(view.getByRole('button', { name: 'Pause' }), { key: 'Escape' });
-    await waitFor(() => assert.ok(document.activeElement === view.getByRole('button', { name: 'Voice, read aloud' }), 'Voice receives focus when the player closes'));
+    assert.ok(document.activeElement === view.getByRole('button', { name: 'Voice, read aloud' }), 'Voice receives focus before the dialog can restore focus to its container');
     assert.equal(view.getByRole('button', { name: 'Send to Zotero' }).getAttribute('aria-busy'), 'true');
     await act(async () => zoteroSend.answer({ sentAt: '2026-11-23T12:00:00Z', highlights: 0 }));
+    fireEvent.click(view.getByRole('button', { name: 'Voice, read aloud' }));
+    fireEvent.click(view.getByRole('button', { name: 'Close player' }));
+    assert.ok(document.activeElement === view.getByRole('button', { name: 'Voice, read aloud' }), 'Closing with the button also returns focus to Voice');
     fireEvent.click(view.getByRole('button', { name: 'Voice, read aloud' }));
     const player = Clip.instances.find(clip => clip.preload !== 'metadata');
     assert.ok(player);
@@ -78,5 +81,33 @@ test('shared reading tools open the voice player, restore focus, and stop when t
     if (originalAnimation) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimation);
     else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
     Clip.instances = [];
+  }
+});
+
+test('a previous account’s Zotero send cannot replace the current account’s status', async () => {
+  const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
+  const worker = stubWorker();
+  const status = worker.hold('/zotero/status');
+  const send = worker.hold('/zotero/send');
+  const tree = (uid: string) => createElement(AuthContext.Provider, { value: { user: { uid }, readingPreferences: {} } },
+    createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
+      createElement(ReadingDock, { title: 'Paper', paper: paperLegacyAdapter({ id: '2611.00001', title: 'Paper' }), scroll: null, contents: null, spoken: null, canListen: false, notes: null, originalUrl: '' })));
+  try {
+    firebase.auth.currentUser = { uid: 'alice', getIdToken: async () => 'alice' };
+    const view = render(tree('alice'));
+    await status.requested();
+    await act(async () => status.answer({ connected: true, username: 'alice', sentAt: null }));
+    fireEvent.click(view.getByRole('button', { name: 'Send to Zotero' }));
+    await send.requested();
+    status.wait();
+    firebase.auth.currentUser = { uid: 'bob', getIdToken: async () => 'bob' };
+    await act(async () => view.rerender(tree('bob')));
+    await act(async () => status.answer({ connected: false, username: null, sentAt: null }));
+    assert.ok(view.getByRole('button', { name: 'Connect Zotero' }));
+    await act(async () => send.answer({ sentAt: '2026-11-23T12:00:00Z', highlights: 0 }));
+    assert.ok(view.getByRole('button', { name: 'Connect Zotero' }));
+    assert.equal(view.queryByRole('button', { name: /Send to Zotero again/ }), null);
+  } finally {
+    cleanup(); worker.stop(); await close();
   }
 });

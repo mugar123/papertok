@@ -321,8 +321,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                 quote={notes.pending.quote}
                 anchor={notes.pending.anchor}
                 busy={notes.busy !== 'idle'}
-                error={notes.failed !== null}
-                initialNote={notes.failed ?? ''}
+                error={notes.failed?.message ?? null}
+                initialNote={notes.failed?.note ?? ''}
                 returnFocus={notes.origin ?? textScroll}
                 onSave={(note, color) => { void notes.save(note, color); }}
                 ask={{

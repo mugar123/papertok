@@ -13,7 +13,6 @@ import type { HighlightColor } from '../../services/user-highlight-service.ts';
 import { HIGHLIGHT_COLORS, MAX_NOTE_LENGTH, highlightColor, passageQuote } from '../../services/user-highlight-service.ts';
 import ScientificText from '../scientific-text.ts';
 import ThinkingDots from '../reader/thinking-dots.tsx';
-import { SAVE_ERROR } from './use-viewer-notes.ts';
 import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import '../ui/tag.css';
 import './viewer-notes.css';
@@ -22,7 +21,7 @@ const COLOR_NAMES: Record<HighlightColor, string> = { yellow: 'Yellow', teal: 'T
 
 type PassageEditorProps = {
   quote: string;
-  error: boolean;
+  error: string | null;
   initialNote: string;
   returnFocus: HTMLElement | null;
   anchor: { top: number; bottom: number; left: number; right: number };
@@ -76,7 +75,7 @@ export function PassageEditor({ quote, anchor, busy, error, initialNote, returnF
         onChange={event => setDraft(event.target.value)}
         onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !sheet) submit(event); }}
       />
-      {error && <p id={errorId} className="vn-pop-error">{SAVE_ERROR}</p>}
+      {error && <p id={errorId} className="vn-pop-error">{error}</p>}
       <div className="vn-pop-bar">
         {ask && (
           <Tabs value={mode} onValueChange={(next) => { setMode(next === 'ask' ? 'ask' : 'note'); field.current?.focus(); }} className="vn-pop-modes">

@@ -48,7 +48,8 @@ function pieces(line: string) {
   let rest = line;
   while (rest.length > MAX_PART_CHARS) {
     const space = rest.lastIndexOf(' ', MAX_PART_CHARS);
-    const cut = space > 0 ? space : MAX_PART_CHARS;
+    let cut = space > 0 ? space : MAX_PART_CHARS;
+    if (/[\uD800-\uDBFF]/.test(rest[cut - 1])) cut -= 1;
     out.push(rest.slice(0, cut));
     rest = rest.slice(cut).trimStart();
   }

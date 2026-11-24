@@ -5,53 +5,48 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import reportApi from './index.ts';
-import { audioKey } from './read-aloud-tts.ts';
 import { RequestQuotaLedger } from './request-quota-ledger.ts';
+import { audioKey } from './read-aloud-tts.ts';
 
 const ROUTE = 'https://papertok-report-api.example/tts/paragraph';
 const ORIGIN = 'https://papertok.app';
 const TEXT = 'The authors measure how well each probe separates injected prompts from benign ones.';
 
 
-/** The ledger's own object over a map, with no alarm. */
-function ledgerObject() {
-  const values = new Map<string, unknown>();
-  return new RequestQuotaLedger({
-    storage: {
-      transaction: <T>(fn: (txn: LedgerTransaction) => Promise<T>) => fn({
-        get: <V>(key: string) => values.get(key) as V | undefined,
-        put: (key, value) => values.set(key, value),
-        delete: key => values.delete(key),
-      }),
-      getAlarm: async () => null,
-      setAlarm: async () => undefined,
-      deleteAll: async () => values.clear(),
-    },
-  });
-}
-
-/**
- * Accepts every reservation of characters, except those of a period named in `refused`, which are
- * refused with its scope, and records them in `calls`. A paragraph's turn (`tts:making:`) is
- * answered by the ledger's own object, one per paragraph, and recorded in `turns`.
- */
 function recordingLedger({ accepted = true, scope = '', refused = {} }: { accepted?: boolean; scope?: string; refused?: Record<string, string> } = {}) {
-  const calls: Array<{ period: string; action: string; amount: number; subjectLimit: number; globalLimit: number }> = [];
   const turns: Array<{ period: string; action: string }> = [];
-  const making = new Map<string, RequestQuotaLedger>();
+  const claims = new Map<string, RequestQuotaLedger>();
+  const calls: Array<{ period: string; action: string; amount: number; globalAmount?: number; subjectLimit: number; globalLimit: number }> = [];
   return {
     calls,
     turns,
     idFromName: (period: string) => period,
     get: (period: string) => ({
-      fetch: async (url: RequestInfo | URL, options?: RequestInit) => {
-        const call = { period, ...JSON.parse(options!.body as string) };
-        if (period.startsWith('tts:making:')) {
-          turns.push(call);
-          if (!making.has(period)) making.set(period, ledgerObject());
-          return making.get(period)!.fetch(new Request(url, options));
+      fetch: async (_url: RequestInfo | URL, options?: RequestInit) => {
+        if (period.startsWith('work:')) {
+          turns.push({ period, ...JSON.parse(options!.body as string) });
+          let ledger = claims.get(period);
+          if (!ledger) {
+            const values = new Map<string, unknown>();
+            const transaction: LedgerTransaction = {
+              get: <T>(key: string) => values.get(key) as T | undefined,
+              put: (key, value) => { values.set(key, value); },
+              delete: key => { values.delete(key); },
+            };
+            let pending: Promise<unknown> = Promise.resolve();
+            ledger = new RequestQuotaLedger({ storage: {
+              transaction: <T>(callback: (tx: LedgerTransaction) => Promise<T>) => {
+                const next = pending.then(() => callback(transaction));
+                pending = next.catch(() => undefined);
+                return next;
+              },
+              getAlarm: async () => null, setAlarm: async () => {}, deleteAll: async () => { values.clear(); },
+            } });
+            claims.set(period, ledger);
+          }
+          return ledger.fetch(new Request(String(_url), options));
         }
-        calls.push(call);
+        calls.push({ period, ...JSON.parse(options!.body as string) });
         const refusal = Object.entries(refused).find(([name]) => period.startsWith(name))?.[1];
         const answer = refusal ? { accepted: false, scope: refusal } : { accepted, ...(scope ? { scope } : {}) };
         return new Response(JSON.stringify({ remaining: 100, ...answer }));
@@ -165,7 +160,7 @@ test('a paragraph nobody has heard is read by Cartesia once, charged by its leng
   assert.equal(calls[0].headers.get('authorization'), 'Bearer cartesia-test-key');
   assert.equal(calls[0].body.transcript, TEXT);
   assert.deepEqual(ledger.calls.map(call => [call.action, call.amount, call.subjectLimit, call.globalLimit]), [['reserve', TEXT.length, 44_000, 258_000]]);
-  assert.deepEqual(ledger.turns.map(turn => turn.action), ['reserve', 'release']);
+  assert.deepEqual(ledger.turns.map(turn => turn.action), ['claim', 'release-claim']);
   const key = await audioKey('cartesia', TEXT);
   assert.deepEqual(bucket.objects.get(`${key}.mp3`), CARTESIA_MP3);
   assert.equal(bucket.objects.has(`${key}.json`), false);
@@ -277,7 +272,7 @@ test('when both providers fail, both give the characters back and the last refus
     assert.equal((await response.json<{ code: string }>()).code, code);
     assert.deepEqual(calls.map(call => call.provider), ['cartesia', 'elevenlabs']);
     assert.deepEqual(ledger.calls.map(call => call.action), ['reserve', 'release', 'reserve', 'release']);
-    assert.deepEqual(ledger.turns.map(turn => turn.action), ['reserve', 'release']);
+    assert.deepEqual(ledger.turns.map(turn => turn.action), ['claim', 'release-claim']);
     assert.equal(bucket.objects.size, 0);
   }
 });
@@ -401,4 +396,23 @@ test('when the request making a paragraph fails, a request waiting for it makes 
   assert.deepEqual(responses.map(response => response.status).sort(), [200, 502]);
   assert.equal(calls.length, 2);
   assert.deepEqual(ledger.calls.map(call => call.action), ['reserve', 'release', 'reserve']);
+});
+
+
+test('a failed success body refunds the reader but preserves potentially billed global characters', async () => {
+  const ledger = recordingLedger();
+  const broken = () => new Response(new ReadableStream({ start(controller) { controller.error(new Error('response interrupted')); } }), { status: 200 });
+  const { response } = await withProviders({ elevenlabs: broken }, () => signedIn(() => reportApi.fetch(
+    paragraphRequest(), env(ledger, memoryBucket(), { CARTESIA_API_KEY: undefined }),
+  )));
+  assert.equal(response.status, 502);
+  assert.deepEqual(ledger.calls.map(call => [call.action, call.globalAmount]), [['reserve', undefined], ['release', 0]]);
+});
+
+test('a confirmed provider rejection refunds its global characters', async () => {
+  const ledger = recordingLedger();
+  await withProviders({ elevenlabs: elevenLabsOutOfCharacters }, () => signedIn(() => reportApi.fetch(
+    paragraphRequest(), env(ledger, memoryBucket(), { CARTESIA_API_KEY: undefined }),
+  )));
+  assert.deepEqual(ledger.calls.map(call => [call.action, call.globalAmount]), [['reserve', undefined], ['release', TEXT.length]]);
 });

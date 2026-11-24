@@ -1,7 +1,7 @@
 import type { WorkerEnv } from './env.ts';
 import { AIExplanationError, getDailyQuotaReset, sha256, verifyFirebaseAccount } from './ai-explanation.ts';
 import { readBoundedJson } from './bounded-body.ts';
-import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
+import { releaseRequestQuota, reserveRequestQuota, requestWorkClaim } from './request-quota-ledger.ts';
 
 export const READ_ALOUD_PATH = '/tts/paragraph';
 
@@ -11,16 +11,6 @@ export const MAX_PARAGRAPH_CHARS = 3_000;
 const SYNTHESIS_TIMEOUT_MS = 20_000;
 const REQUEST_DEADLINE_MS = 34_000;
 const DEFAULT_USER_DAILY_CHARS = 44_000;
-/** How often a request waiting for another's audio of the same paragraph looks for it. */
-const MAKING_POLL_MS = 1_000;
-/**
- * When a paragraph's turn is cleared if the request holding it never gave it
- * back. The ledger clears a whole object at the earliest time it was given, so
- * a turn taken within a minute of an earlier failed attempt can be cleared
- * while it is held, and a second request may then pay for the same paragraph.
- */
-const MAKING_HOLD_MS = 60_000;
-
 type Synthesis = { audio: ArrayBuffer; alignment: Record<string, unknown> | null };
 
 type Provider = {
@@ -37,13 +27,17 @@ function dailyLimit(value: string | undefined, fallback: number) {
   return Number.isInteger(parsed) && parsed > 0 && parsed <= 1_000_000 ? parsed : fallback;
 }
 
+class SynthesisRejected extends AIExplanationError {}
+
 function failure(response: Response, quotaExhausted: boolean) {
   if (quotaExhausted || response.status === 402) {
-    return new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', { ...getDailyQuotaReset(), scope: 'provider' });
+    return new SynthesisRejected('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', { ...getDailyQuotaReset(), scope: 'provider' });
   }
-  if (response.status === 429) return new AIExplanationError('AI_BUSY', 429);
-  if (response.status === 401 || response.status === 403) return new AIExplanationError('AI_NOT_CONFIGURED', 503);
-  return new AIExplanationError('AI_UNAVAILABLE', 502);
+  if (response.status === 429) return new SynthesisRejected('AI_BUSY', 429);
+  if (response.status === 401 || response.status === 403) return new SynthesisRejected('AI_NOT_CONFIGURED', 503);
+  return response.status >= 400 && response.status < 500
+    ? new SynthesisRejected('AI_UNAVAILABLE', 502)
+    : new AIExplanationError('AI_UNAVAILABLE', 502);
 }
 
 function alignmentOf(value: unknown) {
@@ -176,25 +170,27 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
   if (payload?.storedOnly === true) throw new AIExplanationError('AI_AUDIO_NOT_STORED', 404);
 
   const deadline = Date.now() + REQUEST_DEADLINE_MS;
-  // One request at a time makes a paragraph. The ledger object named after the
-  // paragraph holds a single use, taken here and given back when this request ends.
-  const making = { periodKey: `tts:making:${keys[0].slice('tts/'.length)}`, subject: 'tts:making', subjectLimit: 1, globalLimit: 1 };
-  for (;;) {
-    const turn = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, { ...making, expiresAt: Date.now() + MAKING_HOLD_MS });
-    if (turn.accepted) break;
-    if (turn.code) throw new AIExplanationError(turn.code === 'QUOTA_LEDGER_NOT_CONFIGURED' ? 'AI_NOT_CONFIGURED' : 'AI_UNAVAILABLE', 503);
-    // A request that waited takes the turn only with time left for a provider's call; the viewer asks again.
-    if (deadline - Date.now() < SYNTHESIS_TIMEOUT_MS + MAKING_POLL_MS) throw new AIExplanationError('AI_BUSY', 429);
-    await new Promise(resolve => { setTimeout(resolve, MAKING_POLL_MS); });
-    const made = await storedAudio();
-    if (made) return made;
+  const claimKey = await sha256(keys.join('\n'));
+  const owner = crypto.randomUUID();
+  let claimed = false;
+  while (Date.now() < deadline) {
+    try {
+      claimed = await requestWorkClaim(env.REQUEST_QUOTA_LEDGER ?? null, claimKey, owner, 'claim');
+    } catch {
+      throw new AIExplanationError('AI_UNAVAILABLE', 503);
+    }
+    if (claimed) break;
+    const ready = await storedAudio();
+    if (ready) return ready;
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
+  if (!claimed) throw new AIExplanationError('AI_BUSY', 429);
   const work = (async () => {
     try {
       // Stored between this request's look at the bucket and its turn.
       return await storedAudio() ?? await synthesize(env, store, account.uid, text, keys, deadline);
     } finally {
-      await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, making).catch(() => undefined);
+      await requestWorkClaim(env.REQUEST_QUOTA_LEDGER ?? null, claimKey, owner, 'release-claim').catch(() => undefined);
     }
   })();
   keepAlive?.(work.catch(() => undefined));
@@ -231,8 +227,13 @@ async function synthesize(env: WorkerEnv, store: NonNullable<WorkerEnv['TTS_AUDI
       continue;
     }
 
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, ledgerRequest);
+      throw new AIExplanationError('AI_TIMEOUT', 504);
+    }
     try {
-      const { audio, alignment } = await provider.synthesize(text, apiKey, AbortSignal.timeout(Math.min(SYNTHESIS_TIMEOUT_MS, left)));
+      const { audio, alignment } = await provider.synthesize(text, apiKey, AbortSignal.timeout(Math.min(SYNTHESIS_TIMEOUT_MS, remaining)));
       await Promise.all([
         store.put(`${keys[index]}.mp3`, audio, { httpMetadata: { contentType: 'audio/mpeg' } }),
         alignment ? store.put(`${keys[index]}.json`, JSON.stringify(alignment), { httpMetadata: { contentType: 'application/json' } }) : null,
@@ -241,7 +242,10 @@ async function synthesize(env: WorkerEnv, store: NonNullable<WorkerEnv['TTS_AUDI
       });
       return { body: audio, type: 'audio/mpeg' };
     } catch (error) {
-      await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, ledgerRequest).catch(() => undefined);
+      // A timeout or broken success body may already have been billed upstream.
+      await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
+        ...ledgerRequest, globalAmount: error instanceof SynthesisRejected ? text.length : 0,
+      }).catch(() => undefined);
       refusal = error instanceof AIExplanationError
         ? error
         : new AIExplanationError((error as Error)?.name === 'TimeoutError' ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE', 502);
