@@ -54,15 +54,6 @@
 .rd-podcast-forms { position: relative; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
 .rd-podcast-forms > * { position: absolute; inset: 0; width: 100%; height: 100%; }
 .rd-podcast-forms-glow { filter: blur(5px); }
-/* A fractal noise tile over the cloud, as film grain. */
-.rd-podcast-forms-grain {
-  pointer-events: none;
-  opacity: 0.31;
-  mix-blend-mode: overlay;
-  /* Faded out towards the edges, so the grain never draws the canvas's square. */
-  mask-image: radial-gradient(closest-side, black 60%, transparent);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
 
 /* The paper and the section the voice is in, small, over the caption; on a narrow screen it wraps rather than cutting the title short. */
 .rd-podcast-title {
@@ -331,13 +322,14 @@
     grid-template-areas: 'cover words' 'player player';
     justify-content: center;
     align-content: safe center;
-    column-gap: var(--space-10);
+    column-gap: var(--space-6);
   }
   .rd-podcast-cover { grid-area: cover; width: min(44vh, 360px); margin-bottom: var(--space-10); }
   .rd-podcast-words { grid-area: words; align-self: center; margin-bottom: var(--space-10); }
   .rd-podcast-title { text-align: start; }
   .rd-podcast-caption { width: 100%; margin-bottom: 0; }
-  .rd-podcast-text { text-align: start; text-wrap: pretty; }
+  /* Only the lines it has, so a one-line caption is centred on the visual like a longer one. */
+  .rd-podcast-text { min-height: 0; text-align: start; text-wrap: pretty; }
   .rd-podcast-player { grid-area: player; justify-self: center; }
 }
 /* Narrower, the section and the caption are the column's own items, as they were before the group. */

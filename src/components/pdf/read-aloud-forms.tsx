@@ -241,13 +241,12 @@ function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene,
 /**
  * The podcast tab's visualizer: a cloud of particles that flows from one scientific form to
  * the next (a geodesic sphere, an atom, DNA, a crystal, a galaxy, a wave) while the voice speaks, swelling and
- * settling with it, and holds its form while paused. It has a soft glow and a film grain;
+ * settling with it, and holds its form while paused. It has a soft glow, and
  * pressing it shows the next form. With reduced motion it settles into each form and holds still.
  */
 export default function ReadAloudForms({ ready, playing }: { ready: boolean; playing: boolean }) {
   const sharp = useRef<HTMLCanvasElement | null>(null);
   const glow = useRef<HTMLCanvasElement | null>(null);
-  const grain = useRef<HTMLSpanElement | null>(null);
   const scene = useRef<Scene>({ pos: new Float32Array(SETTINGS.particles * 3), form: 0, shownAt: 0, t: 0, level: 0.1, bands: [], pump: 1 });
   useEffect(() => {
     const [canvas, behind] = [sharp.current, glow.current];
@@ -260,14 +259,11 @@ export default function ReadAloudForms({ ready, playing }: { ready: boolean; pla
       return undefined;
     }
     let frame = 0;
-    let count = 0;
     let last = performance.now();
     const tick = (now: number) => {
       step(state, Math.min(0.1, (now - last) / 1000), speaking);
       last = now;
       render(canvas, behind, state, ready);
-      // The grain jumps every other frame, so it shimmers like film.
-      if (grain.current && count++ % 2 === 0) grain.current.style.backgroundPosition = `${Math.floor(Math.random() * 160)}px ${Math.floor(Math.random() * 160)}px`;
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -287,7 +283,6 @@ export default function ReadAloudForms({ ready, playing }: { ready: boolean; pla
     <button type="button" className="rd-podcast-visual rd-podcast-forms" onClick={next} aria-label="Show the next form" title="Next form">
       <canvas ref={glow} className="rd-podcast-forms-glow" />
       <canvas ref={sharp} />
-      <span ref={grain} className="rd-podcast-forms-grain" />
     </button>
   );
 }
