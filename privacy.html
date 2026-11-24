@@ -526,7 +526,8 @@
       <p>
         When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to
         PaperTok's MCP server, or a public request looks up papers, paper figures,
-        open-access links or a shared page, that server uses the IP address
+        open-access links or a shared page, or a full-paper translation needs a fresh
+        look-up of the paper's text, that server uses the IP address
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
         the shared download allowance. It stores a protected identifier derived from
         the address and the current minute using a secret key, together with request
@@ -566,7 +567,8 @@
         deletion is scheduled for one minute after the counting window ends, at most
         two minutes after a request. They can remain longer if Cloudflare delays or
         fails to run that cleanup, but expired counters do not affect later windows.
-        The arXiv, paper-figure, open-access lookup and MCP counters use the same cleanup schedule.
+        The arXiv, paper-figure, open-access lookup and MCP counters, and the per-account
+        counter of full-paper translation attempts, use the same cleanup schedule.
         OpenAlex counters, both the per-minute and the daily identifiers, and shared-page
         lookup counters are stored with the day's allowance, except the counters for lookups
         by identifier: those sit in 16 separate stores a day that hold only the per-address
@@ -625,7 +627,9 @@
         translation in memory while you read and does not store it on its servers. PaperTok
         counts requests against a hashed account identifier in Cloudflare to enforce daily
         limits. PaperTok schedules deletion within three days, though Cloudflare can run
-        the cleanup late. The <a href="#request-counter-retention">counter recovery policy</a>
+        the cleanup late. PaperTok also counts each attempt, including one that later fails,
+        to allow at most two checks of the paper's text a minute per account, under a hashed
+        account identifier whose deletion is scheduled for one minute after that minute ends. The <a href="#request-counter-retention">counter recovery policy</a>
         below also applies. Anthropic may process the text in any region it serves and ordinarily
         deletes API inputs and outputs within 30 days, subject to its agreement with
         PaperTok and exceptions for policy enforcement and legal obligations.

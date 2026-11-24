@@ -206,6 +206,8 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['possibly outside the EU', /Anthropic may process the request in any region it serves, including outside the European Union/],
     ['possibly outside the EU', /Anthropic may process the text in any region it serves/],
     ['Limits on full-paper translations', /PaperTok counts requests against a hashed account identifier in Cloudflare to enforce daily limits/],
+    // preflightFullPaperTranslationQuota (worker/ai-explanation.ts): a per-account minute counter, kept one minute past its window.
+    ['Limits on full-paper translations', /to allow at most two checks of the paper's text a minute per account, under a hashed account identifier whose deletion is scheduled for one minute after that minute ends/],
     ['OpenAlex lookups', /so that one address cannot use up the day's shared OpenAlex allowance/],
     ['hashed or protected IDs', /a second identifier, derived the same way from the address and the current day/],
     ['scheduled for deletion within three days', /Each store's deletion is scheduled for at most three days after the first request it receives/],

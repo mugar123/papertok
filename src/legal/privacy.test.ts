@@ -121,9 +121,10 @@ test('the page names the public pages a shared link opens as places for the Priv
 test('the page says figure lookups count against the caller address like the other public lookups', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   // worker/source-api.ts gives /resources/figures a per-address allowance through worker/caller-quota.ts.
-  assert.match(html, /When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to\s+PaperTok's MCP server, or a public request looks up\s+papers, paper figures,\s+open-access links or a shared page,\s+that server uses the IP address/);
+  assert.match(html, /When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to\s+PaperTok's MCP server, or a public request looks up\s+papers, paper figures,\s+open-access links or a shared page, or a full-paper translation needs a fresh look-up of the paper's text,\s+that server uses the IP address/);
   // reserveCallerMinute (worker/caller-quota.ts) schedules every per-minute caller counter, figures included, for deletion a minute after its window.
-  assert.match(html, /The arXiv, paper-figure, open-access lookup and MCP counters use the same cleanup schedule/);
+  // preflightFullPaperTranslationQuota expires its minute counter one minute after the window, like reserveCallerMinute.
+  assert.match(html, /The arXiv, paper-figure, open-access lookup and MCP counters, and the per-account counter of full-paper translation attempts, use the same cleanup schedule/);
 });
 
 // Title-and-abstract translation is removed before this revision merges; only full-paper translation remains.
@@ -136,7 +137,7 @@ test('the page no longer describes title-and-abstract translation or its stored 
 test('the page says what a full-paper translation sends to Anthropic, what PaperTok keeps and how long Anthropic keeps it', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   assert.match(html, /If you request a full-paper translation, PaperTok sends the article text needed for the translation and your chosen language to Anthropic\. PaperTok does not include your account identifier or email\. The article may itself name people\./);
-  assert.match(html, /PaperTok keeps the translation in memory while you read and does not store it on its servers\. PaperTok counts requests against a hashed account identifier in Cloudflare to enforce daily limits\. PaperTok schedules deletion within three days, though Cloudflare can run the cleanup late\./);
+  assert.match(html, /PaperTok keeps the translation in memory while you read and does not store it on its servers\. PaperTok counts requests against a hashed account identifier in Cloudflare to enforce daily limits\. PaperTok schedules deletion within three days, though Cloudflare can run the cleanup late\. PaperTok also counts each attempt, including one that later fails, to allow at most two checks of the paper's text a minute per account, under a hashed account identifier whose deletion is scheduled for one minute after that minute ends\./);
   // The link lands on the paragraph that says a deleted counter can stay in Cloudflare's recovery history.
   assert.match(html, /<a href="#request-counter-retention">counter recovery policy<\/a> below also applies/);
   assert.match(html, /<p id="request-counter-retention"> The request counters this policy describes/);
