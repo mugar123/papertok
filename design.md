@@ -312,13 +312,14 @@ full-height cards; each card is a sheet of type with an action rail beside it.
 - **The navbar** is 64px on desktop and 52px on a phone (`--nav-height`,
   `--nav-height-mobile`); `--nav-total` adds the top safe-area inset in one
   place, and everything that offsets from the bar reads it.
-- **The card on a phone** is top-anchored: kicker, chips, title and authors
-  under the bar, the abstract filling the middle, the actions at the foot where
+- **The card on a phone** is top-anchored: kicker, the conference pill when
+  there is one, title and authors under the bar, the abstract filling
+  the middle, the actions at the foot where
   the thumb is. Only the abstract yields height, except on a card with the
   publisher's page, whose head rows yield after the panel and scroll (Cards /
   Containers, "A card with no abstract"). On a tablet the column stops at a
   40rem reading measure.
-- **The kicker** reads field · reason · year · conference acceptance · citations.
+- **The kicker** reads field · reason · year · citations.
   It wraps as needed, with dots only between visible items. The reason
   (`utils/feed-reason.ts`) uses `--text-secondary`. A notable
   For You card reads "Highly cited in [field]" when its lane identifies a
@@ -338,10 +339,13 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   was fetched for, then the first picked secondary category if needed. A pick
   with the same label as the displayed field reads "In your area". Only picks
   with a taxonomy label qualify.
-  The Worker's `acceptedConference` supplies the mark in `--text-secondary`.
-  It reads "Accepted at NeurIPS 2026", or "Accepted at NeurIPS" when the
-  conference year is unknown. About this paper repeats it under Status. A
-  preprint keeps its preprint status.
+  The Worker's `acceptedConference` supplies the conference mark: a pill on a
+  line of its own under the kicker, so only an accepted paper's head grows.
+  It is built like a status chip in the blue tint (wash, hairline, ink, mono,
+  a seal icon) with fully rounded ends, and a long name wraps inside it. It
+  reads "Accepted at NeurIPS 2026", or "Accepted at NeurIPS" when the
+  conference year is unknown. About this paper repeats the same pill under
+  the Status chips. A preprint keeps its preprint status.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 
@@ -435,7 +439,9 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 
 ### Chips
 - **Style:** `1px` border, `sm` radius, mono or small Inter, tinted from the
-  field (`color-mix` of `--area-accent`) or from a status tint.
+  field (`color-mix` of `--area-accent`) or from a status tint. The conference
+  pill is the one fully rounded chip, so it reads as a label of the paper
+  rather than one more status chip.
 - **State:** toggles are `aria-pressed` chips (`toggle.ts`); a toggle group's
   `value` is always an array.
 

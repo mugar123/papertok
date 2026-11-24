@@ -80,6 +80,7 @@ import {
   NotePencil,
   Package,
   Planet,
+  SealCheck,
   Sigma,
   TestTube,
   Intersect,
@@ -1313,6 +1314,13 @@ const PaperCard = memo(function PaperCard({
     [paper, followed, analyticsSurface, categoryLabel],
   );
   const acceptedAt = acceptedConferenceText(paper);
+  // The same pill on the card, under its kicker, and in About this paper under Status.
+  const acceptedPill = acceptedAt ? (
+    <span className="pc-chip pc-accepted" data-tone="blue">
+      <SealCheck size={12} weight="bold" aria-hidden="true" />
+      {acceptedAt}
+    </span>
+  ) : null;
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
@@ -1910,7 +1918,7 @@ const PaperCard = memo(function PaperCard({
       })()}
     </AnimatePresence>
             </div>
-            {acceptedAt && <p className="pc-about-accepted">{acceptedAt}</p>}
+            {acceptedPill && <p className="pc-about-accepted">{acceptedPill}</p>}
           </section>
           {topicItems.length > 0 && (
             <section className="pc-about-section">
@@ -2073,19 +2081,12 @@ const PaperCard = memo(function PaperCard({
                 <span className="pc-date">{paper.year}</span>
               </>
             ) : null}
-            {acceptedAt && (
-              <>
-                {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot">·</span> : null}
-                <span className="pc-accepted">{acceptedAt}</span>
-              </>
-            )}
-
             {(paper.citationCountKnown || paper.citationCount! > 0) && (
               <>
                 {/* The modifier gives this dot the chip's fade: the two mount
                     together, and when enrichment runs past the ceiling they
                     mount late together. */}
-                {(categoryLabel || reason || paper.year || acceptedAt) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+                {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
                 {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                   <a
                     className="pc-citations"
@@ -2120,6 +2121,8 @@ const PaperCard = memo(function PaperCard({
                 )}
               </div>
             )}
+            {/* A line of its own under the kicker's items, read after them and before the title. */}
+            {acceptedPill && <span className="pc-accepted-row">{acceptedPill}</span>}
           </div>
           {/* The day's AI uses, as the reader shows them, at the first line's far end: what reading in plain words would spend. */}
           {canRequestRewrite && !publicMode && user && usesNow ? (

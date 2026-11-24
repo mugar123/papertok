@@ -451,6 +451,7 @@
    (direction 0, no lateral flag) still composes under the atom veil. */
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-sheet,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-meta,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-accepted-row,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-title,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-authors,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-abstract,
@@ -632,14 +633,43 @@ a.pc-citations {
   }
 }
 
-.pc-accepted {
-  color: var(--text-secondary);
+.pc-accepted-row,
+.pc-about-accepted {
+  display: flex;
+  margin: 0;
 }
 
-.pc-about-accepted {
-  margin: 0;
-  font: var(--fw-medium) var(--fs-sm)/1.4 var(--font-body);
-  color: var(--text-secondary);
+/* The kicker's items wrap; the pill takes a line of its own after them, so
+   the kicker keeps its single text height and only an accepted paper's head
+   grows. The row gap plus this margin gives the pill the space under the
+   kicker (`--pc-accepted-step`, which the landscape phone halves) from the line
+   above. A mark that arrives with a later page adds the row to a card on
+   screen: it fades in as the late citations do, and the head below moves. */
+.pc-accepted-row {
+  flex-basis: 100%;
+  margin-top: calc(var(--pc-accepted-step, var(--space-3)) - 6px);
+  animation: appear var(--motion-base) linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-accepted-row {
+    animation: none;
+  }
+}
+
+/* A conference acceptance is a state: a status chip in the blue tone
+   (`data-tone="blue"`). Fully rounded, it reads as a label of the paper
+   rather than one more chip of the Status row. */
+.pc-chip.pc-accepted {
+  gap: 5px;
+  padding: 2px 9px 2px 7px;
+  border-radius: var(--radius-full);
+  /* The longest catalogue name ("Accepted at IEEE Swarm Intelligence
+     Symposium 2026") is wider than a 375px phone's column: it wraps inside
+     the pill rather than run past the card. */
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .pc-feed-reason {
@@ -713,6 +743,12 @@ a.pc-citations {
   border-color: var(--tint-green-line);
   background: var(--tint-green-bg);
   color: var(--tint-green-fg);
+}
+
+.pc-chip[data-tone='blue'] {
+  border-color: var(--tint-blue-line);
+  background: var(--tint-blue-bg);
+  color: var(--tint-blue-fg);
 }
 
 /* `data-tone="neutral"` is the base rule already — a subscription is a limit,
@@ -1631,8 +1667,9 @@ button.pc-topics-pop-item:focus-visible {
 /* On a short window the panel only has what the rows above it leave, and at
    1280×600 that was 89px: the Graph/Similar header and a 15px sliver of map.
    While the graph is open the paper above it steps back instead:
-   the topic row, the project badge and the accent rule go (the kicker still
-   names the field), the title keeps two lines, and the steps between rows
+   the topic row, the project badge, the conference pill and the accent rule
+   go (the kicker still names the field; About this paper keeps the
+   acceptance), the title keeps two lines, and the steps between rows
    halve. The panel gets 220px or more there, a funded paper with a two-line
    title included; the actions stay on the sheet. The flag is set in the
    same commit as the panel, so the slot's morph measures the room it lands
@@ -1652,6 +1689,10 @@ button.pc-topics-pop-item:focus-visible {
 
   .pc-sheet[data-connections] :is(.pc-meta, .pc-title) {
     margin-bottom: var(--space-2);
+  }
+
+  .pc-sheet[data-connections] .pc-accepted-row {
+    display: none;
   }
 
   .pc-sheet[data-connections] .pc-body {
@@ -2974,6 +3015,10 @@ button.pc-topics-pop-item:focus-visible {
     .pc-meta,
     .pc-title {
       margin-bottom: var(--space-2);
+    }
+
+    .pc-meta {
+      --pc-accepted-step: var(--space-2);
     }
 
     .pc-body {
