@@ -1,5 +1,4 @@
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/account-warmup.ts';
-import type { InterestSettings } from '../utils/area-preferences.ts';
 import { forgetSessionDismissed } from '../utils/custom-feed-dismissed.ts';
 import { forgetCustomFeedPages } from '../utils/custom-feed-pages.ts';
 import { clearGuestInterests } from '../utils/guest-interests.ts';
@@ -42,7 +41,7 @@ export function closeAccountSession(userId: string | undefined, storage?: Device
  * onboarding as finished, and the guest answer that seeded it is spent, so it
  * cannot seed the next new account on this device.
  */
-export function adoptOnboardedProfile(userId: string, preferences: string[], settings: InterestSettings, storage?: DeviceStorage) {
-  saveStoredOnboarding(userId, { complete: true, preferences, ...settings }, storage);
+export function adoptOnboardedProfile(userId: string, preferences: string[], storage?: DeviceStorage) {
+  saveStoredOnboarding(userId, { complete: true, preferences }, storage);
   clearGuestInterests(storage);
 }

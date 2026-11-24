@@ -218,15 +218,10 @@
   padding: var(--space-4) var(--space-6);
   border-top: 1px solid var(--border-subtle);
   display: flex;
-  flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
   flex-shrink: 0;
   gap: var(--space-4);
-}
-
-.eim-footer > .area-preference-field {
-  margin-inline-end: auto;
 }
 
 .eim-selected-count {

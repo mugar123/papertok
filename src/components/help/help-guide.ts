@@ -5,7 +5,6 @@ import {
   ArrowSquareOut,
   BookmarkSimple,
   ClockCounterClockwise,
-  Compass,
   DotsThree,
   DownloadSimple,
   Eye,
@@ -39,7 +38,6 @@ import {
   X,
 } from '@phosphor-icons/react';
 import { MAX_ACCOUNT_ENTITIES, MAX_ACCOUNT_KEYWORDS, MAX_CUSTOM_FEEDS, MAX_FEED_INGREDIENTS } from '../../utils/custom-feeds.ts';
-import { INTEREST_MIXES } from '../../utils/area-preferences.ts';
 import { MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 import type { AIUses } from '../../services/paper-rewrite-service.ts';
 
@@ -173,7 +171,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     signedInOnly: true,
     entries: [
       entry('level', 'Level', Plant,
-        'Beginner, University or Researcher. The button shows the icon of the current level: a plant, a graduation cap or a flask. The starting level is the one set for the paper’s area in Edit interests, else your default in Settings under Reading & AI. Choosing a level this paper has not been written at spends one AI use; a level already written opens free. The level cannot be changed while a rewrite is being written.',
+        'Beginner, University or Researcher. The button shows the icon of the current level: a plant, a graduation cap or a flask. The starting level is your default in Settings under Reading & AI. Choosing a level this paper has not been written at spends one AI use; a level already written opens free. The level cannot be changed while a rewrite is being written.',
         { allowance: 'ai-new', needsAccount: true }),
       entry('write-again', 'Write it again', ArrowClockwise,
         'Shows under a reused summary. Writes a new version and replaces the saved one. Spends one AI use. If the new one stops early, the old one stays.',
@@ -301,20 +299,6 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     ],
   },
   {
-    id: 'interests',
-    title: 'Interests: areas, Priority and Feed mix',
-    intro: 'Chosen on the welcome page, in an account’s first steps, and later in Settings under Discovery, Edit interests. They shape For you and Most recent, and the per-area level sets your plain-words level. They cost nothing.',
-    entries: [
-      entry('area-priority', 'Priority', Compass,
-        'A choice for each area you pick: Essential, the default, for the areas of your work, or Curiosity for areas you only want a taste of. It decides which of the two groups For you counts an area in.'),
-      entry('feed-mix', 'Feed mix', Compass,
-        `Shows once you have chosen areas of both kinds. It sets how For you divides its weight between Essential and Curiosity areas: ${Object.values(INTEREST_MIXES).map(({ label, essential }) => `${label}, ${essential} to ${100 - essential}`).join('; ')}. Balanced is the default.`),
-      entry('area-level', 'Read in plain words (per area)', Compass,
-        'In Edit interests only. A level for one area, or Use my default. It replaces your default level for papers in that area.',
-        { needsAccount: true }),
-    ],
-  },
-  {
     id: 'settings',
     title: 'Settings',
     intro: 'Reached from the account menu: your picture or initial, at the right end of the top bar. Only an account has Settings; a visitor does not. The Settings pages are listed down the left of the Settings page, or in the page switcher at its top on a narrow screen.',
@@ -333,9 +317,9 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('edit-feeds', 'Edit feeds', PencilSimple,
         'Discovery page. Opens the Feeds page: your feeds in tab order with Edit, Move up, Move down and Delete for each.'),
       entry('edit-interests', 'Edit interests', PencilSimple,
-        'Discovery page. Chooses the subjects that train your feed, and for each area its Priority and plain-words level, and the Feed mix. The Interests section describes them.'),
+        'Discovery page. Chooses the subjects that train your feed.'),
       entry('default-level', 'Default AI level', Sparkle,
-        'Reading & AI page. Sets the level Read in plain words starts at, unless the paper’s area has its own level. The same page lists the papers you have read in plain words.'),
+        'Reading & AI page. Sets the level Read in plain words starts at. The same page lists the papers you have read in plain words.'),
       entry('email-updates', 'Configure email updates', GearSix,
         'Notifications page. Turns the Monday email on or off, and sets how many papers it holds.'),
       entry('analytics', 'Allow usage analytics', ShieldCheck,

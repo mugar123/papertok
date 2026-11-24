@@ -14,8 +14,6 @@ import { useCallback, useLayoutEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CaretDown, Check, SkipForward } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.ts';
-import type { InterestSettings } from '../../utils/area-preferences.ts';
-import { AreaPreferenceFields, InterestMixField } from '../onboarding/area-preference-fields.tsx';
 import ThemeToggle from '../layout/theme-toggle.tsx';
 import ProgressDots from './progress-dots.tsx';
 import { Button } from '../ui/button.tsx';
@@ -229,40 +227,29 @@ export function WelcomeCopy({ kicker, title, lede }: { kicker?: ReactNode; title
 
 // The areas of the taxonomy as a grid of cards. `selected` is a Set of area
 // keys; `onToggle(key)` flips one; `label` names the group.
-export function AreaPicker({ selected, onToggle, label, settings, onSettingsChange }: {
-  selected: Set<string>;
-  onToggle: (key: string) => void;
-  label: string;
-  settings: InterestSettings;
-  onSettingsChange: (settings: InterestSettings) => void;
-}) {
+export function AreaPicker({ selected, onToggle, label }: { selected: Set<string>; onToggle: (key: string) => void; label: string }) {
   return (
-    <div className="gw-area-picker">
-      <div className="gw-areas" role="group" aria-label={label}>
-        {AREA_ENTRIES.map(([key, area], index) => (
-          <div className="gw-area-choice" key={key}>
-            <Toggle
-              variant="outline"
-              className="gw-area"
-              pressed={selected.has(key)}
-              onPressedChange={() => onToggle(key)}
-              style={{ '--area-accent': area.gradient, '--i': index }}
-            >
-              <span className="gw-area-icon" aria-hidden="true">
-                <area.icon size={20} weight={selected.has(key) ? 'fill' : 'regular'} />
-              </span>
-              <span className="gw-area-name">{area.label}</span>
-              <span className="gw-area-box" aria-hidden="true">
-                <Check size={11} weight="bold" />
-              </span>
-            </Toggle>
-            {selected.has(key) && (
-              <AreaPreferenceFields area={key} name={area.label} settings={settings} onChange={onSettingsChange} />
-            )}
-          </div>
-        ))}
-      </div>
-      <InterestMixField areas={selected} settings={settings} onChange={onSettingsChange} />
+    <div className="gw-areas" role="group" aria-label={label}>
+      {AREA_ENTRIES.map(([key, area], index) => (
+        // The shared Toggle: a native button carrying
+        // `aria-pressed` and `data-pressed`, which the CSS reads.
+        <Toggle
+          key={key}
+          variant="outline"
+          className="gw-area"
+          pressed={selected.has(key)}
+          onPressedChange={() => onToggle(key)}
+          style={{ '--area-accent': area.gradient, '--i': index }}
+        >
+          <span className="gw-area-icon" aria-hidden="true">
+            <area.icon size={20} weight={selected.has(key) ? 'fill' : 'regular'} />
+          </span>
+          <span className="gw-area-name">{area.label}</span>
+          <span className="gw-area-box" aria-hidden="true">
+            <Check size={11} weight="bold" />
+          </span>
+        </Toggle>
+      ))}
     </div>
   );
 }

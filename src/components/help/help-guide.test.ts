@@ -95,18 +95,6 @@ test('Read article lists every target it tries, in order, and which of them open
   assert.match(read, /last resort opens the DOI page in a new tab/);
 });
 
-test('the Interests section describes Priority, Feed mix and the per-area level with the mixes the app has', () => {
-  const section = HELP_SECTIONS.find(candidate => candidate.id === 'interests');
-  assert.ok(section && !section.signedInOnly, 'a visitor chooses areas on the welcome page');
-  assert.deepEqual(section.entries.map(entry => entry.id), ['area-priority', 'feed-mix', 'area-level']);
-  assert.match(section.intro, /For you and Most recent/);
-  assert.match(text('area-priority'), /Essential, the default, .* or Curiosity/);
-  assert.match(text('feed-mix'), /Mostly work, 90 to 10; Balanced, 75 to 25; Half and half, 50 to 50/);
-  assert.match(text('feed-mix'), /Shows once you have chosen areas of both kinds/);
-  assert.equal(allowanceOf('area-priority'), 'free');
-  assert.deepEqual(section.entries.map(entry => entry.needsAccount), [false, false, true]);
-});
-
 test('Filters keeps the sort order apart from the three filters that get chips and that Reset clears', () => {
   const filters = text('filters');
   assert.match(filters, /three filters and a sort order/);
