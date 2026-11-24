@@ -471,13 +471,20 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   row, the row stops short of the rail. While the feed still asks a source
   for the abstract, the link holds its place in the row unseen, so the row
   keeps its shape when the wait ends with no abstract.
-- **Settings › Feeds** (`settings/feeds-settings-page.tsx`), reached from
-  Discovery: a `New feed` button over the reader's feeds in tab order, as
-  ruled rows. Each row has the feed's name in the serif, its ingredients on one
-  mono line cut with an ellipsis, and ghost `Edit`, `Move up`, `Move down` and
-  `Delete` buttons, each named for its feed. These buttons do what the tab's
-  menu does, so no command needs a right click or a long press. A move at an
-  end is disabled, and a saved move is announced with the feed's new position.
+- **The Feeds window** (`settings/feeds-dialog.tsx`), opened by Edit feeds in
+  Settings › Discovery: the Interests window's frame, header and footer on a
+  desktop, a settings sheet as tall as its content on a phone. The reader's
+  feeds in tab order as rows split by hairlines: the position in mono (`01`),
+  the feed's name in the serif, then a mono line with the order in capitals
+  and the ingredients cut with an ellipsis. Each row ends in four ghost icon
+  buttons named for its feed: Move up, Move down, Edit in `--accent-success`
+  and Delete in `--accent-danger`; on a phone they sit under the name at
+  44px. The footer counts the feeds against the limit and holds `New feed`,
+  disabled at the limit. These buttons do what the tab's menu does, so no
+  command needs a right click or a long press. A move at an end is disabled,
+  and a saved move is announced with the feed's new position. Edit and Delete
+  open the feed window and the delete confirmation over it, and focus comes
+  back to the button that opened them.
 - **Help** (`help/help-page.tsx`, its words in `help-guide.ts`) at `/help`: what
   each button and gesture does, in the Settings page's style, with the section
   links in place of its menu. It is a public page: a

@@ -79,7 +79,6 @@ const RecentFeedPage = lazyWithPreload(() => import('./components/recent/recent-
 const CustomFeedPage = lazyWithPreload(() => import('./components/custom-feeds/custom-feed-page.tsx'))
 const SettingsPage = lazyWithPreload(() => import('./components/settings/settings-page.tsx'))
 const FollowingSettingsPage = lazyWithPreload(() => import('./components/settings/following-settings-page.tsx'))
-const FeedsSettingsPage = lazyWithPreload(() => import('./components/settings/feeds-settings-page.tsx'))
 const HelpPage = lazyWithPreload(() => import('./components/help/help-page.tsx'))
 const PublicPaperPage = lazyWithPreload(() => import('./components/public/public-paper-page.tsx'))
 const PublicListPage = lazyWithPreload(() => import('./components/lists/public-list-page.tsx'))
@@ -196,7 +195,7 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/profile', '/recent', '/following', '/search', '/settings', '/help', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/feeds']
+  const navbarRoutes = ['/feed', '/lists', '/profile', '/recent', '/following', '/search', '/settings', '/help', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, list and entity pages keep the app chrome for a signed-in
   // user — reaching a paper from a list, a list from someone's shared link,
   // or an author from a card, must not feel like leaving the app. Measured
@@ -568,16 +567,6 @@ function AppContent() {
               <ProtectedRoute>
                 <PageTransition>
                   <FollowingSettingsPage />
-                </PageTransition>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings/feeds"
-            element={
-              <ProtectedRoute>
-                <PageTransition>
-                  <FeedsSettingsPage />
                 </PageTransition>
               </ProtectedRoute>
             }
