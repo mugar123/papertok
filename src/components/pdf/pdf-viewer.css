@@ -1,5 +1,4 @@
-/* The paper viewer: the whole screen, or all of it under the app's bar, above the page it was
-   opened from. */
+/* The paper viewer: the whole screen, above the page it was opened from and the app's bar. */
 .pdf-overlay {
   position: fixed;
   inset: 0;
@@ -9,9 +8,6 @@
   background: var(--bg-primary);
 }
 
-/* The viewer is the paper's route over the page it was opened from: under the app's bar where
-   the page has one, so the bar stays at hand as on any other page (paper-view-route.tsx). */
-:root:has(.navbar) .pdf-overlay { top: var(--nav-total); }
 
 /* `data-open` / `data-closed` are the viewer's (pdf-viewer.tsx): it holds itself on screen until
    its leave has played, then leaves its route. The paper arrives and leaves as a detail page

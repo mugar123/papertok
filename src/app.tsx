@@ -373,7 +373,8 @@ function AppContent() {
       <RouteAnnouncer />
       {/* The one place toasts render; anything calls `toast()` from 'sonner'. */}
       <Toaster />
-      {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={openSearch} onSearchSlot={setSearchSlot} />}
+      {/* Under a paper's viewer, which covers it, the bar is out of the keyboard's reach too. */}
+      {showNavbar && <div inert={Boolean(paperView)}><Navbar searchOpen={searchOpen} onOpenSearch={openSearch} onSearchSlot={setSearchSlot} /></div>}
       {/* Focus target for the skip link and for route changes (RouteAnnouncer).
           A div, not <main>: several routes render their own <main> inside. */}
       <div id="main-content" tabIndex={-1} inert={Boolean(paperView)}>

@@ -639,8 +639,8 @@ options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
 new tab. Both readers use `pdf/reading-dock.tsx` for Notes and the
 original-paper link. The paper viewer is the paper's own route, `/paper/<key>/read`,
-`/listen` or `/summary` (`pdf/paper-view.ts`), drawn under the app's bar over the page it
-was opened from, which stays mounted, inert, below it: Back and the viewer's X return to that
+`/listen` or `/summary` (`pdf/paper-view.ts`), drawn over the whole screen, the app's bar
+included, and over the page it was opened from, which stays mounted, inert, below it: Back and the viewer's X return to that
 page where it was. Opened from a link or a reload, the page under it is the paper's own; its
 menu then has no card actions (Mark as read, Not interested, About). A tab changes the address
 without a new history step. The paper viewer's top bar holds up to three tabs, Paper,

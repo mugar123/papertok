@@ -47,7 +47,7 @@ const LEAVE_MS = 240;
 
 /**
  * The paper's own route (`/paper/<key>/read`, `/listen`, `/summary`, paper-view-route.tsx), drawn
- * under the app's bar over the page it was opened from, which stays mounted and inert below it.
+ * over the whole screen and the page it was opened from, which stays mounted and inert below it.
  * Its tab is the route's: a press asks for the other route (`onViewChange`), and the view arrives
  * from that tab's side. Closing plays the leave, then `onClose` leaves the route. Escape on the
  * viewer closes it as the X does.
