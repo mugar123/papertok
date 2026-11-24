@@ -363,10 +363,11 @@ test('a total deadline after the first translated chunk retains the partial resu
   const deadline = new AbortController();
   const originalTimeout = AbortSignal.timeout;
   t.mock.method(AbortSignal, 'timeout', (ms: number) => ms === PAPER_TRANSLATION_DEADLINE_MS ? deadline.signal : originalTimeout(ms));
-  const second = Promise.withResolvers<void>();
+  let secondStarted!: () => void;
+  const second = new Promise<void>(resolve => { secondStarted = resolve; });
   provider.reply = signal => {
     if (calls.length === 1) return translatedSegments(['Primer fragmento']);
-    second.resolve();
+    secondStarted();
     return new Promise<Response>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true }));
   };
   const response = await worker.fetch(fullRequest(), env);
@@ -375,7 +376,7 @@ test('a total deadline after the first translated chunk retains the partial resu
   const decode = (value: Uint8Array | undefined) => JSON.parse(new TextDecoder().decode(value));
   assert.deepEqual(decode((await reader.read()).value), { type: 'chunk', index: 0, segments: ['Primer fragmento'] });
   const next = reader.read();
-  await second.promise;
+  await second;
   deadline.abort(new DOMException('Deadline exceeded', 'TimeoutError'));
   assert.deepEqual(decode((await next).value), { type: 'error', code: 'AI_TIMEOUT' });
   assert.equal((await reader.read()).done, true);
