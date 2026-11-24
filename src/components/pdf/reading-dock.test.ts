@@ -2,7 +2,7 @@ import '../../../tests/dom/dom-environment.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { loadReadingDock } from '../../../tests/dom/component-modules.ts';
 import { paperLegacyAdapter } from '../../models/paper.ts';
 import { stubWorker } from '../../../tests/dom/worker-stub.ts';
@@ -140,20 +140,21 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
         }))));
     fireEvent.click(screen.getByRole('button', { name: LISTEN }));
     const tab = view.getByRole('region', { name: 'Paper' });
+    const strip = () => within(view.getByRole('navigation', { name: 'Chapters' }));
     assert.match(tab.textContent ?? '', /Preparing the audio, 0%/);
-    assert.equal(view.getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), true, 'no jumps before the audio is there');
+    assert.equal(strip().getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), true, 'no jumps before the audio is there');
     await audioRoute.requested();
     audioRoute.answer({});
     await act(async () => {
       for (const clip of Clip.instances.filter(clip => clip.preload === 'metadata')) clip.onloadedmetadata?.();
     });
-    await waitFor(() => assert.equal(view.getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), false));
+    await waitFor(() => assert.equal(strip().getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), false));
     assert.match(tab.textContent ?? '', /1\. Method\./);
     assert.equal(tab.querySelectorAll('.rd-listen-part').length, 2, 'the line has a block per section, the subsection inside its section');
-    assert.ok(view.getByRole('button', { name: /^1\.1 Data, / }), 'the chapter list still names the subsection');
-    assert.equal(view.getByRole('button', { name: /^1 Method, / }).getAttribute('aria-current'), 'true');
-    fireEvent.click(view.getByRole('button', { name: /^2 Results, / }));
-    await waitFor(() => assert.equal(view.getByRole('button', { name: /^2 Results, / }).getAttribute('aria-current'), 'true'));
+    assert.ok(strip().getByRole('button', { name: /^1\.1 Data, / }), 'the chapter list still names the subsection');
+    assert.equal(strip().getByRole('button', { name: /^1 Method, / }).getAttribute('aria-current'), 'true');
+    fireEvent.click(strip().getByRole('button', { name: /^2 Results, / }));
+    await waitFor(() => assert.equal(strip().getByRole('button', { name: /^2 Results, / }).getAttribute('aria-current'), 'true'));
   } finally {
     cleanup();
     frame.remove();

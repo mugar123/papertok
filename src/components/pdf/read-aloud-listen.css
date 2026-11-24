@@ -107,14 +107,14 @@
 .rd-podcast .rd-listen-progress::-webkit-progress-value { background: var(--podcast-mesh); }
 .rd-podcast .rd-listen-progress::-moz-progress-bar { background: var(--podcast-mesh); }
 
-.rd-podcast-tools { display: flex; gap: var(--space-2); justify-content: center; }
-.rd-podcast-chip { border-radius: 999px; }
 
 /* The sections as chapters, in a drawer from the side. */
-.rd-podcast-chapters {
-  position: absolute;
-  top: 0;
+.rd-podcast-drawer {
+  /* Fixed to the screen under the viewer's bar, so it stays whole however far the tab has scrolled. */
+  position: fixed;
+  top: var(--pdf-topbar-h, 60px);
   right: 0;
+  z-index: 3;
   bottom: 0;
   width: min(360px, 90vw);
   padding: var(--space-4);
@@ -123,16 +123,16 @@
   translate: 100% 0;
   transition: translate 240ms var(--ease-out);
 }
-.rd-podcast-chapters[data-open] { translate: 0 0; }
-.rd-podcast-chapters-title {
+.rd-podcast-drawer[data-open] { translate: 0 0; }
+.rd-podcast-drawer-heading {
   margin: 0 0 var(--space-3);
   font: var(--mono-label);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
 }
-.rd-podcast-chapters ol { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--border-subtle); }
-.rd-podcast-chapters button {
+.rd-podcast-drawer ol { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--border-subtle); }
+.rd-podcast-drawer button {
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1fr) auto;
   gap: var(--space-2);
@@ -149,24 +149,75 @@
   cursor: pointer;
   transition: background-color 150ms ease;
 }
-.rd-podcast-chapters button:disabled { cursor: default; color: var(--text-tertiary); }
+.rd-podcast-drawer button:disabled { cursor: default; color: var(--text-tertiary); }
 @media (hover: hover) and (pointer: fine) {
-  .rd-podcast-chapters button:not(:disabled):hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+  .rd-podcast-drawer button:not(:disabled):hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
 }
-.rd-podcast-chapters button[aria-current] { font-weight: 600; }
-.rd-podcast-chapters button[aria-current] .rd-podcast-chapter-title { color: var(--podcast-accent); }
-.rd-podcast-chapter-number, .rd-podcast-chapter-time {
+.rd-podcast-drawer button[aria-current] { font-weight: 600; }
+.rd-podcast-drawer button[aria-current] .rd-podcast-drawer-title { color: var(--podcast-accent); }
+.rd-podcast-drawer-number, .rd-podcast-drawer-time {
   font: 500 0.75rem/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
 }
-.rd-podcast-chapter-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-podcast-drawer-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.rd-podcast-tools { display: flex; gap: var(--space-2); justify-content: center; }
+.rd-podcast-chip { border-radius: 999px; }
+
+/* The chapters as a strip of cards under the controls, scrolled sideways; the one being read is
+   ringed in ink and centred as it starts. */
+.rd-podcast-chapters { width: min(100%, 760px); }
+.rd-podcast-chapters ol {
+  position: relative;
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-1) var(--space-3);
+  overflow-x: auto;
+  list-style: none;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  mask-image: linear-gradient(90deg, transparent, #000 var(--space-4), #000 calc(100% - var(--space-8)), transparent);
+}
+.rd-podcast-chapters li { flex: none; scroll-snap-align: center; }
+.rd-podcast-chapters button {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  width: 168px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 150ms ease, scale 120ms var(--ease-out);
+}
+.rd-podcast-chapters button:disabled { cursor: default; opacity: 0.5; }
+@media (hover: hover) and (pointer: fine) {
+  .rd-podcast-chapters button:not(:disabled):hover { border-color: var(--border-default); }
+}
+.rd-podcast-chapters button:not(:disabled):active { scale: 0.98; }
+.rd-podcast-chapters button[aria-current] { border-color: var(--text-primary); box-shadow: 0 0 0 1px var(--text-primary); }
+.rd-podcast-chapter-meta { font: 500 0.6875rem/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-tertiary); }
+.rd-podcast-chapter-title {
+  display: -webkit-box;
+  min-height: calc(2 * 1.3em);
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font: 600 0.875rem/1.3 var(--font-serif);
+}
+.rd-podcast-chapter-meter { height: 3px; overflow: hidden; border-radius: 3px; background: var(--border-subtle); }
+.rd-podcast-chapter-meter > span { display: block; height: 100%; background: var(--podcast-accent); }
 
 @media (prefers-reduced-motion: reduce) {
   .rd-podcast { animation: none; }
   .rd-podcast-caption { transition: none; }
   .rd-podcast .rd-listen-play { transition: none; }
-  .rd-podcast-chapters, .rd-podcast-chapters button { transition: none; }
+  .rd-podcast-chapters button, .rd-podcast-drawer, .rd-podcast-drawer button { transition: none; }
 }
 
 /* On a phone the controls are a bar fixed to the bottom of the tab, within the thumb's reach and
@@ -205,4 +256,9 @@
   .rd-podcast-line > .rd-listen-left { grid-row: 2; justify-self: end; padding-right: 0; }
   .rd-podcast .rd-listen-play { width: 64px; height: 64px; }
   .rd-podcast-buttons .rd-listen-transport { gap: var(--space-6); }
+}
+
+@media (max-width: 600px) {
+  .rd-podcast-chapters button { width: 136px; padding: var(--space-2); }
+  .rd-podcast-player > .rd-podcast-dock { margin-bottom: var(--space-2); }
 }

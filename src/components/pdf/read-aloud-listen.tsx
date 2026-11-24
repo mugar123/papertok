@@ -54,7 +54,6 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   const now = playing && voiceAt !== null ? voiceAt : position;
   const shown = target ?? now;
   const chapter = chapterAt(timeline, shown);
-  const [chaptersOpen, setChaptersOpen] = useState(false);
   // The caption's box follows the sentence's height with a transition (read-aloud-listen.css), so a
   // longer or shorter sentence eases the sphere and the controls to their place instead of jumping.
   const caption = useRef<HTMLDivElement | null>(null);
@@ -66,7 +65,17 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
     observer.observe(text);
     return () => observer.disconnect();
   }, []);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerId = useId();
+  const strip = useRef<HTMLOListElement | null>(null);
+  // The chapter being read is brought to the middle of the strip as it starts, or as the tab opens.
+  useEffect(() => {
+    const list = strip.current;
+    const card = list?.querySelector<HTMLElement>('[aria-current]');
+    if (!list || !card) return;
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    list.scrollTo({ left: card.offsetLeft - list.clientWidth / 2 + card.offsetWidth / 2, behavior: still ? 'auto' : 'smooth' });
+  }, [chapter.start, preparing]);
 
   const item = paragraph === null ? null : queue[paragraph] ?? null;
   const starts = useMemo(() => {
@@ -124,7 +133,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
               <SpeedButton speed={speed} onSpeed={onSpeed} />
               <ReadAloudTransport position={now} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
               {timeline.chapters.length > 1 ? (
-                <Button variant="ghost" size="icon" aria-label="Chapters" title="Chapters" aria-expanded={chaptersOpen} aria-controls={drawerId} onClick={() => setChaptersOpen(open => !open)}>
+                <Button variant="ghost" size="icon" aria-label="All chapters" title="All chapters" aria-expanded={drawerOpen} aria-controls={drawerId} onClick={() => setDrawerOpen(open => !open)}>
                   <ListBullets size={20} aria-hidden="true" />
                 </Button>
               ) : <span />}
@@ -136,6 +145,29 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
               <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
             </div>
           </div>
+        )}
+
+        {/* The chapters as a strip of cards, as a video's: the one being read is centred as it starts. */}
+        {timeline.chapters.length > 1 && (
+          <nav className="rd-podcast-chapters" aria-label="Chapters">
+            <ol ref={strip}>
+              {timeline.chapters.map(part => (
+                <li key={part.start}>
+                  <button
+                    type="button"
+                    disabled={preparing}
+                    aria-current={(!preparing && part.start === chapter.start) || undefined}
+                    onClick={() => onSeek(part.start)}
+                    aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, ${clock(part.end - part.start)}`}
+                  >
+                    <span className="rd-podcast-chapter-meta">{[part.number, clock(part.start)].filter(Boolean).join(' · ')}</span>
+                    <span className="rd-podcast-chapter-title">{part.title}</span>
+                    <span className="rd-podcast-chapter-meter"><span style={{ width: `${Math.min(100, Math.max(0, ((now - part.start) / Math.max(1e-6, part.end - part.start)) * 100))}%` }} /></span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </nav>
         )}
 
         {!preparing && (
@@ -156,9 +188,10 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
         )}
       </div>
 
+      {/* Every chapter at once, with its length, in a drawer from the side. */}
       {timeline.chapters.length > 1 && (
-        <nav id={drawerId} className="rd-podcast-chapters" aria-label="Chapters" data-open={chaptersOpen || undefined} inert={!chaptersOpen}>
-          <p className="rd-podcast-chapters-title" aria-hidden="true">Chapters</p>
+        <nav id={drawerId} className="rd-podcast-drawer" aria-label="All chapters" data-open={drawerOpen || undefined} inert={!drawerOpen}>
+          <p className="rd-podcast-drawer-heading" aria-hidden="true">Chapters</p>
           <ol>
             {timeline.chapters.map(part => (
               <li key={part.start}>
@@ -166,12 +199,12 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
                   type="button"
                   disabled={preparing}
                   aria-current={(!preparing && part.start === chapter.start) || undefined}
-                  onClick={() => { onSeek(part.start); setChaptersOpen(false); }}
+                  onClick={() => { onSeek(part.start); setDrawerOpen(false); }}
                   aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, ${clock(part.end - part.start)}`}
                 >
-                  <span className="rd-podcast-chapter-number">{part.number}</span>
-                  <span className="rd-podcast-chapter-title">{part.title}</span>
-                  <span className="rd-podcast-chapter-time">{clock(part.end - part.start)}</span>
+                  <span className="rd-podcast-drawer-number">{part.number}</span>
+                  <span className="rd-podcast-drawer-title">{part.title}</span>
+                  <span className="rd-podcast-drawer-time">{clock(part.end - part.start)}</span>
                 </button>
               </li>
             ))}
