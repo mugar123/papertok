@@ -33,9 +33,8 @@
 - All active AI providers implement the same response contract. Switching providers must not
   change the browser's parser or bypass budget enforcement. Inspect configured providers
   rather than assuming an old provider list is still current.
-- Prompts, explanations, emails and app copy are English. The translation route may return
-  eligible paper text in the requested language. Explanation routes accept and ignore
-  legacy `language: 'es'` input.
+- Prompts, structured output, emails and generated copy are English. Accept and ignore legacy
+  `language: 'es'` input rather than rejecting old clients.
 - State the available evidence honestly: an abstract is not full text. Preserve LaTeX
   delimiters and the endpoint's structured JSON or streaming contract; do not flatten a
   stream or add prose outside JSON to accommodate a provider.

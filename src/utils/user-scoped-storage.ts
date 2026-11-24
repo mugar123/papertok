@@ -5,8 +5,6 @@ import { paperLegacyAdapter, readStoredClassification } from '../models/paper.ts
 import { serializeLibraryPaper } from './reading-library.ts';
 import type { OwnList } from './own-lists.ts';
 import { MAX_VIEWED_IDS } from './interaction-profile.ts';
-import { normalizeInterestSettings, type InterestSettings } from './area-preferences.ts';
-import { getTranslationLanguageStorageKey } from './paper-translation.ts';
 
 const LEGACY_SEEN_PAPERS_KEY = 'papertok_seenIds';
 // Until the list held only viewed papers it held every paper a load showed, so
@@ -301,7 +299,7 @@ export function getOnboardingStorageKey(userId: string | null | undefined) {
  * answer sent the account through the interest picker again. Remembering the
  * flag here lets the router keep them in the app until the document confirms.
  */
-export function readStoredOnboarding(userId: string, storage?: ScopedStorage | null): ({ complete: boolean; preferences: string[] } & InterestSettings) | null {
+export function readStoredOnboarding(userId: string, storage?: ScopedStorage | null): { complete: boolean; preferences: string[] } | null {
   const key = getOnboardingStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return null;
@@ -313,13 +311,13 @@ export function readStoredOnboarding(userId: string, storage?: ScopedStorage | n
       ? parsed.preferences.filter((value: unknown) => typeof value === 'string')
       : [];
     if (parsed.complete !== true && preferences.length === 0) return null;
-    return { complete: parsed.complete === true || preferences.length > 0, preferences, ...normalizeInterestSettings(parsed) };
+    return { complete: parsed.complete === true || preferences.length > 0, preferences };
   } catch {
     return null;
   }
 }
 
-export function saveStoredOnboarding(userId: string, state: { preferences?: unknown[]; complete?: boolean } & InterestSettings, storage?: ScopedStorage | null) {
+export function saveStoredOnboarding(userId: string, state: { preferences?: unknown[]; complete?: boolean }, storage?: ScopedStorage | null) {
   const key = getOnboardingStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target || !state) return;
@@ -333,7 +331,7 @@ export function saveStoredOnboarding(userId: string, state: { preferences?: unkn
       target.removeItem(key);
       return;
     }
-    target.setItem(key, JSON.stringify({ complete, preferences, ...normalizeInterestSettings(state) }));
+    target.setItem(key, JSON.stringify({ complete, preferences }));
   } catch {
     // Missing local memory only means the next visit waits on Firestore.
   }
@@ -398,11 +396,12 @@ export function clearUserScopedStorage(userId: string | undefined, storage?: (Sc
     getListPapersStorageKey(userId),
     getOwnProfileStorageKey(userId),
     getOnboardingStorageKey(userId),
-    getTranslationLanguageStorageKey(userId),
     getCustomFeedDismissedStorageKey(userId),
     getPmfSurveyStorageKey(userId),
     getLocalHiddenStorageKey(userId),
     LEGACY_LOCAL_HIDDEN_KEY,
+    // The retired translation pilot (#581) remembered a language per account.
+    `papertok:paper-translation-language:${userId}`,
     `papertok_following_${safeUserId}`,
     `papertok_following_updates_${safeUserId}`,
     `papertok_readingLibrary_${userId}`,

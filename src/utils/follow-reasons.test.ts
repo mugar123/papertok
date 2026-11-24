@@ -15,15 +15,20 @@ function followLabel(...args: Parameters<typeof followedOnCard>) {
   return feedReason({}, followedOnCard(...args), 'following', 'Research Paper')?.text ?? null;
 }
 
-test('a card with several follows names one, authors before topics before journals', () => {
+test('a card with several follows names one, authors before topics before institutions before projects', () => {
   assert.equal(
-    followLabel([match('journal'), match('topic'), match('author', 'Emmy Noether')], null, all),
+    followLabel([match('project'), match('topic'), match('author', 'Emmy Noether')], null, all),
     'Because you follow Emmy Noether',
   );
-  assert.equal(followLabel([match('journal'), match('topic')], null, all), 'Because you follow The topic');
-  assert.equal(followLabel([match('journal'), match('project'), match('institution')], null, all), 'Because you follow The institution');
-  assert.equal(followLabel([match('journal'), match('project')], null, all), 'Because you follow The project');
-  assert.equal(followLabel([match('journal')], null, all), 'Because you follow The journal');
+  assert.equal(followLabel([match('project'), match('topic')], null, all), 'Because you follow The topic');
+  assert.equal(followLabel([match('project'), match('institution')], null, all), 'Because you follow The institution');
+  assert.equal(followLabel([match('project')], null, all), 'Because you follow The project');
+});
+
+// A custom feed's journal comes back as a match of its lane, but no journal is
+// followed, so it names no card.
+test('a journal match names no follow', () => {
+  assert.equal(followLabel([match('journal')], null, all), null);
 });
 
 test('a followed author found on the card is named before a request match of another type', () => {
@@ -107,10 +112,10 @@ test('a legacy topic outside the taxonomy keeps its name even if the id looks li
   assert.equal(followLabel([topic], null, all), 'Because you follow Ondas de materia');
 });
 
-test('an institution uses its English name and authors, journals and projects keep their names', () => {
+test('an institution uses its English name and authors and projects keep their names', () => {
   const institution = { ...match('institution', 'Universidad de Salamanca'), metadata: { localizedNames: { en: 'University of Salamanca' } } };
   assert.equal(followLabel([institution], null, all), 'Because you follow University of Salamanca');
-  for (const entity of [match('author', 'Óscar Díaz'), match('journal', 'El Profesional de la Información'), match('project', 'Luz y Materia')]) {
+  for (const entity of [match('author', 'Óscar Díaz'), match('project', 'Luz y Materia')]) {
     assert.equal(followLabel([entity], null, all), `Because you follow ${entity.displayName}`);
   }
 });

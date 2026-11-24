@@ -8,7 +8,6 @@ import { sourceAttribution } from '../../utils/source-attribution.ts';
 import { Button } from '../ui/button.tsx';
 import { SourceAttribution } from '../ui/source-attribution.tsx';
 import { Drawer, DrawerBody, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
-import { PaperTranslationPicker, PaperTranslationStatus, TranslatedPaperText, type PaperTranslationState } from './paper-translation.tsx';
 import './abstract-sheet.css';
 
 /**
@@ -24,16 +23,10 @@ import './abstract-sheet.css';
  * the frame after mount (usePopupOpenOnMount) so the drawer actually arrives,
  * and the card unmounts it once the leave has played (`onOpenChangeComplete`).
  */
-export default function AbstractSheet({ paper, onClose, translation }: {
-  paper: Paper;
-  onClose: () => void;
-  translation: PaperTranslationState;
-}) {
+export default function AbstractSheet({ paper, onClose }: { paper: Paper; onClose: () => void }) {
   const { open, requestClose } = usePopupOpenOnMount();
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const attribution = sourceAttribution(paper);
-  const translatedText = translation.current.showing ? translation.current.translation : undefined;
-  const result = translation.current.translation;
   return (
     <Drawer
       open={open}
@@ -45,7 +38,7 @@ export default function AbstractSheet({ paper, onClose, translation }: {
         <header className="abstract-sheet-head">
           <div className="abstract-sheet-heading">
             <span className="abstract-sheet-kicker">{areaLabelForPaper(paper)}</span>
-            <DrawerTitle render={<h3 />} className="abstract-sheet-title" lang={result?.sourceLanguage} dir="auto"><ScientificText>{paper?.title}</ScientificText></DrawerTitle>
+            <DrawerTitle render={<h3 />} className="abstract-sheet-title"><ScientificText>{paper?.title}</ScientificText></DrawerTitle>
           </div>
           {/* `shrink-0`: the heading's flex basis is its title's whole width,
               so the row shares its shortfall with this button. Beside a
@@ -59,30 +52,7 @@ export default function AbstractSheet({ paper, onClose, translation }: {
           </DrawerClose>
         </header>
         <DrawerBody className="abstract-sheet-body" data-base-ui-swipe-ignore>
-          <PaperTranslationPicker key={translation.scope} state={translation} />
-          {result && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              translate="no"
-              aria-label={translatedText ? 'Show original title and abstract' : 'Show translation of title and abstract'}
-              aria-disabled={translation.current.pending}
-              onClick={() => {
-                if (translation.current.pending) return;
-                if (translatedText) translation.showOriginal();
-                else void translation.translate(result.language);
-              }}
-            >
-              {translatedText ? 'Show original' : 'Show translation'}
-            </Button>
-          )}
-          <PaperTranslationStatus state={translation} />
-          <p className="abstract-sheet-text">
-            {translatedText
-              ? <TranslatedPaperText translation={translatedText} />
-              : <span lang={result?.sourceLanguage} dir="auto"><ScientificText>{paper.abstract}</ScientificText></span>}
-          </p>
+          <p className="abstract-sheet-text"><ScientificText>{paper.abstract}</ScientificText></p>
           {attribution && <SourceAttribution className="abstract-sheet-source" lead={attribution.label} name={attribution.name} href={attribution.href} />}
         </DrawerBody>
       </DrawerContent>

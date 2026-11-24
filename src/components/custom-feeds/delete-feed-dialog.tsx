@@ -17,8 +17,8 @@ const COPY = {
 };
 
 /**
- * Asks before a feed is deleted, from its tab's menu or from Settings ›
- * Feeds. The provider mounts it for each request and unmounts it once it has
+ * Asks before a feed is deleted, from its tab's menu or from the Feeds
+ * window in Settings. The provider mounts it for each request and unmounts it once it has
  * closed, so it holds its own `open` and reports from
  * `onOpenChangeComplete(false)`, after the leave has played (design.md,
  * Traps). The feed is read once, when it opens: one already deleted on

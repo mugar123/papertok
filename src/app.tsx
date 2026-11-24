@@ -12,6 +12,7 @@ import { primeAIUses } from './services/paper-rewrite-service.ts'
 import PageTransition from './components/layout/page-transition.tsx'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/use-page-transition-custom.ts'
 import { useOverlayHistory } from './hooks/use-overlay-history.ts'
+import useIsPhone from './hooks/use-is-phone.ts'
 import { INITIAL_ACCOUNT_SCOPE, accountScopeKey, nextAccountScope } from './utils/account-scope.ts'
 import { feedResumeMemory } from './utils/feed-resume-memory.ts'
 import { clearAuthReturn, isInAppPath, offerAuthReturn, takeAuthReturn } from './utils/auth-return.ts'
@@ -79,7 +80,6 @@ const RecentFeedPage = lazyWithPreload(() => import('./components/recent/recent-
 const CustomFeedPage = lazyWithPreload(() => import('./components/custom-feeds/custom-feed-page.tsx'))
 const SettingsPage = lazyWithPreload(() => import('./components/settings/settings-page.tsx'))
 const FollowingSettingsPage = lazyWithPreload(() => import('./components/settings/following-settings-page.tsx'))
-const FeedsSettingsPage = lazyWithPreload(() => import('./components/settings/feeds-settings-page.tsx'))
 const HelpPage = lazyWithPreload(() => import('./components/help/help-page.tsx'))
 const PublicPaperPage = lazyWithPreload(() => import('./components/public/public-paper-page.tsx'))
 const PublicListPage = lazyWithPreload(() => import('./components/lists/public-list-page.tsx'))
@@ -194,9 +194,10 @@ function AppContent() {
   // which cannot work it out for itself, because it is kept mounted inside a
   // <Routes> still providing the location it was rendered for.
   const pageTransitionCustom = usePageTransitionCustom()
+  const isPhone = useIsPhone()
   const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/profile', '/recent', '/following', '/search', '/settings', '/help', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/feeds']
+  const navbarRoutes = ['/feed', '/lists', '/profile', '/recent', '/following', '/search', '/settings', '/help', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, list and entity pages keep the app chrome for a signed-in
   // user — reaching a paper from a list, a list from someone's shared link,
   // or an author from a card, must not feel like leaving the app. Measured
@@ -567,17 +568,9 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <FollowingSettingsPage />
-                </PageTransition>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings/feeds"
-            element={
-              <ProtectedRoute>
-                <PageTransition>
-                  <FeedsSettingsPage />
+                  {/* Wider than a phone the follows are a dialog over
+                      Discovery, which stays mounted as it opens and closes. */}
+                  {isPhone ? <FollowingSettingsPage /> : <SettingsPage page="discovery" />}
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -612,7 +605,6 @@ function AppContent() {
             element={
               <PageTransition>
                 <EntityExplorer
-                  translationEnabled={false}
                   publicMode={!user}
                   onAuthRequired={requestAuthentication}
                   onSaveToList={user ? openSaveModal : requestAuthentication}

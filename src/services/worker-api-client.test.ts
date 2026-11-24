@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WorkerApiAuthError, fetchWorkerSourceJson, workerSourceUrl } from './worker-api-client.ts';
+import { loadWorkerApiClient } from '../../tests/dom/app-modules.ts';
 
 const WORKER = 'https://papertok-report-api.example';
 
@@ -100,4 +101,29 @@ test('an error body that is not JSON leaves the error exactly as the bare status
       return true;
     },
   );
+});
+
+// A token refresh can outlast the account it was asked for: sign-out or a
+// switch lands while it is in flight. The outgoing account's token must not
+// reach the Worker on the next account's behalf, nor on nobody's.
+test('never sends the outgoing account token after the Firebase account changes', async t => {
+  const app = await loadWorkerApiClient();
+  t.after(() => app.close());
+  const { client } = app;
+  const { auth } = await app.firebase();
+  const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json({}));
+  const nextAccount = { uid: 'reader-2', getIdToken: async () => 'next-token' };
+
+  for (const next of [nextAccount, null]) {
+    let giveToken: (token: string) => void = () => {};
+    const getIdToken = t.mock.fn(() => new Promise<string>(resolve => { giveToken = resolve; }));
+    auth.currentUser = { uid: 'reader-1', getIdToken };
+    const request = client.authenticatedWorkerFetch('https://api.papertok.app/ai/quota');
+    assert.equal(getIdToken.mock.callCount(), 1);
+    auth.currentUser = next;
+    giveToken('outgoing-token');
+
+    await assert.rejects(request, error => error instanceof client.WorkerApiAuthError);
+    assert.equal(fetch.mock.callCount(), 0);
+  }
 });

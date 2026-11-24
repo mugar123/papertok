@@ -175,7 +175,6 @@ test('normalizes entity identifiers and strips query strings from analytics path
 test('names the routes that reach analytics through the static list', () => {
   assert.equal(normalizeAnalyticsPath('/profile'), '/profile');
   assert.equal(normalizeAnalyticsPath('/settings/profile'), '/settings/profile');
-  assert.equal(normalizeAnalyticsPath('/settings/feeds'), '/settings/feeds');
   assert.equal(normalizeAnalyticsPath('/help'), '/help');
   assert.equal(normalizeAnalyticsPath('/recent'), '/recent');
   assert.equal(normalizeAnalyticsPath('/report'), '/report');
@@ -839,10 +838,6 @@ test('tracks paper identifiers but drops titles, search text and arbitrary URLs'
   assert.deepEqual(sanitizeProductEventParams('follow_change', {
     action: 'add', entity_type: 'author', entity_id: 'A123', entity_name: 'Author Name',
   }), { action: 'add', entity_type: 'author', entity_id: 'A123' });
-  // ENG-123: a journal follow keeps its type, as the app sends it with no id.
-  assert.deepEqual(sanitizeProductEventParams('follow_change', {
-    action: 'add', entity_type: 'journal', surface: 'other', entity_name: 'American Economic Review',
-  }), { action: 'add', entity_type: 'journal', surface: 'other' });
 });
 
 test('a custom feed reaches analytics as counts and its order, never its name or id', () => {

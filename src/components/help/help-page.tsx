@@ -1,12 +1,11 @@
 import type { MouseEvent } from 'react';
-import { useSyncExternalStore } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from '@phosphor-icons/react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
-import { Button } from '../ui/button.tsx';
 import { ZoteroMark } from '../pdf/zotero-mark.tsx';
+import { HELP_PAGE } from '../settings/settings-pages.ts';
+import { SettingsRail, SettingsSwitcher } from '../settings/settings-pages-nav.tsx';
 import {
   HELP_ALLOWANCE_RULES,
   HELP_OVERVIEW,
@@ -22,6 +21,15 @@ import './help-page.css';
 
 const headingId = (section: HelpSection) => `help-${section.id}-heading`;
 
+const OVERVIEW_HEADING = 'help-overview-heading';
+const OVERVIEW_TITLE = 'What the buttons do';
+
+/** The page's contents, in its order: the overview, then every section. */
+const CONTENTS = [
+  { id: OVERVIEW_HEADING, title: OVERVIEW_TITLE },
+  ...HELP_SECTIONS.map(section => ({ id: headingId(section), title: section.title })),
+];
+
 /**
  * Jumps to a section and moves keyboard focus to its heading. The href stays
  * for assistive technology and for a click that opens in a new tab; the
@@ -32,7 +40,78 @@ function jumpTo(event: MouseEvent<HTMLAnchorElement>, id: string) {
   event.preventDefault();
   const heading = document.getElementById(id);
   heading?.scrollIntoView({ block: 'start' });
-  heading?.focus();
+  // Without preventScroll, focusing cuts the smooth scroll short and the
+  // heading stops mid-screen.
+  heading?.focus({ preventScroll: true });
+}
+
+/**
+ * The heading of the section being read: the last one whose top has passed a
+ * line at 30% of the viewport, and the last section once the page cannot
+ * scroll further (a short last section never reaches the line).
+ */
+function useSectionInView() {
+  const [current, setCurrent] = useState(CONTENTS[0].id);
+  useEffect(() => {
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const line = window.innerHeight * 0.3;
+      let next = CONTENTS[0].id;
+      for (const { id } of CONTENTS) {
+        const top = document.getElementById(id)?.getBoundingClientRect().top;
+        if (top !== undefined && top <= line) next = id;
+      }
+      const root = document.documentElement;
+      if (window.scrollY > 0 && window.innerHeight + window.scrollY >= root.scrollHeight - 2) next = CONTENTS[CONTENTS.length - 1].id;
+      setCurrent(next);
+    };
+    const schedule = () => { frame ||= window.requestAnimationFrame(measure); };
+    schedule();
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+    };
+  }, []);
+  return current;
+}
+
+/**
+ * The page's contents beside it, the section being read marked. On a window
+ * too short for the whole rail, the rail scrolls on its own and is moved, not
+ * the page, so the marked entry stays in sight.
+ */
+function HelpContents({ current }: { current: string }) {
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const link = navRef.current?.querySelector<HTMLElement>('[aria-current]');
+    const rail = link?.closest<HTMLElement>('.settings-index');
+    if (!link || !rail) return;
+    // Back at the first section, the rail returns to its own top, with the
+    // settings pages (or the visitor's label) above the contents.
+    if (current === CONTENTS[0].id) {
+      rail.scrollTop = 0;
+      return;
+    }
+    const linkBox = link.getBoundingClientRect();
+    const railBox = rail.getBoundingClientRect();
+    if (linkBox.top < railBox.top) rail.scrollTop -= railBox.top - linkBox.top;
+    else if (linkBox.bottom > railBox.bottom) rail.scrollTop += linkBox.bottom - railBox.bottom;
+  }, [current]);
+  return (
+    <nav ref={navRef} className="help-toc" aria-label="Help sections">
+      <ol className="help-toc-list">
+        {CONTENTS.map(({ id, title }) => (
+          <li key={id}>
+            <a href={`#${id}`} aria-current={id === current ? 'location' : undefined} onClick={event => jumpTo(event, id)}>{title}</a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
 }
 
 function HelpRow({ entry, signedInOnly }: { entry: HelpEntry; signedInOnly: boolean }) {
@@ -91,57 +170,62 @@ export default function HelpPage() {
   // page starts at its own top.
   const hasNavbar = Boolean(user) && !loading && onboardingComplete && !profileLoadError;
   const { locale } = useLanguage();
-  const navigate = useNavigate();
-  const location = useLocation();
-  // Back returns to where the reader came from; opened directly, it goes to
-  // the page that links here.
-  const goBack = () => {
-    if (location.key !== 'default') void navigate(-1);
-    else void navigate(user ? '/settings' : '/onboarding');
-  };
+  const current = useSectionInView();
   const uses = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(user?.uid));
   const usesLine = aiUsesLine(uses, locale);
 
   return (
     <main className={`settings-page help-page${hasNavbar ? '' : ' help-page--bare'}`}>
       <div className="settings-shell">
-        <Button variant="ghost" size="icon" className="help-back" onClick={goBack} aria-label="Back" title="Back">
-          <ArrowLeft size={18} aria-hidden="true" />
-        </Button>
         <header className="settings-heading">
           <h1>Help</h1>
           <p>What each button and gesture does, what it costs, and what needs an account.</p>
         </header>
-        <div className="help-content">
-      <section className="settings-section" aria-labelledby="help-overview-heading">
-        <div className="settings-section-heading">
-          <h2 id="help-overview-heading" className="help-heading" tabIndex={-1}>What the buttons do</h2>
-          <p>{HELP_OVERVIEW}</p>
-          {usesLine && <p>{usesLine}</p>}
-        </div>
-        <dl className="help-legend">
-          {(Object.keys(HELP_ALLOWANCE_RULES) as HelpAllowance[]).map(allowance => (
-            <div key={allowance}>
-              <dt><span className={`settings-status${allowance === 'free' ? '' : ' is-warning'}`}>{allowanceLabel(allowance)}</span></dt>
-              <dd>{HELP_ALLOWANCE_RULES[allowance]}</dd>
+        {/* A signed-in reader reaches Help from Settings, so the settings pages
+            stay beside it with the contents under Help; a visitor, who has no
+            settings, gets the contents alone. */}
+        <div className="settings-layout">
+          {hasNavbar && <SettingsSwitcher active={HELP_PAGE} />}
+          {hasNavbar ? (
+            <SettingsRail expanded="help"><HelpContents current={current} /></SettingsRail>
+          ) : (
+            <div className="settings-index">
+              <p className="help-toc-label">On this page</p>
+              <HelpContents current={current} />
             </div>
-          ))}
-          <div>
-            <dt><span className="settings-status">Account needed</span></dt>
-            <dd>Works only when signed in. Where a signed-out visitor can see the control, pressing it asks them to sign in.</dd>
+          )}
+          <div className="settings-content help-content">
+            <section className="settings-section" aria-labelledby={OVERVIEW_HEADING}>
+              <div className="settings-section-heading">
+                <h2 id={OVERVIEW_HEADING} className="help-heading" tabIndex={-1}>{OVERVIEW_TITLE}</h2>
+                <p>{HELP_OVERVIEW}</p>
+                {usesLine && <p>{usesLine}</p>}
+              </div>
+              <dl className="help-legend">
+                {(Object.keys(HELP_ALLOWANCE_RULES) as HelpAllowance[]).map(allowance => (
+                  <div key={allowance}>
+                    <dt><span className={`settings-status${allowance === 'free' ? '' : ' is-warning'}`}>{allowanceLabel(allowance)}</span></dt>
+                    <dd>{HELP_ALLOWANCE_RULES[allowance]}</dd>
+                  </div>
+                ))}
+                <div>
+                  <dt><span className="settings-status">Account needed</span></dt>
+                  <dd>Works only when signed in. Where a signed-out visitor can see the control, pressing it asks them to sign in.</dd>
+                </div>
+              </dl>
+              {/* Under 901px, where the contents beside the page are hidden. */}
+              <nav className="help-jump-nav" aria-label="Help sections">
+                <ul className="help-jump">
+                  {HELP_SECTIONS.map(section => (
+                    <li key={section.id}>
+                      <a href={`#${headingId(section)}`} onClick={event => jumpTo(event, headingId(section))}>{section.title}</a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            </section>
+            {HELP_SECTIONS.map(section => <HelpSectionView key={section.id} section={section} />)}
           </div>
-        </dl>
-        <nav aria-label="Help sections">
-          <ul className="help-jump">
-            {HELP_SECTIONS.map(section => (
-              <li key={section.id}>
-                <a href={`#${headingId(section)}`} onClick={event => jumpTo(event, headingId(section))}>{section.title}</a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </section>
-      {HELP_SECTIONS.map(section => <HelpSectionView key={section.id} section={section} />)}
         </div>
       </div>
     </main>

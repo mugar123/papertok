@@ -830,8 +830,8 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       },
     }),
   },
-  // A followed author, institution, topic, concept or journal. A followed
-  // search or a feed's keyword (`query:`) has the same source name and a
+  // A followed author, institution, topic or concept, or a feed's journal. A
+  // followed search or a feed's keyword (`query:`) has the same source name and a
   // harvest of its own (`harvestKeywordLane`).
   'openalex-follows': {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14, keepsOld: true,
@@ -840,7 +840,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       const part = newFollow ? 'new' : 'nightly';
       // None dated after today, which would sort first.
       const until = `to_publication_date:${day(new Date().toISOString())}`;
-      // A followed journal (ENG-123, D4): its articles and reviews, without
+      // A journal's lane (ENG-123, D4): its articles and reviews, without
       // its errata and paratext, 100 a page for the same list call. In the 90
       // days to 2026-10-25 PLOS ONE published 39 articles a day and Nature 12.
       if (kind === 'source') return openAlexLane(env, `${FOLLOW_FILTERS.source}:${value},${FOLLOWED_JOURNAL_TYPE_FILTER},${until}`, { page, lane, perPage: 100, part });

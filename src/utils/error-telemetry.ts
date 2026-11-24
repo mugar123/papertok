@@ -1,6 +1,6 @@
 // What an anonymous PostHog `$exception` event keeps: the error type, where in
 // our code it happened, the release its bundle was built for, and allowlisted
-// operation, status, email-limit and translation-failure labels. Messages,
+// operation, status and email-limit labels. Messages,
 // variables, source lines and every other property stay home. Shared by the
 // browser (`sanitizeAnalyticsCapture`) and the Worker (`worker/error-tracking.ts`).
 
@@ -19,14 +19,6 @@ const PLATFORMS = new Set(['web:javascript', 'node:javascript']);
 // Chunk and release ids are written into our bundles at build time.
 const BUILD_ID = /^[\w-]{1,128}$/;
 const OPERATIONS = new Set(['http', 'rewrite', 'schedule', 'render', 'durable_object', 'workflow']);
-const TRANSLATION_FAILURE_CODES = new Set([
-  'AI_BUSY', 'AI_EMPTY_RESPONSE', 'AI_INVALID_REQUEST_UPSTREAM', 'AI_INVALID_RESPONSE',
-  'AI_NOT_CONFIGURED', 'AI_TIMEOUT', 'AI_UNAVAILABLE',
-]);
-
-export function translationFailureCode(value: unknown) {
-  return typeof value === 'string' && TRANSLATION_FAILURE_CODES.has(value) ? value : undefined;
-}
 
 function codeLocation(filename: unknown) {
   if (typeof filename !== 'string') return undefined;
@@ -63,8 +55,8 @@ function sanitizeFrame(frame: ExceptionFrame) {
   };
 }
 
-function sanitizeException(exception: ExceptionEntry, omitFrames: boolean) {
-  const frames = !omitFrames && Array.isArray(exception.stacktrace?.frames) ? exception.stacktrace.frames as ExceptionFrame[] : [];
+function sanitizeException(exception: ExceptionEntry) {
+  const frames = Array.isArray(exception.stacktrace?.frames) ? exception.stacktrace.frames as ExceptionFrame[] : [];
   return {
     type: ERROR_TYPES.has(exception.type as string) ? exception.type : 'Error',
     value: 'Application error (message redacted)',
@@ -81,14 +73,12 @@ export function sanitizeExceptionProperties(properties: Record<string, unknown>)
   const exceptions = properties.$exception_list;
   if (!Array.isArray(exceptions) || !exceptions.length) return null;
   const status = properties.http_status;
-  const translationFailure = translationFailureCode(properties.translation_failure);
   return {
     $exception_level: 'error',
-    $exception_list: (exceptions as ExceptionEntry[]).slice(0, 3).map(exception => sanitizeException(exception, Boolean(translationFailure))),
+    $exception_list: (exceptions as ExceptionEntry[]).slice(0, 3).map(sanitizeException),
     ...(typeof properties.$release_id === 'string' && BUILD_ID.test(properties.$release_id) ? { $release_id: properties.$release_id } : {}),
     ...(OPERATIONS.has(properties.operation as string) ? { operation: properties.operation } : {}),
     ...(typeof status === 'number' && status >= 500 && status < 600 ? { http_status: status } : {}),
     ...(properties.email_limit === 'reached' ? { email_limit: 'reached' } : {}),
-    ...(translationFailure ? { translation_failure: translationFailure } : {}),
   };
 }

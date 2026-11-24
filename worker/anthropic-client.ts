@@ -5,7 +5,7 @@ import type { WorkerEnv } from './env.ts';
  * Anthropic's Claude models through the official SDK. PaperTok's AI provider
  * since 2026-11-19, when the NaN Builders key had expired and the team's Claude
  * credits took over. `AI_PROVIDER` can switch rewrite and annotation to another
- * provider. Translation requires Anthropic.
+ * provider.
  *
  * Like `nan-client.ts`, only configuration, the request body, error
  * classification and reading an answer live here, so each AI route shares them
@@ -45,27 +45,26 @@ export function createAnthropicClient(env: WorkerEnv) {
 }
 
 /**
- * Request settings shared by the AI routes.
+ * One request body, as every route sends it.
  *
- * Opus 5.5 always thinks and `effort` controls the depth.
- * These models reject `temperature`. The server-side fallback re-runs a
+ * `effort` is the only depth control: thinking is always on for Opus 5.5, and
+ * `temperature` is rejected by these models. The server-side fallback re-runs a
  * request the safety classifier declined on a substitute model inside the same
  * call; a model without a fallback runs the request alone.
  */
-export function buildAnthropicRequest({ model, effort, maxTokens, system, content, allowFallback = true, format }: {
+export function buildAnthropicRequest({ model, effort, maxTokens, system, content }: {
   model: string;
   effort: 'low' | 'medium';
   maxTokens: number;
   system?: string;
-  allowFallback?: boolean;
-  format?: Anthropic.Beta.Messages.BetaJSONOutputFormat;
   content: string | Anthropic.Beta.Messages.BetaContentBlockParam[];
 }) {
   return {
     model,
     max_tokens: maxTokens,
-    ...(allowFallback ? { betas: [SERVER_SIDE_FALLBACK_BETA], fallbacks: 'default' as const } : {}),
-    output_config: { effort, ...(format ? { format } : {}) },
+    betas: [SERVER_SIDE_FALLBACK_BETA],
+    fallbacks: 'default' as const,
+    output_config: { effort },
     ...(system ? { system } : {}),
     messages: [{ role: 'user' as const, content }],
   };

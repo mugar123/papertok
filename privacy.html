@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 23 November 2026 (revision 11).</p>
+      <p class="lp-updated">Last updated 24 November 2026 (revision 13).</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -119,9 +119,9 @@
               <td>Reopening a paper without writing its summary again, and the list in Settings → Reading &amp; AI</td>
             </tr>
             <tr>
-              <td>Authors, institutions, topics and journals you follow</td>
+              <td>Authors, institutions and topics you follow</td>
               <td>Your use of the app</td>
-              <td>Building your feed and, if you turn them on, your email updates, which leave out journals</td>
+              <td>Building your feed and, if you turn them on, your email updates</td>
             </tr>
             <tr>
               <td>Feeds you create: each feed's name and the areas, topics, authors, journals and keywords you put in it</td>
@@ -154,9 +154,9 @@
               <td>Building your feed: a subject you removed stays out of it, except for papers from what you follow and papers related to one you like, and a new subject you added gets a head start until the app learns it, while one you removed and chose again comes back with what the app had learned</td>
             </tr>
             <tr>
-              <td>Your Essential or Curiosity choices, feed mix and reading levels by area</td>
-              <td>You choose them in the welcome, onboarding or Settings</td>
-              <td>Balancing areas in your feed and choosing the starting level for plain-word explanations</td>
+              <td>Essential or Curiosity choices, a feed mix and reading levels by area, if you chose them in an earlier version of PaperTok</td>
+              <td>You chose them in the welcome, onboarding or Settings</td>
+              <td>Nothing: PaperTok no longer uses them. Saving your interests in Settings removes them from your account, and a browser that kept them from the welcome keeps them until you sign in, sign out or clear the site's data</td>
             </tr>
             <tr>
               <td>Language, theme and notification preferences</td>
@@ -370,8 +370,7 @@
       <p>
         Product events record the papers you view, open, like, save, highlight or annotate
         by their identifier, how long cards and the reader stay on screen, the authors,
-        topics or institutions you follow by their identifier, that you followed a journal
-        but not which one, search types and result
+        topics or institutions you follow by their identifier, search types and result
         counts, and the outcome of sign-in and AI explanation requests. When you open a
         paper in the app's viewer, they record whether it showed the paper's text (and from
         which archive), its PDF, a link or nothing, why a PDF could not be shown, and how
@@ -461,8 +460,7 @@
       <p>
         When the in-app reader requests a paper's text or its PDF, an AI assistant sends a request to
         PaperTok's MCP server, or a public request looks up papers, paper figures,
-        open-access links or a shared page, or a translation needs a fresh arXiv lookup,
-        that server uses the IP address
+        open-access links or a shared page, that server uses the IP address
         supplied by Cloudflare to limit requests and keep one visitor from exhausting
         the shared download allowance. It stores a protected identifier derived from
         the address and the current minute using a secret key, together with request
@@ -512,8 +510,8 @@
         Your feed comes from a shared catalogue that server keeps: once a day it collects new
         papers from those repositories, the same for every reader. Each request for more
         papers sends it your interests in groups, each with a weight and the subjects whose
-        likes may rank it. The weights reflect your likes, saves and long reads, new subjects
-        you added and your Essential and Curiosity mix. The groups leave out subjects you
+        likes may rank it. The weights reflect your likes, saves and long reads and the new
+        subjects you added. The groups leave out subjects you
         removed. The request also sends what you follow, the identifiers of up to 24
         papers you liked, saved or read at length, and a compact filter of the papers you
         viewed or were already shown, and of the papers it offered that you had already
@@ -553,13 +551,6 @@
         level you choose, never your identity or your email.
       </p>
       <p>
-        When you request a translation, PaperTok sends the arXiv title, abstract and chosen
-        language to Anthropic without your identity or email. PaperTok keeps the translation
-        in memory while you read the card. Your browser remembers the language you chose
-        for your last successful translation on this account and device. PaperTok counts daily translation requests against
-        a hashed account identifier for up to three days to enforce usage limits.
-      </p>
-      <p>
         When you listen to a paper in the reader, the text of each paragraph is sent to
         Cartesia, in the United States, which turns it into speech. When Cartesia cannot
         answer, the text goes instead to ElevenLabs, also in the United States, which
@@ -581,7 +572,7 @@
         <li><strong>Cloudflare</strong> (Workers, KV, Durable Objects, R2) — the intermediate server, email-update storage and read-aloud audio.</li>
         <li><strong>Cartesia</strong> and <strong>ElevenLabs</strong> — the paragraph text they turn into speech when you listen to a paper in the reader.</li>
         <li><strong>Resend</strong> — sending the emails.</li>
-        <li><strong>Anthropic</strong> — generating plain-words summaries, passage explanations and requested translations from paper text.</li>
+        <li><strong>Anthropic</strong> — writing the plain-words summaries and passage explanations, from the paper's text.</li>
         <li><strong>Zotero</strong> — only if you connect it: the papers and highlights you send to your library.</li>
         <li><strong>ORCID</strong> — only if you connect it: signing in there to confirm your iD, and the public works of your ORCID record, which your browser loads from ORCID directly.</li>
         <li><strong>arXiv, PubMed Central, Europe PMC and Wikimedia</strong> — figures, PDFs, and Wikipedia summaries and pictures that your browser loads from them directly.</li>
@@ -664,17 +655,10 @@
         copy, and so does deleting the account from Settings in this browser.
       </p>
       <p>
-        This browser saves your welcome interests, area priorities and feed mix until
-        they are saved to a new account, an account with existing interests loads, or you
+        This browser saves your welcome interests until they are saved to a new account, an account with existing interests loads, or you
         sign out or switch accounts.
         It also keeps a copy of your signed-in interest preferences under your account
         identifier so they are ready when you return. Signing out clears that copy.
-      </p>
-      <p>
-        This browser remembers the language you chose for your last successful translation
-        under your account identifier, in <code>papertok:paper-translation-language:${uid}</code>.
-        Signing out, deleting the account from Settings in this browser, or clearing
-        the site's data removes that choice.
       </p>
 
       <h2>Changes</h2>

@@ -124,7 +124,7 @@ import PrivacyPopover from '../public/privacy-popover.tsx';
 import { ExplorerEmptyState } from './explorer-empty-state.tsx';
 import ExplorerGuestGate from './explorer-guest-gate.tsx';
 import { pickEmptyVariant } from './explorer-empty-variant.ts';
-import { explorerAuthorIdentityUnverified, explorerFollowEntity } from './explorer-follow-entity.ts';
+import { explorerAuthorIdentityUnverified, explorerFollowEntity, explorerJournalIngredient } from './explorer-follow-entity.ts';
 import { projectEntityFromLookup, projectLookupFunder } from './explorer-project-entity.ts';
 import { authorsSentinelMounted, papersFootReport, papersSentinelMounted } from './explorer-list-foot.ts';
 import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topic-navigation.ts';
@@ -308,11 +308,10 @@ export default function EntityExplorer({
   onSaveToList = () => {},
   publicMode = false,
   onAuthRequired = () => {},
-  translationEnabled = true,
   // Under the app's own bar — app.tsx decides, the same way it decides to
   // render the bar — the page starts below it instead of at the top edge.
   appChrome = false,
-}: { onSaveToList?: (paper: Paper) => void; publicMode?: boolean; onAuthRequired?: (reason?: string) => void; appChrome?: boolean; translationEnabled?: boolean }) {
+}: { onSaveToList?: (paper: Paper) => void; publicMode?: boolean; onAuthRequired?: (reason?: string) => void; appChrome?: boolean }) {
   const { type, id } = useParams() as { type: string; id: string };
   // The visit this page resumes, if it was here before (`visitMemory`).
   // Read once per mount: the seeds below take it into state, and the two
@@ -782,12 +781,16 @@ export default function EntityExplorer({
   const entityFollowPending = Boolean(!publicMode && followEntity && isFollowPending(followEntity));
   // What "Make it a feed" puts in the feed, and the feed's name: null on pages
   // no feed can be made of (institutions, projects, an author without an
-  // OpenAlex id, and the sources that offer no Follow).
+  // OpenAlex id, and the sources other than journals).
   const feedSource = useMemo(() => {
+    if (type === 'source') {
+      const ingredient = explorerJournalIngredient({ entity, displayName: entityDisplayName });
+      return ingredient ? { ingredient, name: ingredient.label } : null;
+    }
     const followed = followEntity ? createFollowEntity(followEntity) : null;
     const ingredient = followed ? ingredientFromFollow(followed) : null;
     return followed && ingredient ? { ingredient, name: followed.displayName } : null;
-  }, [followEntity]);
+  }, [entity, entityDisplayName, followEntity, type]);
   // The visit whose feed is being created. Kept per visit, and read through a
   // ref after the write, so a feed finishing after the reader moved to another
   // page, or left the Explorer, neither shows busy there nor takes them away.
@@ -1592,7 +1595,6 @@ export default function EntityExplorer({
       name: entityDisplayName,
       following: entityIsFollowing,
       startedAt,
-      openSettings: () => { void navigate('/settings/following', { state: { followType: 'journal' } }); },
     }));
   };
 
@@ -2913,7 +2915,6 @@ export default function EntityExplorer({
             trackSkip={trackSkip}
             publicMode={publicMode}
             onAuthRequired={onAuthRequired}
-            translationEnabled={translationEnabled}
             analyticsSurface="explorer"
           />
         )}

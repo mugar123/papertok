@@ -55,7 +55,6 @@ import {
 import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.ts';
 import { HIGHLIGHT_MIN_QUOTE_LENGTH, buildRangeAnchor, buildSelectionAnchor } from '../../utils/text-highlights.ts';
 import { useAuth } from '../../context/auth-context.tsx';
-import { resolveReadingLevel } from '../../utils/area-preferences.ts';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
 import { documentVisibility } from '../pdf/viewer-outcome.ts';
@@ -390,7 +389,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
 }
 
 export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel, onPaperTab, embedded = false, onLeave }: PaperReaderProps) {
-  const { user, readingPreferences, interestSettings } = useAuth();
+  const { user, readingPreferences } = useAuth();
   const uid = user?.uid;
   const { trackEvent, consent } = useAnalyticsConsent();
   const prefersReducedMotion = useReducedMotion();
@@ -401,7 +400,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   // own copy of it.
   const paragraphHintId = useId();
 
-  const [level, setLevel] = useState(() => resolveReadingLevel(paper, interestSettings, initialLevel, readingPreferences.aiExplanationLevel));
+  const [level, setLevel] = useState(() => initialLevel ?? readingPreferences.aiExplanationLevel);
   const [sections, setSections] = useState<RewriteSection[]>([]);
   const [revealingSections, setRevealingSections] = useState<Set<RewriteSection>>(() => new Set());
   const [meta, setMeta] = useState<ClientRewriteMeta | null>(null);
@@ -486,7 +485,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
 
   const supportsRewrite = canRewritePaper(paper);
   const paperId = paper?.id || paper?.doi || paper?.arxivId || '';
-  // The way to a journal's Follow (ENG-123): its name opens its Explorer page.
+  // The journal's name opens its Explorer page (ENG-123).
   const journal = journalExplorerLink(paper);
   const acceptedAt = acceptedConferenceText(paper);
 

@@ -75,9 +75,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const followSignature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
   const previewSignature = useMemo(() => items.slice(0, 20).map(item => item.updateKey || item.id || item.doi).join('|'), [items]);
   const notificationDataReady = !followsLoading && !followsError;
-  // Journals do not count: a reader who follows only journals is told that
-  // journals are not in the email (emailFollowsNotice), and no save, sync or
-  // opt-in sends an empty follow list.
+  // No save, sync or opt-in sends an empty follow list.
   const hasFollows = hasDigestFollows(followedEntities);
   // The reader's chosen categories fill the digest while nothing it covers is
   // followed (ENG-163). Only their leaf ids reach the Worker.
@@ -231,8 +229,8 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   }, [applySavedPreferences, digestCovered, digestSendReady, followedEntities, items, language, notificationDataReady, sentInterests, preferences]);
 
   // A yes from the guest welcome, carried out here, to the address the account
-  // signs in with: the subscription starts with the first follow other than a
-  // journal, as the welcome promised when the reader said yes, even though a
+  // signs in with: the subscription starts with the first follow, as the
+  // welcome promised when the reader said yes, even though a
   // digest turned on in Settings can run on chosen categories alone. Once per
   // session; a failure keeps the flag and the next session tries again. Once
   // it exists — or the reader already turned email on themselves — the flag is

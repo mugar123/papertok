@@ -228,7 +228,7 @@ const NO_INTEREST_MEMORY: ScoringMemory = Object.freeze({ interestProgress: {}, 
 // measured in production, a signed-in visit to a public page fired the full
 // source cascade for a feed nobody was looking at.
 export function FeedProvider({ children, feedRouteActive = true }: PropsWithChildren<{ feedRouteActive?: boolean }>) {
-  const { user, userPreferences, deselectedPreferences, addedPreferences, followedAuthors, interestSettings } = useAuth();
+  const { user, userPreferences, deselectedPreferences, addedPreferences, followedAuthors } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const [papers, setPapers] = useState<Paper[]>([]);
   const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
@@ -1331,7 +1331,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         examples: profileSignals.current.positiveExamples,
         exposure: profileSignals.current.categoryExposure,
         affinities: profileSignals.current.categoryAffinities,
-      }, interestSettings, interactionProfile.current);
+      }, interactionProfile.current);
       let newPapers: Paper[] = [];
       let rankingSeen = false;
       if (activeMode === 'top' || activeMode === null) {
@@ -1699,7 +1699,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
     }
   }, [
-    userPreferences, deselectedPreferences, addedPreferences, interestSettings, page, papers, loading, feedMode,
+    userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed, readerLean,
     calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent, user?.uid,
     lastVisit, restoreFeedSnapshot, scheduleFeedSnapshotWrite,
@@ -2503,7 +2503,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
   // Read-only: loadPapers' plan inputs, rejections and exclusions, with what
   // the reader viewed on a card in place of the session's seen set, which
-  // also holds what For you only loaded.
+  // also holds what For you only loaded. A new identity only when the
+  // reader's topics change, the one input this context does not keep in a ref.
   const getInterestRunSignals = useCallback((): InterestRunSignals => {
     const profile = interactionProfile.current;
     const viewed = viewedPaperIds(activeUserId.current, profile);
@@ -2516,7 +2517,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         examples: profileSignals.current.positiveExamples,
         exposure: profileSignals.current.categoryExposure,
         affinities: profileSignals.current.categoryAffinities,
-      }, interestSettings),
+      }),
       negativeIds: curatedIds(profile, 'notInterested').slice(0, 24),
       excludedIds: [...new Set([
         ...[...viewed].reverse(),
@@ -2526,7 +2527,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       ])].slice(0, 200),
       viewedIds: viewed,
     };
-  }, [userPreferences, deselectedPreferences, addedPreferences, interestSettings]);
+  }, [userPreferences, deselectedPreferences, addedPreferences]);
 
   // Every function key below is already `useCallback`-wrapped (or, for
   // `setFeedMode`/`loadPapers`, deliberately re-created when the state its own

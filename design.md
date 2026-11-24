@@ -471,26 +471,37 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   row, the row stops short of the rail. While the feed still asks a source
   for the abstract, the link holds its place in the row unseen, so the row
   keeps its shape when the wait ends with no abstract.
-- **Settings › Feeds** (`settings/feeds-settings-page.tsx`), reached from
-  Discovery: a `New feed` button over the reader's feeds in tab order, as
-  ruled rows. Each row has the feed's name in the serif, its ingredients on one
-  mono line cut with an ellipsis, and ghost `Edit`, `Move up`, `Move down` and
-  `Delete` buttons, each named for its feed. These buttons do what the tab's
-  menu does, so no command needs a right click or a long press. A move at an
-  end is disabled, and a saved move is announced with the feed's new position.
+- **The Feeds window** (`settings/feeds-dialog.tsx`), opened by Edit feeds in
+  Settings › Discovery: the Interests window's frame, header and footer on a
+  desktop, a settings sheet as tall as its content on a phone. The reader's
+  feeds in tab order as rows split by hairlines: the position in mono (`01`),
+  the feed's name in the serif, then a mono line with the order in capitals
+  and the ingredients cut with an ellipsis. Each row ends in four ghost icon
+  buttons named for its feed: Move up, Move down, Edit in `--accent-success`
+  and Delete in `--accent-danger`; on a phone they sit under the name at
+  44px. The footer counts the feeds against the limit and holds `New feed`,
+  disabled at the limit. These buttons do what the tab's menu does, so no
+  command needs a right click or a long press. A move at an end is disabled,
+  and a saved move is announced with the feed's new position. Edit and Delete
+  open the feed window and the delete confirmation over it, and focus comes
+  back to the button that opened them.
 - **Help** (`help/help-page.tsx`, its words in `help-guide.ts`) at `/help`: what
-  each button and gesture does, in the Settings page's style, with the section
-  links in place of its menu. It is a public page: a
+  each button and gesture does, in the Settings layout. It is a public page: a
   visitor reaches it from the Help icon in the welcome's bar, a signed-in reader
-  from the last entry of the Settings menu. It is set in sections of ruled rows. A row with a
+  from the last entry of the Settings menu. A signed-in reader keeps that menu,
+  rail and phone switcher alike, with the page's contents listed under Help on
+  the rail; a visitor gets the contents alone in the rail's column. The
+  contents mark the section being read with an ink rule and darker text. Under
+  901px, where the rail is hidden, the overview's row of section links stands
+  in for them. It is set in sections of ruled rows. A row with a
   glyph puts it in a 40px tile beside the control's name, which is the row's
   heading, so the tile is decoration. A row with no glyph (text controls,
   gestures) takes the whole width. Under each sentence two mono stamps say what
   the control spends (amber for an AI use or a public-list change, neutral for
   nothing) and whether it needs an account. A section whose controls are all
   behind sign-in says so once under its intro instead. The page opens with a
-  legend of the stamps and links to its sections; a link moves focus to that
-  section's heading.
+  legend of the stamps. A link to a section, in the contents or the row,
+  scrolls to that section's heading and moves focus to it.
 
 ### Inputs / Fields
 - **Style:** a hairline frame on paper, near-square.
@@ -541,6 +552,16 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   authors, journals and a keyword, and suggestions from the reader's own topics. The
   order is two radio cards, Newest first and Best match for you. A limit or a
   taken name is said in a line inside the form.
+- **The Follows window** (`settings/following-settings-page.tsx`): on a
+  desktop, a dialog over Settings › Discovery drawn like the interests editor,
+  with the follow types down a `pill` tab rail, each with its count, beside
+  the list. `/settings/following` opens it, so the email updates window's link
+  lands on it too. It keeps one height and only the list scrolls.
+  Closing it goes back where it was opened from, and a followed page opened
+  from the list waits for it to leave. While it is open, an unfollow's Undo
+  sits in a line held at the top of the list instead of a toast, which would
+  be outside the dialog's focus trap. On a phone the same list is a full
+  page from a link, and a sheet from Settings.
 - **Delete confirmation** (`custom-feeds/delete-feed-dialog.tsx`): an alert
   dialog titled with the feed's name and one sentence saying likes and saved
   papers stay, with `outline` Cancel and `destructive` Delete feed. While it
@@ -610,10 +631,9 @@ arrow above the title, with the reading time under the title when the paper's
 text can be read and the paper's links (DOI, code, data) to its right; below
 come the status chips, topics and funding that are not on the card face;
 topics and funding are ruled rows, the field's rule in its ink and its topics'
-in a lighter one. The journal OpenAlex identifies and the institutions of the authors that
-carry a verified id come as ruled rows, each name with the Follow control (the
-first five institutions, then `Show all`); a paper with neither has no such
-section. Its heading and sections come in from the right one after
+in a lighter one. The institutions of the authors that carry a verified id
+come as ruled rows, each name with the Follow control (the first five, then
+`Show all`); a paper with none has no such section. Its heading and sections come in from the right one after
 another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
@@ -627,13 +647,13 @@ notes are the full-text reader's notes panel and its selection opens the same
 highlight editor, whose second way out is Explain this to me.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
-institution, project, topic or journal can be followed: a row of About this paper, the Explorer header, beside a
+institution, project or topic can be followed: a row of About this paper, the Explorer header, beside a
 Share glyph drawn the same way in the neutral rail, and search results. It is
 an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
 40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press
 like Like and Save; "Follow" is its name and its `title` says Following once on.
 On pages a feed can be made from (an area, a topic, a keyword search, an author
-with an OpenAlex id, a followable journal), the Explorer header also carries a text button after
+with an OpenAlex id, a journal other than a working-paper series), the Explorer header also carries a text button after
 Share, `Make it a feed`: an `outline` `sm` button with a `Plus` glyph.
 
 ### Status Screens (signature)

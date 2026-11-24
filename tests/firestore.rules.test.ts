@@ -29,8 +29,7 @@ import { copyForMergeWrite } from '../src/utils/stored-copy-write.ts';
 import { LIST_COLORS } from '../src/utils/list-colors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
 import { CATEGORIES } from '../src/data/category-taxonomy.ts';
-import { INTEREST_MIXES, normalizeInterestSettings } from '../src/utils/area-preferences.ts';
-import { AI_EXPLANATION_LEVEL_IDS, normalizeReadingPreferences } from '../src/utils/user-settings.ts';
+import { normalizeReadingPreferences } from '../src/utils/user-settings.ts';
 import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
@@ -127,35 +126,61 @@ test('only the account owner can store a valid mix and per-area preferences', as
 });
 
 // =========================================================================
-// Interest mix and per-area preferences, written the way the client writes them
+// Retired interest settings (ENG-229)
 //
-// The test above updates an existing document. These use the client's own write
-// calls (src/context/auth-context.tsx), including the create that an account's
-// first onboarding write is, and the client's own lists of values.
+// Accounts written before 24 November 2026 may hold `interestMix` and
+// `areaPreferences`. The client no longer reads them, and its interest writes
+// (src/context/auth-context.tsx) delete both. The rules keep naming the keys
+// because every write merges into the whole document, and they still judge
+// the values an older bundle may write.
 // =========================================================================
 
-/** The write `updatePreferences` makes: whole-field replacement, not a deep merge. */
+/** The write `updatePreferences` makes. */
 const settingsWrite = (ref: ReturnType<typeof doc>, patch: Record<string, unknown>) =>
-  setDoc(ref, patch, { mergeFields: Object.keys(patch) });
+  setDoc(ref, patch, { merge: true });
 
-test('a new account\'s onboarding write is a create the rules accept', async () => {
+/** What the client's interest writes add to remove the retired settings. */
+const retiredSettings = () => ({ interestMix: deleteField(), areaPreferences: deleteField() });
+
+const legacySettings = {
+  interestMix: 'half-and-half',
+  areaPreferences: { ai: { priority: 'curiosity', level: 'researcher' }, physics: { priority: 'essential' } },
+};
+
+test('a new account\'s onboarding write, which deletes the retired settings, is a create the rules accept', async () => {
   await reset();
   const ref = doc(asAlice(), 'users', ALICE);
   // No document exists, so this merge is a create: the first write of an account.
-  const settings = normalizeInterestSettings({
-    interestMix: 'half-and-half',
-    areaPreferences: { ai: { priority: 'curiosity', level: 'researcher' }, physics: { priority: 'essential' } },
-  }, ['ai', 'physics']);
   await assertSucceeds(setDoc(ref, {
     onboardingComplete: true,
     readingPreferences: normalizeReadingPreferences({ aiExplanationLevel: 'beginner' }),
     preferences: ['cs.AI', 'physics.optics'],
-    ...settings,
+    ...retiredSettings(),
   }, { merge: true }));
+  assert.deepEqual((await getDoc(ref)).data(), {
+    onboardingComplete: true,
+    readingPreferences: { aiExplanationLevel: 'beginner', language: 'en', languagePreferenceSet: false, readAloudFromPosition: false },
+    preferences: ['cs.AI', 'physics.optics'],
+  });
+});
+
+test('an account that still holds the retired settings keeps writing, and saving interests removes them', async () => {
+  await reset();
+  const ref = doc(asAlice(), 'users', ALICE);
+  await assertSucceeds(setDoc(ref, { onboardingComplete: true, preferences: ['cs.AI', 'physics.optics'], ...legacySettings }, { merge: true }));
+  // A write that leaves them alone carries them in the merged document.
+  await assertSucceeds(setDoc(ref, { readingPreferences: normalizeReadingPreferences({ aiExplanationLevel: 'university' }) }, { merge: true }));
+  await assertSucceeds(settingsWrite(ref, {
+    preferences: ['cs.AI'],
+    deselectedPreferences: ['physics.optics'],
+    addedPreferences: [],
+    ...retiredSettings(),
+  }));
   const stored = (await getDoc(ref)).data();
-  assert.equal(stored?.interestMix, 'half-and-half');
-  assert.deepEqual(stored?.areaPreferences, { ai: { priority: 'curiosity', level: 'researcher' }, physics: { priority: 'essential' } });
-  assert.deepEqual(stored?.readingPreferences, { aiExplanationLevel: 'beginner', language: 'en', languagePreferenceSet: false, readAloudFromPosition: false });
+  assert.equal(stored?.interestMix, undefined);
+  assert.equal(stored?.areaPreferences, undefined);
+  assert.deepEqual(stored?.preferences, ['cs.AI']);
+  assert.deepEqual(stored?.deselectedPreferences, ['physics.optics']);
 });
 
 test('an onboarding write that sets no mix and no area preference is a create the rules accept', async () => {
@@ -165,37 +190,7 @@ test('an onboarding write that sets no mix and no area preference is a create th
   assert.deepEqual((await getDoc(ref)).data(), { onboardingComplete: true, preferences: ['cs.LG'] });
 });
 
-test('every mix, area, priority and level the client can write is accepted', async () => {
-  // The rules hand-copy these lists. Areas, levels and mixes come from the
-  // client's own constants, so adding one there without the rules fails here.
-  // The client has no runtime list of priorities (`AreaPriority` is a type),
-  // so those two are written out.
-  const areas = Object.keys(CATEGORIES);
-  const priorities = ['essential', 'curiosity'];
-  const levels = [...AI_EXPLANATION_LEVEL_IDS].filter((level): level is string => typeof level === 'string');
-  const areaPreferences = Object.fromEntries(areas.map((area, index) => [
-    area,
-    { priority: priorities[index % priorities.length], level: levels[index % levels.length] },
-  ]));
-  // Every priority and level lands on at least one area.
-  assert.deepEqual(new Set(Object.values(areaPreferences).map(entry => entry.priority)), new Set(priorities));
-  assert.deepEqual(new Set(Object.values(areaPreferences).map(entry => entry.level)), new Set(levels));
-
-  await reset();
-  const ref = doc(asAlice(), 'users', ALICE);
-  for (const interestMix of Object.keys(INTEREST_MIXES)) {
-    // What the client keeps of this choice: nothing the rules would be asked to judge is lost.
-    const settings = normalizeInterestSettings({ interestMix, areaPreferences });
-    assert.equal(settings.interestMix, interestMix);
-    assert.deepEqual(settings.areaPreferences, areaPreferences);
-    await assertSucceeds(setDoc(ref, { onboardingComplete: true, preferences: ['cs.LG'], ...settings }, { merge: true }));
-    const stored = (await getDoc(ref)).data();
-    assert.equal(stored?.interestMix, interestMix);
-    assert.deepEqual(stored?.areaPreferences, areaPreferences);
-  }
-});
-
-test('a mix or area preference the client never writes is refused, on create and on a later write', async () => {
+test('a retired setting outside the rules\' lists is refused, on create and on a later write', async () => {
   const invalid: Record<string, unknown>[] = [
     { areaPreferences: { astrology: { priority: 'essential' } } },
     { areaPreferences: { 'cs.AI': { priority: 'essential' } } },
@@ -224,42 +219,6 @@ test('a mix or area preference the client never writes is refused, on create and
   const stored = (await getDoc(doc(asAlice(), 'users', ALICE))).data();
   assert.equal(stored?.interestMix, 'balanced');
   assert.deepEqual(stored?.areaPreferences, valid.areaPreferences);
-});
-
-test('the Settings write replaces the per-area map and clears it on an onboarded account', async () => {
-  await reset();
-  const ref = doc(asAlice(), 'users', ALICE);
-  await assertSucceeds(setDoc(ref, {
-    onboardingComplete: true,
-    preferences: ['cs.AI', 'physics.optics'],
-    ...normalizeInterestSettings({
-      interestMix: 'half-and-half',
-      areaPreferences: { ai: { priority: 'curiosity', level: 'researcher' }, physics: { priority: 'essential' } },
-    }, ['ai', 'physics']),
-  }, { merge: true }));
-
-  // Replace: `physics` is gone from the stored map, which a deep merge would keep.
-  await assertSucceeds(settingsWrite(ref, {
-    preferences: ['cs.AI'],
-    deselectedPreferences: ['physics.optics'],
-    addedPreferences: [],
-    ...normalizeInterestSettings({ interestMix: 'mostly-work', areaPreferences: { ai: { level: 'beginner' } } }, ['ai']),
-  }));
-  let stored = (await getDoc(ref)).data();
-  assert.equal(stored?.interestMix, 'mostly-work');
-  assert.deepEqual(stored?.areaPreferences, { ai: { level: 'beginner' } });
-
-  // Clear: the map is written empty.
-  await assertSucceeds(settingsWrite(ref, {
-    preferences: ['cs.AI'],
-    deselectedPreferences: ['physics.optics'],
-    addedPreferences: [],
-    ...normalizeInterestSettings({ interestMix: 'balanced' }, ['ai']),
-    areaPreferences: {},
-  }));
-  stored = (await getDoc(ref)).data();
-  assert.equal(stored?.interestMix, 'balanced');
-  assert.deepEqual(stored?.areaPreferences, {});
 });
 
 // =========================================================================
@@ -536,23 +495,24 @@ test('the owner writes the subjects they added, up to 150, and nobody else does'
   await assertFails(setDoc(doc(asBob(), 'users', ALICE), { addedPreferences: ['econ.EM'] }, { merge: true }));
 });
 
-test('the owner follows a journal by its OpenAlex source id, and nobody else writes it', async () => {
-  // ENG-123: the document FollowingProvider.toggleFollow writes for a journal.
+test('a journal is no longer followed, and the owner alone deletes one stored before', async () => {
+  // Journal follows were retired: FollowingProvider deletes the ones stored,
+  // by their document id, when the list loads.
   await reset();
-  const journal = createFollowEntity({
-    type: 'journal', id: 'https://openalex.org/S23254222', displayName: 'American Economic Review',
-    source: 'openalex', externalIds: { issnl: '0002-8282' },
-  })!;
-  const followDoc = (db: ReturnType<typeof asAlice>, key = createFollowKey(journal.type, journal.canonicalId)) => doc(db, 'users', ALICE, 'following', key);
-  await assertSucceeds(setDoc(followDoc(asAlice()), { ...journal, followedAt: serverTimestamp() }));
-  await assertFails(setDoc(followDoc(asBob()), { ...journal, followedAt: serverTimestamp() }));
-  // A journal is its source id: a name or an ISSN in its place is refused.
-  await assertFails(setDoc(followDoc(asAlice(), 'journal_0002-8282'), { ...journal, canonicalId: '0002-8282', followedAt: serverTimestamp() }));
-  await assertFails(setDoc(followDoc(asAlice(), 'journal_aer'), { ...journal, canonicalId: 'American Economic Review', followedAt: serverTimestamp() }));
+  const journal = {
+    type: 'journal', canonicalId: 'S23254222', displayName: 'American Economic Review',
+    source: 'openalex', externalIds: { issnl: '0002-8282' }, metadata: {},
+  };
+  const followDoc = (db: ReturnType<typeof asAlice>, key = 'journal_S23254222') => doc(db, 'users', ALICE, 'following', key);
+  await assertFails(setDoc(followDoc(asAlice()), { ...journal, followedAt: serverTimestamp() }));
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE, 'following', 'journal_S23254222'), journal);
+  });
+  await assertFails(deleteDoc(followDoc(asBob())));
+  await assertSucceeds(deleteDoc(followDoc(asAlice())));
   // The other kinds of follow are written as before.
   const author = createFollowEntity({ type: 'author', id: 'A5023888391', displayName: 'Wei Zhang', source: 'openalex' })!;
   await assertSucceeds(setDoc(followDoc(asAlice(), createFollowKey(author.type, author.canonicalId)), { ...author, followedAt: serverTimestamp() }));
-  await assertSucceeds(deleteDoc(followDoc(asAlice())));
 });
 
 test('a legacy field cannot be given a new value', async () => {

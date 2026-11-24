@@ -2,23 +2,15 @@ import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/user-settings.ts';
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Bell,
-  CaretDown,
-  Check,
   CircleNotch,
-  Compass,
   GearSix,
   GraduationCap,
   LinkBreak,
   LinkSimple,
   PencilSimple,
-  Question,
-  ShieldCheck,
-  Sparkle,
   Trash,
-  UserCircle,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { toastError } from '../ui/toast.ts';
@@ -44,43 +36,29 @@ import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import EditInterestsModal from './edit-interests-modal.tsx';
 import SummaryHistory from './summary-history.tsx';
 import { LEVEL_DETAILS } from './reading-levels.ts';
-import { FollowingSheet } from './following-settings-page.tsx';
+import { FollowingDialog, FollowingSheet } from './following-settings-page.tsx';
+import FeedsDialog from './feeds-dialog.tsx';
 import DeleteAccountDialog from './delete-account-dialog.tsx';
 import { DELETE_ACCOUNT_DESCRIPTION } from './delete-account-description.ts';
 import EmailNotificationModal from '../following/email-notification-modal.tsx';
 import { Button } from '../ui/button.tsx';
 import { connectZotero, disconnectZotero, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
+import { authorMetricsAnswer, zoteroAnswer } from '../../utils/profile-session-caches.ts';
 import { GithubMark } from '../ui/github-mark.tsx';
 import { Label } from '../ui/label.tsx';
 import { ZoteroMark } from '../pdf/zotero-mark.tsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
 import { Switch } from '../ui/switch.tsx';
 import { readShowAbstract, saveShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
-import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
+import { SETTINGS_PAGES, isFollowsPath } from './settings-pages.ts';
+import { SettingsRail, SettingsSwitcher } from './settings-pages-nav.tsx';
 import usePopupReady from '../../hooks/use-popup-ready.ts';
 import './settings-page.css';
-
-/**
- * The settings pages, one route each: a page carries one subject, so there is
- * no scroll position to track and nothing to spy on. Order is the rail's.
- * Help is the last entry but not a settings page: `to` sends it to /help,
- * which a visitor without an account can open too.
- */
-const SETTINGS_PAGES: { slug: string; label: string; summary: string; Icon: Icon; to?: string }[] = [
-  { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
-  { slug: 'discovery', label: 'Discovery', summary: 'Follows, feeds and interests', Icon: Compass },
-  { slug: 'reading', label: 'Reading & AI', summary: 'AI level, the reader and your plain-words summaries', Icon: Sparkle },
-  { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
-  { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics and author statistics', Icon: ShieldCheck },
-  { slug: 'help', label: 'Help', summary: 'What each button and gesture does', Icon: Question, to: '/help' },
-];
 
 const SETTINGS_COPY = {
   title: 'Settings',
   subtitle: 'Your account, discovery preferences, and reading tools.',
-  pagesLabel: 'Settings pages',
-  settingsPage: 'Settings page',
   discovery: 'Discovery',
   discoveryDescription: 'Signals PaperTok uses to build your feeds.',
   followedContent: 'Follows',
@@ -171,17 +149,28 @@ function RowAction({ label, text = label, Icon, variant = 'outline', ...props }:
   );
 }
 
-/** Keyed by the account where it is used, so a new account starts from an unchecked state. */
+/**
+ * Keyed by the account where it is used, so a new account starts from its own
+ * last answer or from an unchecked state. The check runs on every visit; a
+ * failed one leaves the last answer on screen.
+ */
 function ZoteroSection({ uid }: { uid: string }) {
-  const [status, setStatus] = useState<ZoteroStatus | null>(null);
+  const [status, setStatus] = useState<ZoteroStatus | null>(() => zoteroAnswer.get(uid) ?? null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let live = true;
-    zoteroStatus().then(next => { if (live) setStatus(next); }, () => { if (live) setFailed(true); });
+    const keep = zoteroAnswer.startRead(uid);
+    zoteroStatus().then(next => {
+      // A left visit's check may be older than the next visit's.
+      if (!live) return;
+      // A disconnect that finished while this check was out is newer than its answer.
+      const shown = keep(next) ? next : zoteroAnswer.get(uid);
+      if (shown) setStatus(shown);
+    }, () => { if (live) setFailed(true); });
     return () => { live = false; };
-  }, []);
+  }, [uid]);
 
   usePageRestored(() => setBusy(false));
 
@@ -189,8 +178,11 @@ function ZoteroSection({ uid }: { uid: string }) {
     setBusy(true);
     try {
       if (status?.connected) {
+        const record = zoteroAnswer.startChange(uid);
         await disconnectZotero();
-        setStatus({ connected: false, username: null, sentAt: null });
+        const disconnected = { connected: false, username: null, sentAt: null };
+        record(disconnected);
+        setStatus(disconnected);
         toast.success('Zotero is disconnected.');
         setBusy(false);
       } else {
@@ -202,10 +194,10 @@ function ZoteroSection({ uid }: { uid: string }) {
     }
   }
 
-  const description = failed ? 'The Zotero connection could not be checked. You can still connect it.'
-    : !status ? 'Checking your Zotero connection…'
-      : status.connected ? `Connected${status.username ? ` as ${status.username}` : ''}. Papers you send while reading go to your personal library.`
-        : 'Send the papers you read, with your highlights, to your Zotero library.';
+  const description = status?.connected ? `Connected${status.username ? ` as ${status.username}` : ''}. Papers you send while reading go to your personal library.`
+    : status ? 'Send the papers you read, with your highlights, to your Zotero library.'
+      : failed ? 'The Zotero connection could not be checked. You can still connect it.'
+        : 'Checking your Zotero connection…';
 
   return (
     <section className="settings-section" aria-labelledby="settings-zotero-heading">
@@ -454,21 +446,31 @@ function PrivacyPage() {
   );
 }
 
+const LOADING_PREFERENCE = 'Loading your preference…';
+
+/** Shows the account's last answer at once and reads it again; a failed read leaves that answer on screen. */
 function AuthorMetricsSetting({ uid }: { uid: string }) {
   const hintId = useId();
-  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [enabled, setEnabled] = useState<boolean | null>(() => authorMetricsAnswer.get(uid) ?? null);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState('Loading your preference…');
+  const [status, setStatus] = useState(() => authorMetricsAnswer.get(uid) === undefined ? LOADING_PREFERENCE : '');
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
+    const keep = authorMetricsAnswer.startRead(uid);
     void readAuthorMetricsConsent(uid).then(value => {
+      // A left visit's read may be older than the next visit's.
       if (!active) return;
-      setEnabled(value);
-      setStatus('');
+      // A choice saved while this read was out is newer than its answer.
+      const shown = keep(value) ? value : authorMetricsAnswer.get(uid);
+      if (shown === undefined) return;
+      setEnabled(shown);
+      // Clears only the loading line; a save's own message stays.
+      setStatus(previous => previous === LOADING_PREFERENCE ? '' : previous);
     }, () => {
-      if (active) setStatus('Could not load your preference.');
+      // Only a section still waiting for its first answer reports the failure.
+      if (active) setStatus(previous => previous === LOADING_PREFERENCE ? 'Could not load your preference.' : previous);
     });
     return () => { active = false; };
   }, [uid, attempt]);
@@ -477,7 +479,9 @@ function AuthorMetricsSetting({ uid }: { uid: string }) {
     setSaving(true);
     setStatus('Saving your preference…');
     try {
+      const record = authorMetricsAnswer.startChange(uid);
       await writeAuthorMetricsConsent(uid, value);
+      record(value);
       setEnabled(value);
       setStatus('Preference saved.');
     } catch {
@@ -512,7 +516,7 @@ function AuthorMetricsSetting({ uid }: { uid: string }) {
         <div role="status">{status}</div>
         {enabled === null && status.startsWith('Could not') && (
           <Button variant="outline" onClick={() => {
-            setStatus('Loading your preference…');
+            setStatus(LOADING_PREFERENCE);
             setAttempt(previous => previous + 1);
           }}>Try again</Button>
         )}
@@ -523,11 +527,13 @@ function AuthorMetricsSetting({ uid }: { uid: string }) {
 
 function DiscoveryPage() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { userPreferences } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const { feeds: customFeeds, status: feedsStatus } = useCustomFeeds();
   const [isInterestsOpen, setIsInterestsOpen] = useState(false);
   const [isFollowingOpen, setIsFollowingOpen] = useState(false);
+  const [isFeedsOpen, setIsFeedsOpen] = useState(false);
   const isPhone = useIsPhone();
   const selectedInterestCount = Array.isArray(userPreferences) ? userPreferences.length : 0;
 
@@ -565,7 +571,7 @@ function DiscoveryPage() {
               </h3>
               <p>{copy.feedsDescription}</p>
             </div>
-            <RowAction Icon={PencilSimple} label={copy.editFeeds} text={copy.edit} onClick={() => { void navigate('/settings/feeds'); }} />
+            <RowAction Icon={PencilSimple} label={copy.editFeeds} text={copy.edit} onClick={() => setIsFeedsOpen(true)} />
           </div>
 
           <div className="settings-row settings-row-side">
@@ -586,9 +592,13 @@ function DiscoveryPage() {
         </div>
       </section>
       <EditInterestsModal isOpen={isInterestsOpen} onClose={() => setIsInterestsOpen(false)} />
+      <FeedsDialog open={isFeedsOpen} onOpenChange={setIsFeedsOpen} />
       {/* On a phone the follows open in a sheet, like the interests above;
-          wider than that they have their own page. */}
-      {isPhone && <FollowingSheet open={isFollowingOpen} onOpenChange={setIsFollowingOpen} />}
+          wider than that in a dialog, which /settings/following opens over
+          this page so a link from elsewhere lands on it too. */}
+      {isPhone
+        ? <FollowingSheet open={isFollowingOpen} onOpenChange={setIsFollowingOpen} />
+        : <FollowingDialog open={isFollowsPath(pathname)} />}
     </>
   );
 }
@@ -727,18 +737,19 @@ export default function SettingsPage({ page = 'profile' }) {
   const activeIndex = Math.max(0, SETTINGS_PAGES.findIndex(entry => entry.slug === page));
   const active = SETTINGS_PAGES[activeIndex];
   const Page = PAGE_COMPONENTS[active.slug as keyof typeof PAGE_COMPONENTS];
-  const [pagesOpen, setPagesOpen] = useState(false);
+  // The Follows dialog over Discovery has a route of its own and names the tab
+  // while it is open, as RouteAnnouncer does (route-metadata.ts).
+  const title = `${isFollowsPath(useLocation().pathname) ? 'Follows' : active.label} · Settings | PaperTok`;
 
   // The tab keeps saying which page this is; restored on the way out so the
   // pages that manage their own metadata are not affected.
   useEffect(() => {
     const previous = document.title;
-    const ours = `${active.label} · Settings | PaperTok`;
-    document.title = ours;
+    document.title = title;
     // Only restore if nothing claimed the title since (the outgoing route
     // stays mounted ~200ms into the next one under AnimatePresence).
-    return () => { if (document.title === ours) document.title = previous; };
-  }, [active]);
+    return () => { if (document.title === title) document.title = previous; };
+  }, [title]);
 
   return (
     <main className="settings-page">
@@ -750,72 +761,8 @@ export default function SettingsPage({ page = 'profile' }) {
 
         <div className="settings-layout">
 
-          <button
-            type="button"
-            className="settings-switcher"
-            aria-haspopup="dialog"
-            aria-expanded={pagesOpen}
-            onClick={() => setPagesOpen(true)}
-          >
-            <span className="settings-switcher-icon"><active.Icon size={18} weight="fill" aria-hidden="true" /></span>
-            <span className="settings-switcher-copy">
-              <small>{copy.settingsPage}</small>
-              <strong>{active.label}</strong>
-            </span>
-            <CaretDown size={16} aria-hidden="true" />
-          </button>
-          <Drawer open={pagesOpen} onOpenChange={setPagesOpen}>
-            <DrawerContent className="settings-pages-sheet">
-              <DrawerHandle />
-              <DrawerTitle render={<h3 />} className="settings-pages-title">{copy.title}</DrawerTitle>
-              <nav aria-label={copy.pagesLabel}>
-                <ul className="settings-pages-list">
-                  {SETTINGS_PAGES.map(entry => (
-                    <li key={entry.slug}>
-                      <NavLink
-                        to={entry.to ?? `/settings/${entry.slug}`}
-                        replace={!entry.to}
-                        className={({ isActive }) => (isActive ? 'is-active' : '')}
-                        onClick={() => setPagesOpen(false)}
-                      >
-                        {({ isActive }) => (
-                          <>
-                            <entry.Icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
-                            <span className="settings-pages-copy">
-                              <strong>{entry.label}</strong>
-                              <small>{entry.summary}</small>
-                            </span>
-                            {isActive && <Check size={16} aria-hidden="true" />}
-                          </>
-                        )}
-                      </NavLink>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            </DrawerContent>
-          </Drawer>
-          <nav className="settings-index" aria-label={copy.pagesLabel}>
-            <div className="settings-index-list">
-              {SETTINGS_PAGES.map(entry => (
-                <NavLink
-                  key={entry.slug}
-                  to={entry.to ?? `/settings/${entry.slug}`}
-                  replace={!entry.to}
-                  className={({ isActive }) => (isActive ? 'is-active' : '')}
-                >
-                  {/* Filled on the page you are on: the shape changes, not
-                      only the colour. */}
-                  {({ isActive }) => (
-                    <>
-                      <entry.Icon size={18} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
-                      {entry.label}
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
-          </nav>
+          <SettingsSwitcher active={active} />
+          <SettingsRail />
 
           <div className="settings-content">
             <Page />

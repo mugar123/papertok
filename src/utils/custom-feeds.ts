@@ -300,14 +300,13 @@ export function corpusRequestOf(feed: CustomFeed): { categories: string[]; areas
 
 /**
  * The ingredient a followed entity names: one of the app's areas or
- * categories, an OpenAlex topic or concept, a free-text topic as a keyword, an
- * author by OpenAlex id, or a journal by its OpenAlex source id. Anything
- * else, an author known by name only or a journal without a source id
+ * categories, an OpenAlex topic or concept, a free-text topic as a keyword, or
+ * an author by OpenAlex id. Anything else, an author known by name only
  * included, is null.
  */
 export function ingredientFromFollow(entity: { type: string; id?: string; canonicalId?: string; displayName?: string; metadata?: { query?: string; categoryIds?: string[] } }): FeedIngredient | null {
   const id = entity.canonicalId ?? entity.id ?? '';
-  if (entity.type === 'author' || entity.type === 'journal') return parseFeedIngredient({ kind: entity.type, id, label: entity.displayName });
+  if (entity.type === 'author') return parseFeedIngredient({ kind: entity.type, id, label: entity.displayName });
   if (entity.type !== 'topic' && entity.type !== 'concept') return null;
   if (getAreaLeaves(id)) return { kind: 'area', id };
   if (LEAF_IDS.has(id)) return { kind: 'category', id };

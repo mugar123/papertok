@@ -1,9 +1,8 @@
 type GuestStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown; institutionEmail?: unknown } & InterestSettings;
+type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown; institutionEmail?: unknown };
 
 import { CATEGORIES } from '../data/categories.ts';
-import { normalizeInterestSettings, type InterestSettings } from './area-preferences.ts';
 import { normalizeReadingPreferences } from './user-settings.ts';
 import { institutionDomainOf } from './institution-domain.ts';
 
@@ -149,7 +148,7 @@ export function readGuestInterests(storage?: GuestStorage | null) {
     const email = parsed.emailDigest === true ? { emailDigest: true } : {};
     const institution = institutionDomainOf(parsed.institutionEmail)
       ? { institutionEmail: String(parsed.institutionEmail).trim().toLowerCase() } : {};
-    return { areas, topics, dismissed, ...reading, ...email, ...institution, ...normalizeInterestSettings(parsed, areas) };
+    return { areas, topics, dismissed, ...reading, ...email, ...institution };
   } catch {
     return null;
   }
@@ -177,7 +176,6 @@ export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | unde
       target.setItem(GUEST_INTERESTS_STORAGE_KEY, JSON.stringify({
         areas: normalized,
         topics,
-        ...normalizeInterestSettings(Array.isArray(answer) ? null : answer, normalized),
         ...((answer as GuestAnswer | null | undefined)?.readingLevel ? { readingLevel: normalizeReadingPreferences({ aiExplanationLevel: (answer as GuestAnswer).readingLevel }).aiExplanationLevel } : {}),
         ...((answer as GuestAnswer | null | undefined)?.emailDigest === true ? { emailDigest: true } : {}),
         ...(institutionDomainOf((answer as GuestAnswer | null | undefined)?.institutionEmail)

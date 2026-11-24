@@ -115,9 +115,7 @@ without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
   across feed batches.
 - Provider timeouts, quotas and downtime must leave usable papers from other sources
   available. Keep deadlines and retries bounded; do not multiply requests to mask an outage.
-- The interface, generated explanations, emails and share pages are English-only. Eligible
-  paper text may be translated on request, labelled as an AI translation, with the original
-  available. Comments,
+- The interface, generated explanations, emails and share pages are English-only. Comments,
   documentation, commits and PR text are English too. Preserve original paper content and
   mark its language when known. Legacy `language: 'es'` requests remain accepted and ignored.
 

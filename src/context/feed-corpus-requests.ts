@@ -3,8 +3,6 @@ import type { FollowEntity } from '../utils/following.ts';
 import type { InterestGroup, InterestMemoryInput } from '../utils/interest-memory.ts';
 
 import { corpusPositiveIds } from '../services/paper-store-service.ts';
-import { areaKeyForCategory } from '../utils/area-accent.ts';
-import { DEFAULT_INTEREST_MIX, INTEREST_MIXES, priorityForArea, type InterestSettings } from '../utils/area-preferences.ts';
 import { resolveWithin } from '../utils/async-timing.ts';
 import { coldAddedInterests, dormantCategories, interestProgress, planInterestGroups } from '../utils/interest-memory.ts';
 import { positiveExampleKinds, type InteractionProfile } from '../utils/interaction-profile.ts';
@@ -38,25 +36,12 @@ type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 
  * and the Worker's pages follow one ranking only while the groups stay the
  * same. A later page with no plan (the list came from a snapshot) plans anew.
  */
-export function feedPlanFor(current: FeedPlan | null, page: number, input: InterestMemoryInput, settings: InterestSettings = {}, profile?: InteractionProfile): FeedPlan {
+export function feedPlanFor(current: FeedPlan | null, page: number, input: InterestMemoryInput, profile?: InteractionProfile): FeedPlan {
   if (current && page > 0) return current;
   const { groups, unassignedPositiveIds } = planInterestGroups(input);
-  const priorities = groups.map(group => priorityForArea(settings, areaKeyForCategory(group.categories[0])));
-  const totals = { essential: 0, curiosity: 0 };
-  groups.forEach((group, index) => { totals[priorities[index]] += group.weight; });
-  const essential = INTEREST_MIXES[settings.interestMix ?? DEFAULT_INTEREST_MIX].essential;
-  const shares = { essential: essential / 100, curiosity: (100 - essential) / 100 };
-  // Lane and example budgets use the planned weights. The mix only changes
-  // how the resulting groups take turns in the Worker.
-  const weightedGroups = totals.essential > 0 && totals.curiosity > 0
-    ? groups.map((group, index) => {
-      const priority = priorities[index];
-      return { ...group, weight: 10 * shares[priority] * group.weight / totals[priority] };
-    })
-    : groups;
   const positiveIds = corpusPositiveIds(groups, unassignedPositiveIds);
   return {
-    groups: weightedGroups,
+    groups,
     unassignedPositiveIds,
     positiveIds,
     ...(profile && { exampleKindsById: positiveExampleKinds(profile, positiveIds) }),

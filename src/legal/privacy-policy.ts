@@ -14,7 +14,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so the account record identifies the text behind the notice.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-23.11';
+export const PRIVACY_POLICY_VERSION = '2026-11-24.13';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -150,6 +150,19 @@ export const PRIVACY_POLICY_VERSION = '2026-11-23.11';
  * version's points too, since the notice for 2026-11-23.10 has not opened yet.
  * The same rule applies: if the merge slips to a later UTC day, move the page's
  * date, this version and the instant below to the merge day before merging.
+ *
+ * Version 2026-11-24.12 says PaperTok no longer asks for or uses Essential and
+ * Curiosity choices, the feed mix or reading levels by area (ENG-229), and that
+ * saving interests removes what an account still holds. It also dates the
+ * page text #605 removed with AI translation (ENG-230): the translation request
+ * to Anthropic, its daily counter and the browser's remembered language. Both
+ * collect less, so the summary keeps the changes of 2026-11-23.10 and .11,
+ * whose notice has not opened yet, and this instant stays where they put it.
+ *
+ * Version 2026-11-24.13 takes out the page's three mentions of followed
+ * journals: a reader no longer follows a journal, and the journal follows
+ * stored are deleted. It also collects less, so the summary and this instant
+ * stay as 2026-11-24.12 left them.
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-23T23:59:59Z';
 

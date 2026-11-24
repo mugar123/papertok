@@ -722,10 +722,10 @@ test('a page ranks its lanes by the liked papers, says what each was found under
   assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.00001'").length, 1, 'past its date, still ranked by');
 });
 
-// D3 (Pablo, 2026-10-25): at most 10 followed journals a reader. A journal's
-// lane costs the harvest a list call a night whoever follows it, so the cap
-// holds where the lanes are made, whatever a client stored.
-test('a request serves at most 10 followed journals, and still its other follows', () => {
+// D3 (Pablo, 2026-10-25): at most 10 journals a request. A journal's lane
+// costs the harvest a list call a night whichever feed asks for it, so the cap
+// holds where the lanes are made, whatever a client sent.
+test('a request serves at most 10 journals, and still its other follows', () => {
   const journals = Array.from({ length: 12 }, (_, index) => ({ type: 'journal', canonicalId: `S${1000 + index}`, displayName: `Journal ${index}` }));
   const author = { type: 'author', canonicalId: 'A5023888391', displayName: 'Wei Zhang' };
   const { follows } = parseFeedRequest({ categories: [], follows: [...journals, author] });
@@ -1418,10 +1418,10 @@ test('interest groups take turns on the page by weight, and a paper two groups r
   assert.deepEqual(ids([ranks(), ranks(1), ranks(11, 12, 13)], [3, 5, 1]), [1, 11, 12, 13], 'a group without papers left gives up its turns');
 });
 
-test('a 90/10 mix gives a sparse interest its turn and fills the rest of the page', () => {
-  const essential = Array.from({ length: 15 }, (_, index) => ({ workId: index + 1, lanes: [] }));
-  const curiosity = [{ workId: 101, lanes: [] }];
-  const page = interleaveByWeight([essential, curiosity], [9, 1]).slice(0, 15);
+test('a 9-to-1 weighting gives a sparse group its turn and fills the rest of the page', () => {
+  const heavy = Array.from({ length: 15 }, (_, index) => ({ workId: index + 1, lanes: [] }));
+  const sparse = [{ workId: 101, lanes: [] }];
+  const page = interleaveByWeight([heavy, sparse], [9, 1]).slice(0, 15);
   assert.deepEqual(page.map(candidate => candidate.workId), [1, 2, 3, 4, 5, 101, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
 });
 

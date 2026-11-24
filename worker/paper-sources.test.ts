@@ -2473,13 +2473,13 @@ test("the harvest reserves its share with the day's OpenAlex ledger, and a store
   assert.deepEqual(ledger.calls.map(key => key.split(':').slice(0, 2).join(':')), ['openalex:day']);
 });
 
-// ENG-123 (D4, Pablo 2026-10-25): a followed journal's lane lists its newest
+// ENG-123 (D4, Pablo 2026-10-25): a journal's lane lists its newest
 // articles, with or without an abstract, 100 a page: one list call, as a page
 // of 50 is. In the 90 days to 2026-10-25 PLOS ONE published 39 articles a day,
 // Nature 12, the American Economic Review 0.3. Errata and paratext stay out;
 // reviews, which OpenAlex types `review` (every paper of the Annual Review of
 // Economics), are listed.
-test("a followed journal's lane asks OpenAlex for the journal's articles and reviews, 100 a page, none dated after today", async t => {
+test("a journal's lane asks OpenAlex for the journal's articles and reviews, 100 a page, none dated after today", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-25T02:40:00Z') });
   const review = {
     id: 'https://openalex.org/W7000000002', type: 'review', title: 'Macroeconomic models of inequality: a review', publication_date: '2026-10-20',

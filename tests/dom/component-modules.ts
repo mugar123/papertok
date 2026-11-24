@@ -2,7 +2,6 @@ import './dom-environment.ts';
 import type { Context, ReactNode } from 'react';
 import type { Paper } from '../../src/models/paper.ts';
 import type { ReadAloudChapter, ReadAloudTimeline, SpokenPassage } from '../../src/components/pdf/read-aloud.ts';
-import type { usePaperTranslation as UsePaperTranslation } from '../../src/hooks/use-paper-translation.ts';
 import { startAppModules } from './app-modules.ts';
 
 /**
@@ -26,7 +25,7 @@ async function loadModules<Modules extends unknown[]>(...paths: string[]) {
   const app = await startAppModules();
   try {
     const modules = await Promise.all(paths.map(path => app.load(path))) as Modules;
-    return { modules, firebase: app.firebase, close: () => app.close() };
+    return { modules, close: () => app.close() };
   } catch (error) {
     await app.close();
     throw error;
@@ -124,18 +123,4 @@ export async function loadReadingDock() {
     import('./firebase-stub.ts').FirebaseStub,
   ]>('/src/components/pdf/reading-dock.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');
   return { ...dock, ...contexts, firebase, close };
-}
-
-export async function loadPaperTranslation() {
-  type State = ReturnType<typeof UsePaperTranslation>;
-  const { modules: [hook, controls], firebase, close } = await loadModules<[
-    { usePaperTranslation: typeof UsePaperTranslation },
-    {
-      PaperTranslationButton: Component<{ state: State; onAuthRequired: () => void; onChooseLanguage: () => void }>;
-      PaperTranslationPicker: Component<{ state: State; focusRequested?: boolean }>;
-      PaperTranslationStatus: Component<{ state: State }>;
-      TranslatedPaperText: Component<{ translation: NonNullable<State['current']['translation']> }>;
-    },
-  ]>('/src/hooks/use-paper-translation.ts', '/src/components/feed/paper-translation.tsx');
-  return { ...hook, ...controls, firebase, close };
 }

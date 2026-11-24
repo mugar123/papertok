@@ -6,7 +6,7 @@ import { resetAccountWarmup } from '../services/account-warmup.ts';
 import { changeDismissed, readDismissed } from '../utils/custom-feed-dismissed.ts';
 import { customFeedPagesCache, feedPagesKey } from '../utils/custom-feed-pages.ts';
 import { readGuestInterests, saveGuestInterests } from '../utils/guest-interests.ts';
-import { ownListsCache } from '../utils/profile-session-caches.ts';
+import { authorMetricsAnswer, ownListsCache, zoteroAnswer } from '../utils/profile-session-caches.ts';
 import { recentPagesCache, recentPagesKey, recentRunsCache } from '../utils/recent-feed-pages.ts';
 import { readSeenPaperIds, readStoredLists, readStoredOnboarding, saveSeenPaperIds, saveStoredLists, saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
 
@@ -107,6 +107,22 @@ test('a sign-out takes the pages of the account\'s custom feeds out of the sessi
   assert.equal(customFeedPagesCache.get(key), undefined);
 });
 
+test('a sign-out takes the settings answers of that account, and only that account, out of the session', t => {
+  freshSession(t);
+  zoteroAnswer.startRead('account-a')({ connected: true, username: 'reader-a', sentAt: null });
+  authorMetricsAnswer.startRead('account-a')(false);
+  zoteroAnswer.startRead('account-b')({ connected: false, username: null, sentAt: null });
+  authorMetricsAnswer.startRead('account-b')(true);
+  t.after(() => { closeAccountSession('account-b', deviceStorage()); });
+
+  closeAccountSession('account-a', deviceStorage());
+
+  assert.equal(zoteroAnswer.get('account-a'), undefined, 'A\'s Zotero name left the session');
+  assert.equal(authorMetricsAnswer.get('account-a'), undefined);
+  assert.deepEqual(zoteroAnswer.get('account-b'), { connected: false, username: null, sentAt: null });
+  assert.equal(authorMetricsAnswer.get('account-b'), true);
+});
+
 test('a sign-out takes the account\'s Most recent pages and run out of the session', t => {
   freshSession(t);
   const key = recentPagesKey('account-a', ['cs.AI']);
@@ -141,36 +157,10 @@ test('signing back in after a sign-out reads the account\'s lists again', async 
 
 test('a profile that already holds its interests spends the guest answer waiting on this device', () => {
   const storage = deviceStorage();
-  saveGuestInterests({ areas: ['physics'], topics: [], areaPreferences: { physics: { priority: 'curiosity' } } }, storage);
+  saveGuestInterests({ areas: ['physics'], topics: [] }, storage);
 
-  adoptOnboardedProfile('account-a', ['cs.AI', 'cs.LG'], {}, storage);
+  adoptOnboardedProfile('account-a', ['cs.AI', 'cs.LG'], storage);
 
   assert.deepEqual(readStoredOnboarding('account-a', storage), { complete: true, preferences: ['cs.AI', 'cs.LG'] });
   assert.equal(readGuestInterests(storage), null, 'the next new account on this device is not seeded with A\'s pick');
-});
-
-test('switching accounts on one device loads each account’s own interest settings', async t => {
-  freshSession(t);
-  const storage = deviceStorage();
-  let signedIn = 'account-a';
-  const devices = { storage, currentUid: () => signedIn, readLists: async () => listsSnapshot([]) };
-  saveStoredOnboarding('account-b', { complete: true, preferences: ['quant-ph'] }, storage);
-  saveGuestInterests({
-    areas: ['ai', 'physics'],
-    areaPreferences: { ai: { priority: 'curiosity' } },
-    interestMix: 'half-and-half',
-  }, storage);
-  const answer = readGuestInterests(storage);
-  assert.ok(answer);
-  adoptOnboardedProfile('account-a', ['cs.AI', 'quant-ph'], answer, storage);
-  assert.deepEqual(openAccountSession('account-a', devices), {
-    complete: true,
-    preferences: ['cs.AI', 'quant-ph'],
-    interestMix: 'half-and-half',
-    areaPreferences: { ai: { priority: 'curiosity' } },
-  });
-
-  signedIn = 'account-b';
-  assert.deepEqual(openAccountSession('account-b', devices), { complete: true, preferences: ['quant-ph'] });
-  assert.equal(readGuestInterests(storage), null);
 });

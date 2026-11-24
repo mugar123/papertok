@@ -9,7 +9,6 @@ import {
   Briefcase,
   Buildings,
   CircleNotch,
-  FileText,
   Tag,
   User,
   UserMinus,
@@ -22,10 +21,9 @@ import { openingFollowType } from './opening-follow-type.ts';
 import type { FollowRefusal, RefusalLine } from '../following/follow-refused-toast.ts';
 import { followRefusal, refusalShownTo, sayFollowRefused } from '../following/follow-refused-toast.ts';
 import type { ActionStart } from '../ui/toast.ts';
-import { sameAccount } from '../ui/toast.ts';
+import { afterOverlaysSince, sameAccount } from '../ui/toast.ts';
 import { followsListPress, unfollowOnLeave } from './follows-list-press.ts';
 import { focusAfterUnfollow, focusLeftByQuestion } from './focus-after-unfollow.ts';
-import { journalLimitNote } from './journal-limit-note.ts';
 import { getFollowDisplayName } from '../../utils/follow-display-name.ts';
 import { Button } from '../ui/button.tsx';
 import {
@@ -35,9 +33,11 @@ import {
   AlertDialogDescription,
   AlertDialogTitle,
 } from '../ui/alert-dialog.tsx';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../ui/select.tsx';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 import Petri from '../onboarding/petri.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import './settings-sheet.css';
@@ -48,8 +48,6 @@ const FOLLOW_TABS = [
   { type: 'topic', label: { en: 'Topics' }, Icon: Tag },
   { type: 'institution', label: { en: 'Institutions' }, Icon: Buildings },
   { type: 'project', label: { en: 'Projects' }, Icon: Briefcase },
-  // The Explorer's icon for a source page.
-  { type: 'journal', label: { en: 'Journals' }, Icon: FileText },
 ];
 const FOLLOW_TAB_TYPES = FOLLOW_TABS.map(tab => tab.type);
 
@@ -71,12 +69,13 @@ function getInitials(name: string) {
 const RELEASE_MS = 280;
 
 /**
- * What the page and the phone sheet share: the type on show, its follows in
+ * What the page, the phone sheet and the dialog share: the type on show, its follows in
  * order, and an unfollow that asks first. Confirming lets go of Petri's
  * balloon, closes the question, and unfollows once it has gone, so the row
- * leaves in sight of the list it returns to; a toast offers Undo.
+ * leaves in sight of the list it returns to. A toast offers Undo, or a line
+ * above the list in the dialog (`undoInList`).
  */
-function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
+function useFollowedView({ sheetOpen, undoInList = false }: { sheetOpen?: boolean; undoInList?: boolean } = {}) {
   const { language, locale } = useLanguage();
   const following = useFollowing();
   const { followedByType } = following;
@@ -86,6 +85,12 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   const [errorLine, setErrorLine] = useState<RefusalLine<string> | null>(null);
   const actionError = refusalShownTo(errorLine, uid) ?? '';
   const setActionError = (message: string) => setErrorLine(message ? { uid, refused: message } : null);
+  // The last unfollow's Undo, said in the list rather than in a toast where
+  // the list is a dialog (`undoInList`): the toast sits outside the dialog's
+  // focus trap, where a keyboard cannot reach it before it leaves. Kept with
+  // the account that unfollowed, like the error line.
+  const [undoLine, setUndoLine] = useState<RefusalLine<{ entity: FollowEntity; name: string; startedAt: ActionStart }> | null>(null);
+  const lastUnfollow = refusalShownTo(undoLine, uid);
   const [unfollowing, setUnfollowing] = useState<FollowEntity | null>(null);
   const [unfollowOpen, setUnfollowOpen] = useState(false);
   // When Unfollow was pressed in the question, which lets go of the balloon.
@@ -98,8 +103,8 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   const latest = useRef(following);
   // Whether the list, and so its status line, is on screen: the page until
   // the route leaves it (it stays mounted through its exit transition), the
-  // phone sheet while it is open. A write can settle after the reader has
-  // left either.
+  // phone sheet or the dialog while it is open. A write can settle after the
+  // reader has left any of them.
   const present = useIsPresent();
   const inView = useRef(false);
   useEffect(() => {
@@ -147,9 +152,7 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     });
   };
 
-  const { state: locationState } = useLocation();
-  const requestedType = (locationState as { followType?: unknown } | null)?.followType;
-  const activeType = selectedType || openingFollowType(FOLLOW_TAB_TYPES, requestedType, followedByType);
+  const activeType = selectedType || openingFollowType(FOLLOW_TAB_TYPES, followedByType);
   const activeTab = FOLLOW_TABS.find(tab => tab.type === activeType) || FOLLOW_TABS[0];
   const visibleEntities = useMemo(
     () => [...(followedByType[activeType] || [])]
@@ -160,6 +163,20 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     [activeType, followedByType, locale],
   );
 
+  const undoUnfollow = (entity: FollowEntity, displayName: string, startedAt: ActionStart) => {
+    // The account change puts the toast and the line away; a press as they
+    // leave would still follow for whoever signed in since.
+    if (!sameAccount(startedAt) || latest.current.isFollowing(entity)) return;
+    // A refused Undo is said in the list's status line while the list is on
+    // screen, as the palette does: the list is a sheet or a dialog, and a
+    // toast would sit over it outside its focus trap. The toast outlives the
+    // list, though, so an Undo pressed after it closed is answered in a toast.
+    setActionError('');
+    const undoStartedAt = pressStart('undo');
+    latest.current.toggleFollow(entity).catch((error: unknown) => {
+      sayRefused(followRefusal(error, { name: displayName, following: false }), undoStartedAt);
+    });
+  };
   const handleUnfollow = async (entity: FollowEntity, startedAt: ActionStart) => {
     setActionError('');
     const displayName = getFollowDisplayName(entity);
@@ -171,27 +188,26 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     }
     // Its Undo, pressed by whoever signed in since, would follow in their account.
     if (!sameAccount(startedAt)) return;
+    // A dialog closed while the write settled has no list to say it in. The
+    // line waits, as a refusal does, for an overlay opened since the press:
+    // under one it would change unseen and unannounced.
+    if (undoInList && inView.current) {
+      afterOverlaysSince(startedAt, () => setUndoLine({ uid, refused: { entity, name: displayName, startedAt } }), { inOverlay: true });
+      return;
+    }
     toast(`Unfollowed ${displayName}`, {
-      action: {
-        label: 'Undo',
-        onClick: () => {
-          // The account change puts this toast away; a press as it leaves
-          // would still follow for whoever signed in since.
-          if (!sameAccount(startedAt) || latest.current.isFollowing(entity)) return;
-          // A journal's Undo can meet the journal limit, which another
-          // device's follow may have reached in the meantime. Said in the
-          // list's status line while the list is on screen, as the palette
-          // does: on a phone the list is a sheet, and a toast would sit over
-          // it outside its focus trap. The toast outlives the list, though,
-          // so an Undo pressed after it closed is answered in a toast.
-          setActionError('');
-          const undoStartedAt = pressStart('undo');
-          latest.current.toggleFollow(entity).catch((error: unknown) => {
-            sayRefused(followRefusal(error, { name: displayName, following: false }), undoStartedAt);
-          });
-        },
-      },
+      action: { label: 'Undo', onClick: () => undoUnfollow(entity, displayName, startedAt) },
     });
+  };
+
+  // The line's Undo leaves with the line. Focus goes to the type control: the
+  // row it brings back waits for its write, its Unfollow disabled until then.
+  const undoLastUnfollow = () => {
+    if (!lastUnfollow) return;
+    setUndoLine(null);
+    const key = getRowKey(lastUnfollow.entity);
+    unfollowFocus.current = { from: key, to: key };
+    undoUnfollow(lastUnfollow.entity, lastUnfollow.name, lastUnfollow.startedAt);
   };
 
   const askUnfollow = (entity: FollowEntity) => {
@@ -229,7 +245,13 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     setSelectedType,
     visibleEntities,
     actionError,
-    clearActionError: () => setActionError(''),
+    lastUnfollow,
+    undoLastUnfollow,
+    // A line left from this visit would greet the next one as news.
+    clearActionError: () => {
+      setActionError('');
+      setUndoLine(null);
+    },
     askUnfollow,
     unfollowing,
     unfollowOpen,
@@ -251,12 +273,16 @@ function followSummary({ loading, followedEntities }: FollowedView) {
 }
 
 /** The follows of the type on show, or its loading or empty state. */
-function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; onExplore: () => void; onOpenEntity?: (path: string) => void }) {
-  const { activeType, activeTab, language, loading, followedEntities, followedByType, visibleEntities, isFollowPending, askUnfollow, actionError, unfollowButtons } = view;
-  const limitNote = activeType === 'journal' ? journalLimitNote(followedByType.journal?.length ?? 0) : null;
+function FollowedList({ view, onExplore, onOpenEntity, withUndoLine = false }: { view: FollowedView; onExplore: () => void; onOpenEntity?: (path: string) => void; withUndoLine?: boolean }) {
+  const { activeType, activeTab, language, loading, followedEntities, visibleEntities, isFollowPending, askUnfollow, actionError, unfollowButtons, lastUnfollow, undoLastUnfollow } = view;
   return (
     <>
-      {limitNote && <p className="following-settings-note">{limitNote}</p>}
+      {withUndoLine && (
+        <div className="following-settings-undo">
+          <p role="status">{lastUnfollow ? `Unfollowed ${lastUnfollow.name}.` : ''}</p>
+          {lastUnfollow && <Button variant="outline" size="sm" onClick={undoLastUnfollow}>{'Undo'}</Button>}
+        </div>
+      )}
       {loading && followedEntities.length === 0 ? (
         <div className="following-settings-loading" role="status">
           <CircleNotch size={24} />
@@ -328,20 +354,16 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
         </section>
       ) : (
         <section className="following-settings-empty">
-          {/* Search finds no journals, so the Journals tab says how to reach
-              a journal's page instead of sending the reader there. */}
           <EmptyState
             art={<Petri pose="compass" className="following-settings-empty-petri" />}
             title={'Nothing followed here yet'}
-            actions={activeType !== 'journal' && (
+            actions={(
               <Button size="sm" onClick={onExplore}>
                 {'Explore PaperTok'}
               </Button>
             )}
           >
-            {activeType === 'journal'
-              ? 'Open a paper with Read in plain words and select its journal’s name to follow the journal from its page.'
-              : 'What you follow shows up here and shapes your feed.'}
+            {'What you follow shows up here and shapes your feed.'}
           </EmptyState>
         </section>
       )}
@@ -413,8 +435,8 @@ function UnfollowConfirm({ view }: { view: FollowedView }) {
 export default function FollowingSettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  // Reachable from Settings and from the profile's "Siguiendo" counter; back
-  // returns to whichever one it was. The fallback covers a direct URL load.
+  // A phone reaches the page from links elsewhere (Settings opens the
+  // sheet); back returns there. The fallback covers a direct URL load.
   const goBack = () => {
     if (location.key !== 'default') void navigate(-1);
     else void navigate('/settings/discovery');
@@ -534,5 +556,102 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
         <UnfollowConfirm view={view} />
       </DrawerContent>
     </Drawer>
+  );
+}
+
+/**
+ * The same follows wider than a phone: a dialog over Settings, like the
+ * interests editor, with the types down a rail beside the list.
+ * /settings/following opens it over the Discovery page, which drives `open`
+ * from the route. Closing it goes back to where it was opened from, and a
+ * page opened from the list waits for the dialog to leave first, as the
+ * phone sheet does, rather than leave it behind over the next page.
+ */
+export function FollowingDialog({ open }: { open: boolean }) {
+  const navigate = useNavigate();
+  // Mounted open (a direct load, or Back from a followed page), Base UI
+  // would show the dialog without its arrival; it opens a frame later.
+  const [arrived, setArrived] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setArrived(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  // Where to go once the dialog has left: `null` back where it was opened
+  // from, or a page opened from the list. Over once the route has left
+  // /settings/following, so the next Edit opens it again.
+  const [leaving, setLeaving] = useState<{ to: string | null } | null>(null);
+  if (!open && leaving) setLeaving(null);
+  const shown = open && arrived && !leaving;
+  // Closing changes the route back to Discovery, and RouteAnnouncer then
+  // moves focus to the page after the dialog has returned it. The control
+  // that opened the dialog, noted before that announcer runs as the route
+  // arrives, takes it back, unless the reader has moved focus since.
+  const opener = useRef<Element | null>(null);
+  useLayoutEffect(() => {
+    if (open) opener.current = document.activeElement;
+  }, [open]);
+  useEffect(() => {
+    const control = opener.current;
+    if (open || !(control instanceof HTMLElement) || !control.isConnected) return;
+    opener.current = null;
+    const { activeElement, body } = document;
+    if (activeElement === body || activeElement?.id === 'main-content') control.focus();
+  }, [open]);
+  const view = useFollowedView({ sheetOpen: shown, undoInList: true });
+  const { language, followedByType, activeType, setSelectedType, clearActionError, typeControl, unfollowing, setUnfollowOpen, finishUnfollow } = view;
+  const countOf = (type: string) => followedByType[type]?.length || 0;
+
+  return (
+    <Dialog
+      open={shown}
+      onOpenChange={(nextOpen) => { if (!nextOpen) setLeaving({ to: null }); }}
+      onOpenChangeComplete={(isOpen) => {
+        if (isOpen) return;
+        // A line left from this visit would greet the next one as news.
+        clearActionError();
+        // Browser Back closes the dialog with the unfollow question still
+        // open, and the question then unmounts without reporting its leave:
+        // it is settled here, writing an unfollow already confirmed, so that
+        // nothing of it is left for the next visit.
+        if (unfollowing) {
+          setUnfollowOpen(false);
+          finishUnfollow(false);
+        }
+        if (!leaving) return;
+        if (leaving.to) void navigate(leaving.to);
+        // An entry before this one in the tab's history is PaperTok's; on the
+        // first, Back would leave the app or do nothing.
+        else if (Number.isInteger(window.history.state?.idx) && window.history.state.idx > 0) void navigate(-1);
+        else void navigate('/settings/discovery', { replace: true });
+      }}
+      modal
+    >
+      <DialogContent className="following-dialog" overlayClassName="following-dialog-overlay" closeLabel={'Close'}>
+        <header className="following-dialog-header">
+          <DialogTitle>{'Follows'}</DialogTitle>
+          <DialogDescription>{followSummary(view)}</DialogDescription>
+        </header>
+        <Tabs value={activeType} onValueChange={value => setSelectedType(value as string)} orientation="vertical" className="following-dialog-body">
+          <TabsList variant="pill" className="following-dialog-rail" aria-label={'Types of followed content'}>
+            {FOLLOW_TABS.map(({ type, label, Icon }) => (
+              <TabsTrigger key={type} ref={type === activeType ? typeControl : undefined} value={type} className="following-dialog-tab">
+                <Icon size={18} weight={type === activeType ? 'fill' : 'regular'} aria-hidden="true" />
+                <span className="following-dialog-tab-label">{label[language]}</span>
+                <small>{countOf(type)}</small>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <TabsContent value={activeType} className="following-dialog-panel">
+            <FollowedList
+              view={view}
+              onExplore={() => setLeaving({ to: '/search' })}
+              onOpenEntity={path => setLeaving({ to: path })}
+              withUndoLine
+            />
+          </TabsContent>
+        </Tabs>
+        <UnfollowConfirm view={view} />
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -27,8 +27,8 @@ const COPY = {
 
 /**
  * A feed's tab in the bar and its menu: Edit feed, Move left, Move right and
- * Delete feed. The same four are buttons in Settings › Feeds, the way that
- * needs no gesture.
+ * Delete feed. The same four are buttons in the Feeds window in Settings
+ * (settings/feeds-dialog.tsx), the way that needs no gesture.
  *
  * The tab (`link`, a NavLink the bar draws) is the menu's trigger itself,
  * rendered as the link, so the line holds the link and nothing around it: the

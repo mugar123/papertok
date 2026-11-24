@@ -119,41 +119,18 @@ export async function fetchWorkerSourceJson<T = unknown>(path: string, params: R
   return response.json() as Promise<T>;
 }
 
-async function tokenWithSignal(getToken: () => Promise<string>, signal: AbortSignal) {
-  signal.throwIfAborted();
-  let onAbort = () => {};
-  const cancelled = new Promise<never>((_, reject) => {
-    onAbort = () => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-  try {
-    return await Promise.race([cancelled, getToken()]);
-  } finally {
-    signal.removeEventListener('abort', onAbort);
-  }
-}
-
 /**
  * `timeoutMs` is the request's own budget. It starts once the ID token is in
  * hand: a token refresh can take seconds, and a deadline armed before it spent
  * the feed's 3.5 s on the refresh (ENG-116). The deadline covers the response
- * body too (request-deadline.ts). Callers that budget the token wait too opt in
- * with `abortTokenWait` and supply a signal for the whole operation.
+ * body too (request-deadline.ts).
  */
-export async function authenticatedWorkerFetch(
-  input: string | URL,
-  { abortTokenWait = false, ...options }: RequestInit & { abortTokenWait?: boolean } = {},
-  timeoutMs?: number,
-) {
+export async function authenticatedWorkerFetch(input: string | URL, options: RequestInit = {}, timeoutMs?: number) {
   const url = trustedWorkerUrl(input);
   if (!url) throw new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED');
   const currentUser = auth.currentUser;
   if (!currentUser) throw new WorkerApiAuthError();
-  const tokenSignal = abortTokenWait ? options.signal : undefined;
-  const token = tokenSignal
-    ? await tokenWithSignal(() => currentUser.getIdToken(), tokenSignal)
-    : await currentUser.getIdToken();
-  tokenSignal?.throwIfAborted();
+  const token = await currentUser.getIdToken();
   if (auth.currentUser !== currentUser) throw new WorkerApiAuthError();
   const headers = new Headers(options.headers || {});
   headers.set('authorization', `Bearer ${token}`);

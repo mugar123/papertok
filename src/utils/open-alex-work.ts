@@ -165,7 +165,7 @@ export function getArxivIdFromWork(work: OpenAlexWork | null | undefined) {
  * The OpenAlex id (`S…`) of the journal that published a work: its primary
  * location's source, when OpenAlex types that source a journal. A repository
  * (arXiv, SSRN, Zenodo), a conference, a listed working-paper series (the
- * Explorer's rule for what a reader can follow) or a missing source gives none.
+ * Explorer's rule for what makes a journal feed) or a missing source gives none.
  */
 export function openAlexJournalId(work: OpenAlexWork | null | undefined) {
   const source = work?.primary_location?.source;
@@ -176,7 +176,7 @@ export function openAlexJournalId(work: OpenAlexWork | null | undefined) {
 
 /**
  * OpenAlex's own name for the journal `openAlexJournalId` gives, kept beside
- * the id so a card can name what it offers to follow (ENG-123). Absent without
+ * the id so the reader can name the journal it links to (ENG-123). Absent without
  * the id: the work's `journal` text can be another provider's.
  */
 export function openAlexJournalName(work: OpenAlexWork | null | undefined) {

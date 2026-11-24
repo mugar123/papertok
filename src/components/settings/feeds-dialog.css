@@ -1,0 +1,154 @@
+/* The Feeds window in Settings (feeds-dialog.tsx). Its frame, header and
+   footer are the Interests window's (edit-interests-modal.css) on a desktop
+   and the settings sheet's (settings-sheet.css) on a phone; the list is
+   ruled rows on the card, numbered in tab order. */
+
+/* As tall as its feeds, up to 90% of the viewport at every width (the
+   Interests window drops its own cap below 768px), so the list scrolls. */
+.fsd-modal.eim-modal {
+  max-width: 640px;
+  height: auto;
+  max-height: 90dvh;
+}
+
+.fsd-body.eim-body {
+  gap: 0;
+  padding-block: var(--space-2);
+}
+
+.fsd-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8) 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.fsd-loading svg {
+  animation: spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fsd-loading svg {
+    animation-duration: 2.4s;
+  }
+}
+
+.fsd-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fsd-row {
+  display: grid;
+  grid-template-columns: 2.5ch minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+}
+
+.fsd-row + .fsd-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.fsd-position {
+  align-self: start;
+  padding-top: 0.3em;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.fsd-copy {
+  min-width: 0;
+}
+
+.fsd-name {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* The order, then the ingredients on what is left of one line, cut with an
+   ellipsis; the whole list is still in the text assistive technology reads. */
+.fsd-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.fsd-order {
+  flex: none;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fsd-order::after {
+  content: '·' / '';
+  margin-left: var(--space-2);
+  color: var(--text-tertiary);
+}
+
+.fsd-ingredients {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fsd-actions {
+  display: flex;
+  gap: 2px;
+}
+
+/* Edit in the success green and Delete in the danger red, at rest and on
+   hover. Doubled class: it has to outrank the ghost Button's text colours. */
+.fsd-edit.fsd-edit {
+  color: var(--accent-success);
+}
+
+.fsd-delete.fsd-delete {
+  color: var(--accent-danger);
+}
+
+.fsd-footer.eim-footer {
+  justify-content: space-between;
+}
+
+.fsd-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A phone's row: the actions go under the name, full thumb targets. */
+@media (max-width: 520px) {
+  .fsd-row {
+    grid-template-columns: 2.5ch minmax(0, 1fr);
+    row-gap: var(--space-2);
+  }
+
+  .fsd-actions {
+    grid-column: 2;
+    margin-left: calc(-1 * var(--space-2));
+  }
+}
+
+/* Doubled class: it has to outrank the shared Button's size utilities. */
+@media (pointer: coarse) {
+  .fsd-action.fsd-action {
+    width: 44px;
+    height: 44px;
+  }
+}

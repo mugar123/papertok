@@ -1,5 +1,6 @@
 import type { OwnList } from './own-lists.ts';
 import type { Paper } from '../models/paper.ts';
+import type { ZoteroStatus } from '../services/zotero-service.ts';
 
 import { mergeListPaperCopies } from './list-paper-copies.ts';
 import { readStoredListPapers, saveStoredListPapers } from './user-scoped-storage.ts';
@@ -173,4 +174,58 @@ export function forgetListPapers(uid: string | undefined) {
   listSavedAnswers.delete(uid);
   listFieldAnswers.delete(uid);
   savedAnswerListeners.forEach(listener => listener());
+}
+
+/** Bumped when an account signs out, so nothing begun in its old session lands in a new one. */
+const settingsSessions = new Map<string, number>();
+
+/**
+ * What one settings section last knew for each account. Each settings page is
+ * its own route, so switching pages unmounts the section; the next visit shows
+ * this answer at once while the same read runs again behind it.
+ *
+ * Answers are ordered across visits, not only within one: a change made in
+ * this tab (a disconnect, a saved switch) makes every read begun before it
+ * stale, and a sign-out makes everything begun before it stale.
+ */
+function settingsAnswer<T>() {
+  const cache = createSessionCache<T>({ maxEntries: 2 });
+  const changes = new Map<string, number>();
+  const session = (uid: string) => settingsSessions.get(uid) ?? 0;
+  const changed = (uid: string) => changes.get(uid) ?? 0;
+  return {
+    get: (uid: string) => cache.get(uid),
+    /** Call as a read starts; the returned function keeps its answer, unless it is stale, and says whether it did. */
+    startRead(uid: string) {
+      const begun = { session: session(uid), changes: changed(uid) };
+      return (value: T) => {
+        if (session(uid) !== begun.session || changed(uid) !== begun.changes) return false;
+        cache.set(uid, value);
+        return true;
+      };
+    },
+    /** Call as a change starts; the returned function records its result unless the account signed out meanwhile. */
+    startChange(uid: string) {
+      const begun = session(uid);
+      return (value: T) => {
+        if (session(uid) !== begun) return false;
+        changes.set(uid, changed(uid) + 1);
+        cache.set(uid, value);
+        return true;
+      };
+    },
+    forget(uid: string) {
+      cache.delete(uid);
+    },
+  };
+}
+
+export const zoteroAnswer = settingsAnswer<ZoteroStatus>();
+export const authorMetricsAnswer = settingsAnswer<boolean>();
+
+export function forgetSettingsAnswers(uid: string | undefined) {
+  if (!uid) return;
+  settingsSessions.set(uid, (settingsSessions.get(uid) ?? 0) + 1);
+  zoteroAnswer.forget(uid);
+  authorMetricsAnswer.forget(uid);
 }

@@ -9,7 +9,9 @@ export type CardFollow =
   | { type: 'author'; name: string; source: 'card' };
 
 // The order a card with several follows names one in.
-const TYPES: FollowType[] = ['author', 'topic', 'institution', 'project', 'journal'];
+// A custom feed's journal comes back as a `journal` match, but no journal is
+// followed, so it never names a card.
+const TYPES: FollowType[] = ['author', 'topic', 'institution', 'project'];
 
 /**
  * The follow a card names: the first type that matched, in a fixed order.

@@ -1,6 +1,6 @@
-import { ingredientLabel, MAX_CUSTOM_FEEDS, type CustomFeed } from '../../utils/custom-feeds.ts';
+import { ingredientLabel, type CustomFeed } from '../../utils/custom-feeds.ts';
 
-/** One row of Settings › Feeds: what it shows and which of its moves are possible. */
+/** One row of the Feeds window in Settings: what it shows and which of its moves are possible. */
 export interface FeedRow {
   feed: CustomFeed;
   /** The ingredients in the feed's order, on one line. */
@@ -24,11 +24,6 @@ export function feedRows(feeds: readonly CustomFeed[]): FeedRow[] {
     canMoveUp: index > 0,
     canMoveDown: index < feeds.length - 1,
   }));
-}
-
-/** Said only when it explains something: once the account holds as many feeds as it may. */
-export function feedLimitNote(count: number): string | null {
-  return count >= MAX_CUSTOM_FEEDS ? `${count} of ${MAX_CUSTOM_FEEDS} feeds` : null;
 }
 
 /**

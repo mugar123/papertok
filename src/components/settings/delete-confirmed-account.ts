@@ -1,6 +1,5 @@
 import { forgetPrivacyNotice } from '../../utils/nudges.ts';
 import { forgetPmfSurveyAsked } from '../../utils/pmf-survey.ts';
-import { forgetTranslationLanguage } from '../../utils/paper-translation.ts';
 
 /**
  * The order of an account deletion once the person has typed the phrase.
@@ -28,6 +27,5 @@ export async function deleteConfirmedAccount({ reauthenticate, onSignedIn, delet
   await deleteAccount(confirmedUid);
   forgetPrivacyNotice(confirmedUid, storage);
   forgetPmfSurveyAsked(confirmedUid, storage);
-  forgetTranslationLanguage(confirmedUid, storage);
   await onDeleted();
 }

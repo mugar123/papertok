@@ -799,20 +799,6 @@
   text-align: left;
 }
 
-.gw-area-picker {
-  display: grid;
-  gap: var(--space-4);
-  width: 100%;
-  text-align: left;
-}
-
-.gw-area-choice {
-  display: grid;
-  align-content: start;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
 /* The shared Toggle, redrawn as a tile. Its own chip utilities (a 2rem row,
    nowrap, an ink fill when pressed) are undone here; this rule is
    unlayered, so it outranks the Tailwind layer they live in. */
@@ -933,6 +919,12 @@
   margin-top: var(--space-3);
 }
 
+/* A topic with one long word ("Telecommunications") has no space to wrap
+   at; in a tile too narrow for it, it would run under the box beside it. */
+.gw-subtopics .gw-area-name {
+  overflow-wrap: anywhere;
+}
+
 /* "Show more" under a folded group: a quiet text control, left-aligned
    under the grid it opens. */
 .gw-more {
@@ -987,11 +979,6 @@
 /* On the areas screen the tiles scroll under the foot, so it earns a rule. */
 .gw-stage--topics + .gw-foot {
   border-top: 1px solid var(--border-subtle);
-}
-
-/* Leave the picker's last fields visible when the keyboard reaches them. */
-.gw-stage:has(.gw-area-picker) + .gw-foot {
-  position: static;
 }
 
 .gw-dots {
@@ -1088,6 +1075,13 @@
   .gw-areas {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-top: var(--space-5);
+  }
+
+  /* Topic names run longer than area names ("Telecommunications"). Half
+     a 390px phone leaves them about 95px beside the glyph and the box, and
+     less on smaller ones, so they take the full width instead. */
+  .gw-subtopics .gw-areas {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .gw-area {

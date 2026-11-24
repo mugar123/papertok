@@ -5,7 +5,6 @@ import {
   ArrowSquareOut,
   BookmarkSimple,
   ClockCounterClockwise,
-  Compass,
   DotsThree,
   DownloadSimple,
   Eye,
@@ -39,8 +38,6 @@ import {
   X,
 } from '@phosphor-icons/react';
 import { MAX_ACCOUNT_ENTITIES, MAX_ACCOUNT_KEYWORDS, MAX_CUSTOM_FEEDS, MAX_FEED_INGREDIENTS } from '../../utils/custom-feeds.ts';
-import { INTEREST_MIXES } from '../../utils/area-preferences.ts';
-import { MAX_FOLLOWED_JOURNALS } from '../../utils/following.ts';
 import type { AIUses } from '../../services/paper-rewrite-service.ts';
 
 /**
@@ -173,7 +170,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     signedInOnly: true,
     entries: [
       entry('level', 'Level', Plant,
-        'Beginner, University or Researcher. The button shows the icon of the current level: a plant, a graduation cap or a flask. The starting level is the one set for the paper’s area in Edit interests, else your default in Settings under Reading & AI. Choosing a level this paper has not been written at spends one AI use; a level already written opens free. The level cannot be changed while a rewrite is being written.',
+        'Beginner, University or Researcher. The button shows the icon of the current level: a plant, a graduation cap or a flask. The starting level is your default in Settings under Reading & AI. Choosing a level this paper has not been written at spends one AI use; a level already written opens free. The level cannot be changed while a rewrite is being written.',
         { allowance: 'ai-new', needsAccount: true }),
       entry('write-again', 'Write it again', ArrowClockwise,
         'Shows under a reused summary. Writes a new version and replaces the saved one. Spends one AI use. If the new one stops early, the old one stays.',
@@ -238,9 +235,9 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('most-recent', 'Most recent', ClockCounterClockwise,
         'Papers on your topics that you have not seen yet, newest first.'),
       entry('following', 'Following', UserCheck,
-        'Papers from the authors, institutions, topics, projects and journals you follow.'),
+        'Papers from the authors, institutions, topics and projects you follow.'),
       entry('own-feeds', 'Your own feeds', undefined,
-        `Feeds you made from topics, authors, journals and keywords show as tabs after Following. You can have up to ${MAX_CUSTOM_FEEDS}, each with up to ${MAX_FEED_INGREDIENTS} ingredients. Edit feed, Move left, Move right and Delete feed are in the tab’s menu, and as buttons on the Feeds page, which Edit feeds in Settings under Discovery opens.`),
+        `Feeds you made from topics, authors, journals and keywords show as tabs after Following. You can have up to ${MAX_CUSTOM_FEEDS}, each with up to ${MAX_FEED_INGREDIENTS} ingredients. Edit feed, Move left, Move right and Delete feed are in the tab’s menu, and as buttons in the Feeds window, which Edit feeds in Settings under Discovery opens.`),
       entry('new-feed', 'New feed', Plus,
         'The plus after the tabs. Opens a form to name a feed and choose what goes in it.'),
       entry('search', 'Search', MagnifyingGlass,
@@ -255,12 +252,12 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('explorer-back', 'Back', ArrowLeft,
         'Returns to the page you came from.'),
       entry('follow', 'Follow', UserCirclePlus,
-        `Follows this author, institution, topic, project or journal, so its papers show in Following. The icon fills in once followed; press again to unfollow. You can follow up to ${MAX_FOLLOWED_JOURNALS} journals.`,
+        'Follows this author, institution, topic or project, so its papers show in Following. The icon fills in once followed; press again to unfollow.',
         { needsAccount: true }),
       entry('explorer-share', 'Share', ShareNetwork,
         'Copies the page’s link or shares it to a network.'),
       entry('make-feed', 'Make it a feed', Plus,
-        `Turns this page into a feed tab. Shows on areas, topics, keyword searches, authors and journals that can be followed. Across its feeds an account can hold ${MAX_ACCOUNT_ENTITIES} authors, topics and journals and ${MAX_ACCOUNT_KEYWORDS} keywords.`,
+        `Turns this page into a feed tab. Shows on areas, topics, keyword searches, authors with an OpenAlex profile and journals. Across its feeds an account can hold ${MAX_ACCOUNT_ENTITIES} authors, topics and journals and ${MAX_ACCOUNT_KEYWORDS} keywords.`,
         { needsAccount: true }),
       entry('explorer-search', 'Search this page', MagnifyingGlass,
         'Searches the papers or authors on this page. The Papers and Authors buttons beside it choose which list; Authors is there only on pages that have authors to list.',
@@ -301,20 +298,6 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     ],
   },
   {
-    id: 'interests',
-    title: 'Interests: areas, Priority and Feed mix',
-    intro: 'Chosen on the welcome page, in an account’s first steps, and later in Settings under Discovery, Edit interests. They shape For you and Most recent, and the per-area level sets your plain-words level. They cost nothing.',
-    entries: [
-      entry('area-priority', 'Priority', Compass,
-        'A choice for each area you pick: Essential, the default, for the areas of your work, or Curiosity for areas you only want a taste of. It decides which of the two groups For you counts an area in.'),
-      entry('feed-mix', 'Feed mix', Compass,
-        `Shows once you have chosen areas of both kinds. It sets how For you divides its weight between Essential and Curiosity areas: ${Object.values(INTEREST_MIXES).map(({ label, essential }) => `${label}, ${essential} to ${100 - essential}`).join('; ')}. Balanced is the default.`),
-      entry('area-level', 'Read in plain words (per area)', Compass,
-        'In Edit interests only. A level for one area, or Use my default. It replaces your default level for papers in that area.',
-        { needsAccount: true }),
-    ],
-  },
-  {
     id: 'settings',
     title: 'Settings',
     intro: 'Reached from the account menu: your picture or initial, at the right end of the top bar. Only an account has Settings; a visitor does not. The Settings pages are listed down the left of the Settings page, or in the page switcher at its top on a narrow screen.',
@@ -331,11 +314,11 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('edit-follows', 'Edit follows', PencilSimple,
         'Discovery page. Lists what you follow and lets you unfollow.'),
       entry('edit-feeds', 'Edit feeds', PencilSimple,
-        'Discovery page. Opens the Feeds page: your feeds in tab order with Edit, Move up, Move down and Delete for each.'),
+        'Discovery page. Opens the Feeds window: your feeds in tab order, each with Move up, Move down, Edit and Delete, and a New feed button.'),
       entry('edit-interests', 'Edit interests', PencilSimple,
-        'Discovery page. Chooses the subjects that train your feed, and for each area its Priority and plain-words level, and the Feed mix. The Interests section describes them.'),
+        'Discovery page. Chooses the subjects that train your feed.'),
       entry('default-level', 'Default AI level', Sparkle,
-        'Reading & AI page. Sets the level Read in plain words starts at, unless the paper’s area has its own level. The same page lists the papers you have read in plain words.'),
+        'Reading & AI page. Sets the level Read in plain words starts at. The same page lists the papers you have read in plain words.'),
       entry('email-updates', 'Configure email updates', GearSix,
         'Notifications page. Turns the Monday email on or off, and sets how many papers it holds.'),
       entry('analytics', 'Allow usage analytics', ShieldCheck,
@@ -365,7 +348,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Moves to the previous or next paper when focus is not on a button, link or field.',
         { needsAccount: true }),
       entry('tab-menu', 'Right-click or hold a feed tab', undefined,
-        'Opens the tab’s menu: Edit feed, Move left, Move right and Delete feed. The Menu key or Shift+F10 opens it from a keyboard. The Feeds page in Settings, opened from Discovery, has buttons for the same.',
+        'Opens the tab’s menu: Edit feed, Move left, Move right and Delete feed. The Menu key or Shift+F10 opens it from a keyboard. The Feeds window in Settings, opened from Discovery, has buttons for the same.',
         { needsAccount: true }),
       entry('search-key', '/ or Ctrl+K (⌘K)', undefined,
         'Opens search. The slash does nothing while you are typing in a field.',
