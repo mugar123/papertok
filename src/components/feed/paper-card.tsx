@@ -2065,89 +2065,92 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
         <div ref={metaRef} className="pc-meta">
-          {primaryTopic ? (
-            <button
-              type="button"
-              className="pc-masthead-field pc-topic-link"
-              onClick={(event) => openTopic(event, primaryTopic)}
-              title={`${'Explore'} ${categoryLabel}`}
-            >
-              {categoryLabel}
-            </button>
-          ) : categoryLabel && (
-            <span className="pc-masthead-field">{categoryLabel}</span>
-          )}
-          {/* Each item brings the dot in front of it. A paper can have no
-              year (a PubMed record printed next year), and a dot after the
-              field then stood beside an empty date. */}
-          {reason && (
-            <>
-              {categoryLabel && <span className="pc-meta-dot">·</span>}
-              <span className="pc-feed-reason">
-                {reason.kind === 'follow' && reason.followType === 'author' && <UserCheck size={12} aria-hidden="true" />} {reason.text}
-              </span>
-            </>
-          )}
-          {paper.year ? (
-            <>
-              {(categoryLabel || reason) && <span className="pc-meta-dot">·</span>}
-              <span className="pc-date">{paper.year}</span>
-            </>
-          ) : null}
-          {acceptedAt && (
-            <>
-              {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot">·</span> : null}
-              <span className="pc-accepted">{acceptedAt}</span>
-            </>
-          )}
-
-          {(paper.citationCountKnown || paper.citationCount! > 0) && (
-            <>
-              {/* El modificador es lo que le da a este punto el mismo fundido
-                  que al chip: los dos montan juntos, y cuando el
-                  enriquecimiento se pasa del techo montan tarde juntos. */}
-              {(categoryLabel || reason || paper.year || acceptedAt) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
-              {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
-                <a
-                  className="pc-citations"
-                  href={safeExternalUrl(paper.scopusCitedByUrl) || undefined}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => event.stopPropagation()}
-                  aria-label={`${paper.citationCount!.toLocaleString('en-US')} ${'citations on Scopus'}`}
-                >
-                  {paper.citationCount!.toLocaleString('en-US')} {'citations on Scopus'}
-                </a>
-              ) : (
-                <span className="pc-citations">
-                  {paper.citationCount!.toLocaleString('en-US')} {'citations'}
+          {/* The paper's details wrap among themselves; the uses tag keeps to the first line's end. */}
+          <div className="pc-meta-items">
+            {primaryTopic ? (
+              <button
+                type="button"
+                className="pc-masthead-field pc-topic-link"
+                onClick={(event) => openTopic(event, primaryTopic)}
+                title={`${'Explore'} ${categoryLabel}`}
+              >
+                {categoryLabel}
+              </button>
+            ) : categoryLabel && (
+              <span className="pc-masthead-field">{categoryLabel}</span>
+            )}
+            {/* Each item brings the dot in front of it. A paper can have no
+                year (a PubMed record printed next year), and a dot after the
+                field then stood beside an empty date. */}
+            {reason && (
+              <>
+                {categoryLabel && <span className="pc-meta-dot">·</span>}
+                <span className="pc-feed-reason">
+                  {reason.kind === 'follow' && reason.followType === 'author' && <UserCheck size={12} aria-hidden="true" />} {reason.text}
                 </span>
-              )}
-            </>
-          )}
-          {/* The day's AI uses, as the reader shows them, at the row's far end: what reading in plain words would spend. */}
+              </>
+            )}
+            {paper.year ? (
+              <>
+                {(categoryLabel || reason) && <span className="pc-meta-dot">·</span>}
+                <span className="pc-date">{paper.year}</span>
+              </>
+            ) : null}
+            {acceptedAt && (
+              <>
+                {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot">·</span> : null}
+                <span className="pc-accepted">{acceptedAt}</span>
+              </>
+            )}
+
+            {(paper.citationCountKnown || paper.citationCount! > 0) && (
+              <>
+                {/* El modificador es lo que le da a este punto el mismo fundido
+                    que al chip: los dos montan juntos, y cuando el
+                    enriquecimiento se pasa del techo montan tarde juntos. */}
+                {(categoryLabel || reason || paper.year || acceptedAt) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+                {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
+                  <a
+                    className="pc-citations"
+                    href={safeExternalUrl(paper.scopusCitedByUrl) || undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label={`${paper.citationCount!.toLocaleString('en-US')} ${'citations on Scopus'}`}
+                  >
+                    {paper.citationCount!.toLocaleString('en-US')} {'citations on Scopus'}
+                  </a>
+                ) : (
+                  <span className="pc-citations">
+                    {paper.citationCount!.toLocaleString('en-US')} {'citations'}
+                  </span>
+                )}
+              </>
+            )}
+            {(studyTypeLabel || trialUrl) && (
+              <div className="pc-evidence">
+                {studyTypeLabel && <span>{studyTypeLabel}</span>}
+                {trialUrl && (
+                  <a
+                    href={trialUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${paper.trialRegistration} on ClinicalTrials.gov (opens in a new tab)`}
+                    onClick={event => event.stopPropagation()}
+                  >
+                    {paper.trialRegistration}
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+          {/* The day's AI uses, as the reader shows them, at the first line's far end: what reading in plain words would spend. */}
           {canRequestRewrite && !publicMode && user && quota?.dailyLimit && !quota.unlimited ? (
             <span className="rd-tag rd-tag--ai rd-uses pc-uses">
               <Sparkle size={12} aria-hidden="true" />
               <UsesCount left={quota.remainingUses} limit={quota.dailyLimit} />
             </span>
           ) : null}
-          {(studyTypeLabel || trialUrl) && (
-            <div className="pc-evidence">
-              {studyTypeLabel && <span>{studyTypeLabel}</span>}
-              {trialUrl && (
-                <a
-                  href={trialUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`${paper.trialRegistration} on ClinicalTrials.gov (opens in a new tab)`}
-                  onClick={event => event.stopPropagation()}
-                >
-                  {paper.trialRegistration}
-                </a>
-              )}
-            </div>
-          )}
         </div>
 
         {/* On a phone the title opens the abstract sheet, which shows it
