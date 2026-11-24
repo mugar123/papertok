@@ -1,6 +1,6 @@
-// The language an account last chose for a paper translation. Nothing writes
-// it now, but browsers that used the title-and-abstract translation still
-// hold it, so an account change or deletion clears it.
+// The language an account chose for the removed title-and-abstract
+// translation. Nothing reads or writes it now. Browsers that used it may still
+// hold it, so loading, changing or deleting the account clears it.
 export function getTranslationLanguageStorageKey(uid: string) {
   return `papertok:paper-translation-language:${uid}`;
 }

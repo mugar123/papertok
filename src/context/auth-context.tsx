@@ -197,6 +197,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
         clearGuestInterests();
         forgetTranslationLanguage(outgoingUid);
       }
+      // Nothing reads or writes the translation language any more. A choice
+      // left by the removed title-and-abstract translation goes when its
+      // account loads.
+      if (uid) forgetTranslationLanguage(uid);
       previousUid.current = uid;
       // Here rather than in signOut: another tab can end this session too.
       clearRewriteCache();

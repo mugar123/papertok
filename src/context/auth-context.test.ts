@@ -7,7 +7,7 @@ import { loadAuthProvider } from '../../tests/dom/app-modules.ts';
 import type { StubUser } from '../../tests/dom/firebase-stub.ts';
 import { getTranslationLanguageStorageKey } from '../utils/paper-translation.ts';
 
-test('the auth provider clears only the outgoing account translation language on sign-out and switch', async t => {
+test('the auth provider clears the stored translation language of the accounts it loads and leaves, and no other', async t => {
   const app = await loadAuthProvider();
   t.after(async () => {
     cleanup();
@@ -43,15 +43,22 @@ test('the auth provider clears only the outgoing account translation language on
     localStorage.setItem(getTranslationLanguageStorageKey(uid), language);
   }
 
+  remember(a.uid, 'es');
   remember(b.uid, 'he');
   remember('reader-c', 'ja');
-  for (const next of [null, b]) {
-    await changeAccount(a);
-    remember(a.uid, 'es');
-    assert.equal(saved(a.uid), 'es');
-    await changeAccount(next);
-    assert.equal(saved(a.uid), null);
-    assert.equal(saved(b.uid), 'he');
-    assert.equal(saved('reader-c'), 'ja');
-  }
+  await changeAccount(a);
+  assert.equal(saved(a.uid), null, 'the account that loads');
+  assert.equal(saved(b.uid), 'he');
+
+  remember(a.uid, 'es');
+  await changeAccount(null);
+  assert.equal(saved(a.uid), null, 'the account that signs out');
+  assert.equal(saved(b.uid), 'he');
+
+  await changeAccount(a);
+  remember(a.uid, 'es');
+  await changeAccount(b);
+  assert.equal(saved(a.uid), null, 'the account switched away from');
+  assert.equal(saved(b.uid), null, 'the account switched to');
+  assert.equal(saved('reader-c'), 'ja', 'an account that never loaded here');
 });
