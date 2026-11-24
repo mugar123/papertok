@@ -11,74 +11,27 @@
   align-items: center;
   gap: var(--space-5);
   padding: var(--space-8) var(--space-4) max(var(--space-10), env(safe-area-inset-bottom));
-  background: var(--bg-primary);
   overflow-y: auto;
   animation: rd-podcast-in 200ms var(--ease-out);
+  /* On paper the mesh is ink with yellow points ringed in ink; at night it is all yellow. */
+  --podcast-mesh: var(--text-tertiary);
+  --podcast-accent: var(--accent-primary);
+  --podcast-edge: var(--accent-primary);
+  --podcast-node: var(--brand-yellow);
+  --podcast-node-ring: var(--accent-primary);
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 @keyframes rd-podcast-in { from { opacity: 0; } }
 .rd-podcast > * { flex: none; width: min(100%, 26rem); }
 
-.rd-podcast-cover {
-  position: relative;
-  max-width: 300px;
-  aspect-ratio: 1;
-  container-type: inline-size;
+.rd-podcast-cover { max-width: 260px; aspect-ratio: 1; }
+:root[data-theme='dark'] .rd-podcast {
+  --podcast-accent: var(--brand-yellow);
+  --podcast-edge: var(--brand-yellow);
+  --podcast-node-ring: transparent;
 }
-.rd-podcast-ring { position: absolute; inset: 0; rotate: -90deg; overflow: visible; }
-.rd-podcast-ring circle { fill: none; stroke-width: 3; }
-.rd-podcast-track { stroke: var(--bg-secondary); }
-.rd-podcast-fill {
-  stroke: var(--accent-primary);
-  stroke-linecap: round;
-  transition: stroke-dasharray 250ms var(--ease-out);
-}
-.rd-podcast-fill[data-preparing] { stroke: var(--accent-secondary); }
-
-/* The sphere breathes while the voice speaks and rests when it stops. */
-.rd-podcast-orb {
-  position: absolute;
-  inset: 14%;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 34% 28%, var(--brand-yellow-soft) 0%, transparent 38%),
-    radial-gradient(circle at 50% 50%, var(--accent-secondary) 0%, var(--accent-primary) 78%);
-  box-shadow: 0 24px 60px -20px color-mix(in srgb, var(--accent-primary) 55%, transparent);
-  animation: rd-podcast-breathe 2.4s ease-in-out infinite alternate paused;
-}
-.rd-podcast-orb[data-playing] { animation-play-state: running; }
-@keyframes rd-podcast-breathe {
-  from { scale: 0.96; }
-  to { scale: 1.04; }
-}
-
-/* A chapter's start on the ring (radius 94 of the cover's 200): a pointer's shortcut to the list below. */
-.rd-podcast-mark {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 24px;
-  height: 24px;
-  margin: -12px 0 0 -12px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  transform: rotate(calc(var(--turn, 0) * 1turn)) translateY(-47cqi);
-}
-.rd-podcast-mark::before {
-  content: '';
-  position: absolute;
-  inset: 7px;
-  border: 2px solid var(--bg-primary);
-  border-radius: 50%;
-  background: var(--text-tertiary);
-  transition: scale 150ms var(--ease-out);
-}
-.rd-podcast-mark[data-played]::before { background: var(--accent-primary); }
-@media (hover: hover) and (pointer: fine) {
-  .rd-podcast-mark:hover::before { scale: 1.4; }
-}
+.rd-podcast-sphere { display: block; width: 100%; height: 100%; }
 
 .rd-podcast-head { display: grid; gap: var(--space-1); }
 .rd-podcast-title {
@@ -107,7 +60,7 @@
 .rd-podcast-text [data-said] { color: var(--text-primary); }
 .rd-podcast-text [data-current] {
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--accent-secondary) 20%, transparent);
+  background: color-mix(in srgb, var(--podcast-accent) 28%, transparent);
   color: var(--text-primary);
 }
 
@@ -151,7 +104,7 @@
   .rd-podcast-chapters button:not(:disabled):hover { background: var(--bg-secondary); }
 }
 .rd-podcast-chapters button[aria-current] { font-weight: 600; }
-.rd-podcast-chapters button[aria-current] .rd-podcast-chapter-title { color: var(--accent-secondary); }
+.rd-podcast-chapters button[aria-current] .rd-podcast-chapter-title { color: var(--podcast-accent); }
 .rd-podcast-chapter-number, .rd-podcast-chapter-time {
   font: 500 0.75rem/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -160,6 +113,14 @@
 .rd-podcast-chapter-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
-  .rd-podcast, .rd-podcast-orb { animation: none; }
-  .rd-podcast-fill, .rd-podcast-mark::before, .rd-podcast-chapters button { transition: none; }
+  .rd-podcast { animation: none; }
+  .rd-podcast-chapters button { transition: none; }
 }
+
+/* The line under the sphere fills in the tab's accent. */
+.rd-podcast .rd-listen-fill,
+.rd-podcast .rd-listen-fill::after { background: var(--podcast-accent); }
+/* While the audio is prepared, the line is the mesh's grey, as the sphere is. */
+.rd-podcast .rd-listen-progress { color: var(--podcast-mesh); }
+.rd-podcast .rd-listen-progress::-webkit-progress-value { background: var(--podcast-mesh); }
+.rd-podcast .rd-listen-progress::-moz-progress-bar { background: var(--podcast-mesh); }

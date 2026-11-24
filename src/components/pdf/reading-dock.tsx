@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowSquareOut, CircleNotch, Headphones, NotePencil, SpeakerHigh } from '@phosphor-icons/react';
+import { ArrowSquareOut, CircleNotch, Headphones, NotePencil } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -47,7 +47,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   const { paragraph: speaking, reset: resetReadAloud } = readAloud;
   useSpokenWord({ root: scroll, queue: spoken?.queue ?? NO_PASSAGES, speaking, timings: readAloud.timings, live: readAloud.live, playing: readAloud.playing, position: readAloud.position });
   useEffect(() => () => resetReadAloud(), [spoken, canListen, resetReadAloud]);
-  const readAloudButton = useRef<HTMLButtonElement | null>(null);
+  const listenButton = useRef<HTMLButtonElement | null>(null);
   // The closed dock's outline while the player is open, which it grows out of.
   const [playerFrom, setPlayerFrom] = useState<{ width: number; height: number } | null>(null);
   const playerOpen = playerFrom !== null && canListen;
@@ -128,11 +128,9 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     readAloud.play(readAloudStart(speaking, visible));
   };
   const openPlayer = () => {
-    const bar = readAloudButton.current?.closest<HTMLElement>('.pdf-dock');
-    if (bar) {
-      const padding = Number.parseFloat(getComputedStyle(bar).paddingLeft) || 0;
-      setPlayerFrom({ width: bar.clientWidth - 2 * padding, height: bar.getBoundingClientRect().height });
-    }
+    const bar = scroll?.parentElement?.querySelector<HTMLElement>('.pdf-dock');
+    const padding = bar ? Number.parseFloat(getComputedStyle(bar).paddingLeft) || 0 : 0;
+    setPlayerFrom(bar ? { width: bar.clientWidth - 2 * padding, height: bar.getBoundingClientRect().height } : { width: 0, height: 0 });
     if (!readAloud.playing) playPause();
   };
   const [listening, setListening] = useState(false);
@@ -140,7 +138,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     setListening(false);
     readAloud.pause();
     setPlayerFrom(null);
-    requestAnimationFrame(() => readAloudButton.current?.focus());
+    requestAnimationFrame(() => listenButton.current?.focus());
   };
 
   // The podcast tab's way in and out, round in the top bar's corner. The text under it is left
@@ -162,12 +160,13 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   return <>
     {scroll && createPortal(<div className="rd-word" hidden aria-hidden="true" />, scroll)}
     {canListen && topbar && createPortal(
-      <Toggle className="rd-listen-corner" pressed={podcast} onPressedChange={listen} aria-label="Listen to the paper as a podcast" title={podcast ? 'Back to the text' : 'Listen as a podcast'}>
+      <Toggle ref={listenButton} className="rd-listen-corner" pressed={podcast} onPressedChange={listen} aria-label="Listen to the paper as a podcast" title={podcast ? 'Back to the text' : 'Listen as a podcast'}>
         <Headphones size={18} weight={podcast ? 'fill' : 'regular'} aria-hidden="true" />
       </Toggle>,
       topbar,
     )}
-    {!podcast && <PaperDock scroll={scroll} pinned={playerOpen} menu={playerOpen ? undefined : menu} contents={playerOpen ? null : contents}>
+    {/* Hidden rather than unmounted while the podcast tab covers it, so a Zotero send in flight finishes. */}
+    <div hidden={podcast}><PaperDock scroll={scroll} pinned={playerOpen} menu={playerOpen ? undefined : menu} contents={playerOpen ? null : contents}>
       {playerOpen ? <ReadAloudPlayer
         timeline={readAloud.timeline} prepared={readAloud.prepared} position={readAloud.position}
         playing={readAloud.playing} speed={readAloud.speed} onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek}
@@ -178,13 +177,10 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
           <NotePencil size={18} aria-hidden="true" />
           <span><span className="pdf-dock-label">Notes</span>{notes.count > 0 && <span className="pdf-dock-count">{notes.count}</span>}</span>
         </Toggle>}
-        {canListen && <Toggle ref={readAloudButton} className="pdf-dock-toggle" pressed={readAloud.playing} onPressedChange={openPlayer} aria-label="Voice, read aloud" title="Read aloud">
-          <SpeakerHigh size={18} aria-hidden="true" /><span className="pdf-dock-label">Voice</span>
-        </Toggle>}
       </>}
       {paper && <ZoteroControl paper={paper} hidden={playerOpen} />}
       {!playerOpen && originalUrl && <Button role="link" variant="ghost" size="icon" aria-label="Open in a new tab" title="Open in a new tab" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}><ArrowSquareOut size={18} aria-hidden="true" /></Button>}
-    </PaperDock>}
+    </PaperDock></div>
     {podcast && spoken && <ReadAloudListen
       title={paper?.title ?? title}
       byline={byline.length > 3 ? `${byline.slice(0, 3).join(', ')} and others` : byline.join(', ')}
