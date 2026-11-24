@@ -607,6 +607,8 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   options in the reader's dock open as its card, not as an overlay.
 
 ### The Action Rail (signature)
+The daily AI uses tag sits above Like, centered on the action column. It
+keeps the existing visibility rules for signed-in readers with a known quota.
 The card's right-hand column: Like, Save, Connections, Similar papers and More
 (⋯). Each is an icon-only ghost button, a 28px glyph in its own colour (`--rail`)
 on a 52px tap area, with no tile behind it at rest; a fine pointer's hover fills

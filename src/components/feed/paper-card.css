@@ -515,7 +515,6 @@
 /* ── Masthead — the field, the year and the citations, above the headline ── */
 .pc-meta {
   display: flex;
-  /* On the first line's baseline, so the uses tag sits level with the field however the details wrap. */
   align-items: baseline;
   gap: 6px;
   margin-bottom: var(--space-3);

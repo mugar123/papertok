@@ -832,8 +832,8 @@ const PaperCard = memo(function PaperCard({
   const watermarkRef = useRef<HTMLSpanElement | null>(null);
   // A separator the row wraps after is left hanging at the end of its line, as "2020 ·", so it is hidden there.
   const metaRef = useRef<HTMLDivElement | null>(null);
-  // When what the row holds changes, as a late citation count or the uses tag can move the break; the observer covers resizes.
-  useLayoutEffect(() => markSeparatorLineEnds(metaRef.current), [paper.id, paper.citationCount, paper.year, quota]);
+  // Late citation counts can change the line breaks; the observer covers resizes.
+  useLayoutEffect(() => markSeparatorLineEnds(metaRef.current), [paper.id, paper.citationCount, paper.year]);
   useEffect(() => {
     const meta = metaRef.current;
     if (!meta) return undefined;
@@ -1678,7 +1678,7 @@ const PaperCard = memo(function PaperCard({
   const firstTarget = openTargetsForPaper(paper, resolvedOpenCopy, currentInstitutionAccess)[0];
   const inlineTarget = firstTarget?.mode === 'inline' ? firstTarget : null;
   const rewriteHint = canRequestRewrite && !publicMode && user && isCardVisible
-    // The uses left are the masthead's tag; under the button only a saved version, which opens free.
+    // The rail shows uses left; under the button only a saved version, which opens free.
     ? (getCachedRewrite(readablePaper, readingPreferences.aiExplanationLevel) ? 'Open this version for free.' : '')
     : '';
 
@@ -2042,7 +2042,6 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
         <div ref={metaRef} className="pc-meta">
-          {/* The paper's details wrap among themselves; the uses tag keeps to the first line's end. */}
           <div className="pc-meta-items">
             {primaryTopic ? (
               <button
@@ -2121,13 +2120,6 @@ const PaperCard = memo(function PaperCard({
               </div>
             )}
           </div>
-          {/* The day's AI uses, as the reader shows them, at the first line's far end: what reading in plain words would spend. */}
-          {canRequestRewrite && !publicMode && user && usesNow ? (
-            <span className="rd-tag rd-tag--ai rd-uses pc-uses">
-              <Sparkle size={12} aria-hidden="true" />
-              <UsesCount left={usesNow.left} limit={usesNow.limit} />
-            </span>
-          ) : null}
         </div>
 
         {/* On a phone the title opens the abstract sheet, which shows it
@@ -2453,6 +2445,12 @@ const PaperCard = memo(function PaperCard({
           `--read` classes stay: each names its own colour, and the stylesheet
           and its tests key the pop and the eye-to-tick morph on them. */}
       <div className="pc-side-actions">
+        {canRequestRewrite && !publicMode && user && usesNow ? (
+          <span className="rd-tag rd-tag--ai rd-uses pc-uses">
+            <Sparkle size={12} aria-hidden="true" />
+            <UsesCount left={usesNow.left} limit={usesNow.limit} />
+          </span>
+        ) : null}
         <Toggle
           className={`pc-side-btn pc-side-btn--like ${isLiked ? 'pc-side-btn--liked' : ''}`}
           pressed={isLiked}
