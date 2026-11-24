@@ -255,6 +255,50 @@ test('system controls resume and seek the paper, and hidden playback advances to
   }
 });
 
+test('a browser voice that ends a sentence without starting it stops the reading instead of racing through the paper', async () => {
+  const { useReadAloud, firebase, close } = await loadReadAloud();
+  const worker = stubWorker();
+  const route = worker.hold('/tts/paragraph');
+  const spoken: Array<{ text: string; onend: (() => void) | null }> = [];
+  const originalSynthesis = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
+  const originalUtterance = Object.getOwnPropertyDescriptor(globalThis, 'SpeechSynthesisUtterance');
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { speak: (utterance: (typeof spoken)[number]) => spoken.push(utterance), cancel: () => {} } });
+  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
+    configurable: true,
+    value: class { text: string; lang = ''; onstart = null; onboundary = null; onend = null; onerror = null; constructor(text: string) { this.text = text; } },
+  });
+  let unmount = () => {};
+  let errors = 0;
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const view = renderHook(() => useReadAloud([{ passage: 'b0', utterances: ['Agents read untrusted text.', 'They follow it.'] }], [], {
+      title: 'Agents paper',
+      onFallback: () => {},
+      onError: () => { errors += 1; },
+      onBlocked: () => assert.fail('the start should not be blocked'),
+    }));
+    unmount = view.unmount;
+    act(() => view.result.current.play(0));
+    route.refuse(429, 'AI_QUOTA_EXHAUSTED');
+    await waitFor(() => assert.equal(spoken.length, 1));
+
+    act(() => spoken[0].onend?.());
+    assert.equal(errors, 1);
+    assert.equal(view.result.current.playing, false);
+    assert.equal(spoken.length, 1, 'the next sentence is not handed to a voice that said nothing');
+  } finally {
+    unmount();
+    worker.stop();
+    await close();
+    for (const [target, name, original] of [[window, 'speechSynthesis', originalSynthesis], [globalThis, 'SpeechSynthesisUtterance', originalUtterance], [globalThis, 'Audio', originalAudio]] as const) {
+      if (original) Object.defineProperty(target, name, original);
+      else Reflect.deleteProperty(target, name);
+    }
+  }
+});
+
 test('the browser voice\'s place moves with time when it reports no words, and follows its word boundaries when it does', async () => {
   const { useReadAloud, firebase, close } = await loadReadAloud();
   const worker = stubWorker();

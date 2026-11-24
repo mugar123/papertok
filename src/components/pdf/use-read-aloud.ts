@@ -206,6 +206,10 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
         return;
       }
       const line = item.utterances[sentence].slice(skip);
+      if (!line.trim()) {
+        speakWithBrowser(index, sentence + 1);
+        return;
+      }
       const utterance = new SpeechSynthesisUtterance(line);
       utterance.lang = 'en-US';
       utterance.rate = speedNow.current;
@@ -223,6 +227,13 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       };
       utterance.onend = () => {
         if (!current()) return;
+        // A voice that ends a sentence it never started said nothing (Chrome does this when its speech
+        // service fails); moving on would race the clock through the paper, so it stops and says so.
+        if (!said.startedAt) {
+          pause();
+          onError();
+          return;
+        }
         if (said.startedAt && said.length >= TIMED_SENTENCE_CHARS) {
           pace.current.chars += said.length;
           pace.current.seconds += (performance.now() - said.startedAt) / 1000;
