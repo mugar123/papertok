@@ -4,11 +4,79 @@ const PARAGRAPH_TIMEOUT_MS = 40_000;
 
 export class ReadAloudError extends Error {
   declare code: string;
-  constructor(code: string) {
+  /** Whose allowance a refusal spent: `user` (the account's papers or characters), `global` or `provider`. */
+  declare scope?: string;
+  constructor(code: string, scope?: string) {
     super(code);
     this.name = 'ReadAloudError';
     this.code = code;
+    this.scope = scope;
   }
+}
+
+function postToVoice(body: unknown, signal?: AbortSignal) {
+  const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
+  if (!apiBase) return Promise.resolve(null);
+  return authenticatedWorkerFetch(`${apiBase}/tts/paragraph`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  }, PARAGRAPH_TIMEOUT_MS).catch(() => null);
+}
+
+/** Tells the Worker every paragraph of the paper came with PaperTok's audio, so the feed can show it. */
+export async function markPaperVoiced(paperId: string) {
+  const response = await postToVoice({ paperId, voiced: true });
+  if (response?.ok) noteVoiced([paperId]);
+}
+
+const voiced = new Map<string, boolean>();
+const asked = new Set<string>();
+const voicedChanges = new EventTarget();
+let asking: ReturnType<typeof setTimeout> | null = null;
+
+function noteVoiced(ids: string[], all = ids) {
+  for (const id of all) voiced.set(id, ids.includes(id));
+  voicedChanges.dispatchEvent(new Event('change'));
+}
+
+export function subscribeVoicedPapers(listener: () => void) {
+  voicedChanges.addEventListener('change', listener);
+  return () => voicedChanges.removeEventListener('change', listener);
+}
+
+/** Whether the paper has PaperTok's audio for every paragraph, as far as this page has asked. */
+export const isPaperVoiced = (paperId: string) => voiced.get(paperId) === true;
+
+/**
+ * Asks once per page load whether a paper has PaperTok's audio, gathering the cards that ask in the
+ * same moment into one request. A failed request leaves them unknown, which shows nothing.
+ */
+export function askPaperVoiced(paperId: string) {
+  if (!paperId || voiced.has(paperId) || asked.has(paperId)) return;
+  asked.add(paperId);
+  asking ??= setTimeout(() => {
+    asking = null;
+    const ids = [...asked].filter(id => !voiced.has(id));
+    for (let start = 0; start < ids.length; start += 60) {
+      const page = ids.slice(start, start + 60);
+      void postToVoice({ papers: page })
+        .then(response => (response?.ok ? response.json() as Promise<{ voiced?: unknown }> : null))
+        .then((body) => {
+          if (Array.isArray(body?.voiced)) noteVoiced(body.voiced.filter((id): id is string => typeof id === 'string'), page);
+          else for (const id of page) asked.delete(id);
+        }, () => { for (const id of page) asked.delete(id); });
+    }
+  }, 50);
+}
+
+/** How many new papers the account may still have read in PaperTok's voice today; null when unknown. */
+export async function fetchVoiceUsage({ signal }: { signal?: AbortSignal } = {}) {
+  const response = await postToVoice({ usage: true }, signal);
+  const body = response?.ok ? await response.json().catch(() => null) as { papersLeft?: unknown; dailyPapers?: unknown } | null : null;
+  const { papersLeft, dailyPapers } = body ?? {};
+  return Number.isInteger(papersLeft) && Number.isInteger(dailyPapers) ? { papersLeft: papersLeft as number, dailyPapers: dailyPapers as number } : null;
 }
 
 /**
@@ -16,7 +84,7 @@ export class ReadAloudError extends Error {
  * Worker answers only from audio already made, refusing with
  * `AI_AUDIO_NOT_STORED` rather than spending credits.
  */
-export async function fetchParagraphAudio(text: string, { signal, storedOnly = false }: { signal?: AbortSignal; storedOnly?: boolean } = {}) {
+export async function fetchParagraphAudio(text: string, { signal, storedOnly = false, paperId }: { signal?: AbortSignal; storedOnly?: boolean; paperId?: string } = {}) {
   const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
   if (!apiBase) throw new ReadAloudError('AI_NOT_CONFIGURED');
   let response: Response;
@@ -24,15 +92,15 @@ export async function fetchParagraphAudio(text: string, { signal, storedOnly = f
     response = await authenticatedWorkerFetch(`${apiBase}/tts/paragraph`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(storedOnly ? { text, storedOnly } : { text }),
+      body: JSON.stringify({ text, ...(storedOnly ? { storedOnly } : {}), ...(paperId ? { paperId } : {}) }),
       signal,
     }, PARAGRAPH_TIMEOUT_MS);
   } catch (error) {
     throw new ReadAloudError((error as { name?: string } | null)?.name === 'WorkerApiAuthError' ? 'AI_AUTH_REQUIRED' : 'AI_UNAVAILABLE');
   }
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { code?: unknown } | null;
-    throw new ReadAloudError(typeof body?.code === 'string' ? body.code : 'AI_UNAVAILABLE');
+    const body = await response.json().catch(() => null) as { code?: unknown; quota?: { scope?: unknown } } | null;
+    throw new ReadAloudError(typeof body?.code === 'string' ? body.code : 'AI_UNAVAILABLE', typeof body?.quota?.scope === 'string' ? body.quota.scope : undefined);
   }
   return response.blob();
 }

@@ -33,8 +33,10 @@ function clipSeconds(url: string) {
   });
 }
 
-export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, onFallback, onError, onBlocked }: {
+export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, paperId, onFallback, onError, onBlocked }: {
   title: string;
+  /** The paper the passages are from: its first new audio of the day counts against the account's papers. */
+  paperId?: string;
   onFallback: (error: unknown) => void;
   onError: () => void;
   /** The browser would not start the audio without another press; the voice is paused. */
@@ -123,7 +125,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       for (let attempt = 0; ; attempt += 1) {
         fetches.current?.signal.throwIfAborted();
         try {
-          return await fetchParagraphAudio(text, { signal: fetches.current?.signal, storedOnly: storedOnly.current });
+          return await fetchParagraphAudio(text, { signal: fetches.current?.signal, storedOnly: storedOnly.current, paperId });
         } catch (error) {
           if (error instanceof ReadAloudError && error.code === 'AI_QUOTA_EXHAUSTED') storedOnly.current = true;
           if (!(error instanceof ReadAloudError && error.code === 'AI_BUSY') || attempt >= BUSY_RETRIES) throw error;

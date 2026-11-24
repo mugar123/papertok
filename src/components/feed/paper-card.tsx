@@ -45,12 +45,14 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, Suspense } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, useSyncExternalStore, memo, Suspense } from 'react';
+import { askPaperVoiced, isPaperVoiced, subscribeVoicedPapers } from '../../services/read-aloud-service.ts';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
   ArrowLeft,
   ArrowRight,
   ArrowSquareOut,
+  Headphones,
   BookmarkSimple,
   Brain,
   Building,
@@ -517,6 +519,11 @@ const PaperCard = memo(function PaperCard({
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
   const { institution, user } = useAuth();
+  // Whether PaperTok's voice is ready for every paragraph: listening to it then spends no use.
+  const voiced = useSyncExternalStore(subscribeVoicedPapers, () => Boolean(user) && isPaperVoiced(paper.id));
+  useEffect(() => {
+    if (user) askPaperVoiced(paper.id);
+  }, [paper.id, user]);
   const { language } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
@@ -2046,6 +2053,14 @@ const PaperCard = memo(function PaperCard({
                     {paper.citationCount!.toLocaleString('en-US')} {'citations'}
                   </span>
                 )}
+              </>
+            )}
+            {voiced && (
+              <>
+                {(categoryLabel || reason || paper.year || paper.citationCountKnown || paper.citationCount! > 0) ? <span className="pc-meta-dot">·</span> : null}
+                <span className="pc-voiced" title="PaperTok’s voice is ready for this paper: listening uses none of today’s papers">
+                  <Headphones size={12} weight="bold" aria-hidden="true" /> Audio ready
+                </span>
               </>
             )}
             {(studyTypeLabel || trialUrl) && (

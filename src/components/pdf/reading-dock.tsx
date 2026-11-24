@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { saveFile } from '../../utils/save-file.ts';
-import { ReadAloudError } from '../../services/read-aloud-service.ts';
+import { ReadAloudError, fetchVoiceUsage, markPaperVoiced } from '../../services/read-aloud-service.ts';
 import { Button } from '../ui/button.tsx';
 import { Toggle } from '../ui/toggle.ts';
 import { PaperDock } from './paper-info.tsx';
@@ -38,8 +38,10 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   const { trackEvent } = useAnalyticsConsent();
   const readAloud = useReadAloud(spoken?.queue ?? NO_PASSAGES, spoken?.chapters ?? NO_CHAPTERS, {
     title,
-    onFallback: cause => toast(cause instanceof ReadAloudError && (cause.code === 'AI_QUOTA_EXHAUSTED' || cause.code === 'AI_AUDIO_NOT_STORED')
-      ? 'Parts of this paper have no PaperTok audio yet, so this browser’s voice reads them.'
+    paperId: paper?.id,
+    onFallback: cause => toast(!(cause instanceof ReadAloudError) ? 'PaperTok’s voice is not available right now, so this browser’s voice reads instead.'
+      : cause.code === 'AI_QUOTA_EXHAUSTED' && cause.scope === 'user' ? 'You have used today’s papers with PaperTok’s voice, so this browser’s voice reads the parts without it. More tomorrow.'
+      : cause.code === 'AI_QUOTA_EXHAUSTED' || cause.code === 'AI_AUDIO_NOT_STORED' ? 'Parts of this paper have no PaperTok audio yet, so this browser’s voice reads them.'
       : 'PaperTok’s voice is not available right now, so this browser’s voice reads instead.'),
     onError: () => toast.error('Reading aloud stopped. This browser could not play the voice.'),
     onBlocked: () => toast('The audio is ready. Press play to listen.'),
@@ -90,7 +92,23 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     setListening(open);
   };
   const podcast = listening && canListen;
+  // How many new papers the account may still hear in PaperTok's voice today, read once the
+  // first passages are ready, so it already counts this paper.
+  const [voiceLeft, setVoiceLeft] = useState<Awaited<ReturnType<typeof fetchVoiceUsage>>>(null);
+  const startupDone = readAloud.startup.failed || readAloud.startup.ready >= readAloud.startup.total;
+  useEffect(() => {
+    if (!podcast || !startupDone) return undefined;
+    const controller = new AbortController();
+    void fetchVoiceUsage({ signal: controller.signal }).then(usage => { if (!controller.signal.aborted) setVoiceLeft(usage); });
+    return () => controller.abort();
+  }, [podcast, startupDone]);
   const unsaved = readAloud.prepared.ready < readAloud.prepared.total;
+  // Every paragraph has PaperTok's audio: the feed marks the paper as one to hear without spending a use.
+  const paperId = paper?.id;
+  const voiced = Boolean(paperId) && readAloud.prepared.total > 0 && !unsaved;
+  useEffect(() => {
+    if (voiced && paperId) void markPaperVoiced(paperId);
+  }, [voiced, paperId]);
   useEffect(() => {
     if (!scroll || !podcast) return undefined;
     scroll.toggleAttribute('inert', true);
@@ -134,6 +152,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       title={paper?.title ?? title}
       queue={spoken.queue}
       player={readAloud}
+      voiceLeft={voiceLeft}
       onPlayPause={playPause}
     />}
   </>;

@@ -47,11 +47,13 @@ function spokenSentence(item: SpokenPassage, word: number) {
  * controls round the timeline (which shows the audio still to come, then where the voice
  * is), and the paper's sections as chapters in a drawer.
  */
-export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
+export default function ReadAloudListen({ title, queue, player, voiceLeft = null, onPlayPause }: {
   title: string;
   queue: readonly SpokenPassage[];
   /** The voice the dock plays: where it is, how much is ready, and its controls. */
   player: Pick<ReturnType<typeof useReadAloud>, 'timeline' | 'startup' | 'buffering' | 'paragraph' | 'position' | 'playing' | 'speed' | 'timings' | 'live' | 'setSpeed' | 'seek'>;
+  /** New papers the account may still hear in PaperTok's voice today, when known. */
+  voiceLeft?: { papersLeft: number; dailyPapers: number } | null;
   onPlayPause: () => void;
 }) {
   const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek: onSeek } = player;
@@ -146,6 +148,7 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
       <span ref={statusRegion} className="visually-hidden" role="status" />
       <header className="rd-podcast-header">
         <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
+        {voiceLeft && <p className="rd-podcast-header-voice">PaperTok’s voice: {voiceLeft.papersLeft} of {voiceLeft.dailyPapers} new papers left today</p>}
       </header>
       <div className="rd-podcast-cover">
         <ReadAloudForms progress={preparing ? startup.ready / startup.total : 1} playing={playing && !buffering} />

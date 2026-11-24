@@ -87,9 +87,12 @@ AI_REWRITE_MODEL = "gemini-3.5-flash"
 # cannot. Both bill by the character, and audio already in TTS_AUDIO costs
 # nothing. ElevenLabs' day is a 31st of a month of its Startup Grant
 # (33,000,000 characters over 12 months); Cartesia's is a 31st of 8,000,000
-# credits a month. An account's day at each is one new full paper (about
-# 35,000 characters).
-TTS_DAILY_USER_CHARS = "44000"
+# credits a month. An account may have two new papers a day read in PaperTok's
+# voice (a paper already counted that day, or already stored, is free), and at
+# most 200,000 characters of new audio at each provider, which bounds a paper's
+# length and an account that sends other text under a paper's id.
+TTS_DAILY_USER_PAPERS = "2"
+TTS_DAILY_USER_CHARS = "200000"
 TTS_DAILY_ELEVENLABS_CHARS = "88000"
 TTS_DAILY_CARTESIA_CHARS = "258000"
 FIREBASE_WEB_API_KEY = "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0"
