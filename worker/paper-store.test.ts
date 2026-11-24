@@ -823,6 +823,99 @@ test("a reader of any leaf of an area is served the area's journal articles, fil
 // A paper filed only under the lanes given, by its own title.
 const lanePaper = (id: string, title: string, published = '2026-10-15T00:00:00.000Z') => ({ ...arxivRecord, id, arxivId: id, title, published, allCategories: [], categories: [] });
 
+// Three candidates with the same date and vector. The liked work is outside their lane.
+async function qualityCorpus() {
+  const { env, db } = corpus();
+  const ids = ['2610.00081', '2610.00082', '2610.00083'];
+  const liked = '2610.00084';
+  const published = daysFromNow(-2, NOW);
+  const titles = ['Graph coloring', 'Random walks', 'Network flows', 'Sparse matrices'];
+  await ingestPapers(env, [...ids, liked].map((id, index) => ({
+    paper: lanePaper(id, titles[index], published), lanes: id === liked ? [] : ['cs.LG'],
+  })), { now: NOW });
+  for (const id of [...ids, liked]) {
+    db.prepare('INSERT INTO work_vectors (work_id, embedding) SELECT work_id, ? FROM work_keys WHERE key = ?')
+      .run(quantize(id === liked ? [1, 0] : [3, 4]), `arxiv:${id}`);
+  }
+  const groups = [{ categories: ['cs.LG'], weight: 1 }];
+  const read = (body: Parameters<typeof parseFeedRequest>[0], now = NOW) =>
+    readFeedPage(env, parseFeedRequest(body), { now });
+  const addQuality = () => db.prepare(`INSERT INTO work_quality (work_id, published, hf_upvotes, author_bonus, hf_bonus, score)
+    SELECT work_id, ?, 1, 0, 0.01, 0.01 FROM work_keys WHERE key = ?`).run(published, `arxiv:${ids[2]}`);
+  return { env, db, ids, liked, published, groups, read, addQuality };
+}
+
+test('For You raises a tied paper with quality while preserving the other ties and each semantic score', async () => {
+  for (const withLikes of [false, true]) {
+    const { ids, liked, groups, read, addQuality } = await qualityCorpus();
+    const request = { groups: groups.map(group => ({ ...group, positiveIds: withLikes ? [liked] : [] })) };
+    const before = await read(request);
+    assert.deepEqual(before.map(paper => paper.id), ids);
+    if (withLikes) assert.ok(before.every(paper => paper._semanticScore! > 0));
+    addQuality();
+    assert.deepEqual(await read(request), [before[2], before[0], before[1]]);
+  }
+});
+
+test('a full quality signal bridges one day of recency but leaves a paper published today ahead', async () => {
+  const { env, db } = corpus();
+  const ids = ['2610.00091', '2610.00092', '2610.00093'];
+  await ingestPapers(env, ids.map((id, index) => ({
+    paper: lanePaper(id, ['Sparse matrices', 'Network flows', 'Random walks'][index], daysFromNow(-index, NOW)),
+    lanes: ['cs.LG'],
+  })), { now: NOW });
+  db.prepare(`INSERT INTO work_quality (work_id, published, max_h_index, hf_upvotes, author_bonus, hf_bonus, score)
+    SELECT work_id, published, 91, 20, 0.034, 0.016, 0.05 FROM work_lanes
+    WHERE lane = 'cs.LG' AND work_id = (SELECT work_id FROM work_keys WHERE key = ?)`).run(`arxiv:${ids[2]}`);
+  const page = await readFeedPage(env, parseFeedRequest({ groups: [{ categories: ['cs.LG'], weight: 1 }] }), { now: NOW });
+  assert.deepEqual(page.map(paper => paper.id), [ids[0], ids[2], ids[1]]);
+});
+
+test('a fresh For You ranking drops the bonus when a paper reaches five citations between harvests', async () => {
+  const { env, ids, published, groups, read, addQuality } = await qualityCorpus();
+  addQuality();
+  for (const citationCount of [4, 5]) {
+    const paper = { ...lanePaper(ids[2], 'Network flows', published), citationCount, citationCountKnown: true };
+    await ingestPapers(env, [{ paper, lanes: ['cs.LG'] }], { now: NOW });
+    const page = await read({ groups });
+    assert.equal(page.find(row => row.id === ids[2])?.citationCount, citationCount);
+    assert.deepEqual(page.map(row => row.id), citationCount === 4 ? [ids[2], ids[0], ids[1]] : ids);
+  }
+});
+
+test('only the recent main feed uses quality, until exactly 90 days after publication', async () => {
+  const { db, ids, groups, read, published, addQuality } = await qualityCorpus();
+  addQuality();
+  const categories = ['cs.LG'];
+  const follows = [{ type: 'topic', canonicalId: 'cs.LG', displayName: 'Machine learning' }];
+  for (const request of [
+    { categories, exact: true }, { groups, order: 'daily' }, { groups, order: 'relevance' },
+    { categories, follows }, { groups, follows }, { categories },
+  ]) {
+    assert.deepEqual((await read(request)).map(paper => paper.id), ids, JSON.stringify(request));
+  }
+  // Folding a journal listing into an arXiv work can leave a later date in its lane.
+  db.prepare("UPDATE work_lanes SET published = ? WHERE lane = 'cs.LG'").run(daysFromNow(1, Date.parse(published)));
+  const cutoff = Date.parse(published) + 90 * 86_400_000;
+  assert.deepEqual((await read({ groups }, cutoff - 1)).map(paper => paper.id), [ids[2], ids[0], ids[1]]);
+  for (const now of [cutoff, cutoff + 86_400_000]) {
+    assert.deepEqual((await read({ groups }, now)).map(paper => paper.id), ids);
+  }
+});
+
+test('a main feed resumed after the quality change keeps the served paper and ranks the rest again', async () => {
+  const { env, ids, groups, addQuality } = await qualityCorpus();
+  const stored = new Map<string, KeptRanking>();
+  const cache: RankingCache = { get: async key => stored.get(key) ?? null, put: async (key, ranking) => { stored.set(key, ranking); } };
+  const page = async (number: number) => (await readFeedPage(env, parseFeedRequest({ groups, pageSize: 1, page: number }), { now: NOW, cache })).map(paper => paper.id);
+  assert.deepEqual(await page(0), [ids[0]]);
+  // The digest the deployed Worker gave this request before it read quality.
+  for (const entry of stored.values()) entry.rankedBy = '4ba86b047e6bc29d0e619896b249f1dcd8052146eb58dcea72f23b6b2d2673fd';
+  addQuality();
+  assert.deepEqual(await page(1), [ids[2]]);
+  assert.deepEqual(await page(2), [ids[1]]);
+});
+
 // A feed shows a paper on the first day any of its lanes held it: a followed
 // author's lane listing it days after the category did does not bring it back on top.
 test('a daily page places a paper several of its lanes hold on the earliest day they got it', async () => {
@@ -3999,6 +4092,29 @@ test('a page without likes reads the vectors of its newest candidates only, and 
   assert.equal(kept.length, 1);
   assert.equal(kept[0].final, false);
   assert.equal(kept[0].decided, 500);
+});
+
+test('deciding vectors account for quality even when a rejected copy is last by date', async t => {
+  const { env, db, rejections } = coldPageCorpus();
+  // Quality can put the oldest paper in the diversity pool until its vector
+  // reveals that it duplicates the rejection.
+  const last = db.prepare("SELECT work_id FROM work_lanes WHERE lane = 'cs.LG' ORDER BY published, work_id DESC LIMIT 1").get()!.work_id;
+  db.prepare(`INSERT OR REPLACE INTO work_vectors (work_id, embedding)
+    SELECT ?, embedding FROM work_vectors JOIN work_keys USING (work_id) WHERE key = ?`).run(last, `arxiv:${rejections[0]}`);
+  db.prepare(`INSERT INTO work_quality (work_id, published, max_h_index, hf_upvotes, author_bonus, hf_bonus, score)
+    SELECT work_id, published, 91, 20, 0.034, 0.016, 0.05 FROM work_lanes WHERE work_id = ? AND lane = 'cs.LG'`).run(last);
+  const count = vectorRowsRead(t, env.PAPER_STORE!);
+  const request = { groups: [{ categories: ['cs.LG'], weight: 1 }], negativeIds: [rejections[0]] };
+  const kept: KeptRanking[] = [];
+  const cache: RankingCache = { get: async () => null, put: async (_key, ranking) => { kept.push(ranking); } };
+  await readFeedPage(env, parseFeedRequest(request), { now: NOW, cache });
+  const partialReads = count();
+  await readFeedPage(env, parseFeedRequest({ ...request, seen: feedSeenFilter([]), skipsSeen: true }), { now: NOW, cache });
+  assert.ok(partialReads < count() - partialReads, 'the numbered page skipped vectors');
+  const through = kept[0].decided;
+  assert.ok(through && through < kept[0].ranks.length);
+  const prefix = (ranking: KeptRanking) => ranking.ranks.slice(0, through).map(rank => [rank?.workId, rank?.semanticScore]);
+  assert.deepEqual(prefix(kept[0]), prefix(kept[1]));
 });
 
 // The slow-request line (`FeedTimings`) of a page without likes: each round
