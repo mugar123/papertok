@@ -316,6 +316,10 @@ function AppContent() {
       // main.jsx, and the feed coming back from the top — which read as the
       // whole feed reloading.
       SettingsPage.preload().catch(() => {})
+      // Help is the last entry in Settings, and the step to it has no
+      // transition: the settings page goes in the same frame, so an
+      // unfetched chunk would leave the screen empty until it arrived.
+      HelpPage.preload().catch(() => {})
       // My lists is the account menu's other door; unpreloaded, its first
       // open slid in an empty page and filled it afterwards.
       ListsPage.preload().catch(() => {})
