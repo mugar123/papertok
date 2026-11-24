@@ -19,9 +19,9 @@
   height: 4px;
   overflow: hidden;
   border-radius: 999px;
-  /* Three quarters of the quiet ink into the paper: 3:1 against it in both themes (WCAG 1.4.11),
-     so the chapters still to come read, and still apart from the played ones. */
-  background: color-mix(in srgb, var(--text-tertiary) 75%, var(--bg-primary));
+  /* A light wash of the quiet ink, so what is still to play stands well apart from what has played;
+     where the voice is reads from the played ink and the thumb, and from the slider's value. */
+  background: color-mix(in srgb, var(--text-tertiary) 40%, var(--bg-primary));
   transition: height 150ms var(--ease-out);
 }
 .rd-listen-part-fill { position: absolute; inset: 0 auto 0 0; background: var(--text-primary); }
