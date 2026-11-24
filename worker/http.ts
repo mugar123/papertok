@@ -16,14 +16,18 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'http://127.0.0.1:5173',
 ];
 
+export const RESPONSE_SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+};
+
 export function json(data: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-      'referrer-policy': 'no-referrer',
-      'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+      ...RESPONSE_SECURITY_HEADERS,
       ...headers,
     },
   });

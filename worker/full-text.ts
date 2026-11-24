@@ -35,13 +35,31 @@ export function normalizeFullTextRequest(params: URLSearchParams): FullTextReque
   return request.arxivId || request.fullTextId || request.doi ? request : null;
 }
 
-async function fetchText(url: string, accept: string, signal: AbortSignal) {
-  const response = await fetch(url, { signal, headers: { accept, 'user-agent': USER_AGENT } });
+async function fetchText(url: string, accept: string, signal: AbortSignal, arxivId?: string) {
+  const headers = { accept, 'user-agent': USER_AGENT };
+  const options: RequestInit = { signal, headers, ...(arxivId && { redirect: 'manual' }) };
+  let response = await fetch(url, options);
+  for (let redirects = 0; arxivId && [301, 302, 303, 307, 308].includes(response.status); redirects++) {
+    const location = response.headers.get('location');
+    void response.body?.cancel().catch(() => undefined);
+    if (!location || redirects >= 3) throw new Error('Unexpected arXiv HTML redirect');
+    const next = new URL(location, url);
+    if (next.username || next.password || !isArxivRenderedPage(next.href, arxivId)) throw new Error('Unexpected arXiv HTML redirect');
+    url = next.href;
+    response = await fetch(url, options);
+  }
   if (response.status === 404 || response.status === 410) return null;
   if (!response.ok) throw new Error(`${response.status} from ${new URL(url).host}`);
   // Read inside the caller's deadline: `fetch` settles on the headers alone.
   const text = await readHtmlWithinLimit(response, MAX_DOCUMENT_BYTES);
   return text === null ? null : { text, url: response.url || url };
+}
+
+export function isArxivRenderedPage(url: string, arxivId: string) {
+  if (!URL.canParse(url)) return false;
+  const { origin, pathname } = new URL(url);
+  return ['https://arxiv.org', 'https://ar5iv.labs.arxiv.org', 'https://ar5iv.org'].includes(origin)
+    && pathname.replace(/v\d+$/, '') === `/html/${arxivId}`;
 }
 
 async function fromArxiv(arxivId: string, signal: AbortSignal): Promise<FullTextAnswer | null> {
@@ -50,15 +68,15 @@ async function fromArxiv(arxivId: string, signal: AbortSignal): Promise<FullText
     { source: 'ar5iv' as const, url: `https://ar5iv.labs.arxiv.org/html/${arxivId}` },
   ];
   let failure: unknown = null;
-  for (const renderer of renderers) {
+  for (const candidate of renderers) {
     // One renderer failing still leaves the other to ask.
-    const page = await fetchText(renderer.url, 'text/html', signal).catch((error: unknown) => {
+    const page = await fetchText(candidate.url, 'text/html', signal, arxivId).catch((error: unknown) => {
       failure = error;
       return null;
     });
     // arXiv answers 200 with a notice for a paper it has not converted.
     if (page?.text.includes('ltx_document')) {
-      return { source: renderer.source, format: 'latexml', url: page.url, document: page.text };
+      return { source: candidate.source, format: 'latexml', url: page.url, document: page.text };
     }
   }
   if (failure) throw failure;

@@ -456,9 +456,9 @@ export function hasUnlimitedAI(env: WorkerEnv, identity: Partial<VerifiedIdentit
  * second lookup to find out would have doubled the Identity Toolkit traffic in
  * front of every protected route.
  */
-export async function verifyFirebaseAccount(request: Request, env: WorkerEnv) {
+export async function verifyFirebaseAccount(request: Request, env: WorkerEnv, options?: { allowCache?: boolean }) {
   try {
-    const identity = await verifyFirebaseIdentity(request, env);
+    const identity = await verifyFirebaseIdentity(request, env, options);
     return { ...identity, unlimitedAI: hasUnlimitedAI(env, identity) };
   } catch (error) {
     if (error instanceof WorkerAuthError) {
@@ -572,6 +572,48 @@ export async function peekAIQuota(env: WorkerEnv, uid: string, { unlimited = fal
   };
 }
 
+const FULL_PAPER_DAILY_LIMITS = { subjectLimit: 5, globalLimit: 25 };
+const FULL_PAPER_CHECKS_PER_MINUTE = 2;
+
+function fullPaperDailyQuota(uid: string) {
+  return {
+    periodKey: `translate-paper:${todayKey()}`,
+    subject: `translate-paper:${uid}`,
+    ...FULL_PAPER_DAILY_LIMITS,
+  };
+}
+
+export async function preflightFullPaperTranslationQuota(env: WorkerEnv, uid: string) {
+  const minute = Math.floor(Date.now() / 60_000);
+  const rate = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `translate-paper-check:${minute}`,
+    subject: uid,
+    subjectLimit: FULL_PAPER_CHECKS_PER_MINUTE,
+    globalLimit: FULL_PAPER_CHECKS_PER_MINUTE,
+    globalAmount: 0,
+    expiresAt: (minute + 2) * 60_000,
+  });
+  if (rate.code) throw new AIExplanationError('AI_UNAVAILABLE', 503);
+  if (!rate.accepted) throw new AIExplanationError('AI_BUSY', 429);
+
+  const limits = fullPaperDailyQuota(uid);
+  const reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, limits);
+  if (reading.code || !reading.accepted) throw new AIExplanationError('AI_UNAVAILABLE', 503);
+  const scope = (reading.subjectUsage ?? 0) >= limits.subjectLimit ? 'user'
+    : (reading.globalUsage ?? 0) >= limits.globalLimit ? 'global' : null;
+  if (scope) {
+    throw new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', {
+      ...getDailyQuotaReset(),
+      scope,
+      ...(scope === 'user' ? { remainingUses: 0 } : {}),
+    });
+  }
+}
+
+export async function reserveFullPaperTranslationQuota(env: WorkerEnv, uid: string) {
+  await reserveQuota(env, fullPaperDailyQuota(uid));
+}
+
 export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = false } = {}) {
   const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
   // The day is fixed once and travels with the reservation: recomputing it at
@@ -585,6 +627,10 @@ export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = 
       : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
     globalLimit,
   };
+  return reserveQuota(env, ledgerRequest);
+}
+
+async function reserveQuota(env: WorkerEnv, ledgerRequest: QuotaRequest) {
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
     // A ledger that is merely unreachable is a transient outage worth retrying;

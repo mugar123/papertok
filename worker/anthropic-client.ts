@@ -1,11 +1,11 @@
-import Anthropic from '@anthropic-ai/sdk';
+import Anthropic, { type ClientOptions } from '@anthropic-ai/sdk';
 import type { WorkerEnv } from './env.ts';
 
 /**
  * Anthropic's Claude models through the official SDK. PaperTok's AI provider
  * since 2026-11-19, when the NaN Builders key had expired and the team's Claude
  * credits took over. `AI_PROVIDER` can switch rewrite and annotation to another
- * provider.
+ * provider. Translation requires Anthropic.
  *
  * Like `nan-client.ts`, only configuration, the request body, error
  * classification and reading an answer live here, so each AI route shares them
@@ -40,31 +40,32 @@ export function anthropicModel(env: WorkerEnv) {
  * route's whole deadline waiting, and every retry is another paid request; the
  * reader's own retry button is the bounded one.
  */
-export function createAnthropicClient(env: WorkerEnv) {
-  return new Anthropic({ apiKey: setting(env?.ANTHROPIC_API_KEY, 300), maxRetries: 0 });
+export function createAnthropicClient(env: WorkerEnv, options?: Pick<ClientOptions, 'logLevel' | 'openTelemetry'>) {
+  return new Anthropic({ ...options, baseURL: 'https://api.anthropic.com', apiKey: setting(env?.ANTHROPIC_API_KEY, 300), maxRetries: 0 });
 }
 
 /**
- * One request body, as every route sends it.
+ * Request settings shared by the AI routes.
  *
- * `effort` is the only depth control: thinking is always on for Opus 5.5, and
- * `temperature` is rejected by these models. The server-side fallback re-runs a
+ * Opus 5.5 always thinks and `effort` controls the depth.
+ * These models reject `temperature`. The server-side fallback re-runs a
  * request the safety classifier declined on a substitute model inside the same
  * call; a model without a fallback runs the request alone.
  */
-export function buildAnthropicRequest({ model, effort, maxTokens, system, content }: {
+export function buildAnthropicRequest({ model, effort, maxTokens, system, content, allowFallback = true, format }: {
   model: string;
   effort: 'low' | 'medium';
   maxTokens: number;
   system?: string;
+  allowFallback?: boolean;
+  format?: Anthropic.Beta.Messages.BetaJSONOutputFormat;
   content: string | Anthropic.Beta.Messages.BetaContentBlockParam[];
 }) {
   return {
     model,
     max_tokens: maxTokens,
-    betas: [SERVER_SIDE_FALLBACK_BETA],
-    fallbacks: 'default' as const,
-    output_config: { effort },
+    ...(allowFallback ? { betas: [SERVER_SIDE_FALLBACK_BETA], fallbacks: 'default' as const } : {}),
+    output_config: { effort, ...(format ? { format } : {}) },
     ...(system ? { system } : {}),
     messages: [{ role: 'user' as const, content }],
   };
