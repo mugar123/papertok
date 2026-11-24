@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { DownloadSimple, ListBullets } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { CharacterTimings, ReadAloudTimeline, SpokenPassage } from './read-aloud.ts';
@@ -55,6 +55,17 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   const shown = target ?? now;
   const chapter = chapterAt(timeline, shown);
   const [chaptersOpen, setChaptersOpen] = useState(false);
+  // The caption's box follows the sentence's height with a transition (read-aloud-listen.css), so a
+  // longer or shorter sentence eases the sphere and the controls to their place instead of jumping.
+  const caption = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const box = caption.current;
+    const text = box?.firstElementChild;
+    if (!box || !text) return undefined;
+    const observer = new ResizeObserver(() => { box.style.height = `${(text as HTMLElement).offsetHeight}px`; });
+    observer.observe(text);
+    return () => observer.disconnect();
+  }, []);
   const drawerId = useId();
 
   const item = paragraph === null ? null : queue[paragraph] ?? null;
@@ -91,13 +102,15 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
         {!preparing && <span>{` · ${[chapter.number, chapter.title].filter(Boolean).join(' ')}`}</span>}
       </h2>
 
-      <p className="rd-podcast-text" lang="en">
-        {preparing
-          ? `Preparing the audio, ${percent}%`
-          : sentence?.words.map((text, index) => (
-            <span key={index} data-said={index < sentence.current || undefined} data-current={index === sentence.current || undefined}>{text} </span>
-          ))}
-      </p>
+      <div ref={caption} className="rd-podcast-caption">
+        <p className="rd-podcast-text" lang="en">
+          {preparing
+            ? `Preparing the audio, ${percent}%`
+            : sentence?.words.map((text, index) => (
+              <span key={index} data-said={index < sentence.current || undefined} data-current={index === sentence.current || undefined}>{text} </span>
+            ))}
+        </p>
+      </div>
 
       {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
         <div className="rd-podcast-dock">
