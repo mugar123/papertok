@@ -165,59 +165,12 @@
 .rd-podcast-tools { display: flex; gap: var(--space-2); justify-content: center; }
 .rd-podcast-chip { border-radius: 999px; }
 
-/* The chapters as a strip of cards under the controls, scrolled sideways; the one being read is
-   ringed in ink and centred as it starts. */
-.rd-podcast-chapters { width: min(100%, 760px); }
-.rd-podcast-chapters ol {
-  position: relative;
-  display: flex;
-  gap: var(--space-2);
-  margin: 0;
-  padding: var(--space-1) var(--space-1) var(--space-3);
-  overflow-x: auto;
-  list-style: none;
-  scroll-snap-type: x proximity;
-  scrollbar-width: thin;
-  mask-image: linear-gradient(90deg, transparent, #000 var(--space-4), #000 calc(100% - var(--space-8)), transparent);
-}
-.rd-podcast-chapters li { flex: none; scroll-snap-align: center; }
-.rd-podcast-chapters button {
-  display: grid;
-  gap: 6px;
-  align-content: start;
-  width: 168px;
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  text-align: start;
-  cursor: pointer;
-  transition: border-color 150ms ease, scale 120ms var(--ease-out);
-}
-.rd-podcast-chapters button:disabled { cursor: default; opacity: 0.5; }
-@media (hover: hover) and (pointer: fine) {
-  .rd-podcast-chapters button:not(:disabled):hover { border-color: var(--border-default); }
-}
-.rd-podcast-chapters button:not(:disabled):active { scale: 0.98; }
-.rd-podcast-chapters button[aria-current] { border-color: var(--text-primary); box-shadow: 0 0 0 1px var(--text-primary); }
-.rd-podcast-chapter-meta { font: 500 0.6875rem/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-tertiary); }
-.rd-podcast-chapter-title {
-  display: -webkit-box;
-  min-height: calc(2 * 1.3em);
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  font: 600 0.875rem/1.3 var(--font-serif);
-}
-.rd-podcast-chapter-meter { height: 3px; overflow: hidden; border-radius: 3px; background: var(--border-subtle); }
-.rd-podcast-chapter-meter > span { display: block; height: 100%; background: var(--podcast-accent); }
 
 @media (prefers-reduced-motion: reduce) {
   .rd-podcast { animation: none; }
   .rd-podcast-caption { transition: none; }
   .rd-podcast .rd-listen-play { transition: none; }
-  .rd-podcast-chapters button, .rd-podcast-drawer, .rd-podcast-drawer button { transition: none; }
+  .rd-podcast-drawer, .rd-podcast-drawer button { transition: none; }
 }
 
 /* On a phone the controls are a bar fixed to the bottom of the tab, within the thumb's reach and
@@ -259,6 +212,5 @@
 }
 
 @media (max-width: 600px) {
-  .rd-podcast-chapters button { width: 136px; padding: var(--space-2); }
   .rd-podcast-player > .rd-podcast-dock { margin-bottom: var(--space-2); }
 }

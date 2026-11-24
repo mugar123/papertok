@@ -67,15 +67,6 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   }, []);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerId = useId();
-  const strip = useRef<HTMLOListElement | null>(null);
-  // The chapter being read is brought to the middle of the strip as it starts, or as the tab opens.
-  useEffect(() => {
-    const list = strip.current;
-    const card = list?.querySelector<HTMLElement>('[aria-current]');
-    if (!list || !card) return;
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    list.scrollTo({ left: card.offsetLeft - list.clientWidth / 2 + card.offsetWidth / 2, behavior: still ? 'auto' : 'smooth' });
-  }, [chapter.start, preparing]);
 
   const item = paragraph === null ? null : queue[paragraph] ?? null;
   const starts = useMemo(() => {
@@ -145,29 +136,6 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
               <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
             </div>
           </div>
-        )}
-
-        {/* The chapters as a strip of cards, as a video's: the one being read is centred as it starts. */}
-        {timeline.chapters.length > 1 && (
-          <nav className="rd-podcast-chapters" aria-label="Chapters">
-            <ol ref={strip}>
-              {timeline.chapters.map(part => (
-                <li key={part.start}>
-                  <button
-                    type="button"
-                    disabled={preparing}
-                    aria-current={(!preparing && part.start === chapter.start) || undefined}
-                    onClick={() => onSeek(part.start)}
-                    aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, ${clock(part.end - part.start)}`}
-                  >
-                    <span className="rd-podcast-chapter-meta">{[part.number, clock(part.start)].filter(Boolean).join(' · ')}</span>
-                    <span className="rd-podcast-chapter-title">{part.title}</span>
-                    <span className="rd-podcast-chapter-meter"><span style={{ width: `${Math.min(100, Math.max(0, ((now - part.start) / Math.max(1e-6, part.end - part.start)) * 100))}%` }} /></span>
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </nav>
         )}
 
         {!preparing && (
