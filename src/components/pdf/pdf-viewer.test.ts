@@ -24,7 +24,7 @@ test('a tab asks for its route, and switching between Paper and AI summary keeps
         createElement(FeedContext.Provider, { value: { trackPdfBounce: async () => {} } },
           createElement(Viewer, { paper, menu, readingView, onViewChange: (view) => { asked.push(view); }, onClose: () => { closed += 1; } }))));
     const view = render(tree('paper'));
-    const dialog = await screen.findByRole('region', { name: 'Paper viewer' });
+    const dialog = await screen.findByRole('dialog', { name: 'Paper viewer' });
     const stage = dialog.querySelector('.pdf-stage');
     assert.ok(stage);
     assert.equal(stage.hasAttribute('inert'), false, 'the viewer opens on the paper');
@@ -35,7 +35,7 @@ test('a tab asks for its route, and switching between Paper and AI summary keeps
     assert.ok(stage.hasAttribute('inert'), 'the paper waits behind the AI summary');
     fireEvent.click(screen.getByRole('button', { name: 'Paper' }));
     view.rerender(tree('paper'));
-    assert.equal(screen.getByRole('region', { name: 'Paper viewer' }), dialog, 'the same viewer stays mounted');
+    assert.equal(screen.getByRole('dialog', { name: 'Paper viewer' }), dialog, 'the same viewer stays mounted');
     assert.equal(dialog.querySelector('.pdf-stage'), stage, 'the original paper stays mounted');
     assert.equal(stage.hasAttribute('inert'), false);
     assert.equal(dialog.querySelector('.rd--embedded'), null, 'the AI summary goes at once');

@@ -1,7 +1,6 @@
 import type { ComponentProps, MouseEvent, ReactNode } from 'react'
 import type { Paper } from './models/paper.ts'
-import type { PaperViewState } from './components/pdf/paper-view.ts'
-import { matchPaperView, useOpenPaperView } from './components/pdf/paper-view.ts'
+import { matchPaperView, pageLocationOf, useOpenPaperView } from './components/pdf/paper-view.ts'
 import { PaperViewRoute } from './components/pdf/paper-view-route.tsx'
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
@@ -176,9 +175,18 @@ function AppContent() {
   // Without the flush its write waits for the debounce timer, the tab being
   // hidden or pagehide, and the reload fires the last two only as it unloads
   // the page.
+  // A paper's viewer is a route drawn over the page it was opened from, which stays mounted under
+  // it; reached by a link, that page is the paper's own (paper-view.ts). The page is what counts
+  // as where the reader is, so opening the viewer or switching its tab never reloads for a deploy.
+  const paperView = matchPaperView(location.pathname)
+  const pageLocation = pageLocationOf(location)
+  // The viewer stays mounted after Back leaves its route, to close as its X does: a modal torn out
+  // while open would leave the page behind it locked (use-overlay-history.ts).
+  const [mountedView, setMountedView] = useState(paperView)
+  if (paperView && (paperView.paperKey !== mountedView?.paperKey || paperView.view !== mountedView.view)) setMountedView(paperView)
   useEffect(() => {
-    void reloadIfBehindDeploy(location.pathname, () => Promise.all([flushAllInteractionProfiles(), waitForPendingWrites(db)]))
-  }, [location.pathname])
+    void reloadIfBehindDeploy(pageLocation.pathname, () => Promise.all([flushAllInteractionProfiles(), waitForPendingWrites(db)]))
+  }, [pageLocation.pathname])
   // The ONE place this is computed. Every PageTransition reads it from the
   // provider below, and AnimatePresence hands it to the page on its way out —
   // which cannot work it out for itself, because it is kept mounted inside a
@@ -186,14 +194,6 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const isPhone = useIsPhone()
   const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
-  // A paper's viewer is a route drawn over the page it was opened from, which stays mounted under
-  // it (`background`); opened from a link, that page is the paper's own.
-  const paperView = matchPaperView(location.pathname)
-  const background = paperView
-    ? ((location.state as PaperViewState | null)?.background
-      ?? { pathname: getPublicPaperPath(paperView.paperKey) ?? '/feed', search: '', hash: '', state: null, key: 'paper-view' })
-    : null
-  const pageLocation = background ?? location
   const normalizedPathname = pageLocation.pathname === '/' ? '/' : pageLocation.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/feed', '/lists', '/profile', '/recent', '/following', '/search', '/settings', '/help', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, list and entity pages keep the app chrome for a signed-in
@@ -373,11 +373,10 @@ function AppContent() {
       <RouteAnnouncer />
       {/* The one place toasts render; anything calls `toast()` from 'sonner'. */}
       <Toaster />
-      {/* Under a paper's viewer, which covers it, the bar is out of the keyboard's reach too. */}
-      {showNavbar && <div inert={Boolean(paperView)}><Navbar searchOpen={searchOpen} onOpenSearch={openSearch} onSearchSlot={setSearchSlot} /></div>}
+      {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={openSearch} onSearchSlot={setSearchSlot} />}
       {/* Focus target for the skip link and for route changes (RouteAnnouncer).
           A div, not <main>: several routes render their own <main> inside. */}
-      <div id="main-content" tabIndex={-1} inert={Boolean(paperView)}>
+      <div id="main-content" tabIndex={-1}>
       <Suspense fallback={<RouteFallback />}>
       {/* `mode="sync"`: the page leaving and the page arriving share the
           screen, the deeper one on top (page-transition.css). `custom` so the
@@ -683,7 +682,7 @@ function AppContent() {
       {/* Each overlay suspends on its own: while its chunk downloads (idle
           prefetch usually has it already) nothing flashes, and the rest of
           the screen stays interactive. */}
-      {paperView && <PaperViewRoute paperKey={paperView.paperKey} view={paperView.view} />}
+      {mountedView && <PaperViewRoute paperKey={mountedView.paperKey} view={mountedView.view} left={!paperView} onLeft={() => setMountedView(null)} />}
 
       <Suspense fallback={null}>
         {saveModal && (

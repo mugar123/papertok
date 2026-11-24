@@ -173,6 +173,9 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     return pending;
   };
 
+  /** The first passages a tab opened at `start` prepares before Play is offered. */
+  const firstPassages = (start: number) => queue.slice(start, start + STARTUP_PASSAGES);
+
   const reportStartup = (batch: NonNullable<typeof fetchingAll.current>, failed = false) => {
     if (!batch.opening) return;
     const ready = batch.initial.filter(item => batch.settled.has(item)).length;
@@ -187,11 +190,11 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     if (running?.items === queue) {
       const pending = new Set(running.remaining);
       running.remaining = order(queue).filter(item => pending.has(item));
-      if (opening) Object.assign(running, { opening, start, initial: queue.slice(start, start + STARTUP_PASSAGES) });
+      if (opening) Object.assign(running, { opening, start, initial: firstPassages(start) });
       reportStartup(running);
       return;
     }
-    const batch = { items: queue, remaining: order(queue), settled: new Set<SpokenPassage>(), start, initial: queue.slice(start, start + STARTUP_PASSAGES), opening };
+    const batch = { items: queue, remaining: order(queue), settled: new Set<SpokenPassage>(), start, initial: firstPassages(start), opening };
     fetchingAll.current = batch;
     setPrepareDone(false);
     reportStartup(batch);

@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_OUT, MOTION_BASE_S } from '../../utils/motion-curves.ts';
 import { useFeed } from '../../context/feed-context.tsx';
 import { Highlighter, TextAlignLeft, X } from '@phosphor-icons/react';
+import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { readShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
 import './pdf-viewer.css';
@@ -42,20 +43,18 @@ const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 const PdfPages = lazy(() => import('./pdf-pages.tsx'));
 const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 
-/** How long the viewer's leave plays before its route is left (pdf-viewer.css, 240ms). */
-const LEAVE_MS = 240;
-
 /**
- * The paper's own route (`/paper/<key>/read`, `/listen`, `/summary`, paper-view-route.tsx), drawn
- * over the whole screen and the page it was opened from, which stays mounted and inert below it.
- * Its tab is the route's: a press asks for the other route (`onViewChange`), and the view arrives
- * from that tab's side. Closing plays the leave, then `onClose` leaves the route. Escape on the
- * viewer closes it as the X does.
+ * A full-screen Base UI Dialog (ui/dialog.jsx) on the paper's own route (paper-view-route.tsx),
+ * over the page it was opened from. The viewer owns its open state: closing flips it, the
+ * primitive plays the exit in pdf-viewer.css, and `onClose` leaves the route from
+ * `onOpenChangeComplete(false)` once that has finished. The primitive also owns the focus trap,
+ * Escape, the scroll lock and the restore to the button that opened it. Its tab is the route's:
+ * a press asks for the other route (`onViewChange`), and the view arrives from that tab's side.
  */
 /** The viewer's tabs in the bar's order, which sets the side a view arrives from. */
 const VIEW_ORDER: readonly ReadingView[] = ['paper', 'listen', 'summary'];
 
-export default function PDFViewer({ paper, menu, readingView, onViewChange, onClose }: { paper: Paper; menu: ReaderMenu; readingView: ReadingView; onViewChange: (view: ReadingView) => void; onClose: () => void }) {
+export default function PDFViewer({ paper, menu, readingView, onViewChange, closing = false, onClose }: { paper: Paper; menu: ReaderMenu; readingView: ReadingView; onViewChange: (view: ReadingView) => void; closing?: boolean; onClose: () => void }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
@@ -131,13 +130,14 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, onCl
   const startTimeRef = useRef<number | null>(null);
 
   // The X and Escape land here, so the bounce is counted once, whichever it was.
+  const countBounce = useCallback(() => {
+    if (startTimeRef.current !== null && Date.now() - startTimeRef.current < 5000) void trackPdfBounce(paper);
+  }, [paper, trackPdfBounce]);
   const handleClose = useCallback(() => {
     if (!open) return;
-    if (startTimeRef.current !== null && Date.now() - startTimeRef.current < 5000) {
-      void trackPdfBounce(paper);
-    }
+    countBounce();
     setOpen(false);
-  }, [open, paper, trackPdfBounce]);
+  }, [countBounce, open]);
   const afterClose = useRef<(() => void) | null>(null);
   const leaveThen = useCallback((then: () => void) => {
     if (!open) return;
@@ -148,17 +148,11 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, onCl
   useEffect(() => {
     startTimeRef.current = Date.now();
   }, []);
-
+  // Its route was left (Back): it closes as the X closes it, leave and bounce included.
   useEffect(() => {
-    if (open) return undefined;
-    const timer = window.setTimeout(() => {
-      onClose();
-      afterClose.current?.();
-    }, LEAVE_MS);
-    return () => clearTimeout(timer);
-  }, [open, onClose]);
-  const viewer = useRef<HTMLElement | null>(null);
-  useEffect(() => { viewer.current?.focus({ preventScroll: true }); }, []);
+    if (closing) countBounce();
+  }, [closing, countBounce]);
+
 
   // Apunta a lo que el lector está viendo cuando hay iframe, y al PDF que no
   // cabe en él cuando no lo hay.
@@ -188,8 +182,11 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, onCl
   const { user, readingPreferences } = useAuth();
   // The route's tab, and the side the view it shows arrives from: a tab to the right comes in from
   // the right. The view left goes at once, so two texts never show through each other.
-  const [tab, setTab] = useState<{ view: ReadingView; from: number; turn: number }>({ view: readingView, from: 0, turn: 0 });
-  if (tab.view !== readingView) setTab({ view: readingView, from: Math.sign(VIEW_ORDER.indexOf(readingView) - VIEW_ORDER.indexOf(tab.view)), turn: tab.turn + 1 });
+  const [arrival, setArrival] = useState({ view: readingView, from: 0, turn: 0 });
+  if (arrival.view !== readingView) {
+    setArrival({ view: readingView, from: Math.sign(VIEW_ORDER.indexOf(readingView) - VIEW_ORDER.indexOf(arrival.view)), turn: arrival.turn + 1 });
+  }
+  const tab = { ...arrival, view: readingView };
   const choose = (next: ReadingView) => { if (next !== readingView) onViewChange(next); };
   const canSummarize = Boolean(user) && canRewritePaper(paper);
   const uid = user?.uid ?? '';
@@ -277,33 +274,41 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, onCl
   // A tab that is no longer offered (the text turned to the PDF, say) falls back to the paper.
   const shown = tabs.includes(tab.view) ? tab.view : 'paper';
   const summaryOpen = shown === 'summary';
-  // Each arrival swaps between two equal animations, so the next one plays again.
-  const arrival = tab.turn === 0 ? undefined : tab.turn % 2 ? 'odd' : 'even';
+  // A tab not offered once the paper's text is in (the text turned to the PDF, or Listen asked for
+  // by a link without an account) leaves its route for the paper's.
+  const leaveUnoffered = useEffectEvent(() => onViewChange('paper'));
+  useEffect(() => {
+    if (fullText !== undefined && shown !== readingView) leaveUnoffered();
+  }, [fullText, shown, readingView]);
 
   return (
-    <section
-      ref={viewer}
-      className="pdf-overlay"
-      data-open={open || undefined}
-      data-closed={!open || undefined}
-      aria-label="Paper viewer"
-      tabIndex={-1}
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape' || event.defaultPrevented) return;
-        event.preventDefault();
-        handleClose();
+    <Dialog
+      open={open && !closing}
+      onOpenChange={(nextOpen) => { if (!nextOpen) handleClose(); }}
+      onOpenChangeComplete={(nextOpen) => {
+        if (nextOpen) return;
+        onClose();
+        afterClose.current?.();
       }}
     >
-        <div className="pdf-viewer" style={{ '--view-from': `${tab.from * 16}px` }}>
+      <DialogContent
+        className="pdf-overlay"
+        overlayClassName="pdf-scrim"
+        showClose={false}
+        closeLabel={'Close paper'}
+        aria-label={'Paper viewer'}
+        style={{ '--view-from': `${tab.from * 16}px` }}
+      >
+        <div className="pdf-viewer">
           {/* Top bar */}
           <div className="pdf-topbar" ref={setTopbar}>
-            <Button variant="ghost" size="icon-sm" aria-label="Close paper" title="Close" onClick={handleClose}>
+            <DialogClose render={<Button variant="ghost" size="icon-sm" />} aria-label={'Close paper'} title={'Close'}>
               <X size={18} aria-hidden="true" />
-            </Button>
+            </DialogClose>
 
             {/* The bar names the paper once the article's own title has scrolled
                 away, rising in from below; it leaves the way it came. Where the paper
-                has an AI summary, the bar holds the two tabs instead. */}
+                has other tabs (an AI summary, Listen), the bar holds them instead. */}
             {tabs.length > 1 ? <ReadingTabs current={shown} views={tabs} onChange={choose} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
@@ -321,7 +326,7 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, onCl
           </div>
 
           {/* Under the AI summary tab the paper stays mounted, so its place waits, but out of reach. */}
-          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} data-arrive={shown === 'paper' ? arrival : undefined} inert={summaryOpen}>
+          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} data-arrive={(shown === 'paper' && tab.turn > 0) || undefined} inert={summaryOpen}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
                 <p>The text of this paper could not be loaded right now.</p>
@@ -477,6 +482,7 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, onCl
             </Suspense>
           </div>
         )}
-    </section>
+      </DialogContent>
+    </Dialog>
   );
 }

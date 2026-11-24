@@ -1,18 +1,36 @@
-/* The paper viewer: the whole screen, above the page it was opened from and the app's bar. */
+/* PDF Viewer Overlay — the popup of a full-screen Base UI Dialog
+   (ui/dialog.jsx). The primitive arrives centred with a hairline and a
+   shadow; the overrides below are the viewer claiming the whole viewport at
+   the z-index it has always had, above every other surface. */
 .pdf-overlay {
   position: fixed;
   inset: 0;
   z-index: 12100;
-  /* The viewer's own fixed parts (the podcast's chapters) are placed in it, not on the screen. */
-  contain: layout;
+  width: auto;
+  max-width: none;
+  translate: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   background: var(--bg-primary);
 }
 
+/* The veil is the popup itself, so the primitive's scrim draws nothing. */
+.pdf-scrim {
+  z-index: 12099;
+  background: transparent;
+}
 
-/* `data-open` / `data-closed` are the viewer's (pdf-viewer.tsx): it holds itself on screen until
-   its leave has played, then leaves its route. The paper arrives and leaves as a detail page
-   does, on the same keyframes and clocks as `enter` and `leave` in page-transition.css (280ms in,
-   240ms out). */
+.pdf-scrim[data-open],
+.pdf-scrim[data-closed] {
+  animation: none;
+}
+
+/* `data-open` / `data-closed` are the primitive's: it holds the popup in the
+   document until the closing animation has finished, and only then is the
+   viewer's route left (paper-view-route.tsx). The paper arrives and leaves as a detail
+   page does, on the same keyframes and clocks as `enter` and `leave` in
+   page-transition.css (280ms in, 240ms out). */
 .pdf-overlay[data-open] {
   animation:
     pageEnterTravel 280ms var(--ease-out-cubic) both,
@@ -204,14 +222,13 @@
    goes at once and the one arriving is opaque from the start, so two texts never show through
    each other; only its contents slide in and fade up. */
 @keyframes pdf-view-in { from { opacity: 0; translate: var(--view-from, 0) 0; } }
-@keyframes pdf-view-in-again { from { opacity: 0; translate: var(--view-from, 0) 0; } }
 .pdf-summary { position: absolute; inset: var(--pdf-topbar-h, 60px) 0 0; z-index: 5; background: var(--bg-primary); }
+/* The paper's own reading surfaces, not the dock or the notes beside them, which place themselves. */
 .pdf-summary > *,
-.pdf-stage[data-arrive='odd'] > :not(.rd-podcast),
+.pdf-stage[data-arrive] > :is(.ft-scroll, iframe, .pdf-pages, .pdf-loading, .pdf-fallback, .pdf-text-failed),
 .rd-podcast > :not(.rd-podcast-drawer) { animation: pdf-view-in 220ms var(--ease-out) backwards; }
-.pdf-stage[data-arrive='even'] > :not(.rd-podcast) { animation: pdf-view-in-again 220ms var(--ease-out) backwards; }
 @media (prefers-reduced-motion: reduce) {
   .pdf-summary > *,
-  .pdf-stage[data-arrive] > :not(.rd-podcast),
+  .pdf-stage[data-arrive] > :is(.ft-scroll, iframe, .pdf-pages, .pdf-loading, .pdf-fallback, .pdf-text-failed),
   .rd-podcast > :not(.rd-podcast-drawer) { animation: fadeIn 120ms linear backwards; }
 }

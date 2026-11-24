@@ -26,11 +26,23 @@ export type PaperViewState = { background?: Location };
 
 /**
  * The paper and its card's menu, handed from the card that opened the viewer to its route. The
- * menu holds the card's live state and actions, which history state cannot carry.
+ * menu holds the card's live state and actions, which history state cannot carry. One entry per
+ * paper opened in this page load; a reload starts without them.
  */
+// ponytail: kept for the page load, one per paper opened; clear on close if sessions grow long.
 export const handoffs = new Map<string, { paper: Paper; menu: ReaderMenu }>();
-// The control that opened the viewer, which takes the focus back when it closes.
-export const opener: { control: HTMLElement | null } = { control: null };
+
+/**
+ * The page a location shows: itself, or under a paper's viewer the page it was opened from. A
+ * viewer reached by a link or a reload, with no card's handoff, has the paper's own page under it.
+ * Title, announcements, page views and the deploy check follow this page, not the viewer's tab.
+ */
+export function pageLocationOf(location: Location): Location {
+  const view = matchPaperView(location.pathname);
+  if (!view) return location;
+  const background = handoffs.has(view.paperKey) ? (location.state as PaperViewState | null)?.background : undefined;
+  return background ?? { pathname: getPublicPaperPath(view.paperKey) ?? '/feed', search: '', hash: '', state: null, key: `paper:${view.paperKey}` };
+}
 
 /** Opens a paper's viewer on its route, over the page it is opened from, which stays mounted under it. */
 export function useOpenPaperView() {
@@ -43,7 +55,6 @@ export function useOpenPaperView() {
     const view = page && matchPaperView(`${page}/read`);
     if (!page || !view) return;
     handoffs.set(view.paperKey, { paper, menu });
-    opener.control = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     // Opened from another viewer's page, the page under both stays the one beneath.
     const background = (here.current.state as PaperViewState | null)?.background ?? here.current;
     void navigate(`${page}/read`, { state: { background } satisfies PaperViewState });

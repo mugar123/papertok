@@ -1,3 +1,4 @@
+import { auth } from './firebase.ts';
 import { authenticatedWorkerFetch } from './worker-api-client.ts';
 
 const PARAGRAPH_TIMEOUT_MS = 40_000;
@@ -91,13 +92,23 @@ export async function fetchVoiceUsage({ signal }: { signal?: AbortSignal } = {})
 /**
  * Paragraphs already heard, kept in the browser so a paper opened again plays and jumps at once
  * instead of asking the Worker for each one: at most 800 (three or four long papers), each for 30
- * days, the oldest dropped first. The audio is the same for every reader. Where the browser keeps
- * no cache (a private window), everything is asked for as before.
+ * days, the first kept dropped first. One cache per account, since what was heard is the
+ * account's reading history; another account's is deleted when this one keeps audio. Where the
+ * browser keeps no cache (a private window), everything is asked for as before.
  */
-const AUDIO_CACHE = 'papertok-voice-1';
+const AUDIO_CACHE_PREFIX = 'papertok-voice-1:';
 const MAX_CACHED_PARAGRAPHS = 800;
 const CACHED_FOR_MS = 30 * 24 * 60 * 60 * 1000;
-let keptSinceTrim = 0;
+/** Kept paragraphs between two trims of the cache; the first of each page load trims too. */
+const TRIM_EVERY = 25;
+let keptSinceTrim = TRIM_EVERY - 1;
+
+const audioCacheName = () => (auth.currentUser ? `${AUDIO_CACHE_PREFIX}${auth.currentUser.uid}` : null);
+
+async function openAudioCache() {
+  const name = audioCacheName();
+  return typeof caches === 'undefined' || !name ? null : { name, cache: await caches.open(name) };
+}
 
 async function cacheAddress(text: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -107,8 +118,9 @@ async function cacheAddress(text: string) {
 
 async function cachedAudio(text: string) {
   try {
-    if (typeof caches === 'undefined') return null;
-    const cache = await caches.open(AUDIO_CACHE);
+    const opened = await openAudioCache();
+    if (!opened) return null;
+    const { cache } = opened;
     const address = await cacheAddress(text);
     const kept = await cache.match(address);
     if (!kept) return null;
@@ -124,14 +136,17 @@ async function cachedAudio(text: string) {
 
 async function keepAudio(text: string, blob: Blob, key: string | null) {
   try {
-    if (typeof caches === 'undefined') return;
-    const cache = await caches.open(AUDIO_CACHE);
+    const opened = await openAudioCache();
+    if (!opened) return;
+    const { name, cache } = opened;
     await cache.put(await cacheAddress(text), new Response(blob, {
       headers: { 'content-type': 'audio/mpeg', 'x-kept-at': String(Date.now()), ...(key ? { 'x-tts-audio': key } : {}) },
     }));
     keptSinceTrim += 1;
-    if (keptSinceTrim < 25) return;
+    if (keptSinceTrim < TRIM_EVERY) return;
     keptSinceTrim = 0;
+    const others = (await caches.keys()).filter(other => other.startsWith(AUDIO_CACHE_PREFIX) && other !== name);
+    await Promise.all(others.map(other => caches.delete(other)));
     const kept = await cache.keys();
     await Promise.all(kept.slice(0, Math.max(0, kept.length - MAX_CACHED_PARAGRAPHS)).map(request => cache.delete(request)));
   } catch {
