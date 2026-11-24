@@ -8,6 +8,8 @@ import { READ_ALOUD_SPEEDS } from './use-read-aloud.ts';
 import './read-aloud-controls.css';
 
 const SKIP_SECONDS = 15;
+/** The space after each of the timeline's blocks. */
+const BLOCK_GAP_PX = 4;
 
 function spokenClock(seconds: number) {
   const whole = Math.max(0, Math.floor(seconds));
@@ -50,14 +52,24 @@ export function SpeedButton({ speed, onSpeed }: { speed: number; onSpeed: (speed
   );
 }
 
+/** A section shorter than this share of the paper joins the block before it, as a video's short chapters do. */
+const MIN_BLOCK_SHARE = 0.015;
+
 /**
  * The paper's top-level sections, each running until the next one starts: the timeline's
- * blocks, so a paper with many short subsections is not cut into slivers.
+ * blocks, so a paper with many short subsections, appendices or notes is not cut into slivers.
  */
 function sections(timeline: ReadAloudTimeline) {
   const tops = timeline.chapters.filter(part => !part.number.includes('.'));
-  if (tops.length === 0) return timeline.chapters;
-  return tops.map((part, index) => ({ ...part, start: index === 0 ? 0 : part.start, end: tops[index + 1]?.start ?? timeline.duration }));
+  const spans = (tops.length > 0 ? tops : timeline.chapters)
+    .map((part, index, all) => ({ ...part, start: index === 0 ? 0 : part.start, end: all[index + 1]?.start ?? timeline.duration }));
+  const blocks: typeof spans = [];
+  for (const span of spans) {
+    const last = blocks[blocks.length - 1];
+    if (last && (span.end - span.start) / timeline.duration < MIN_BLOCK_SHARE) last.end = span.end;
+    else blocks.push(span);
+  }
+  return blocks;
 }
 
 /**
@@ -139,7 +151,8 @@ export function ReadAloudTrack({ timeline, prepared, position, target, onTarget,
             key={part.start}
             className="rd-listen-part"
             data-pointed={pointedBlock === part || undefined}
-            style={{ flexGrow: part.end - part.start }}
+            // Placed by time, not laid out with gaps, so the block under the pointer is the minute it names.
+            style={{ left: `${share(part.start)}%`, width: `calc(${share(part.end - part.start)}% - ${BLOCK_GAP_PX}px)` }}
           >
             <span className="rd-listen-part-fill" style={{ width: `${Math.min(100, Math.max(0, ((shown - part.start) / Math.max(1e-6, part.end - part.start)) * 100))}%` }} />
           </span>

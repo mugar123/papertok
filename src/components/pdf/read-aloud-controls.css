@@ -28,23 +28,21 @@
 
 /* The voice's controls in the podcast tab. */
 
-/* One line, one segment per section with a gap between, as a video's chapters; a native range on top carries the semantics. */
+/* One line, one block per section with a gap after it, as a video's chapters; a native range on top carries the semantics. */
 .rd-listen-track { position: relative; height: 24px; }
 .rd-listen-line {
   position: absolute;
   top: 50%;
   right: 0;
   left: 0;
-  display: flex;
-  gap: 4px;
-  align-items: center;
   height: 12px;
   translate: 0 -50%;
   pointer-events: none;
 }
 .rd-listen-part {
-  position: relative;
-  flex: 1 1 0;
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
   min-width: 2px;
   height: 4px;
   overflow: hidden;
