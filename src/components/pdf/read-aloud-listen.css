@@ -48,8 +48,8 @@
 /* On a phone the forms are the cover at the top, large as a player's artwork, with room left for the caption. */
 @media (max-width: 600px) {
   /* The screen's height less what the bars, the section and about four lines of caption need, so a
-     short phone shrinks the forms rather than hiding the caption under the controls. */
-  .rd-podcast-cover { width: min(84vw, max(96px, 100dvh - 480px)); margin-bottom: var(--space-5); }
+     short phone shrinks the forms rather than hiding the caption under the controls; the header's room too. */
+  .rd-podcast-cover { width: min(84vw, max(96px, 100dvh - 540px)); margin-bottom: var(--space-5); }
   .rd-podcast-caption { margin-bottom: var(--space-6); }
 }
 .rd-podcast-visual { display: block; width: 100%; height: 100%; }
@@ -68,6 +68,7 @@
   text-wrap: balance;
 }
 .rd-podcast-section::before { content: ' · '; }
+.rd-podcast-header { display: none; }
 
 /* The sentence being read, as a large caption: spoken words in ink, the current one marked. */
 .rd-podcast-caption {
@@ -292,7 +293,11 @@
    under its ends, then the transport, larger, within the thumb's reach. */
 @media (max-width: 600px) {
   .rd-podcast-title { width: 100%; max-width: none; display: grid; gap: 2px; text-align: start; }
-  .rd-podcast-paper { font: 600 0.75rem/1.3 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); }
+  /* The paper is the header's on a phone, so the line over the caption is the section alone. */
+  .rd-podcast-paper { display: none; }
+  .rd-podcast-header { display: grid; gap: 2px; width: 100%; margin-bottom: var(--space-3); text-align: center; }
+  .rd-podcast-header-label { margin: 0; font: 600 0.75rem/1.3 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); }
+  .rd-podcast-header-title { margin: 0; font: 600 0.9375rem/1.3 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
   .rd-podcast-section { font: 700 1.375rem/1.25 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
   .rd-podcast-section::before { content: none; }
   .rd-podcast-text { text-align: start; text-wrap: pretty; }
