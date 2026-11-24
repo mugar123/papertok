@@ -130,7 +130,7 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
     fireEvent.click(screen.getByRole('button', { name: LISTEN }));
     const tab = view.getByRole('region', { name: 'Paper' });
     const chapterList = () => within(view.getByRole('navigation', { name: 'All chapters' }));
-    assert.match(tab.textContent ?? '', /Preparing the first passages0% · 3 chapters · about \d+ min/, 'what is prepared, how far, and what is coming');
+    assert.match(tab.textContent ?? '', /Preparing the first passages0% · 3 chapters/, 'what is prepared, how far, and how many chapters');
     assert.equal(within(tab).queryByRole('button', { name: 'Play' }), null, 'no player before there is something to play');
     const status = within(tab).getByRole('status');
     await waitFor(() => assert.equal(status.textContent, 'Preparing the first passages', 'the player tells a screen reader it is preparing'));

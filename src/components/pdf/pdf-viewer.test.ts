@@ -2,7 +2,7 @@ import '../../../tests/dom/dom-environment.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { loadPaperViewer } from '../../../tests/dom/component-modules.ts';
 import { stubWorker } from '../../../tests/dom/worker-stub.ts';
 import { paperLegacyAdapter } from '../../models/paper.ts';
@@ -33,6 +33,8 @@ test('switching between Paper and AI summary keeps the dialog and the paper moun
     assert.equal(screen.getByRole('dialog'), dialog, 'the same dialog stays mounted');
     assert.equal(dialog.querySelector('.pdf-stage'), stage, 'the original paper stays mounted');
     assert.equal(stage.hasAttribute('inert'), false);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+    assert.equal(dialog.querySelector('.rd--embedded'), null, 'the AI summary goes once it has faded out');
     assert.equal(closed, 0);
   } finally {
     cleanup();

@@ -26,10 +26,7 @@
   border-radius: 0;
   box-shadow: none;
   background: var(--bg-primary);
-  /* Where the reader grows from: the card's button, handed over by
-     paper-reader.tsx as `--rd-origin` (viewport coordinates — `.rd` is
-     `inset: 0`, so its box is the viewport). */
-  transform-origin: var(--rd-origin, 50% 62%);
+  transform-origin: 50% 62%;
 }
 /* The viewer's AI summary tab fills its place over the paper (`.pdf-summary`, pdf-viewer.css). */
 .rd.rd--embedded { position: absolute; inset: 0; z-index: auto; }
@@ -551,8 +548,8 @@ button.rd-tag {
 /* ── The reader's arrival and leave ──
    Base UI marks the popup `data-open` while it is up and `data-closed` for
    the length of the leave, and holds the node until the animation on it has
-   played — so these are animations, not transitions. The shell grows out of
-   the card's button (`--rd-origin`, above) on the native `scale`, never
+   played — so these are animations, not transitions. The shell grows on the
+   native `scale`, never
    `transform`: the dialog's centring utilities own `translate`, and a
    keyframe touching them would drag the sheet to a corner mid-animation.
 

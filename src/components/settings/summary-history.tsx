@@ -230,7 +230,7 @@ export default function SummaryHistory({ uid }: { uid: string }) {
       <p className="visually-hidden" role="status">{announcement}</p>
 
       {openRow && readerPaper && (
-        // As in PaperCard: nothing to hold a place for while the chunk loads.
+        // Nothing to hold a place for while the chunk loads.
         <Suspense fallback={null}>
           <PaperReader
             paper={readerPaper}

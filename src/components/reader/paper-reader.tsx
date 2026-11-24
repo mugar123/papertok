@@ -7,7 +7,6 @@ import type { ReadingLevel } from '../../utils/user-settings.ts';
 interface PaperReaderProps {
   card?: { paper: Paper; menu: ReaderMenu };
   paper: Partial<Paper>; onClose: () => void;
-  originRect?: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'> | null;
   closeRef?: Ref<() => void> | null;
   /** The level to open at instead of the reader's default (the summary history opens the one it lists). */
   initialLevel?: ReadingLevel;
@@ -112,25 +111,25 @@ const COPY = {
     title: 'AI summary',
     close: 'Close reader',
     level: 'Level',
-    writing: 'Rewriting the paper',
+    writing: 'Writing the summary',
     writingHint: 'Sections appear as they are written.',
     cached: 'Free to reopen',
-    cachedTitle: 'A rewrite made earlier, reused: no AI use was spent.',
-    adaptationTag: 'AI adaptation',
+    cachedTitle: 'A summary written earlier, reused: no AI use was spent.',
+    adaptationTag: 'AI summary',
     original: 'View the original paper',
-    adaptation: 'AI adaptation generated from the full text. It does not replace the original article.',
+    adaptation: 'AI summary written from the full text. It does not replace the original article.',
     stages: {
       saved: 'Looking for your saved summary',
       source: 'Downloading the paper',
       reading: 'The model is reading the paper',
-      writing: 'Rewriting the paper',
+      writing: 'Writing the summary',
     },
     retry: 'Try again',
-    incomplete: 'The rewrite stopped before finishing. You can try again.',
+    incomplete: 'The summary stopped before finishing. You can try again.',
     reusedNote: 'Written earlier and reused, so it spent no AI use. Writing it again spends one.',
     writeAgain: 'Write it again',
     writeAgainFailed: (reason: string) => `${reason}. The summary above was not replaced.`,
-    writeAgainIncomplete: 'The new rewrite stopped before finishing',
+    writeAgainIncomplete: 'The new summary stopped before finishing',
     sections: 'sections',
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
@@ -164,7 +163,7 @@ const ERROR_COPY = {
     },
     AI_AUTH_REQUIRED: {
       title: 'You need to sign in',
-      body: 'Rewriting papers with AI is a feature for signed-in accounts.',
+      body: 'AI summaries are a feature for signed-in accounts.',
     },
     AI_QUOTA_EXHAUSTED: {
       title: 'Today’s uses have run out',
@@ -175,7 +174,7 @@ const ERROR_COPY = {
       body: 'The ceiling is the model provider’s, not yours: your own uses are untouched. It usually frees up before long.',
     },
     AI_NOT_CONFIGURED: {
-      title: 'Rewriting is not available',
+      title: 'AI summaries are not available',
       body: 'This feature is not switched on here yet. It is not the paper’s fault.',
     },
     AI_TIMEOUT: {
@@ -188,7 +187,7 @@ const ERROR_COPY = {
     },
     AI_INVALID_PAPER: {
       title: 'This paper cannot be summarized',
-      body: 'The PDF does not carry enough text to rewrite. Usually a scan, or a one-page article.',
+      body: 'The PDF does not carry enough text to summarize. Usually a scan, or a one-page article.',
     },
     AI_INVALID_RESPONSE: {
       title: 'The model answered in another format',
@@ -306,11 +305,9 @@ const GHOST_LINES = Object.freeze([
 ]);
 
 /*
- * The reader's own entrance and exit — growing out of the button that opened
- * it, collapsing back into it, the floating chrome a beat behind — are CSS
- * now, on the `[data-open]` / `[data-closed]` attributes the Base UI Dialog
- * sets (see `.rd[data-open]` in paper-reader.css). The origin still comes from
- * the card: it travels as the `--rd-origin` variable set on the shell below.
+ * The reader's own entrance and exit, the floating chrome a beat behind, are
+ * CSS, on the `[data-open]` / `[data-closed]` attributes the Base UI Dialog
+ * sets (see `.rd[data-open]` in paper-reader.css).
  */
 
 /**
@@ -388,7 +385,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
   );
 }
 
-export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel, onPaperTab, embedded = false, onLeave }: PaperReaderProps) {
+export default function PaperReader({ paper, card, onClose, closeRef = null, initialLevel, onPaperTab, embedded = false, onLeave }: PaperReaderProps) {
   const { user, readingPreferences } = useAuth();
   const uid = user?.uid;
   const { trackEvent, consent } = useAnalyticsConsent();
@@ -1114,15 +1111,6 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   const errorPose = providerQuota ? 'thinking' : ERROR_POSES[shownError as keyof typeof ERROR_POSES] || 'upset';
   const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError!));
 
-  /* The reader grows from wherever it was opened. `.rd` is `inset: 0`, so its
-     own box is the viewport and the button's viewport coordinates are already
-     the right origin — no measuring, no offset parent to correct for. Handed
-     to the stylesheet as `--rd-origin`, which the arrival and the leave
-     keyframes read as their `transform-origin`. */
-  const transformOrigin = originRect
-    ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
-    : '50% 62%';
-
   const usesQuota = quota && !quota.unlimited && quota.dailyLimit ? { left: quota.remainingUses, limit: quota.dailyLimit } : null;
   // The seed draws the pill but never refuses a use: it may be yesterday's.
   const quotaConfirmed = quota !== null && quota !== seededQuota;
@@ -1189,7 +1177,6 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
         showClose={false}
         initialFocus={closeButtonRef}
         aria-label={copy.title}
-        style={{ '--rd-origin': transformOrigin }}
       >
         {body}
       </DialogContent>
@@ -1212,7 +1199,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             {/* The bar names the paper once the document's own title has scrolled
                 away, rising in from below; it leaves the way it came. Opened as the
                 viewer's tab, the bar holds the two tabs instead. */}
-            {onPaperTab ? <ReadingTabs current="plain" onChange={(view) => {
+            {onPaperTab ? <ReadingTabs current="summary" onChange={(view) => {
               if (view !== 'paper') return;
               if (embedded) { onPaperTab(); return; }
               toPaper.current = true;

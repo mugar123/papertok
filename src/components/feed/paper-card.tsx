@@ -210,14 +210,6 @@ function ClippedName({ name }: { name: string }) {
   );
 }
 
-// The reader drags in the annotations layer, LaTeX export and their CSS
-// (paper-reader.css, annotations.css, Export.css — ~53 KB raw source, ~28 KB
-// once minified) — none of it belongs in the boot graph when most sessions
-// never tap "read". It opens over a card that has already painted, so there
-// is nothing to placehold while the chunk loads; `fallback={null}` is
-// correct here, unlike the route-level `RouteFallback` used for `app.tsx`'s
-// lazy routes.
-
 // One quiet watermark per research area, engraved in the head of the sheet.
 // It replaces the old animated icon constellation: the same visual cue about
 // the field, without the haze competing with the type.

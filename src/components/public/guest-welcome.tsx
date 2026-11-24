@@ -172,7 +172,7 @@ function SwipeDemo({ still }: { still: boolean }) {
   );
 }
 
-function PlainWordsDemo({ still }: { still: boolean }) {
+function SummaryDemo({ still }: { still: boolean }) {
   // The dense abstract gives way to three short highlighted lines.
   return (
     <div className="gw-demo gw-demo--plain" aria-hidden="true">
@@ -270,7 +270,7 @@ function LearnDemo({ still }: { still: boolean }) {
   );
 }
 
-const BEAT_DEMOS = [SwipeDemo, PlainWordsDemo, LearnDemo];
+const BEAT_DEMOS = [SwipeDemo, SummaryDemo, LearnDemo];
 
 // One gesture in the row. It keeps its box from the first frame — the well
 // is drawn empty until its turn — so nothing shifts as the three arrive, and

@@ -171,10 +171,12 @@ function project([x, y, z]: Vec3, yaw: number): Vec3 {
   return [cx * p, ty * p, p];
 }
 
-type Scene = { pos: Float32Array; form: number; shownAt: number; t: number; level: number; bands: number[]; pump: number };
+type Scene = { pos: Float32Array; form: number; shownAt: number; t: number; level: number; bands: number[]; pump: number; gather: number };
 
 /** Every particle eases towards its place in the form at its own pace, so one form flows into the next. */
-function step(scene: Scene, seconds: number, speaking: boolean) {
+function step(scene: Scene, seconds: number, speaking: boolean, progress: number) {
+  // Scattered while the audio is prepared, the particles gather into the form as it arrives.
+  scene.gather += (progress - scene.gather) * Math.min(1, seconds * 4);
   // Paused, the forms' own motion stops too, so the play button is also what stills the cloud.
   if (speaking) scene.t += seconds;
   const next = Array.from({ length: BANDS }, (_, i) => 0.3 + 0.25 * Math.sin(scene.t * (speaking ? 1.6 : 1.1) + i * 1.9));
@@ -203,6 +205,7 @@ function step(scene: Scene, seconds: number, speaking: boolean) {
 
 /** Dots in three colour groups, larger when nearer and as the voice swells; the glow is a blurred copy behind. */
 function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene, ready: boolean) {
+  const gather = scene.gather;
   const context = sharp.getContext('2d');
   const glowContext = glow.getContext('2d');
   if (!context || !glowContext) return;
@@ -227,7 +230,10 @@ function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene,
     context.beginPath();
     for (let i = group; i < SETTINGS.particles; i += 3) {
       const o = i * 3;
-      const [x, y, depth] = project([scene.pos[o], scene.pos[o + 1], scene.pos[o + 2]], yaw);
+      // Scattered through a ball a little wider than the form, so they stay inside the ring round it.
+      const [angle, height, reach] = [hash(i, 7) * TAU, hash(i, 8) * 2 - 1, Math.cbrt(hash(i, 9)) * 1.15 * (1 - gather)];
+      const across = Math.sqrt(1 - height * height) * reach;
+      const [x, y, depth] = project([scene.pos[o] * gather + Math.cos(angle) * across, scene.pos[o + 1] * gather + height * reach, scene.pos[o + 2] * gather + Math.sin(angle) * across], yaw);
       const dot = SETTINGS.dot * depth * (1 + scene.level * 0.6) * ratio;
       context.moveTo(half + x * radius + dot, half + y * radius);
       context.arc(half + x * radius, half + y * radius, dot, 0, TAU);
@@ -244,38 +250,40 @@ function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene,
  * settling with it, and holds its form while paused. It has a soft glow, and
  * pressing it shows the next form. With reduced motion it settles into each form and holds still.
  */
-export default function ReadAloudForms({ ready, playing }: { ready: boolean; playing: boolean }) {
+export default function ReadAloudForms({ progress, playing }: { progress: number; playing: boolean }) {
+  const ready = progress >= 1;
   const sharp = useRef<HTMLCanvasElement | null>(null);
   const glow = useRef<HTMLCanvasElement | null>(null);
-  const scene = useRef<Scene>({ pos: new Float32Array(SETTINGS.particles * 3), form: 0, shownAt: 0, t: 0, level: 0.1, bands: [], pump: 1 });
+  const scene = useRef<Scene>({ pos: new Float32Array(SETTINGS.particles * 3), form: 0, shownAt: 0, t: 0, level: 0.1, bands: [], pump: 1, gather: progress });
   useEffect(() => {
     const [canvas, behind] = [sharp.current, glow.current];
     if (!canvas || !behind) return undefined;
     const state = scene.current;
     const speaking = playing && ready;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false);
+      state.gather = progress;
+      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false, progress);
       render(canvas, behind, state, ready);
       return undefined;
     }
     let frame = 0;
     let last = performance.now();
     const tick = (now: number) => {
-      step(state, Math.min(0.1, (now - last) / 1000), speaking);
+      step(state, Math.min(0.1, (now - last) / 1000), speaking, progress);
       last = now;
       render(canvas, behind, state, ready);
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, ready]);
+  }, [playing, progress, ready]);
   // A press moves the cloud on to the next form, as a beat does in the playground.
   const next = () => {
     const state = scene.current;
     state.form = (state.form + 1) % FORMS.length;
     state.shownAt = state.t;
     if (sharp.current && glow.current && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false);
+      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false, progress);
       render(sharp.current, glow.current, state, ready);
     }
   };

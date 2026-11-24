@@ -51,6 +51,9 @@ const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/
  * also owns what the old overlay did by hand — the focus trap, Escape, the
  * scroll lock and the restore to the button that opened it.
  */
+/** How long the AI summary takes to leave, a little over its 150ms fade (pdf-viewer.css). */
+const SUMMARY_LEAVE_MS = 160;
+
 export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
@@ -182,9 +185,15 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // The AI summary as the viewer's second tab: it opens over the paper, and its Paper tab comes back.
   // Leaving it, it stays a moment while it fades out over the paper.
   const [summary, setSummary] = useState<'shown' | 'leaving' | null>(null);
-  const plain = summary === 'shown';
+  const summaryOpen = summary === 'shown';
   const showPaper = () => setSummary(shown => shown && 'leaving');
-  const canPlain = Boolean(user) && canRewritePaper(paper);
+  // Its leave lasts 150ms (pdf-viewer.css); then it goes, whether or not an animation ran.
+  useEffect(() => {
+    if (summary !== 'leaving') return undefined;
+    const timer = window.setTimeout(() => setSummary(null), SUMMARY_LEAVE_MS);
+    return () => clearTimeout(timer);
+  }, [summary]);
+  const canSummarize = Boolean(user) && canRewritePaper(paper);
   const uid = user?.uid ?? '';
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
     void trackEvent(name, params, stillValid);
@@ -292,7 +301,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {/* The bar names the paper once the article's own title has scrolled
                 away, rising in from below; it leaves the way it came. Where the paper
                 has an AI summary, the bar holds the two tabs instead. */}
-            {canPlain ? <ReadingTabs current={plain ? 'plain' : 'paper'} onChange={view => (view === 'plain' ? setSummary('shown') : showPaper())} /> : <AnimatePresence initial={false}>
+            {canSummarize ? <ReadingTabs current={summaryOpen ? 'summary' : 'paper'} onChange={view => (view === 'summary' ? setSummary('shown') : showPaper())} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
                   key="title"
@@ -309,7 +318,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
           </div>
 
           {/* Under the AI summary tab the paper stays mounted, so its place waits, but out of reach. */}
-          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} inert={plain}>
+          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} inert={summaryOpen}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
                 <p>The text of this paper could not be loaded right now.</p>
@@ -392,7 +401,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {fullText !== undefined && (
             <ReadingDock
               title={paper.title} paper={paper} scroll={showsText ? textScroll : null}
-              spoken={spoken} topbar={topbar} canListen={!plain && Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
+              spoken={spoken} topbar={topbar} canListen={!summaryOpen && Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
               notes={notesOn ? { id: 'viewer-notes', open: notesOpen, count: notes.passages.length, onOpenChange: setNotesOpen } : null}
               originalUrl={dockUrl}
               menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText
@@ -459,9 +468,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
           </div>
         </div>
         {summary && (
-          <div className="pdf-summary" data-leaving={summary === 'leaving' || undefined} inert={summary === 'leaving'} onAnimationEnd={(event) => {
-            if (event.target === event.currentTarget && summary === 'leaving') setSummary(null);
-          }}>
+          <div className="pdf-summary" data-leaving={summary === 'leaving' || undefined} inert={summary === 'leaving'}>
             <Suspense fallback={null}>
               <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={showPaper} />
             </Suspense>
