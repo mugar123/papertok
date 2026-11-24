@@ -270,7 +270,8 @@ export default function PDFViewer({ paper, menu, readingView, onViewChange, clos
   const spoken = useMemo(() => (fullText ? fullTextListen(fullText, { withAbstract: abstractShown }) : null), [fullText, abstractShown]);
   // Listening needs the paper's English text, read as text, for a signed-in reader.
   const listenable = Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '');
-  const tabs = VIEW_ORDER.filter(item => item === 'paper' || (item === 'summary' ? canSummarize : listenable));
+  // The same list while the same tabs apply: the tabs measure their layout when it changes.
+  const tabs = useMemo(() => VIEW_ORDER.filter(item => item === 'paper' || (item === 'summary' ? canSummarize : listenable)), [canSummarize, listenable]);
   // A tab that is no longer offered (the text turned to the PDF, say) falls back to the paper.
   const shown = tabs.includes(tab.view) ? tab.view : 'paper';
   const summaryOpen = shown === 'summary';
