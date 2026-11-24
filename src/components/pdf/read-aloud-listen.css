@@ -290,20 +290,24 @@
 }
 
 /* On a wide screen the section and the caption sit beside the blob, as a player sets a song's
-   name beside its cover, and the controls run under both. */
+   name beside its cover, and the controls run under both; the three are centred as one group. */
 @media (min-width: 901px) {
   .rd-podcast {
     display: grid;
     grid-template-columns: auto minmax(0, 560px);
-    grid-template-rows: 1fr auto auto 1fr auto;
-    grid-template-areas: 'cover .' 'cover title' 'cover caption' 'cover .' 'player player';
+    grid-template-areas: 'cover words' 'player player';
     justify-content: center;
     align-content: safe center;
     column-gap: var(--space-10);
   }
-  .rd-podcast-cover { grid-area: cover; align-self: center; width: min(44vh, 360px); margin-bottom: var(--space-10); }
-  .rd-podcast-title { grid-area: title; text-align: start; }
-  .rd-podcast-caption { grid-area: caption; width: 100%; }
+  .rd-podcast-cover { grid-area: cover; width: min(44vh, 360px); margin-bottom: var(--space-10); }
+  .rd-podcast-words { grid-area: words; align-self: center; margin-bottom: var(--space-10); }
+  .rd-podcast-title { text-align: start; }
+  .rd-podcast-caption { width: 100%; margin-bottom: 0; }
   .rd-podcast-text { text-align: start; text-wrap: pretty; }
   .rd-podcast-player { grid-area: player; justify-self: center; }
+}
+/* Narrower, the section and the caption are the column's own items, as they were before the group. */
+@media (max-width: 900px) {
+  .rd-podcast-words { display: contents; }
 }
