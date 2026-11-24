@@ -222,7 +222,7 @@
    start, so two texts never show through each other. The paper and the summary can hold tens of
    thousands of nodes, so they arrive under a veil of the page's colour that fades out: moving or
    fading the text itself repainted all of it, a second or more on a long paper. The Listen tab is
-   small, and slides in from its tab's side (`--view-from`, set by pdf-viewer.tsx). */
+   small, and slides in from its tab's side (`--view-from`, scoped to the podcast so changing it does not restyle the paper). */
 @keyframes pdf-view-in { from { opacity: 0; translate: var(--view-from, 0) 0; } }
 @keyframes pdf-veil-out { to { opacity: 0; } }
 .pdf-summary { position: absolute; inset: var(--pdf-topbar-h, 60px) 0 0; z-index: 5; background: var(--bg-primary); }

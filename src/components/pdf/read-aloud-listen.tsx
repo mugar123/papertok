@@ -51,12 +51,13 @@ function spokenSentence(item: SpokenPassage, word: number) {
  * controls round the timeline (which shows the audio still to come, then where the voice
  * is), and the paper's sections as chapters in a drawer.
  */
-export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
+export default function ReadAloudListen({ title, queue, player, onPlayPause, arrivalFrom = 0 }: {
   title: string;
   queue: readonly SpokenPassage[];
   /** The voice the dock plays: where it is, how much is ready, and its controls. */
   player: Pick<ReturnType<typeof useReadAloud>, 'timeline' | 'startup' | 'buffering' | 'paragraph' | 'position' | 'playing' | 'speed' | 'timings' | 'live' | 'setSpeed' | 'seek'>;
   onPlayPause: () => void;
+  arrivalFrom?: number;
 }) {
   const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek } = player;
   const preparing = !startup.failed && startup.ready < startup.total;
@@ -159,7 +160,7 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
   const sentence = item ? spokenSentence(item, word) : null;
 
   return (
-    <section className="rd-podcast" aria-labelledby="rd-podcast-paper" data-chapters-open={drawerOpen || undefined} data-preparing={preparing || undefined}>
+    <section style={{ '--view-from': `${arrivalFrom}px` }} className="rd-podcast" aria-labelledby="rd-podcast-paper" data-chapters-open={drawerOpen || undefined} data-preparing={preparing || undefined}>
       {/* The paper heads the tab, as a player names the album over its cover. */}
       <span ref={statusRegion} className="visually-hidden" role="status" />
       <header className="rd-podcast-header">

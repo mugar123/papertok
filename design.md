@@ -653,7 +653,12 @@ AI summary stay in place under a veil of the page colour that fades out over 220
 Listen arrives from its side of the bar, its contents sliding 16px in and fading
 up over 220ms (opacity only with reduced motion). A view under another tab is
 skipped with `content-visibility: hidden`, which keeps its scroll; `inert` is the
-fallback where that is missing. Cards have no AI summary button: the
+fallback where that is missing. The covered paper’s scroll region also leaves the
+keyboard tab order. The Listen animation’s direction is scoped to the podcast,
+so changing it does not invalidate styles across the paper. Summary styles load
+with the viewer, before a large article is laid out. With reduced motion, the
+podcast visual computes each static shape directly instead of simulating its
+arrival frames. Cards have no AI summary button: the
 viewer's tab is the way in. Switching
 to Paper keeps the dialog and its history entry mounted; it does not reveal the feed. The Listen tab
 opens the podcast (`pdf/read-aloud-listen.tsx`), with its download in the bar's corner, which reads the paper's text aloud:
