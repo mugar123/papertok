@@ -105,7 +105,6 @@ import { adoptOnboardedProfile, closeAccountSession, openAccountSession } from '
 import { confirmOnboardingWrite, profileReadOutcome } from './profile-load.ts';
 import { writeOptimistically } from './optimistic-write.ts';
 import { clearRewriteCache } from '../services/paper-rewrite-service.ts';
-import { forgetTranslationLanguage } from '../utils/paper-translation.ts';
 import { forgetAccountToasts } from '../components/ui/toast.ts';
 import { accountLooksOnboarded } from '../utils/account-onboarding.ts';
 import { nextAdded, nextDeselected } from '../utils/interest-memory.ts';
@@ -192,11 +191,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const handleAuthChange = async (currentUser: User | null) => {
       const changeId = ++authChangeId;
       const uid = currentUser?.uid ?? null;
-      const outgoingUid = previousUid.current;
-      if (outgoingUid && outgoingUid !== uid) {
-        clearGuestInterests();
-        forgetTranslationLanguage(outgoingUid);
-      }
+      if (previousUid.current && previousUid.current !== uid) clearGuestInterests();
       previousUid.current = uid;
       // Here rather than in signOut: another tab can end this session too.
       clearRewriteCache();

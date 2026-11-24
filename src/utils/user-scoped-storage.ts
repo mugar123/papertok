@@ -6,7 +6,6 @@ import { serializeLibraryPaper } from './reading-library.ts';
 import type { OwnList } from './own-lists.ts';
 import { MAX_VIEWED_IDS } from './interaction-profile.ts';
 import { normalizeInterestSettings, type InterestSettings } from './area-preferences.ts';
-import { getTranslationLanguageStorageKey } from './paper-translation.ts';
 
 const LEGACY_SEEN_PAPERS_KEY = 'papertok_seenIds';
 // Until the list held only viewed papers it held every paper a load showed, so
@@ -398,7 +397,6 @@ export function clearUserScopedStorage(userId: string | undefined, storage?: (Sc
     getListPapersStorageKey(userId),
     getOwnProfileStorageKey(userId),
     getOnboardingStorageKey(userId),
-    getTranslationLanguageStorageKey(userId),
     getCustomFeedDismissedStorageKey(userId),
     getPmfSurveyStorageKey(userId),
     getLocalHiddenStorageKey(userId),

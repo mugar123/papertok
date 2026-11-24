@@ -456,9 +456,9 @@ export function hasUnlimitedAI(env: WorkerEnv, identity: Partial<VerifiedIdentit
  * second lookup to find out would have doubled the Identity Toolkit traffic in
  * front of every protected route.
  */
-export async function verifyFirebaseAccount(request: Request, env: WorkerEnv, options?: { allowCache?: boolean }) {
+export async function verifyFirebaseAccount(request: Request, env: WorkerEnv) {
   try {
-    const identity = await verifyFirebaseIdentity(request, env, options);
+    const identity = await verifyFirebaseIdentity(request, env);
     return { ...identity, unlimitedAI: hasUnlimitedAI(env, identity) };
   } catch (error) {
     if (error instanceof WorkerAuthError) {
@@ -572,22 +572,18 @@ export async function peekAIQuota(env: WorkerEnv, uid: string, { unlimited = fal
   };
 }
 
-export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = false, translation = false } = {}) {
-  const globalLimit = translation
-    ? 100
-    : safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
-  const namespace = translation ? 'translate' : 'ai';
+export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = false } = {}) {
+  const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
   // The day is fixed once and travels with the reservation: recomputing it at
   // release time would refund against tomorrow's ledger for a request that
   // straddles UTC midnight.
   const ledgerRequest = {
-    periodKey: `${namespace}:${todayKey()}`,
-    subject: `${namespace}:${uid}`,
-    subjectLimit: translation
-      ? 10
-      : unlimited ? globalLimit : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
+    periodKey: `ai:${todayKey()}`,
+    subject: `ai:${uid}`,
+    subjectLimit: unlimited
+      ? globalLimit
+      : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
     globalLimit,
-    ...(translation && { part: { subject: `translate-attempt:${uid}`, limit: 20 } }),
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
