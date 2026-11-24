@@ -3,7 +3,7 @@ import { DownloadSimple } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { CharacterTimings, ReadAloudTimeline, SpokenPassage } from './read-aloud.ts';
 import { chapterAt, clock, passageText, spokenWordAt, wordSpans, wordStarts } from './read-aloud.ts';
-import { ReadAloudTrack, ReadAloudTransport, SpeedButton } from './read-aloud-player.tsx';
+import { ReadAloudTrack, ReadAloudTransport, SpeedButton } from './read-aloud-controls.tsx';
 import ReadAloudSphere from './read-aloud-sphere.tsx';
 import './read-aloud-listen.css';
 

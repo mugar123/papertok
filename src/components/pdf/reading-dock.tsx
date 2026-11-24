@@ -17,7 +17,6 @@ import { useReadAloud } from './use-read-aloud.ts';
 import { useSpokenWord } from './use-spoken-word.ts';
 import { useZoteroAction } from './use-zotero-action.ts';
 import { ZoteroMark } from './zotero-mark.tsx';
-import ReadAloudPlayer from './read-aloud-player.tsx';
 import ReadAloudListen from './read-aloud-listen.tsx';
 
 const NO_PASSAGES: SpokenPassage[] = [];
@@ -48,26 +47,6 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   useSpokenWord({ root: scroll, queue: spoken?.queue ?? NO_PASSAGES, speaking, timings: readAloud.timings, live: readAloud.live, playing: readAloud.playing, position: readAloud.position });
   useEffect(() => () => resetReadAloud(), [spoken, canListen, resetReadAloud]);
   const listenButton = useRef<HTMLButtonElement | null>(null);
-  // The closed dock's outline while the player is open, which it grows out of.
-  const [playerFrom, setPlayerFrom] = useState<{ width: number; height: number } | null>(null);
-  const playerOpen = playerFrom !== null && canListen;
-  // The player is as wide as the text column, which narrows when the notes open (read-aloud-player.css).
-  useEffect(() => {
-    const article = scroll?.querySelector<HTMLElement>('article');
-    const stage = scroll?.closest<HTMLElement>('.pdf-stage');
-    if (!playerOpen || !article || !stage) return undefined;
-    const measure = () => {
-      const style = getComputedStyle(article);
-      stage.style.setProperty('--ft-text-w', `${article.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)}px`);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(article);
-    return () => {
-      observer.disconnect();
-      stage.style.removeProperty('--ft-text-w');
-    };
-  }, [playerOpen, scroll]);
   const followsVoice = useRef(true);
   useEffect(() => {
     if (!scroll) return undefined;
@@ -127,29 +106,18 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     }
     readAloud.play(readAloudStart(speaking, visible));
   };
-  const openPlayer = () => {
-    const bar = scroll?.parentElement?.querySelector<HTMLElement>('.pdf-dock');
-    const padding = bar ? Number.parseFloat(getComputedStyle(bar).paddingLeft) || 0 : 0;
-    setPlayerFrom(bar ? { width: bar.clientWidth - 2 * padding, height: bar.getBoundingClientRect().height } : { width: 0, height: 0 });
-    if (!readAloud.playing) playPause();
-  };
-  const [listening, setListening] = useState(false);
-  const closePlayer = () => {
-    setListening(false);
-    readAloud.pause();
-    setPlayerFrom(null);
-    requestAnimationFrame(() => listenButton.current?.focus());
-  };
 
   // The podcast tab's way in and out, round in the top bar's corner. The text under it is left
   // out of the keyboard's way while the tab covers it.
   const topbar = scroll?.closest('.pdf-viewer, .rd')?.querySelector('.pdf-topbar, .rd-topbar');
+  // The podcast is the voice's only player: opening it starts the voice, closing it stops it.
+  const [listening, setListening] = useState(false);
   const listen = (open: boolean) => {
-    if (open && !playerOpen) openPlayer();
-    else if (open && !readAloud.playing) playPause();
+    if (open && !readAloud.playing) playPause();
+    if (!open) readAloud.pause();
     setListening(open);
   };
-  const podcast = listening && playerOpen;
+  const podcast = listening && canListen;
   useEffect(() => {
     if (!scroll || !podcast) return undefined;
     scroll.toggleAttribute('inert', true);
@@ -166,20 +134,14 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       topbar,
     )}
     {/* Hidden rather than unmounted while the podcast tab covers it, so a Zotero send in flight finishes. */}
-    <div hidden={podcast}><PaperDock scroll={scroll} pinned={playerOpen} menu={playerOpen ? undefined : menu} contents={playerOpen ? null : contents}>
-      {playerOpen ? <ReadAloudPlayer
-        timeline={readAloud.timeline} prepared={readAloud.prepared} position={readAloud.position}
-        playing={readAloud.playing} speed={readAloud.speed} onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek}
-        onClose={closePlayer} onDownload={downloadAudio} onExpand={() => setListening(true)} openedFrom={playerFrom}
-      /> : <>
-        {children}
-        {notes && <Toggle className="pdf-dock-toggle pdf-dock-notes" pressed={notes.open} onPressedChange={notes.onOpenChange} aria-label="Notes" aria-controls={notes.id} title={notes.open ? 'Hide notes' : 'Show notes'}>
-          <NotePencil size={18} aria-hidden="true" />
-          <span><span className="pdf-dock-label">Notes</span>{notes.count > 0 && <span className="pdf-dock-count">{notes.count}</span>}</span>
-        </Toggle>}
-      </>}
-      {paper && <ZoteroControl paper={paper} hidden={playerOpen} />}
-      {!playerOpen && originalUrl && <Button role="link" variant="ghost" size="icon" aria-label="Open in a new tab" title="Open in a new tab" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}><ArrowSquareOut size={18} aria-hidden="true" /></Button>}
+    <div hidden={podcast}><PaperDock scroll={scroll} menu={menu} contents={contents}>
+      {children}
+      {notes && <Toggle className="pdf-dock-toggle pdf-dock-notes" pressed={notes.open} onPressedChange={notes.onOpenChange} aria-label="Notes" aria-controls={notes.id} title={notes.open ? 'Hide notes' : 'Show notes'}>
+        <NotePencil size={18} aria-hidden="true" />
+        <span><span className="pdf-dock-label">Notes</span>{notes.count > 0 && <span className="pdf-dock-count">{notes.count}</span>}</span>
+      </Toggle>}
+      {paper && <ZoteroControl paper={paper} hidden={false} />}
+      {originalUrl && <Button role="link" variant="ghost" size="icon" aria-label="Open in a new tab" title="Open in a new tab" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}><ArrowSquareOut size={18} aria-hidden="true" /></Button>}
     </PaperDock></div>
     {podcast && spoken && <ReadAloudListen
       title={paper?.title ?? title}

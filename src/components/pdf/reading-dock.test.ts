@@ -47,7 +47,7 @@ function viewerFrame() {
 }
 const LISTEN = 'Listen to the paper as a podcast';
 
-test('shared reading tools open the voice player, restore focus, and stop when the explanation changes', async () => {
+test('shared reading tools: the round button opens the podcast and starts the voice, leaving it stops the voice, and it goes with the explanation', async () => {
   const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
   const worker = stubWorker();
   const audioRoute = worker.hold('/tts/paragraph');
@@ -80,25 +80,25 @@ test('shared reading tools open the voice player, restore focus, and stop when t
     assert.equal(view.getByRole('link', { name: 'Open in a new tab' }).getAttribute('href'), 'https://doi.org/10.1234/paper');
     assert.equal(view.queryByRole('button', { name: 'Voice, read aloud' }), null, 'the dock has no Voice of its own');
     fireEvent.click(screen.getByRole('button', { name: LISTEN }));
-    assert.ok(screen.getByRole('region', { name: 'Paper' }), 'the podcast tab opens');
-    fireEvent.click(screen.getByRole('button', { name: LISTEN }));
+    assert.ok(screen.getByRole('region', { name: 'Paper' }), 'the podcast tab opens and starts the voice');
     await audioRoute.requested();
     audioRoute.answer({});
-    await waitFor(() => assert.ok(view.getByRole('button', { name: 'Pause' })));
-    await waitFor(() => assert.equal(Clip.instances.length, 2));
-    assert.equal(view.queryByRole('button', { name: 'Explanation level' }), null);
-    fireEvent.keyDown(view.getByRole('button', { name: 'Pause' }), { key: 'Escape' });
-    await waitFor(() => assert.ok(document.activeElement === screen.getByRole('button', { name: LISTEN }), 'the round button receives focus when the player closes'));
-    assert.equal(view.getByRole('button', { name: 'Send to Zotero' }).getAttribute('aria-busy'), 'true');
-    await act(async () => zoteroSend.answer({ sentAt: '2026-11-23T12:00:00Z', highlights: 0 }));
-    fireEvent.click(screen.getByRole('button', { name: LISTEN }));
+    await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Pause' })));
+    await waitFor(() => assert.ok(Clip.instances.some(clip => clip.preload !== 'metadata')));
     const player = Clip.instances.find(clip => clip.preload !== 'metadata');
     assert.ok(player);
     const before = player.pauses;
+    fireEvent.click(screen.getByRole('button', { name: LISTEN }));
+    assert.ok(player.pauses > before, 'leaving the podcast stops the voice');
+    assert.equal(screen.queryByRole('region', { name: 'Paper' }), null);
+    assert.equal(screen.queryByRole('button', { name: 'Pause' }), null, 'no player is left behind');
+    assert.ok(view.getByRole('button', { name: 'Explanation level' }), 'the dock is back');
+    assert.equal(view.getByRole('button', { name: 'Send to Zotero' }).getAttribute('aria-busy'), 'true', 'a send in flight survived the podcast');
+    await act(async () => zoteroSend.answer({ sentAt: '2026-11-23T12:00:00Z', highlights: 0 }));
+    fireEvent.click(screen.getByRole('button', { name: LISTEN }));
     await act(async () => view.rerender(tree(false)));
-    assert.ok(player.pauses > before);
     assert.equal(screen.queryByRole('button', { name: LISTEN }), null);
-    assert.equal(screen.queryByRole('button', { name: 'Pause' }), null);
+    assert.equal(screen.queryByRole('region', { name: 'Paper' }), null);
     assert.ok(view.getByRole('button', { name: 'Explanation level' }));
   } finally {
     cleanup();
