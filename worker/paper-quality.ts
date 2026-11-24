@@ -6,9 +6,10 @@ import { CORPUS_DAYS, daysFromNow } from './paper-store.ts';
 
 const AUTHOR_REFRESH_DAYS = 30;
 const AUTHOR_RETENTION_DAYS = 365;
-// At least 2,830 of the nightly share’s 3,700 units remained after the 2026-11-23 harvest.
+// The 600-call cap for the 2026-11-25 demo leaves more of the daily search budget for readers.
+// The earlier cap of 2,500 was authorized on 2026-11-23.
 // On busier nights the remaining share or the feed ceiling can stop author lookups sooner.
-const AUTHOR_NIGHTLY_CALLS = 2_500;
+const AUTHOR_NIGHTLY_CALLS = 600;
 export const AUTHOR_IMPACT_PART = { subject: 'openalex:harvest:author-impact', limit: AUTHOR_NIGHTLY_CALLS };
 const AUTHORS_PER_CALL = 100;
 // An empty large batch can hide a provider outage and postpone every missing author for 30 days.
