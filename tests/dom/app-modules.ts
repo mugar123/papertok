@@ -69,3 +69,13 @@ interface AuthProviderModule {
 export function loadAuthProvider() {
   return loadAppModule<AuthProviderModule>('/src/context/auth-context.tsx', { stubFirestore: true });
 }
+
+export function loadPassageAnnotations() {
+  return loadAppModule<{
+    usePassageAnnotations: (options: { uid: string; paperId: string; level: string; language: string }) => {
+      begin: (selection: { sectionId: string; paragraphIndex: number; quote: string; occurrence: number }) => void;
+      ask: () => Promise<unknown>;
+      annotations: Array<{ id: string; quote: string; occurrence?: number; unsaved?: boolean }>;
+    };
+  }>('/src/hooks/use-passage-annotations.ts', { stubFirestore: true });
+}

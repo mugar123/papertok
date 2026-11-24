@@ -6,7 +6,7 @@ import { FULL_TEXT_LEVEL, HIGHLIGHT_COLORS, MAX_QUOTE_LENGTH, highlightColor } f
 import { HIGHLIGHT_MIN_QUOTE_LENGTH } from '../../utils/text-highlights.ts';
 import type { PassageSelection } from './passage-range.ts';
 import type { HighlightColor } from '../../services/user-highlight-service.ts';
-import { blockPassage, blockText, overlapping, passageAt, passageRange, replacingHighlights, selectedPassage } from './passage-range.ts';
+import { blockPassage, blockText, replacementHighlights, replacingHighlights, passageAt, passageRange, selectedPassage } from './passage-range.ts';
 import { newestFirst } from './passage-order.ts';
 import { lastKnownAIUses, refreshAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 
@@ -32,7 +32,7 @@ export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string
   const passages = useMemo(() => newestFirst(notes.annotations.filter(item => item.level === FULL_TEXT_LEVEL)), [notes.annotations]);
   const [status, setStatus] = useState('');
   const [origin, setOrigin] = useState<HTMLElement | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ note: string; message: string } | null>(null);
   // The passage the reader clicked. Derived against the list, so a deleted one simply drops out.
   const [picked, setPicked] = useState<string | null>(null);
   const active = passages.some(passage => passage.id === picked) ? picked : null;
@@ -59,9 +59,17 @@ export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string
   const save = async (note: string, color?: HighlightColor) => {
     const passage = notes.pending;
     const block = passage && document.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
-    const { note: text, replaced } = replacingHighlights(note, block && passage
-      ? overlapping(blockText(block), passage, passages.filter(item => item.kind === 'user' && item.sectionId === passage.sectionId))
-      : []);
+    const candidates = block && passage
+      ? replacementHighlights(blockText(block), passage, passages, FULL_TEXT_LEVEL)
+      : [];
+    const replacement = replacingHighlights(note, candidates);
+    if (replacement === null) {
+      const message = 'Combined notes exceed 1,200 characters. Existing highlights were kept.';
+      setStatus(message);
+      setFailed({ note, message });
+      return;
+    }
+    const { note: text, replaced } = replacement;
     const saved = text ? await notes.saveNote(text, color) : await notes.highlight(color);
     if (saved) {
       window.getSelection()?.removeAllRanges();
@@ -71,7 +79,7 @@ export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string
       return;
     }
     if (passage) notes.begin(passage);
-    setFailed(note);
+    setFailed({ note, message: SAVE_ERROR });
     setStatus(SAVE_ERROR);
   };
 

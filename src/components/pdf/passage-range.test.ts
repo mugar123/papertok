@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { occurrenceBefore, overlapping, quoteOffsets, replacingHighlights } from './passage-range.ts';
-import { MAX_NOTE_LENGTH } from '../../services/user-highlight-service.ts';
+import { occurrenceBefore, overlapping, quoteOffsets, replacementHighlights, replacingHighlights } from './passage-range.ts';
 
 test('a quote is found across the line breaks and runs of spaces of the page text', () => {
   const text = 'The model\n   scored better than earlier  systems.';
@@ -43,9 +42,24 @@ test('the same words elsewhere in the paragraph are a different passage', () => 
   assert.deepEqual(overlapping(text, { quote: 'the model', occurrence: 1 }, [{ quote: 'the model', occurrence: 0 }]), []);
 });
 
-test('a highlight over others keeps their notes, and replaces none when the notes would not fit one', () => {
-  const old = [{ id: 'a', note: 'First thought.' }, { id: 'b', note: '' }];
-  assert.deepEqual(replacingHighlights('New thought.', old), { note: 'New thought.\n\nFirst thought.', replaced: old });
-  const long = [{ id: 'c', note: 'x'.repeat(MAX_NOTE_LENGTH - 5) }];
-  assert.deepEqual(replacingHighlights('New thought.', long), { note: 'New thought.', replaced: [] });
+
+test('replacing a highlight cannot consume another level, paragraph, section or AI answer', () => {
+  const passage = { sectionId: 'intro', paragraphIndex: 0, quote: 'a shared phrase' };
+  const base = { ...passage, kind: 'user' as const, level: 'researcher' };
+  const candidates = [
+    { ...base, id: 'visible' }, { ...base, id: 'beginner', level: 'beginner' },
+    { ...base, id: 'other-paragraph', paragraphIndex: 1 }, { ...base, id: 'other-section', sectionId: 'results' },
+    { ...base, id: 'answer', kind: 'ai' as const },
+  ];
+  assert.deepEqual(replacementHighlights('This has a shared phrase.', passage, candidates, 'researcher').map(item => item.id), ['visible']);
+  assert.deepEqual(replacementHighlights('a shared phrase and a shared phrase', passage, candidates, 'researcher'), []);
+});
+
+
+test('merging notes preserves all text or refuses before the original is overwritten', () => {
+  const notes = [{ id: 'a', note: 'First note' }, { id: 'b', note: 'Second note' }];
+  assert.deepEqual(replacingHighlights('New note', notes), { note: 'New note\n\nFirst note\n\nSecond note', replaced: notes });
+  assert.equal(replacingHighlights('', [{ note: 'a'.repeat(800) }, { note: 'b'.repeat(800) }]), null);
+  assert.equal(replacingHighlights('New note', [{ id: 'same-highlight', note: 'a'.repeat(1200) }]), null);
+  assert.deepEqual(replacingHighlights('', [{ note: 'a'.repeat(1200) }]), { note: 'a'.repeat(1200), replaced: [{ note: 'a'.repeat(1200) }] });
 });

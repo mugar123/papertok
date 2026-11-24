@@ -1,4 +1,5 @@
 import { MAX_NOTE_LENGTH } from '../../services/user-highlight-service.ts';
+import type { UserHighlight } from '../../services/user-highlight-service.ts';
 export interface PassageSelection { sectionId: string; quote: string; occurrence: number; anchor: DOMRect; context: string }
 
 function collapse(text: string) {
@@ -65,14 +66,21 @@ export function overlapping<T extends { quote: string; occurrence?: number }>(te
   });
 }
 
-/**
- * What saving `note` over the reader's own `overlapped` highlights does: it replaces them and
- * keeps their notes after its own. When the notes together would not fit one note, nothing
- * is replaced, so no note is cut short.
- */
+/** An overflowing merge must not overwrite even an identical highlight's saved note. */
 export function replacingHighlights<T extends { note?: string | null }>(note: string, overlapped: readonly T[]) {
-  const merged = [note, ...overlapped.map(item => item.note)].filter(Boolean).join('\n\n');
-  return merged.length <= MAX_NOTE_LENGTH ? { note: merged, replaced: overlapped } : { note, replaced: [] };
+  const merged = [note, ...overlapped.map(item => item.note)].filter(Boolean).join('\n\n').trim();
+  return merged.length <= MAX_NOTE_LENGTH ? { note: merged, replaced: overlapped } : null;
+}
+
+/** Only visible user highlights in this passage may be replaced. */
+export function replacementHighlights<T extends Pick<UserHighlight, 'level' | 'kind' | 'sectionId' | 'paragraphIndex' | 'quote' | 'occurrence' | 'endQuote'>>(
+  text: string, passage: Pick<UserHighlight, 'sectionId' | 'paragraphIndex' | 'quote' | 'occurrence' | 'endQuote'>, highlights: readonly T[], level: string,
+): T[] {
+  const unambiguous = (quote: string) => level === 'full-text' || quoteOffsets(text, quote, 1) === null;
+  if (passage.endQuote || !unambiguous(passage.quote)) return [];
+  return overlapping(text, passage, highlights.filter(item => item.level === level && item.kind === 'user'
+    && item.sectionId === passage.sectionId && item.paragraphIndex === passage.paragraphIndex
+    && !item.endQuote && unambiguous(item.quote)));
 }
 
 export const blockText = (block: Element) => joinText(textNodes(block)).text;

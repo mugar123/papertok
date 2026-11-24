@@ -65,10 +65,11 @@ import { Toggle } from '../ui/toggle.ts';
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { NotesSidebar, PassageEditor } from '../pdf/viewer-notes.tsx';
+import { SAVE_ERROR } from '../pdf/use-viewer-notes.ts';
 import { ReadingDock } from '../pdf/reading-dock.tsx';
 import { OutlineList, OutlineRail } from '../pdf/full-text-outline.tsx';
 import { PassageHandles } from '../pdf/passage-handles.tsx';
-import { overlapping, quoteOffsets, replacingHighlights } from '../pdf/passage-range.ts';
+import { replacementHighlights, replacingHighlights } from '../pdf/passage-range.ts';
 import { useOutlineActive } from '../pdf/use-outline.ts';
 import { ListRowAuthors } from '../lists/list-row.tsx';
 import HighlightedScientificText from './highlighted-scientific-text.tsx';
@@ -710,7 +711,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
 
   const { begin: beginAnnotation } = annotations;
   const [annotationOrigin, setAnnotationOrigin] = useState<HTMLElement | null>(null);
-  const [failedNote, setFailedNote] = useState<string | null>(null);
+  const [failedNote, setFailedNote] = useState<{ note: string; message: string } | null>(null);
 
   const outlineItems = useMemo(() => sections.map((section, index) => ({
     target: outlineTarget(index),
@@ -950,13 +951,13 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   const saveAnnotation = async (note: string, color: HighlightColor) => {
     const passage = annotations.pending;
     const text = passage && !passage.endQuote ? paragraphTextFor(passage.sectionId, passage.paragraphIndex) : null;
-    // Without an occurrence on either side, a quote said twice in the paragraph could match
-    // the wrong one, so only quotes the paragraph holds once take part.
-    const once = (quote: string) => text !== null && quoteOffsets(text, quote, 1) === null;
-    const { note: words, replaced } = replacingHighlights(note, passage && text !== null && once(passage.quote)
-      ? overlapping(text, passage, orderedAnnotations.filter(item => item.kind === 'user' && !item.endQuote
-        && item.sectionId === passage.sectionId && item.paragraphIndex === passage.paragraphIndex && once(item.quote)))
-      : []);
+    const candidates = passage && text !== null ? replacementHighlights(text, passage, orderedAnnotations, level) : [];
+    const replacement = replacingHighlights(note, candidates);
+    if (replacement === null) {
+      setFailedNote({ note, message: 'Combined notes exceed 1,200 characters. Existing highlights were kept.' });
+      return;
+    }
+    const { note: words, replaced } = replacement;
     const saved = words ? await annotations.saveNote(words, color) : await annotations.highlight(color);
     if (saved) {
       setFailedNote(null);
@@ -966,7 +967,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
       return;
     }
     if (passage) beginAnnotation(passage);
-    setFailedNote(note);
+    setFailedNote({ note, message: SAVE_ERROR });
   };
 
   const { ask: askAnnotation } = annotations;
@@ -1525,8 +1526,8 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             quote={passageQuote(annotations.pending)}
             anchor={annotations.pending.anchor}
             busy={annotations.busy === 'saving'}
-            error={failedNote !== null}
-            initialNote={failedNote ?? ''}
+            error={failedNote?.message ?? null}
+            initialNote={failedNote?.note ?? ''}
             returnFocus={annotationOrigin}
             sheet={touch}
             ask={{

@@ -151,3 +151,16 @@ test('spoken words catch up past long runs of citations, and a heading read firs
   assert.deepEqual(onPage(['', ...words('Methods matter. We describe methods here')], paragraph), ['Methods', 'Methods', 'matter.', 'We', 'describe', 'methods', 'here']);
 });
 
+
+
+test('a long sentence keeps its ending and every word across speech requests', () => {
+  const sentence = 'word '.repeat(700) + 'END.';
+  const { queue } = fullTextListen(doc([p(text(sentence))]), { withAbstract: false });
+  assert.equal(queue.flatMap(item => item.utterances).join(' '), sentence);
+  assert.ok(queue.length > 1);
+  assert.ok(queue.every(item => item.utterances.join(' ').length <= 2500));
+  const unbroken = 'a'.repeat(2499) + '🧪' + 'b'.repeat(501);
+  const parts = fullTextListen(doc([p(text(unbroken))]), { withAbstract: false }).queue.flatMap(item => item.utterances);
+  assert.equal(parts.join(''), unbroken);
+  assert.deepEqual(parts, ['a'.repeat(2499), '🧪' + 'b'.repeat(501)]);
+});

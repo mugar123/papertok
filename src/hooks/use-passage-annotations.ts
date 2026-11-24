@@ -12,6 +12,7 @@ interface AnnotationOptions {
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  buildHighlightId,
   listUserHighlights,
   removeUserHighlight,
   saveUserHighlight,
@@ -217,7 +218,7 @@ export function usePassageAnnotations({
         signal: controller.signal,
       });
       if (uid && typeof answer.remainingUses === 'number') noteAIUsesLeft(uid, answer.remainingUses);
-      const saved = await saveUserHighlight(uid, {
+      const highlight = {
         paperId,
         paperTitle: paper?.title,
         level,
@@ -225,27 +226,21 @@ export function usePassageAnnotations({
         sectionId: passage.sectionId,
         paragraphIndex: passage.paragraphIndex,
         quote: passage.quote,
+        occurrence: passage.occurrence,
         endParagraphIndex: passage.endParagraphIndex,
         endQuote: passage.endQuote,
-        kind: 'ai',
+        kind: 'ai' as const,
         note: answer.note,
-      });
+      };
+      const saved = await saveUserHighlight(uid, highlight);
       // An answer that arrived but could not be stored is still an answer worth
       // showing: it goes in the rail unsaved rather than being thrown away for
       // a Firestore write the reader never asked about.
       const entry: PassageAnnotation = saved
         ? { ...saved, fresh: true }
         : {
-          id: `local:${passage.sectionId}:${passage.paragraphIndex}`,
-          paperId,
-          level,
-          language,
-          sectionId: passage.sectionId,
-          paragraphIndex: passage.paragraphIndex,
-          quote: passage.quote,
-          ...(passage.endParagraphIndex === undefined ? {} : { endParagraphIndex: passage.endParagraphIndex, endQuote: passage.endQuote }),
-          kind: 'ai',
-          note: answer.note,
+          ...highlight,
+          id: `local:${buildHighlightId(highlight)}`,
           fresh: true,
           unsaved: true,
         };

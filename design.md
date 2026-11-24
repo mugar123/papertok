@@ -624,7 +624,9 @@ reader. The plain-words reader keeps its reading level and AI highlights
 alongside them. When opened from a paper card, it also receives the card's options and
 Zotero action; saved-summary history has no card actions. Its
 notes are the full-text reader's notes panel and its selection opens the same
-highlight editor, whose second way out is Explain this to me.
+highlight editor, which also offers Ask AI. Overlapping user
+highlights are replaced only within the current reading level. If their combined
+notes exceed 1,200 characters, the save is refused and the originals are kept.
 
 Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
 institution, project, topic or journal can be followed: a row of About this paper, the Explorer header, beside a
