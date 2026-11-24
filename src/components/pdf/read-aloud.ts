@@ -210,35 +210,3 @@ export function spokenWordAt(text: string, starts: number[] | null, { seconds, f
   const found = spans.findIndex(([, end]) => at < end);
   return found === -1 ? spans.length - 1 : found;
 }
-
-const letters = (word: string) => word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-
-/**
- * For each spoken word, the word on the page it reads. The voice leaves out
- * citation marks and reads formulas as words, so a word is matched by itself
- * within the next few words on the page; failing that, where it and the next
- * spoken word stand together further on, which catches up past a long run of
- * citations. A word with no letters, or one the page does not have, stays on
- * the last match.
- */
-export function matchSpokenWords(spoken: readonly string[], page: readonly string[], lookahead = 8) {
-  const said = spoken.map(letters);
-  const shown = page.map(letters);
-  let cursor = 0;
-  const take = (index: number) => {
-    cursor = index + 1;
-    return index;
-  };
-  return said.map((word, index) => {
-    if (word) {
-      for (let at = cursor; at < Math.min(shown.length, cursor + lookahead); at += 1) {
-        if (shown[at] === word) return take(at);
-      }
-      const next = said[index + 1];
-      for (let at = cursor; at < shown.length; at += 1) {
-        if (shown[at] === word && (!next || shown[at + 1] === next)) return take(at);
-      }
-    }
-    return Math.max(0, cursor - 1);
-  });
-}

@@ -1,31 +1,3 @@
-/* The passage being read in the paper's text. */
-:is(.ft-scroll, .rd-scroll) [data-speaking] {
-  border-radius: var(--radius-sm);
-  outline: 1.5px dashed var(--accent-secondary);
-  outline-offset: var(--space-2);
-}
-
-/* The word the voice is on: a box under the text that slides from word to word
-   along a line and jumps to the next line (`data-jump`) instead of sweeping back. */
-:is(.ft-scroll, .rd-scroll):has(> .rd-word) { position: relative; isolation: isolate; }
-.rd-word {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: -1;
-  margin: -1px 0 0 -3px;
-  padding: 1px 3px;
-  box-sizing: content-box;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--accent-secondary) 20%, transparent);
-  pointer-events: none;
-  transition: transform 180ms var(--ease-out), width 180ms var(--ease-out);
-}
-.rd-word[data-jump] { transition: none; }
-@media (prefers-reduced-motion: reduce) {
-  .rd-word { transition: none; }
-}
-
 /* The voice's controls in the podcast tab. */
 
 /* One line, one block per section with a gap after it, as a video's chapters; a native range on top carries the semantics. */
