@@ -192,7 +192,7 @@ flowchart TD
     Vectors["Workers AI · paper embeddings"]
     Corpus[("D1 · papers, lanes and vectors")]
     Quality[("D1 · author h-index cache and paper quality")]
-    API["/store/papers · recency and vector similarity"]
+    API["/store/papers · feed ranking"]
     Feed["FeedContext · client scoring and unread queue"]
     Custom["Custom feed page · one feed's exact lanes"]
     Recent["Most recent page · the reader's topics by day, unseen only"]
@@ -204,6 +204,7 @@ flowchart TD
     Harvest --> Vectors --> Corpus
     Corpus --> Vectors
     Harvest -->|Nightly, after filing area papers| Quality
+    Quality -->|Stored score for recent For You ranking| API
     Corpus --> API --> Feed --> UI
     API --> Custom --> UI
     API --> Recent --> UI
@@ -228,7 +229,9 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 [PaperBuilder](src/services/paper-builder.ts). Harvesting and embedding have
 separate bounded steps. After area filing, [paper-quality.ts](worker/paper-quality.ts)
 computes the stored signals from the paper bylines, OpenAlex author metrics
-and Hugging Face votes.
+and Hugging Face votes. For You reads the stored score with its lane candidates
+and adds 40% of it to the recent ranking for papers under 90 days old with
+fewer than five known citations. The bonus is at most 0.02.
 
 The Worker records a conference when the arXiv author attributes the paper to it
 or OpenReview assigns it a matching venue. OpenAlex source IDs can span main and
