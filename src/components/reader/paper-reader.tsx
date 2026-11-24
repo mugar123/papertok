@@ -448,6 +448,9 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
    * the one moment the card is told. The card keeps its one-line mount.
    */
   const afterClose = useRef<(() => void) | null>(null);
+  // The Paper tab closes the reader the way its X does, so the press ends on the reader rather
+  // than on whatever is under it once it is gone, and then hands over to the paper.
+  const toPaper = useRef(false);
   const [open, setOpen] = useState(true);
   const requestClose = useCallback(() => setOpen(false), []);
   const readerOpenTracked = useRef(false);
@@ -1168,7 +1171,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
     <Dialog
       open={open}
       onOpenChange={(next) => { if (!next) requestClose(); }}
-      onOpenChangeComplete={(next) => { if (!next) { onClose(); afterClose.current?.(); } }}
+      onOpenChangeComplete={(next) => { if (!next) { if (toPaper.current && onPaperTab) onPaperTab(); else onClose(); afterClose.current?.(); } }}
       modal
       disablePointerDismissal
     >
@@ -1194,7 +1197,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             {/* The bar names the paper once the document's own title has scrolled
                 away, rising in from below; it leaves the way it came. Opened as the
                 viewer's tab, the bar holds the two tabs instead. */}
-            {onPaperTab ? <ReadingTabs current="plain" onChange={(view) => { if (view === 'paper') onPaperTab(); }} /> : <AnimatePresence initial={false}>
+            {onPaperTab ? <ReadingTabs current="plain" onChange={(view) => { if (view !== 'paper') return; toPaper.current = true; requestClose(); }} /> : <AnimatePresence initial={false}>
               {!titleInView && (
                 <motion.p
                   key="title"
