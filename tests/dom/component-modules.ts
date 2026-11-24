@@ -61,6 +61,9 @@ export async function loadReadAloud() {
       onBlocked: () => void;
     }) => {
       playing: boolean;
+      buffering: boolean;
+      startup: { start: number; ready: number; total: number; failed: boolean };
+      prepare: (start: number) => void;
       prepared: { ready: number; total: number; failed: boolean };
       timeline: ReadAloudTimeline;
       paragraph: number | null;

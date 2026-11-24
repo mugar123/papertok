@@ -55,12 +55,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       .then(file => saveFile(file, title, 'mp3'), () => toast.error('Could not save the audio.'))
       .finally(() => { savingAudio.current = false; });
   };
-  const playPause = () => {
-    if (readAloud.playing) {
-      readAloud.pause();
-      return;
-    }
-    if (speaking === null) void trackEvent('read_aloud_start', { surface: 'reader' });
+  const startAt = () => {
     let visible = null;
     if (readingPreferences.readAloudFromPosition && scroll && spoken) {
       const { top, bottom } = scroll.getBoundingClientRect();
@@ -73,15 +68,24 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       const first = spoken.queue.findIndex(item => onScreen.has(item.passage));
       if (first !== -1) visible = { first, last: spoken.queue.findLastIndex(item => onScreen.has(item.passage)) };
     }
-    readAloud.play(readAloudStart(speaking, visible));
+    return readAloudStart(speaking, visible);
+  };
+  const playPause = () => {
+    if (readAloud.playing) readAloud.pause();
+    else {
+      readAloud.play(startAt());
+    }
   };
 
   // The podcast tab's way in and out, round in the top bar's corner. The text under it is left
   // out of the keyboard's way while the tab covers it.
-  // The podcast is the voice's only player: opening it starts the voice, closing it stops it.
+  // Opening prepares the first passages; playback starts with the player's Play button.
   const [listening, setListening] = useState(false);
   const listen = (open: boolean) => {
-    if (open && !readAloud.playing) playPause();
+    if (open && speaking === null) {
+      void trackEvent('read_aloud_start', { surface: 'reader' });
+      readAloud.prepare(startAt());
+    }
     if (!open) readAloud.pause();
     setListening(open);
   };

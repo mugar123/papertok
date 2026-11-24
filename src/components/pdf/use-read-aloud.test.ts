@@ -122,7 +122,7 @@ test('a refused passage is asked for again once the voice is back, and a blocked
   }
 });
 
-test('the voice starts once every passage has arrived, and plays at the chosen speed', async () => {
+test('the voice waits for its passage and plays at the chosen speed', async () => {
   const { useReadAloud, firebase, close } = await loadReadAloud();
   const worker = stubWorker();
   const route = worker.hold('/tts/paragraph');
@@ -350,5 +350,123 @@ test('the browser voice\'s place moves with time when it reports no words, and f
       if (original) Object.defineProperty(target, name, original);
       else Reflect.deleteProperty(target, name);
     }
+  }
+});
+
+
+test('opening prepares only the startup progress, playback starts before the rest arrives, and an uncached seek can be paused', async (t) => {
+  Clip.instances = [];
+  const { useReadAloud, firebase, close } = await loadReadAloud();
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  const waiting = new Map<string, (response: Response) => void>();
+  let active = 0;
+  let peak = 0;
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    const body = await request.json();
+    if (body.timings) return Response.json({}, { status: 404 });
+    active += 1;
+    peak = Math.max(peak, active);
+    return new Promise<Response>((resolve) => { waiting.set(body.text, resolve); }).finally(() => { active -= 1; });
+  });
+  firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+  const queue: SpokenPassage[] = Array.from({ length: 8 }, (_, i) => ({ passage: `b${i}`, utterances: [`Passage number ${i}.`] }));
+  const view = renderHook(() => useReadAloud(queue, [], {
+    title: 'Progressive paper',
+    onFallback: () => assert.fail('pending audio must not fall back'),
+    onError: () => assert.fail('audio should play'),
+    onBlocked: () => assert.fail('play should not be blocked'),
+  }));
+  const answer = async (index: number, response = new Response(new Blob(['audio']))) => {
+    const text = `Passage number ${index}.`;
+    await waitFor(() => assert.ok(waiting.has(text)));
+    await act(async () => waiting.get(text)?.(response));
+  };
+  try {
+    act(() => view.result.current.prepare(0));
+    assert.deepEqual(view.result.current.startup, { start: 0, ready: 0, total: 3, failed: false });
+    await answer(0);
+    await waitFor(() => assert.equal(view.result.current.startup.ready, 1));
+    await answer(1);
+    await answer(2);
+    await waitFor(() => assert.deepEqual(view.result.current.startup, { start: 0, ready: 3, total: 3, failed: false }));
+    assert.equal(view.result.current.playing, false, 'opening never starts the voice');
+    assert.equal(Clip.instances.some(clip => clip.preload !== 'metadata'), false);
+    act(() => view.result.current.play(0));
+    await waitFor(() => assert.equal(view.result.current.buffering, false));
+    const player = Clip.instances.find(clip => clip.preload !== 'metadata');
+    assert.ok(player);
+    assert.ok(player.src.startsWith('blob:'));
+    const firstSource = player.src;
+    await answer(3, Response.json({ code: 'AI_UNAVAILABLE' }, { status: 503 }));
+    await waitFor(() => assert.equal(view.result.current.prepared.failed, true));
+    act(() => view.result.current.seek(view.result.current.timeline.duration - 1));
+    assert.equal(view.result.current.paragraph, 7);
+    assert.equal(view.result.current.startup.ready, 3, 'a retry keeps the initial gate open so Pause stays available');
+    assert.equal(view.result.current.buffering, true);
+    await waitFor(() => assert.ok(waiting.has('Passage number 7.')), { timeout: 2000 });
+    act(() => view.result.current.seek(view.result.current.timeline.passages[6].start));
+    act(() => view.result.current.seek(view.result.current.timeline.passages[5].start));
+    await answer(7);
+    await answer(6);
+    act(() => view.result.current.pause());
+    await answer(5);
+    assert.equal(view.result.current.playing, false);
+    assert.equal(view.result.current.buffering, false);
+    assert.equal(player.src, firstSource, 'a completed seek must not resume after Pause');
+    assert.equal(peak, 3, 'rapid seeks share the three-request limit with background loading');
+    act(() => view.result.current.play(5));
+    await waitFor(() => assert.equal(view.result.current.buffering, false));
+    assert.notEqual(player.src, firstSource);
+  } finally {
+    view.unmount();
+    for (const resolve of waiting.values()) resolve(new Response(new Blob(['audio'])));
+    await close();
+    if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
+    else Reflect.deleteProperty(globalThis, 'Audio');
+    Clip.instances = [];
+  }
+});
+
+
+test('a late failure from an old preparation cannot hide a new ready buffer', async (t) => {
+  const { useReadAloud, firebase, close } = await loadReadAloud();
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  const waiting = new Map<string, (response: Response) => void>();
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const { text } = await new Request(input, init).json();
+    return new Promise<Response>(resolve => waiting.set(text, resolve));
+  });
+  firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+  const oldQueue: SpokenPassage[] = ['Old first.', 'Old second.'].map(text => ({ passage: text, utterances: [text] }));
+  const newQueue: SpokenPassage[] = Array.from({ length: 5 }, (_, i) => ({ passage: `new${i}`, utterances: [`New ${i}.`] }));
+  const view = renderHook(({ queue }) => useReadAloud(queue, [], {
+    title: 'Paper', onFallback: () => {}, onError: () => {}, onBlocked: () => {},
+  }), { initialProps: { queue: oldQueue } });
+  const answer = async (text: string, response = new Response(new Blob(['audio']))) => {
+    await waitFor(() => assert.ok(waiting.has(text)));
+    await act(async () => waiting.get(text)?.(response));
+  };
+  try {
+    act(() => view.result.current.prepare(0));
+    await waitFor(() => assert.ok(waiting.has('Old second.')));
+    view.rerender({ queue: newQueue });
+    act(() => view.result.current.prepare(0));
+    await answer('Old second.');
+    for (let i = 0; i < 3; i += 1) await answer(`New ${i}.`);
+    await waitFor(() => assert.deepEqual(view.result.current.startup, { start: 0, ready: 3, total: 3, failed: false }));
+    await answer('Old first.', Response.json({ code: 'AI_UNAVAILABLE' }, { status: 503 }));
+    await answer('New 3.');
+    await waitFor(() => assert.ok(waiting.has('New 4.')));
+    assert.deepEqual(view.result.current.startup, { start: 0, ready: 3, total: 3, failed: false });
+  } finally {
+    view.unmount();
+    for (const resolve of waiting.values()) resolve(new Response(new Blob(['audio'])));
+    await close();
+    if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
+    else Reflect.deleteProperty(globalThis, 'Audio');
+    Clip.instances = [];
   }
 });

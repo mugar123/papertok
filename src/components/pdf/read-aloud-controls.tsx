@@ -70,13 +70,12 @@ function sections(timeline: ReadAloudTimeline) {
 
 /**
  * The line through the paper, cut into one block per top-level section as a video's chapters are:
- * until the audio is all there, how much of it is; then where the voice is. The segment under
+ * showing where the voice is. The segment under
  * the pointer grows, the tip names its minute and section, and letting go moves the voice
  * there; a range input on top carries it for the keyboard.
  */
-export function ReadAloudTrack({ timeline, prepared, position, speed, target, onTarget, onSeek }: {
+export function ReadAloudTrack({ timeline, position, speed, target, onTarget, onSeek }: {
   timeline: ReadAloudTimeline;
-  prepared: { ready: number; total: number; failed: boolean };
   position: number;
   /** Times are told in listening time, the paper's divided by the speed. */
   speed: number;
@@ -86,7 +85,6 @@ export function ReadAloudTrack({ timeline, prepared, position, speed, target, on
 }) {
   // Where a mouse over the track points, before any press.
   const [hover, setHover] = useState<number | null>(null);
-  const preparing = !prepared.failed && prepared.ready < prepared.total;
   const shown = target ?? position;
   const chapter = chapterAt(timeline, shown);
   /** The moment under a pointer, over the full width of the line as drawn. */
@@ -108,13 +106,6 @@ export function ReadAloudTrack({ timeline, prepared, position, speed, target, on
   const tipText = !pointedChapter ? '' : !pointedBlock || pointedBlock.start === pointedChapter.start
     ? pointedChapter.title
     : `${pointedBlock.title} · ${[pointedChapter.number, pointedChapter.title].filter(Boolean).join(' ')}`;
-  if (preparing) {
-    return (
-      <div className="rd-listen-track">
-        <progress className="rd-listen-progress" max={prepared.total} value={prepared.ready} aria-label="Preparing the paper's audio" />
-      </div>
-    );
-  }
   return (
     <div
       className="rd-listen-track"

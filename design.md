@@ -646,7 +646,12 @@ and Paper goes back to the text. A round headphones button at the bar's end open
 the podcast tab (`pdf/read-aloud-listen.tsx`), which reads the paper's text aloud:
 the paper's title over a particle visual, the sentence being read as a caption,
 and a player with speed, 15-second skips and a timeline cut into the paper's
-sections; its chapters open in a panel beside it, full screen on a phone. The
+sections; its chapters open in a panel beside it, full screen on a phone. Opening
+the tab prepares three passages from the starting position (or the remaining
+passages for a shorter ending). The percentage covers only that initial buffer;
+Play becomes available when it is ready, without starting automatically. Two
+background requests keep loading the rest. A jump to uncached audio shows
+“Loading this passage…” while the controls remain available. The
 plain-words reader has no audio; it keeps its reading level and AI highlights
 alongside the shared tools. When opened from a paper card, it also receives the card's options and
 Zotero action; saved-summary history has no card actions. Its
