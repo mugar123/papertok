@@ -105,7 +105,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   const sentence = item ? spokenSentence(item, word) : null;
 
   return (
-    <section className="rd-podcast" aria-labelledby="rd-podcast-title">
+    <section className="rd-podcast" aria-labelledby="rd-podcast-title" data-chapters-open={drawerOpen || undefined}>
       <div className="rd-podcast-cover"><ReadAloudSphere ready={!preparing} playing={playing} /></div>
 
       {/* The paper, then the section the voice is in: one line on a wide screen; on a phone the
