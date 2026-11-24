@@ -7,7 +7,17 @@ import { ReadAloudTrack, ReadAloudTransport, SpeedButton } from './read-aloud-co
 import ReadAloudForms from './read-aloud-forms.tsx';
 import './read-aloud-listen.css';
 
-/** The sentence the voice is on, cut into words, and which of them it is saying. */
+/** About four lines of the caption; a longer sentence is shown a piece at a time, as lyrics are. */
+const CAPTION_WORDS = 28;
+
+/** The piece of a sentence's words that holds the one being said, the pieces as even as they can be. */
+function captionPiece(words: string[], current: number) {
+  const size = Math.ceil(words.length / Math.ceil(words.length / CAPTION_WORDS));
+  const start = Math.floor(Math.max(0, current) / size) * size;
+  return { words: words.slice(start, start + size), current: current - start };
+}
+
+/** The sentence the voice is on, cut into words (only the piece being read, if it is long), and which of them it is saying. */
 function spokenSentence(item: SpokenPassage, word: number) {
   const text = passageText(item);
   const at = wordSpans(text)[word]?.[0] ?? 0;
@@ -15,7 +25,7 @@ function spokenSentence(item: SpokenPassage, word: number) {
   for (const line of item.utterances) {
     if (at < start + line.length + 1) {
       const before = text.slice(0, start).split(/\s+/).filter(Boolean).length;
-      return { words: line.split(/\s+/).filter(Boolean), current: word - before };
+      return captionPiece(line.split(/\s+/).filter(Boolean), word - before);
     }
     start += line.length + 1;
   }
