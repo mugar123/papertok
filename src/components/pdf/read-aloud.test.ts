@@ -125,5 +125,10 @@ test('the word being spoken follows ElevenLabs\' timings, and is estimated from 
   assert.equal(wordStarts(text, { characters: [...'Other text'], character_start_times_seconds: [] }), null);
   assert.equal(spokenWordAt(text, null, { seconds: null, fraction: 0.5 }), 1);
   assert.equal(spokenWordAt(text, null, { seconds: null, fraction: 1 }), 2);
+  // A clip without timings is placed by spoken length: a voice spells "K t c" letter by letter,
+  // so 70% of the clip is still in the formula, where 70% of the characters is past it.
+  const formula = 'The value K t c is large';
+  assert.equal(spokenWordAt(formula, null, { seconds: null, fraction: 0.7 }), 5);
+  assert.equal(spokenWordAt(formula, null, { seconds: 3, fraction: 0.7 }), 4);
 });
 

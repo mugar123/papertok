@@ -15,7 +15,7 @@ test('after a jump the line holds the place asked for until the voice reports it
     const player = (position: number) => ({
       timeline, startup: { start: 0, ready: 2, total: 2, failed: false }, buffering: false, paragraph: null, position,
       playing: false, speed: 1, timings: {}, live: () => ({ seconds: null, fraction: 0 }), setSpeed() {},
-      seek: (seconds: number) => { seeks.push(seconds); }, withoutVoice: { passages: [], reason: null },
+      seek: (seconds: number) => { seeks.push(seconds); },
     });
     const tab = (position: number) => createElement(ReadAloudListen, { title: 'Paper', queue, player: player(position), onPlayPause() {} });
     const view = render(tab(10));

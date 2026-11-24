@@ -208,8 +208,23 @@ export function wordStarts(text: string, timings: CharacterTimings | null) {
 }
 
 /**
+ * About how long a word takes to say, in letters of ordinary speech. A voice spells a symbol, a
+ * lone letter, a short capitalised name or a token with digits or signs out one character at a
+ * time ("K t c", "SU(2)", "x^2"), each about as long as a short word, and pauses after a comma
+ * or a full stop.
+ */
+function spokenLength(word: string) {
+  const bare = word.replace(/[.,;:!?)\]"'’”]+$/, '').replace(/^[("'‘“[]+/, '');
+  const spelled = bare.length <= 1 || /[\d=+^_/<>|∑∫√≤≥±×·−∈∞]|[\u0370-\u03ff]/.test(bare) || /^[A-Z][A-Za-z]{0,3}$/.test(bare) && bare !== bare[0] + bare.slice(1).toLowerCase();
+  const pause = /[.!?:;]["'’”)]*$/.test(word) ? 4 : /,["'’”)]*$/.test(word) ? 2 : 0;
+  return (spelled ? Math.max(1, bare.length) * 3 : bare.length) + 1 + pause;
+}
+
+/**
  * The word being spoken: by its timing when the clip's seconds and the timings
- * are known, otherwise by how far through the text the voice is.
+ * are known; for a clip without timings, by how far through its spoken length
+ * the clip has played; for the browser's voice, which tells how far through the
+ * text it is, by that.
  */
 export function spokenWordAt(text: string, starts: number[] | null, { seconds, fraction }: { seconds: number | null; fraction: number }) {
   if (starts && seconds !== null) {
@@ -218,6 +233,15 @@ export function spokenWordAt(text: string, starts: number[] | null, { seconds, f
     return index;
   }
   const spans = wordSpans(text);
+  if (seconds !== null && spans.length) {
+    const lengths = spans.map(([start, end]) => spokenLength(text.slice(start, end)));
+    let at = fraction * lengths.reduce((sum, length) => sum + length, 0);
+    for (const [index, length] of lengths.entries()) {
+      if (at < length) return index;
+      at -= length;
+    }
+    return spans.length - 1;
+  }
   const at = fraction * text.length;
   const found = spans.findIndex(([, end]) => at < end);
   return found === -1 ? spans.length - 1 : found;

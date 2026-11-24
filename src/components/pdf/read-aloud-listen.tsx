@@ -57,14 +57,12 @@ export default function ReadAloudListen({ title, queue, player, voiceLeft = null
   title: string;
   queue: readonly SpokenPassage[];
   /** The voice the dock plays: where it is, how much is ready, and its controls. */
-  player: Pick<ReturnType<typeof useReadAloud>, 'timeline' | 'startup' | 'buffering' | 'paragraph' | 'position' | 'playing' | 'speed' | 'timings' | 'live' | 'setSpeed' | 'seek' | 'withoutVoice'>;
+  player: Pick<ReturnType<typeof useReadAloud>, 'timeline' | 'startup' | 'buffering' | 'paragraph' | 'position' | 'playing' | 'speed' | 'timings' | 'live' | 'setSpeed' | 'seek'>;
   /** New papers the account may still hear in PaperTok's voice today, when known. */
   voiceLeft?: { papersLeft: number; dailyPapers: number } | null;
   onPlayPause: () => void;
 }) {
-  const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek, withoutVoice } = player;
-  const unvoiced = withoutVoice.passages.flatMap(index => (timeline.passages[index] ? [timeline.passages[index]] : []));
-  const voicedCount = timeline.passages.length - unvoiced.length;
+  const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek } = player;
   const preparing = !startup.failed && startup.ready < startup.total;
   const percent = startup.total ? Math.floor((startup.ready / startup.total) * 100) : 100;
   // What the wait is for: the chapters and, at the chosen speed, about how long they last (left out when unknown).
@@ -240,15 +238,9 @@ export default function ReadAloudListen({ title, queue, player, voiceLeft = null
             {/* and under it the line, its minute at one end and what is left at the other. */}
             <div className="rd-podcast-line">
               <span className="rd-listen-time">{clock(shown / speed)}</span>
-              <ReadAloudTrack timeline={timeline} position={now} speed={speed} target={target} onTarget={setTarget} onSeek={onSeek} unvoiced={unvoiced} />
+              <ReadAloudTrack timeline={timeline} position={now} speed={speed} target={target} onTarget={setTarget} onSeek={onSeek} />
               <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
             </div>
-            {unvoiced.length > 0 && (
-              <p className="rd-podcast-unvoiced">
-                {`${voicedCount} of ${timeline.passages.length} parts have PaperTok’s voice. Your browser’s voice reads the other ${unvoiced.length}, striped on the line`}
-                {withoutVoice.reason === 'quota' ? ', which can be made tomorrow.' : '; PaperTok tries again the next time you open the paper.'}
-              </p>
-            )}
           </div>
         </div>
       )}

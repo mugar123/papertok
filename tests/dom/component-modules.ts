@@ -61,7 +61,6 @@ export async function loadReadAloud() {
       onBlocked: () => void;
     }) => {
       playing: boolean;
-      withoutVoice: { passages: number[]; reason: 'quota' | 'failed' | null };
       buffering: boolean;
       startup: { start: number; ready: number; total: number; failed: boolean };
       prepare: (start: number) => void;

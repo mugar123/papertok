@@ -25,16 +25,6 @@
   transition: height 150ms var(--ease-out);
 }
 .rd-listen-part-fill { position: absolute; inset: 0 auto 0 0; background: var(--text-primary); }
-/* Over the line, where the browser's voice reads: diagonal stripes, so the stretch reads apart by shape as well as tone. */
-.rd-listen-unvoiced {
-  position: absolute;
-  top: 50%;
-  height: 4px;
-  translate: 0 -50%;
-  border-radius: var(--radius-full);
-  background: repeating-linear-gradient(-45deg, var(--bg-primary) 0 2px, transparent 2px 4px);
-  pointer-events: none;
-}
 /* The line thickens under a mouse and while it is dragged, and the section under the pointer most. */
 @media (hover: hover) and (pointer: fine) {
   .rd-listen-track:hover .rd-listen-part { height: 6px; }

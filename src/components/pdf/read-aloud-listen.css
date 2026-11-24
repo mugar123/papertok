@@ -67,8 +67,6 @@
   text-align: center;
   text-wrap: balance;
 }
-/* Under the line, when part of the paper has no PaperTok audio: how much, and when it can come. */
-.rd-podcast-unvoiced { margin: var(--space-2) 0 0; font: 400 0.8125rem/1.4 var(--font-body); color: var(--text-secondary); text-align: center; text-wrap: pretty; }
 /* Under the title, how many new papers the account may still hear in PaperTok's voice today. */
 .rd-podcast-header-voice { margin: var(--space-2) 0 0; text-align: center; }
 /* The paper's title over everything, centred. */

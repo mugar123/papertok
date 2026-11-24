@@ -93,11 +93,6 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
 
   const timeline = useMemo(() => readAloudTimeline(queue, chapters, item => lengths[passageText(item)]), [chapters, lengths, queue]);
   const ready = useMemo(() => queue.reduce((count, item) => count + Number(lengths[passageText(item)] !== undefined), 0), [lengths, queue]);
-  // Passages PaperTok's audio was refused for, which the browser's voice reads, and why: `quota`
-  // for the day's papers or the providers' characters (it can be made another day), `failed` otherwise.
-  const [refused, setRefused] = useState<Record<string, 'quota' | 'failed'>>({});
-  const withoutVoice = useMemo(() => queue.flatMap((item, index) => (refused[passageText(item)] ? [index] : [])), [queue, refused]);
-  const refusedFor = Object.values(refused).includes('quota') ? 'quota' : withoutVoice.length ? 'failed' : null;
 
   const pause = useCallback(() => {
     run.current += 1;
@@ -164,12 +159,6 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     const pending = request(text).then(({ blob, key }) => {
       fetches.current?.signal.throwIfAborted();
       if (key) audioKeys.current.set(text, key);
-      setRefused((refused) => {
-        if (!(text in refused)) return refused;
-        const rest = { ...refused };
-        delete rest[text];
-        return rest;
-      });
       const url = URL.createObjectURL(blob);
       void clipSeconds(url).then((seconds) => {
         setLengths(lengths => ({ ...lengths, [text]: seconds ?? readAloudTimeline([item], []).duration }));
@@ -179,9 +168,6 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     // A passage that failed for now is asked for again the next time it is needed.
     pending.catch((error: unknown) => {
       if (!skippable(error) && clips.current.get(text) === pending) clips.current.delete(text);
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        setRefused(refused => ({ ...refused, [text]: skippable(error) ? 'quota' : 'failed' }));
-      }
     });
     clips.current.set(text, pending);
     return pending;
@@ -507,8 +493,6 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     live,
     /** How much of the paper's audio exists yet; `failed` once a passage was refused and the rest will not come. */
     prepared: { ready, total: queue.length, failed: prepareDone && ready < queue.length },
-    /** The passages the browser's voice reads, PaperTok's audio refused for them, and why. */
-    withoutVoice: { passages: withoutVoice, reason: refusedFor },
     paragraph,
     playing,
     position,
