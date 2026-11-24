@@ -1,5 +1,8 @@
 import { MAX_NOTE_LENGTH } from '../../services/user-highlight-service.ts';
-export interface PassageSelection { sectionId: string; quote: string; occurrence: number; anchor: DOMRect; context: string }
+/** A selection in the paper's text: its first block, and the block it ends in and the words of it when it runs on. */
+export interface PassageSelection { sectionId: string; quote: string; occurrence: number; anchor: DOMRect; context: string; endSectionId?: string; endQuote?: string }
+
+type Anchored = { sectionId: string; quote: string; occurrence?: number; endSectionId?: string; endQuote?: string };
 
 function collapse(text: string) {
   let collapsed = '';
@@ -105,23 +108,54 @@ export function selectedPassage(root: Element): PassageSelection | null {
   return passageFromRange(root, selection.getRangeAt(0));
 }
 
-/** The passage a range covers, clipped to the block it starts in. */
+const blockOf = (node: Node) => (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>('[data-passage]') ?? null;
+
+/** The words of `block` that `range` covers, as the block's text shows them. */
+function coveredText(block: HTMLElement, range: Range) {
+  const picked = textNodes(block).filter(node => range.intersectsNode(node));
+  return joinText(picked, node => node.data.slice(
+    node === range.startContainer ? range.startOffset : 0,
+    node === range.endContainer ? range.endOffset : undefined,
+  )).text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The passage a range covers: the words of the block it starts in and, when it runs into a later
+ * block, that block's id and the words of it up to where the range ends (the blocks between are
+ * covered whole).
+ */
 export function passageFromRange(root: Element, range: Range): PassageSelection | null {
-  const start = range.startContainer;
-  const block = (start instanceof Element ? start : start.parentElement)?.closest<HTMLElement>('[data-passage]');
+  const block = blockOf(range.startContainer);
   if (!block || !root.contains(block)) return null;
   const clipped = range.cloneRange();
   if (!block.contains(range.endContainer)) clipped.setEnd(block, block.childNodes.length);
   const nodes = textNodes(block);
   const picked = nodes.filter(node => clipped.intersectsNode(node));
-  const quote = joinText(picked, node => node.data.slice(
-    node === clipped.startContainer ? clipped.startOffset : 0,
-    node === clipped.endContainer ? clipped.endOffset : undefined,
-  )).text.replace(/\s+/g, ' ').trim();
+  const quote = coveredText(block, clipped);
   if (!quote) return null;
   const whole = joinText(nodes);
   const before = whole.starts[nodes.indexOf(picked[0])] + (picked[0] === clipped.startContainer ? clipped.startOffset : 0);
-  return { sectionId: block.dataset.passage!, quote, occurrence: occurrenceBefore(whole.text, quote, before), anchor: clipped.getBoundingClientRect(), context: whole.text.replace(/\s+/g, ' ').trim() };
+  const passage = { sectionId: block.dataset.passage!, quote, occurrence: occurrenceBefore(whole.text, quote, before), anchor: clipped.getBoundingClientRect(), context: whole.text.replace(/\s+/g, ' ').trim() };
+  const last = blockOf(range.endContainer);
+  if (!last || last === block || !root.contains(last)) return passage;
+  const ending = range.cloneRange();
+  ending.setStart(last, 0);
+  const endQuote = coveredText(last, ending);
+  return endQuote ? { ...passage, endSectionId: last.dataset.passage!, endQuote } : passage;
+}
+
+/** The DOM range a saved passage covers: within its block, or from its block into the one it ends in. */
+export function annotationRange(root: ParentNode, passage: Anchored) {
+  const block = root.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
+  const start = block && passageRange(block, passage.quote, passage.occurrence);
+  if (!start || !passage.endSectionId || !passage.endQuote) return start;
+  const last = root.querySelector(`[data-passage="${CSS.escape(passage.endSectionId)}"]`);
+  const end = last && passageRange(last, passage.endQuote);
+  if (!end) return start;
+  const range = document.createRange();
+  range.setStart(start.startContainer, start.startOffset);
+  range.setEnd(end.endContainer, end.endOffset);
+  return range;
 }
 
 export function blockPassage(block: HTMLElement): PassageSelection | null {
@@ -136,12 +170,13 @@ export function blockPassage(block: HTMLElement): PassageSelection | null {
  * element to click: the point must fall inside one of the passage range's
  * line boxes, in the block the click landed in.
  */
-export function passageAt<T extends { sectionId: string; quote: string; occurrence?: number }>(target: EventTarget | null, passages: readonly T[], x: number, y: number): T | null {
+export function passageAt<T extends Anchored>(target: EventTarget | null, passages: readonly T[], x: number, y: number): T | null {
   // A link or button inside a highlight keeps its own job: a citation, a figure, a new tab.
   if (!(target instanceof Element) || target.closest('a, button')) return null;
   const block = target.closest<HTMLElement>('[data-passage]');
   if (!block) return null;
-  return passages.find(passage => passage.sectionId === block.dataset.passage
-    && [...passageRange(block, passage.quote, passage.occurrence)?.getClientRects() ?? []]
+  // Only the passages that start in this block, or run across blocks, can be under the point.
+  return passages.find(passage => (passage.sectionId === block.dataset.passage || passage.endSectionId)
+    && [...annotationRange(block.ownerDocument, passage)?.getClientRects() ?? []]
       .some(box => x >= box.left && x <= box.right && y >= box.top && y <= box.bottom)) ?? null;
 }

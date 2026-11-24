@@ -8,6 +8,8 @@ export interface UserHighlight {
   quote: string;
   endParagraphIndex?: number;
   endQuote?: string;
+  /** In the paper's own text, the paragraph a passage ends in when it runs past the one it starts in. */
+  endSectionId?: string;
   kind: 'ai' | 'user';
   note?: string;
   color?: HighlightColor;
@@ -95,7 +97,7 @@ export function buildHighlightsQuery(uid: string, paperId: string, overrides?: H
  * highlight of it would land as a second document. Leaving `user` out keeps
  * every existing id exactly where it is.
  */
-export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, endParagraphIndex, endQuote, kind, occurrence }: HighlightInput) {
+export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, endParagraphIndex, endQuote, endSectionId, kind, occurrence }: HighlightInput) {
   const fingerprint = [
     cleanText(paperId, 400),
     level,
@@ -105,6 +107,7 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
     normalizeHighlightQuote(quote),
   ]
     .concat(endParagraphIndex === undefined ? [] : [endParagraphIndex, normalizeHighlightQuote(endQuote)])
+    .concat(endSectionId === undefined ? [] : [cleanText(endSectionId, 40), String(endQuote ?? '').replace(/\s+/g, ' ').trim()])
     .concat(kind === 'ai' ? ['ai'] : [])
     .concat(occurrence ? [`#${occurrence}`] : []).join('|');
 
@@ -124,7 +127,7 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
  */
 export const MAX_NOTE_LENGTH = 1_200;
 
-export const MAX_QUOTE_LENGTH = 1_200;
+export const MAX_QUOTE_LENGTH = 10_000;
 export const FULL_TEXT_LEVEL = 'full-text';
 const LEVELS = ['beginner', 'university', 'researcher', FULL_TEXT_LEVEL];
 export const HIGHLIGHT_COLORS = ['yellow', 'teal', 'sky', 'violet', 'rose'] as const;
@@ -149,7 +152,11 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
   // it ends: the last paragraph and the words of it that were selected.
   const endParagraphIndex = Number.parseInt(input?.endParagraphIndex as string, 10);
   const endQuote = normalizeHighlightQuote(input?.endQuote);
-  const spans = Number.isInteger(endParagraphIndex)
+  // In the paper's own text a passage may run into later paragraphs, named by their own ids.
+  const endSectionId = level === FULL_TEXT_LEVEL ? cleanText(input?.endSectionId, 40) : '';
+  const endText = String(input?.endQuote ?? '').replace(/\s+/g, ' ').trim();
+  const crosses = Boolean(endSectionId) && endSectionId !== sectionId && endText.length > 0;
+  const spans = !crosses && Number.isInteger(endParagraphIndex)
     && endParagraphIndex > paragraphIndex
     && endParagraphIndex <= 100
     && endQuote.length > 0;
@@ -176,6 +183,7 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
     paragraphIndex,
     quote: quote.slice(0, MAX_QUOTE_LENGTH),
     ...(spans ? { endParagraphIndex, endQuote: endQuote.slice(0, MAX_QUOTE_LENGTH) } : {}),
+    ...(crosses ? { endSectionId, endQuote: endText.slice(0, MAX_QUOTE_LENGTH) } : {}),
     kind,
     ...(note ? { note } : {}),
     ...(color ? { color } : {}),

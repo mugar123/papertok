@@ -1,7 +1,7 @@
 import type { Paper } from '../models/paper.ts';
 import type { HighlightColor, UserHighlight } from '../services/user-highlight-service.ts';
 import type { ProductAnalyticsEvent } from '../services/analytics-service.ts';
-export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; occurrence?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
+export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; endSectionId?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; occurrence?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
 interface AnnotationOptions {
   uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
@@ -155,6 +155,7 @@ export function usePassageAnnotations({
       quote: pending.quote,
       endParagraphIndex: pending.endParagraphIndex,
       endQuote: pending.endQuote,
+      endSectionId: pending.endSectionId,
       occurrence: pending.occurrence,
       kind,
       note,
@@ -227,6 +228,7 @@ export function usePassageAnnotations({
         quote: passage.quote,
         endParagraphIndex: passage.endParagraphIndex,
         endQuote: passage.endQuote,
+        endSectionId: passage.endSectionId,
         kind: 'ai',
         note: answer.note,
       });
@@ -244,6 +246,7 @@ export function usePassageAnnotations({
           paragraphIndex: passage.paragraphIndex,
           quote: passage.quote,
           ...(passage.endParagraphIndex === undefined ? {} : { endParagraphIndex: passage.endParagraphIndex, endQuote: passage.endQuote }),
+          ...(passage.endSectionId === undefined ? {} : { endSectionId: passage.endSectionId, endQuote: passage.endQuote }),
           kind: 'ai',
           note: answer.note,
           fresh: true,

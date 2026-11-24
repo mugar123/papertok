@@ -27,13 +27,14 @@ import { documentVisibility, startViewerTracking, viewerOutcome } from './viewer
 import { NotesSidebar, PassageEditor } from './viewer-notes.tsx';
 import { PassageHandles } from './passage-handles.tsx';
 import type { PassageSelection } from './passage-range.ts';
-import { passageAt, passageFromRange, passageRange } from './passage-range.ts';
+import { annotationRange, passageAt, passageFromRange } from './passage-range.ts';
 import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import UsesCount from '../reader/uses-count.tsx';
 import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-viewer-notes.ts';
 import { fullTextListen } from './read-aloud.ts';
 import { ReadingTabs } from './reading-tabs.tsx';
 import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
+import { passageQuote } from '../../services/user-highlight-service.ts';
 
 const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 
@@ -331,7 +332,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
               <PassageEditor
                 sheet={coarsePointer}
                 key={`${notes.pending.sectionId}:${notes.pending.quote}`}
-                quote={notes.pending.quote}
+                quote={passageQuote(notes.pending)}
                 anchor={notes.pending.anchor}
                 busy={notes.busy !== 'idle'}
                 error={notes.failed !== null}
@@ -358,8 +359,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                 root={textScroll}
                 range={() => {
                   const shown = dragged ?? notes.pending;
-                  const block = shown && textScroll.querySelector(`[data-passage="${CSS.escape(shown.sectionId)}"]`);
-                  return block && shown ? passageRange(block, shown.quote, shown.occurrence) : null;
+                  return shown ? annotationRange(textScroll, shown) : null;
                 }}
                 onMove={(range) => setDragged(passageFromRange(textScroll, range))}
                 onEnd={(range) => {

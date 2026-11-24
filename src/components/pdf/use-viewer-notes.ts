@@ -6,7 +6,7 @@ import { FULL_TEXT_LEVEL, HIGHLIGHT_COLORS, MAX_QUOTE_LENGTH, highlightColor } f
 import { HIGHLIGHT_MIN_QUOTE_LENGTH } from '../../utils/text-highlights.ts';
 import type { PassageSelection } from './passage-range.ts';
 import type { HighlightColor } from '../../services/user-highlight-service.ts';
-import { blockPassage, blockText, overlapping, passageAt, passageRange, replacingHighlights, selectedPassage } from './passage-range.ts';
+import { annotationRange, blockPassage, blockText, overlapping, passageAt, replacingHighlights, selectedPassage } from './passage-range.ts';
 import { newestFirst } from './passage-order.ts';
 import { lastKnownAIUses, refreshAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 
@@ -42,7 +42,10 @@ export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string
     if (!passage || passage.quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return;
     setFailed(null);
     setOrigin(from);
-    notes.begin({ sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), occurrence: passage.occurrence, anchor: passage.anchor, context: passage.context.slice(0, 4_000) });
+    notes.begin({
+      sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), occurrence: passage.occurrence, anchor: passage.anchor, context: passage.context.slice(0, 4_000),
+      ...(passage.endSectionId && passage.endQuote ? { endSectionId: passage.endSectionId, endQuote: passage.endQuote.slice(0, MAX_QUOTE_LENGTH).trim() } : {}),
+    });
   };
   const pick = (root: HTMLElement | null) => {
     if (root) pickPassage(selectedPassage(root), root);
@@ -59,9 +62,10 @@ export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string
   // A selection over the reader's own highlights replaces them, keeping their notes.
   const save = async (note: string, color?: HighlightColor) => {
     const passage = notes.pending;
-    const block = passage && document.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
+    // Only a passage inside one block replaces the highlights it overlaps there.
+    const block = passage && !passage.endSectionId && document.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
     const { note: text, replaced } = replacingHighlights(note, block && passage
-      ? overlapping(blockText(block), passage, passages.filter(item => item.kind === 'user' && item.sectionId === passage.sectionId))
+      ? overlapping(blockText(block), passage, passages.filter(item => item.kind === 'user' && item.sectionId === passage.sectionId && !item.endSectionId))
       : []);
     const saved = text ? await notes.saveNote(text, color) : await notes.highlight(color);
     if (saved) {
@@ -119,12 +123,13 @@ export function useTouchSelection(root: HTMLElement | null) {
   return root ? passage : null;
 }
 
-export function usePaintedPassages(root: HTMLElement | null, passages: Pick<PassageAnnotation, 'id' | 'sectionId' | 'quote' | 'color' | 'occurrence'>[], pending: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'> | null, active: string | null = null, hovered: string | null = null) {
+type Painted = Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence' | 'endSectionId' | 'endQuote'>;
+
+export function usePaintedPassages(root: HTMLElement | null, passages: (Painted & Pick<PassageAnnotation, 'id' | 'color'>)[], pending: Painted | null, active: string | null = null, hovered: string | null = null) {
   useEffect(() => {
     if (!root || typeof CSS === 'undefined' || !('highlights' in CSS)) return undefined;
-    const ranges = (list: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'>[]) => list.flatMap((passage) => {
-      const block = root.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
-      const range = block && passageRange(block, passage.quote, passage.occurrence);
+    const ranges = (list: Painted[]) => list.flatMap((passage) => {
+      const range = annotationRange(root, passage);
       return range ? [range] : [];
     });
     const paint = () => {

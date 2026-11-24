@@ -1,6 +1,7 @@
+import '../../../tests/dom/dom-environment.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { occurrenceBefore, overlapping, quoteOffsets, replacingHighlights } from './passage-range.ts';
+import { annotationRange, occurrenceBefore, overlapping, passageFromRange, quoteOffsets, replacingHighlights } from './passage-range.ts';
 import { MAX_NOTE_LENGTH } from '../../services/user-highlight-service.ts';
 
 test('a quote is found across the line breaks and runs of spaces of the page text', () => {
@@ -48,4 +49,42 @@ test('a highlight over others keeps their notes, and replaces none when the note
   assert.deepEqual(replacingHighlights('New thought.', old), { note: 'New thought.\n\nFirst thought.', replaced: old });
   const long = [{ id: 'c', note: 'x'.repeat(MAX_NOTE_LENGTH - 5) }];
   assert.deepEqual(replacingHighlights('New thought.', long), { note: 'New thought.', replaced: [] });
+});
+
+test('a selection into a later block keeps where it ends, and its saved range covers every block between', (t) => {
+  // jsdom has no CSS namespace (the blocks are looked up by escaped id), and its NodeFilter lives on its window.
+  if (typeof CSS === 'undefined') {
+    Object.defineProperty(globalThis, 'CSS', { configurable: true, value: { escape: (value: string) => value } });
+    t.after(() => Reflect.deleteProperty(globalThis, 'CSS'));
+  }
+  if (typeof NodeFilter === 'undefined') {
+    Object.defineProperty(globalThis, 'NodeFilter', { configurable: true, value: (window as unknown as { NodeFilter: typeof NodeFilter }).NodeFilter });
+    t.after(() => Reflect.deleteProperty(globalThis, 'NodeFilter'));
+  }
+  // Nor does jsdom lay out a range; the box only places the editor.
+  const RangeType = (window as unknown as { Range: typeof Range }).Range;
+  if (!('getBoundingClientRect' in RangeType.prototype)) {
+    Object.defineProperty(RangeType.prototype, 'getBoundingClientRect', { configurable: true, value: () => ({}) });
+    t.after(() => Reflect.deleteProperty(RangeType.prototype, 'getBoundingClientRect'));
+  }
+  const root = document.createElement('div');
+  root.innerHTML = '<p data-passage="b1">First block ends here.</p><p data-passage="b2">Middle block whole.</p><p data-passage="b3">Last block starts and goes on.</p>';
+  document.body.append(root);
+  t.after(() => root.remove());
+  const [first, , last] = [...root.querySelectorAll('p')].map(block => block.firstChild!);
+  const range = document.createRange();
+  range.setStart(first, 6);
+  range.setEnd(last, 17);
+
+  const passage = passageFromRange(root, range);
+  assert.equal(passage?.sectionId, 'b1');
+  assert.equal(passage?.quote, 'block ends here.');
+  assert.equal(passage?.endSectionId, 'b3');
+  assert.equal(passage?.endQuote, 'Last block starts');
+  assert.equal(annotationRange(root, passage)?.toString(), 'block ends here.Middle block whole.Last block starts');
+
+  const inside = document.createRange();
+  inside.setStart(first, 6);
+  inside.setEnd(first, 16);
+  assert.equal(passageFromRange(root, inside)?.endSectionId, undefined, 'a selection inside one block names no end');
 });
