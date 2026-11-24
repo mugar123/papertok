@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowSquareOut, CircleNotch, NotePencil, SpeakerHigh } from '@phosphor-icons/react';
+import { ArrowSquareOut, CircleNotch, Headphones, NotePencil, SpeakerHigh } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -18,6 +18,7 @@ import { useSpokenWord } from './use-spoken-word.ts';
 import { useZoteroAction } from './use-zotero-action.ts';
 import { ZoteroMark } from './zotero-mark.tsx';
 import ReadAloudPlayer from './read-aloud-player.tsx';
+import ReadAloudListen from './read-aloud-listen.tsx';
 
 const NO_PASSAGES: SpokenPassage[] = [];
 const NO_CHAPTERS: ReadAloudChapter[] = [];
@@ -134,19 +135,35 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     }
     if (!readAloud.playing) playPause();
   };
+  const [listening, setListening] = useState(false);
   const closePlayer = () => {
+    setListening(false);
     readAloud.pause();
     setPlayerFrom(null);
     requestAnimationFrame(() => readAloudButton.current?.focus());
   };
 
+  // The listening view's own way in, round in the top bar's corner.
+  const topbar = scroll?.closest('.pdf-viewer, .rd')?.querySelector('.pdf-topbar, .rd-topbar');
+  const listen = () => {
+    if (!playerOpen) openPlayer();
+    else if (!readAloud.playing) playPause();
+    setListening(true);
+  };
+
   return <>
     {scroll && createPortal(<div className="rd-word" hidden aria-hidden="true" />, scroll)}
+    {canListen && topbar && createPortal(
+      <Button variant="outline" size="icon" className="rd-listen-corner" onClick={listen} aria-label="Listen to the paper" title="Listen to the paper">
+        <Headphones size={18} aria-hidden="true" />
+      </Button>,
+      topbar,
+    )}
     <PaperDock scroll={scroll} pinned={playerOpen} menu={playerOpen ? undefined : menu} contents={playerOpen ? null : contents}>
       {playerOpen ? <ReadAloudPlayer
         timeline={readAloud.timeline} prepared={readAloud.prepared} position={readAloud.position}
         playing={readAloud.playing} speed={readAloud.speed} onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek}
-        onClose={closePlayer} onDownload={downloadAudio} openedFrom={playerFrom}
+        onClose={closePlayer} onDownload={downloadAudio} onExpand={() => setListening(true)} openedFrom={playerFrom}
       /> : <>
         {children}
         {notes && <Toggle className="pdf-dock-toggle pdf-dock-notes" pressed={notes.open} onPressedChange={notes.onOpenChange} aria-label="Notes" aria-controls={notes.id} title={notes.open ? 'Hide notes' : 'Show notes'}>
@@ -160,6 +177,13 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       {paper && <ZoteroControl paper={paper} hidden={playerOpen} />}
       {!playerOpen && originalUrl && <Button role="link" variant="ghost" size="icon" aria-label="Open in a new tab" title="Open in a new tab" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}><ArrowSquareOut size={18} aria-hidden="true" /></Button>}
     </PaperDock>
+    {playerOpen && spoken && <ReadAloudListen
+      open={listening} onOpenChange={setListening} title={title} queue={spoken.queue}
+      timeline={readAloud.timeline} prepared={readAloud.prepared} paragraph={readAloud.paragraph}
+      position={readAloud.position} playing={readAloud.playing} speed={readAloud.speed}
+      timings={readAloud.timings} live={readAloud.live}
+      onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek}
+    />}
   </>;
 }
 

@@ -80,3 +80,48 @@ test('shared reading tools open the voice player, restore focus, and stop when t
     Clip.instances = [];
   }
 });
+
+test('the listening view rings the audio still to come, then the sections to jump to and the sentence being read', async () => {
+  const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
+  const worker = stubWorker();
+  const audioRoute = worker.hold('/tts/paragraph');
+  worker.hold('/zotero/status');
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  const originalAnimation = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: () => ({ cancel() {} }) });
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const spoken = {
+      queue: [{ passage: 'b0', utterances: ['1. Method.', 'We fit the model.'], heading: '1. Method.' }],
+      chapters: [{ number: '1', title: 'Method', first: 0 }],
+    };
+    const view = render(createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
+      createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
+        createElement(ReadingDock, {
+          title: 'Paper', scroll: null, contents: null, spoken, canListen: true, originalUrl: '', notes: null,
+        }))));
+    fireEvent.click(view.getByRole('button', { name: 'Voice, read aloud' }));
+    fireEvent.click(view.getByRole('button', { name: 'Open the listening view' }));
+    const dialog = await waitFor(() => view.getByRole('dialog', { name: 'Paper' }));
+    assert.match(dialog.textContent ?? '', /Preparing the audio, 0%/);
+    assert.equal(view.queryByRole('button', { name: 'Go to 1 Method' }), null, 'no jumps before the audio is there');
+    await audioRoute.requested();
+    audioRoute.answer({});
+    await act(async () => {
+      for (const clip of Clip.instances.filter(clip => clip.preload === 'metadata')) clip.onloadedmetadata?.();
+    });
+    await waitFor(() => assert.ok(view.getByRole('button', { name: 'Go to 1 Method' })));
+    assert.match(dialog.textContent ?? '', /1\. Method\./);
+    assert.ok(view.getAllByRole('button', { name: 'Pause' }).length > 0);
+  } finally {
+    cleanup();
+    worker.stop();
+    await close();
+    if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
+    else Reflect.deleteProperty(globalThis, 'Audio');
+    if (originalAnimation) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimation);
+    else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    Clip.instances = [];
+  }
+});

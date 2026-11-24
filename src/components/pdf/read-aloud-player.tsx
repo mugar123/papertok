@@ -1,22 +1,54 @@
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, Ref } from 'react';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowClockwise, ArrowCounterClockwise, DownloadSimple, Pause, Play, X } from '@phosphor-icons/react';
+import { ArrowClockwise, ArrowCounterClockwise, ArrowsOut, DownloadSimple, Pause, Play, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { ReadAloudTimeline } from './read-aloud.ts';
-import { chapterAt } from './read-aloud.ts';
+import { chapterAt, clock } from './read-aloud.ts';
 import { READ_ALOUD_SPEEDS } from './use-read-aloud.ts';
 import './read-aloud-player.css';
 
 const SKIP_SECONDS = 15;
 
-function clock(seconds: number) {
-  const whole = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
-}
 
 function spokenClock(seconds: number) {
   const whole = Math.max(0, Math.floor(seconds));
   return `${Math.floor(whole / 60)} min ${whole % 60} s`;
+}
+
+/** Back and forward 15 seconds around play and pause, in the dock's player and the listening view. */
+export function ReadAloudTransport({ position, playing, onPlayPause, onSeek, playButton }: {
+  position: number;
+  playing: boolean;
+  onPlayPause: () => void;
+  onSeek: (seconds: number) => void;
+  playButton?: Ref<HTMLButtonElement>;
+}) {
+  const PlayIcon = playing ? Pause : Play;
+  return (
+    <div className="rd-listen-transport">
+      <Button variant="ghost" size="icon" className="rd-listen-skip" onClick={() => onSeek(position - SKIP_SECONDS)} aria-label={`Back ${SKIP_SECONDS} seconds`} title={`Back ${SKIP_SECONDS} seconds`}>
+        <ArrowCounterClockwise size={30} weight="light" aria-hidden="true" />
+        <span aria-hidden="true">{SKIP_SECONDS}</span>
+      </Button>
+      <Button ref={playButton} variant="ghost" size="icon" onClick={onPlayPause} aria-label={playing ? 'Pause' : 'Play'}>
+        <PlayIcon size={18} weight="fill" aria-hidden="true" />
+      </Button>
+      <Button variant="ghost" size="icon" className="rd-listen-skip" onClick={() => onSeek(position + SKIP_SECONDS)} aria-label={`Forward ${SKIP_SECONDS} seconds`} title={`Forward ${SKIP_SECONDS} seconds`}>
+        <ArrowClockwise size={30} weight="light" aria-hidden="true" />
+        <span aria-hidden="true">{SKIP_SECONDS}</span>
+      </Button>
+    </div>
+  );
+}
+
+/** Steps through the speeds the voice offers, and back to the slowest after the fastest. */
+export function SpeedButton({ speed, onSpeed }: { speed: number; onSpeed: (speed: number) => void }) {
+  const next = READ_ALOUD_SPEEDS[(READ_ALOUD_SPEEDS.indexOf(speed as typeof READ_ALOUD_SPEEDS[number]) + 1) % READ_ALOUD_SPEEDS.length];
+  return (
+    <Button variant="ghost" size="sm" className="rd-listen-speed" onClick={() => onSpeed(next)} aria-label={`Speed ${speed}×`} title="Change the speed">
+      {speed}×
+    </Button>
+  );
 }
 
 /**
@@ -25,7 +57,7 @@ function spokenClock(seconds: number) {
  * and play, pause and skip. Dragging the track names the chapter it would
  * land in; letting go moves the voice there.
  */
-export default function ReadAloudPlayer({ timeline, prepared, position, playing, speed, onSpeed, onPlayPause, onSeek, onClose, onDownload, openedFrom }: {
+export default function ReadAloudPlayer({ timeline, prepared, position, playing, speed, onSpeed, onPlayPause, onSeek, onClose, onDownload, onExpand, openedFrom }: {
   timeline: ReadAloudTimeline;
   /** Passages whose audio exists; until all do, the track shows what is left to prepare. */
   prepared: { ready: number; total: number; failed: boolean };
@@ -38,6 +70,8 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
   onClose: () => void;
   /** Saves the paper's audio; offered once every passage has PaperTok's voice. */
   onDownload: () => void;
+  /** Opens the listening view over the whole paper. */
+  onExpand: () => void;
   /** The closed dock's outline, which the player grows out of. */
   openedFrom: { width: number; height: number } | null;
 }) {
@@ -92,7 +126,6 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
 
   const pointed = target ?? hover;
   const pointedChapter = pointed === null ? null : chapterAt(timeline, pointed);
-  const PlayIcon = playing ? Pause : Play;
   const percent = prepared.total ? Math.floor((prepared.ready / prepared.total) * 100) : 0;
   // Why the audio cannot be saved yet, or at all once some paragraphs will not get PaperTok's voice.
   const downloadNoteId = useId();
@@ -126,18 +159,10 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
           <DownloadSimple size={16} aria-hidden="true" />
         </Button>
         {unsaved && <span id={downloadNoteId} className="visually-hidden">{downloadNote}</span>}
-        {!preparing && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="rd-listen-speed"
-            onClick={() => onSpeed(READ_ALOUD_SPEEDS[(READ_ALOUD_SPEEDS.indexOf(speed as typeof READ_ALOUD_SPEEDS[number]) + 1) % READ_ALOUD_SPEEDS.length])}
-            aria-label={`Speed ${speed}×`}
-            title="Change the speed"
-          >
-            {speed}×
-          </Button>
-        )}
+        {!preparing && <SpeedButton speed={speed} onSpeed={onSpeed} />}
+        <Button variant="ghost" size="icon-sm" onClick={onExpand} aria-label="Open the listening view" title="Open the listening view">
+          <ArrowsOut size={16} aria-hidden="true" />
+        </Button>
         <Button ref={closeButton} variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close player" title="Close player">
           <X size={16} aria-hidden="true" />
         </Button>
@@ -210,19 +235,7 @@ export default function ReadAloudPlayer({ timeline, prepared, position, playing,
       ) : (
       <div className="rd-listen-controls">
         <span className="rd-listen-time">{clock(shown)}</span>
-        <div className="rd-listen-transport">
-          <Button variant="ghost" size="icon" className="rd-listen-skip" onClick={() => onSeek(position - SKIP_SECONDS)} aria-label={`Back ${SKIP_SECONDS} seconds`} title={`Back ${SKIP_SECONDS} seconds`}>
-            <ArrowCounterClockwise size={30} weight="light" aria-hidden="true" />
-            <span aria-hidden="true">{SKIP_SECONDS}</span>
-          </Button>
-          <Button ref={playButton} variant="ghost" size="icon" onClick={onPlayPause} aria-label={playing ? 'Pause' : 'Play'}>
-            <PlayIcon size={18} weight="fill" aria-hidden="true" />
-          </Button>
-          <Button variant="ghost" size="icon" className="rd-listen-skip" onClick={() => onSeek(position + SKIP_SECONDS)} aria-label={`Forward ${SKIP_SECONDS} seconds`} title={`Forward ${SKIP_SECONDS} seconds`}>
-            <ArrowClockwise size={30} weight="light" aria-hidden="true" />
-            <span aria-hidden="true">{SKIP_SECONDS}</span>
-          </Button>
-        </div>
+        <ReadAloudTransport position={position} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} playButton={playButton} />
         <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
       </div>
       )}

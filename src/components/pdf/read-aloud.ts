@@ -126,6 +126,12 @@ export function fullTextListen(doc: Pick<FullText, 'abstract' | 'body'>, { withA
   return { queue, chapters: chapters.filter((chapter, index) => chapter.first < queue.length && chapter.first !== chapters[index + 1]?.first) };
 }
 
+/** Minutes and seconds, as a player shows them. */
+export function clock(seconds: number) {
+  const whole = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
 /** The voice speaks about this many characters a second, until a clip's real length is known. */
 export const CHARS_PER_SECOND = 15;
 
