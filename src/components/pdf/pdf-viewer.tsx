@@ -228,6 +228,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const [dragged, setDragged] = useState<PassageSelection | null>(null);
   // The highlight under the mouse, painted a shade darker.
   const [hoveredPassage, setHoveredPassage] = useState<string | null>(null);
+  // The bar the podcast's round button is placed in.
+  const [topbar, setTopbar] = useState<HTMLDivElement | null>(null);
   usePaintedPassages(notesOn ? textScroll : null, notes.passages, dragged ?? notes.pending, notes.active, hoveredPassage);
   // A note in the panel goes to its passage and marks it, as in the reader; on a phone the
   // notes cover the text, so they close to show it.
@@ -280,7 +282,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
       >
         <div className="pdf-viewer">
           {/* Top bar */}
-          <div className="pdf-topbar">
+          <div className="pdf-topbar" ref={setTopbar}>
             <DialogClose render={<Button variant="ghost" size="icon-sm" />} aria-label={'Close paper'} title={'Close'}>
               <X size={18} aria-hidden="true" />
             </DialogClose>
@@ -388,7 +390,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {fullText !== undefined && (
             <ReadingDock
               title={paper.title} paper={paper} scroll={showsText ? textScroll : null}
-              spoken={spoken} canListen={!plain && Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
+              spoken={spoken} topbar={topbar} canListen={!plain && Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
               notes={notesOn ? { id: 'viewer-notes', open: notesOpen, count: notes.passages.length, onOpenChange: setNotesOpen } : null}
               originalUrl={dockUrl}
               menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText

@@ -16,7 +16,7 @@
 ::highlight(viewer-passage-active-violet) { background-color: color-mix(in srgb, var(--accent-violet) 35%, var(--accent-violet-soft)); color: inherit; }
 ::highlight(viewer-passage-active-rose) { background-color: color-mix(in srgb, var(--accent-rose) 35%, var(--accent-rose-soft)); color: inherit; }
 /* A formula inside a highlight, painted as a box since its pieces leave gaps the text paint does not fill. */
-.ft-math[data-mark] { border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.ft-math[data-mark] { border-radius: var(--radius-sm); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .ft-math[data-mark="yellow"] { background-color: var(--brand-yellow-soft); }
 .ft-math[data-mark="yellow"][data-mark-active] { background-color: color-mix(in srgb, var(--brand-yellow) 35%, var(--brand-yellow-soft)); }
 .ft-math[data-mark="teal"] { background-color: var(--accent-teal-soft); }

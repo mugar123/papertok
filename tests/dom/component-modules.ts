@@ -115,7 +115,7 @@ export async function loadReadingDock() {
     { ReadingDock: Component<{
       title: string; paper?: Paper; scroll: HTMLElement | null; contents: null;
       spoken: { queue: SpokenPassage[]; chapters: ReadAloudChapter[] } | null;
-      canListen: boolean; originalUrl: string;
+      canListen: boolean; topbar?: HTMLElement | null; originalUrl: string;
       notes: { id: string; open: boolean; count: number; onOpenChange: (open: boolean) => void } | null;
       children?: ReactNode;
     }> },

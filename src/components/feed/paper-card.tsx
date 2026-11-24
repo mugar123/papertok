@@ -135,7 +135,8 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { currentAIUses } from './rewrite-use-hint.ts';
+import { currentAIUses } from './current-ai-uses.ts';
+import { markSeparatorLineEnds } from './separator-line-ends.ts';
 import UsesCount from '../reader/uses-count.tsx';
 import '../ui/tag.css';
 import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
@@ -831,21 +832,15 @@ const PaperCard = memo(function PaperCard({
   const watermarkRef = useRef<HTMLSpanElement | null>(null);
   // A separator the row wraps after is left hanging at the end of its line, as "2020 ·", so it is hidden there.
   const metaRef = useRef<HTMLDivElement | null>(null);
-  const markLineEnds = useCallback(() => {
-    for (const dot of metaRef.current?.querySelectorAll<HTMLElement>('.pc-meta-dot') ?? []) {
-      const next = dot.nextElementSibling as HTMLElement | null;
-      dot.toggleAttribute('data-line-end', !next || next.offsetTop > dot.offsetTop + dot.offsetHeight / 2);
-    }
-  }, []);
   // When what the row holds changes, as a late citation count or the uses tag can move the break; the observer covers resizes.
-  useLayoutEffect(markLineEnds, [markLineEnds, paper.id, paper.citationCount, paper.year, quota]);
+  useLayoutEffect(() => markSeparatorLineEnds(metaRef.current), [paper.id, paper.citationCount, paper.year, quota]);
   useEffect(() => {
     const meta = metaRef.current;
     if (!meta) return undefined;
-    const observer = new ResizeObserver(markLineEnds);
+    const observer = new ResizeObserver(() => markSeparatorLineEnds(meta));
     observer.observe(meta);
     return () => observer.disconnect();
-  }, [markLineEnds]);
+  }, []);
   const holdWatermark = () => {
     const mark = watermarkRef.current;
     if (!mark || mark.style.height) return;
@@ -2087,9 +2082,9 @@ const PaperCard = memo(function PaperCard({
 
             {(paper.citationCountKnown || paper.citationCount! > 0) && (
               <>
-                {/* El modificador es lo que le da a este punto el mismo fundido
-                    que al chip: los dos montan juntos, y cuando el
-                    enriquecimiento se pasa del techo montan tarde juntos. */}
+                {/* The modifier gives this dot the chip's fade: the two mount
+                    together, and when enrichment runs past the ceiling they
+                    mount late together. */}
                 {(categoryLabel || reason || paper.year || acceptedAt) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
                 {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                   <a

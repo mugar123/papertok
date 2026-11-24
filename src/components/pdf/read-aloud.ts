@@ -129,8 +129,19 @@ export function fullTextListen(doc: Pick<FullText, 'abstract' | 'body'>, { withA
 
 /** Minutes and seconds, as a player shows them. */
 export function clock(seconds: number) {
+  const [minutes, rest] = minutesAndSeconds(seconds);
+  return `${minutes}:${String(rest).padStart(2, '0')}`;
+}
+
+/** The same time in words, for a screen reader: "3 min 7 s". */
+export function spokenClock(seconds: number) {
+  const [minutes, rest] = minutesAndSeconds(seconds);
+  return `${minutes} min ${rest} s`;
+}
+
+function minutesAndSeconds(seconds: number) {
   const whole = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+  return [Math.floor(whole / 60), whole % 60] as const;
 }
 
 /** The voice speaks about this many characters a second, until a clip's real length is known. */

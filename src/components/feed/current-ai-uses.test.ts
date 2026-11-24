@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { currentAIUses } from './rewrite-use-hint.ts';
+import { currentAIUses } from './current-ai-uses.ts';
 
 test('the uses tag states only a count that still holds', () => {
   const quota = { remainingUses: 3, dailyLimit: 10, resetAt: '2099-01-02T16:00:00Z' };

@@ -46,6 +46,9 @@ import { HIGHLIGHT_MIN_QUOTE_LENGTH, normalizeHighlightQuote } from '../utils/te
 
 export const MAX_HIGHLIGHTS_PER_PAPER = 200;
 
+/** The paper's own text as one line: a full-text quote is stored as the page shows it, spaces collapsed. */
+const oneLine = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
+
 function cleanText(value: unknown, maxLength: number) {
   return String(value || '').trim().slice(0, maxLength);
 }
@@ -107,7 +110,7 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
     normalizeHighlightQuote(quote),
   ]
     .concat(endParagraphIndex === undefined ? [] : [endParagraphIndex, normalizeHighlightQuote(endQuote)])
-    .concat(endSectionId === undefined ? [] : [cleanText(endSectionId, 40), String(endQuote ?? '').replace(/\s+/g, ' ').trim()])
+    .concat(endSectionId === undefined ? [] : [cleanText(endSectionId, 40), oneLine(endQuote)])
     .concat(kind === 'ai' ? ['ai'] : [])
     .concat(occurrence ? [`#${occurrence}`] : []).join('|');
 
@@ -139,7 +142,7 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
     ? input!.level as string
     : 'university';
   const quote = level === FULL_TEXT_LEVEL
-    ? String(input?.quote ?? '').replace(/\s+/g, ' ').trim()
+    ? oneLine(input?.quote)
     : normalizeHighlightQuote(input?.quote);
   if (quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return null;
   const paragraphIndex = Number.parseInt(input?.paragraphIndex as string, 10);
@@ -154,7 +157,7 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
   const endQuote = normalizeHighlightQuote(input?.endQuote);
   // In the paper's own text a passage may run into later paragraphs, named by their own ids.
   const endSectionId = level === FULL_TEXT_LEVEL ? cleanText(input?.endSectionId, 40) : '';
-  const endText = String(input?.endQuote ?? '').replace(/\s+/g, ' ').trim();
+  const endText = oneLine(input?.endQuote);
   const crosses = Boolean(endSectionId) && endSectionId !== sectionId && endText.length > 0;
   const spans = !crosses && Number.isInteger(endParagraphIndex)
     && endParagraphIndex > paragraphIndex

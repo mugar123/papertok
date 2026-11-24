@@ -1,11 +1,15 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ListBullets, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
-import type { CharacterTimings, ReadAloudTimeline, SpokenPassage } from './read-aloud.ts';
+import type { SpokenPassage } from './read-aloud.ts';
+import type { useReadAloud } from './use-read-aloud.ts';
 import { chapterAt, clock, passageText, spokenWordAt, wordSpans, wordStarts } from './read-aloud.ts';
 import { ReadAloudTrack, ReadAloudTransport, SpeedButton } from './read-aloud-controls.tsx';
 import ReadAloudForms from './read-aloud-forms.tsx';
 import './read-aloud-listen.css';
+
+/** Where the chapters panel covers the tab (the stylesheet's own phone breakpoint, read-aloud-listen.css). */
+const PHONE = '(max-width: 600px)';
 
 /** About three lines of the caption on a wide screen and five on a phone; a longer sentence is shown a piece at a time, as lyrics are. */
 const CAPTION_WORDS = 20;
@@ -40,21 +44,14 @@ function spokenSentence(item: SpokenPassage, word: number) {
  * controls round the timeline (which shows the audio still to come, then where the voice
  * is), and the paper's sections as chapters in a drawer.
  */
-export default function ReadAloudListen({ title, queue, timeline, prepared, paragraph, position, playing, speed, timings, live, onSpeed, onPlayPause, onSeek }: {
+export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
   title: string;
   queue: readonly SpokenPassage[];
-  timeline: ReadAloudTimeline;
-  prepared: { ready: number; total: number; failed: boolean };
-  paragraph: number | null;
-  position: number;
-  playing: boolean;
-  speed: number;
-  timings: Record<string, CharacterTimings>;
-  live: () => { seconds: number | null; fraction: number };
-  onSpeed: (speed: number) => void;
+  /** The voice the dock plays: where it is, how much is ready, and its controls. */
+  player: Pick<ReturnType<typeof useReadAloud>, 'timeline' | 'prepared' | 'paragraph' | 'position' | 'playing' | 'speed' | 'timings' | 'live' | 'setSpeed' | 'seek'>;
   onPlayPause: () => void;
-  onSeek: (seconds: number) => void;
 }) {
+  const { timeline, prepared, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek: onSeek } = player;
   const preparing = !prepared.failed && prepared.ready < prepared.total;
   const percent = prepared.total ? Math.floor((prepared.ready / prepared.total) * 100) : 0;
   // Where a drag along the line would move the voice, until it is let go.
@@ -65,6 +62,15 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   const now = playing && voiceAt !== null ? voiceAt : position;
   const shown = target ?? now;
   const chapter = chapterAt(timeline, shown);
+  // The player's state, told to a screen reader as it changes: the section only when the voice
+  // reaches a new one, never each word or percent. The region is mounted empty and filled after,
+  // as a region that arrives holding its words is not reliably spoken.
+  const reading = chapterAt(timeline, now);
+  const status = preparing ? 'Preparing the audio' : playing ? `Reading ${[reading.number, reading.title].filter(Boolean).join(' ')}` : 'Paused';
+  const statusRegion = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (statusRegion.current) statusRegion.current.textContent = status;
+  }, [status]);
   // The chapter the voice was in before, so the rail can run from there to the one it is in now.
   const current = timeline.chapters.findIndex(part => part.start === chapter.start);
   const [rail, setRail] = useState({ at: current, from: current });
@@ -131,6 +137,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   return (
     <section className="rd-podcast" aria-labelledby="rd-podcast-paper" data-chapters-open={drawerOpen || undefined}>
       {/* The paper heads the tab, as a player names the album over its cover. */}
+      <span ref={statusRegion} className="visually-hidden" role="status" />
       <header className="rd-podcast-header">
         <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
       </header>
@@ -162,15 +169,15 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
       {/* The controls: under the caption on a wide screen; on a phone, a bar fixed to the bottom of the
           tab, ruled off from the forms and the caption, which scroll behind it. */}
       <div className="rd-podcast-player" inert={drawerOpen && drawerCovers}>
-        {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
+        {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} speed={speed} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
           <div className="rd-podcast-dock">
             {/* As a music player lays them out: the transport centred, the speed and the chapters at its sides. */}
             <div className="rd-podcast-buttons">
               <SpeedButton speed={speed} onSpeed={onSpeed} />
-              <ReadAloudTransport position={now} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
+              <ReadAloudTransport position={now} playing={playing} speed={speed} onPlayPause={onPlayPause} onSeek={onSeek} />
               {timeline.chapters.length > 1 ? (
                 <Button ref={drawerButton} variant="ghost" size="icon" aria-label="All chapters" title="All chapters" aria-expanded={drawerOpen} aria-controls={drawerId} onClick={() => {
-                  setDrawerCovers(window.matchMedia('(max-width: 600px)').matches);
+                  setDrawerCovers(window.matchMedia(PHONE).matches);
                   setDrawerOpen(open => !open);
                 }}>
                   <ListBullets size={20} aria-hidden="true" />
@@ -179,8 +186,8 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
             </div>
             {/* and under it the line, its minute at one end and what is left at the other. */}
             <div className="rd-podcast-line">
-              <span className="rd-listen-time">{clock(shown)}</span>
-              <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} />
+              <span className="rd-listen-time">{clock(shown / speed)}</span>
+              <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} speed={speed} target={target} onTarget={setTarget} onSeek={onSeek} />
               <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
             </div>
           </div>
@@ -221,11 +228,11 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
                   onClick={() => {
                     onSeek(part.start);
                     // Beside the tab the panel stays open to pick again; full screen on a phone it gives way to the player.
-                    if (window.matchMedia('(max-width: 600px)').matches) closeDrawer();
+                    if (window.matchMedia(PHONE).matches) closeDrawer();
                   }}
-                  aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, from ${clock(part.start)}`}
+                  aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, from ${clock(part.start / speed)}`}
                 >
-                  <span className="rd-podcast-drawer-time">{clock(part.start)}</span>
+                  <span className="rd-podcast-drawer-time">{clock(part.start / speed)}</span>
                   <span className="rd-podcast-drawer-dot" aria-hidden="true" />
                   {/* "Appendix A" is shown as "A", so a long label stays short beside its title. */}
                   <span className="rd-podcast-drawer-title">

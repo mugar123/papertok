@@ -26,12 +26,14 @@ type ReadingDockProps = Pick<ComponentProps<typeof PaperDock>, 'scroll' | 'conte
   paper?: Paper;
   spoken: { queue: SpokenPassage[]; chapters: ReadAloudChapter[] } | null;
   canListen: boolean;
+  /** The top bar of the viewer around the text, where the podcast's round button goes. */
+  topbar?: HTMLElement | null;
   notes: { id: string; open: boolean; count: number; onOpenChange: (open: boolean) => void } | null;
   originalUrl: string;
   children?: ReactNode;
 };
 
-export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canListen, notes, originalUrl, children }: ReadingDockProps) {
+export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canListen, topbar = null, notes, originalUrl, children }: ReadingDockProps) {
   const { readingPreferences } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
   const readAloud = useReadAloud(spoken?.queue ?? NO_PASSAGES, spoken?.chapters ?? NO_CHAPTERS, {
@@ -76,7 +78,6 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
 
   // The podcast tab's way in and out, round in the top bar's corner. The text under it is left
   // out of the keyboard's way while the tab covers it.
-  const topbar = scroll?.closest('.pdf-viewer, .rd')?.querySelector('.pdf-topbar, .rd-topbar');
   // The podcast is the voice's only player: opening it starts the voice, closing it stops it.
   const [listening, setListening] = useState(false);
   const listen = (open: boolean) => {
@@ -122,24 +123,22 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
         <NotePencil size={18} aria-hidden="true" />
         <span><span className="pdf-dock-label">Notes</span>{notes.count > 0 && <span className="pdf-dock-count">{notes.count}</span>}</span>
       </Toggle>}
-      {paper && <ZoteroControl paper={paper} hidden={false} />}
+      {paper && <ZoteroControl paper={paper} />}
       {originalUrl && <Button role="link" variant="ghost" size="icon" aria-label="Open in a new tab" title="Open in a new tab" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}><ArrowSquareOut size={18} aria-hidden="true" /></Button>}
     </PaperDock></div>
     {podcast && spoken && <ReadAloudListen
       title={paper?.title ?? title}
       queue={spoken.queue}
-      timeline={readAloud.timeline} prepared={readAloud.prepared} paragraph={readAloud.paragraph}
-      position={readAloud.position} playing={readAloud.playing} speed={readAloud.speed}
-      timings={readAloud.timings} live={readAloud.live}
-      onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek}
+      player={readAloud}
+      onPlayPause={playPause}
     />}
   </>;
 }
 
-function ZoteroControl({ paper, hidden }: { paper: Paper; hidden: boolean }) {
+function ZoteroControl({ paper }: { paper: Paper }) {
   const { user } = useAuth();
   const zotero = useZoteroAction(paper, user?.uid, true);
-  if (!zotero || hidden) return null;
+  if (!zotero) return null;
   const name = zotero.sent ? `${zotero.label} (${zotero.hint.charAt(0).toLowerCase()}${zotero.hint.slice(1)})` : zotero.label;
   return <Button variant="ghost" className="pdf-dock-toggle pdf-dock-zotero" onClick={zotero.onSelect}
     disabled={zotero.busy} focusableWhenDisabled aria-busy={zotero.busy || undefined}

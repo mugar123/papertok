@@ -236,7 +236,7 @@
   box-sizing: content-box;
   background: var(--border-default);
   scale: 0.7;
-  transition-property: scale, background-color, box-shadow;
+  transition-property: scale, background-color, outline-color;
   transition-duration: 150ms;
   transition-timing-function: var(--ease-out);
   transition-delay: calc(max(var(--row) - var(--from), var(--from) - var(--row)) * var(--rail-step) * 1ms);
@@ -246,7 +246,7 @@
 .rd-podcast-drawer ol button[aria-current] .rd-podcast-drawer-dot {
   scale: 1;
   background: var(--podcast-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--podcast-accent) 20%, transparent);
+  outline: 4px solid color-mix(in srgb, var(--podcast-accent) 20%, transparent);
 }
 .rd-podcast-drawer ol button:disabled { cursor: default; color: var(--text-tertiary); }
 @media (hover: hover) and (pointer: fine) {
@@ -284,7 +284,6 @@
     padding: var(--space-3) var(--space-4) max(var(--space-3), env(safe-area-inset-bottom));
     border-top: 1px solid var(--border-subtle);
     background: var(--bg-primary);
-    box-shadow: 0 -12px 24px -20px color-mix(in srgb, var(--text-primary) 40%, transparent);
   }
   .rd-podcast-player > .rd-podcast-dock, .rd-podcast-player > .rd-listen-track { margin-bottom: var(--space-3); }
 }

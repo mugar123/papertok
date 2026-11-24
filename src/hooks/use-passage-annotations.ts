@@ -57,6 +57,12 @@ export const FRESH_SETTLE_MS = 700;
 /** One frozen empty list, so "nothing to show" is a stable identity. */
 const EMPTY: readonly PassageAnnotation[] = Object.freeze([]);
 
+/** Where a passage ends when it runs past where it starts: a later paragraph of the rewrite, or a later block of the paper's text. */
+function passageEnd({ endParagraphIndex, endSectionId, endQuote }: PassageSelection) {
+  if (endSectionId !== undefined) return { endSectionId, endQuote };
+  return endParagraphIndex === undefined ? {} : { endParagraphIndex, endQuote };
+}
+
 export function usePassageAnnotations({
   uid,
   paper,
@@ -153,9 +159,7 @@ export function usePassageAnnotations({
       sectionId: pending.sectionId,
       paragraphIndex: pending.paragraphIndex,
       quote: pending.quote,
-      endParagraphIndex: pending.endParagraphIndex,
-      endQuote: pending.endQuote,
-      endSectionId: pending.endSectionId,
+      ...passageEnd(pending),
       occurrence: pending.occurrence,
       kind,
       note,
@@ -226,9 +230,7 @@ export function usePassageAnnotations({
         sectionId: passage.sectionId,
         paragraphIndex: passage.paragraphIndex,
         quote: passage.quote,
-        endParagraphIndex: passage.endParagraphIndex,
-        endQuote: passage.endQuote,
-        endSectionId: passage.endSectionId,
+        ...passageEnd(passage),
         kind: 'ai',
         note: answer.note,
       });
@@ -245,8 +247,7 @@ export function usePassageAnnotations({
           sectionId: passage.sectionId,
           paragraphIndex: passage.paragraphIndex,
           quote: passage.quote,
-          ...(passage.endParagraphIndex === undefined ? {} : { endParagraphIndex: passage.endParagraphIndex, endQuote: passage.endQuote }),
-          ...(passage.endSectionId === undefined ? {} : { endSectionId: passage.endSectionId, endQuote: passage.endQuote }),
+          ...passageEnd(passage),
           kind: 'ai',
           note: answer.note,
           fresh: true,

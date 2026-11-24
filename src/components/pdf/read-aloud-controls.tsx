@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ArrowClockwise, ArrowCounterClockwise, Pause, Play } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { ReadAloudTimeline } from './read-aloud.ts';
-import { chapterAt, clock } from './read-aloud.ts';
+import { chapterAt, clock, spokenClock } from './read-aloud.ts';
 import { READ_ALOUD_SPEEDS } from './use-read-aloud.ts';
 import './read-aloud-controls.css';
 
@@ -11,15 +11,11 @@ const SKIP_SECONDS = 15;
 /** The space after each of the timeline's blocks. */
 const BLOCK_GAP_PX = 4;
 
-function spokenClock(seconds: number) {
-  const whole = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(whole / 60)} min ${whole % 60} s`;
-}
-
-/** Back and forward 15 seconds around play and pause. */
-export function ReadAloudTransport({ position, playing, onPlayPause, onSeek, playButton }: {
+/** Back and forward 15 seconds of listening around play and pause: at 2× that is 30 of the paper's. */
+export function ReadAloudTransport({ position, playing, speed, onPlayPause, onSeek, playButton }: {
   position: number;
   playing: boolean;
+  speed: number;
   onPlayPause: () => void;
   onSeek: (seconds: number) => void;
   playButton?: Ref<HTMLButtonElement>;
@@ -27,14 +23,14 @@ export function ReadAloudTransport({ position, playing, onPlayPause, onSeek, pla
   const PlayIcon = playing ? Pause : Play;
   return (
     <div className="rd-listen-transport">
-      <Button variant="ghost" size="icon" className="rd-listen-skip" onClick={() => onSeek(position - SKIP_SECONDS)} aria-label={`Back ${SKIP_SECONDS} seconds`} title={`Back ${SKIP_SECONDS} seconds`}>
+      <Button variant="ghost" size="icon" className="rd-listen-skip" onClick={() => onSeek(position - SKIP_SECONDS * speed)} aria-label={`Back ${SKIP_SECONDS} seconds`} title={`Back ${SKIP_SECONDS} seconds`}>
         <ArrowCounterClockwise size={30} weight="light" aria-hidden="true" />
         <span aria-hidden="true">{SKIP_SECONDS}</span>
       </Button>
       <Button ref={playButton} variant="ghost" size="icon" className="rd-listen-play" onClick={onPlayPause} aria-label={playing ? 'Pause' : 'Play'}>
         <PlayIcon size={18} weight="fill" aria-hidden="true" />
       </Button>
-      <Button variant="ghost" size="icon" className="rd-listen-skip" onClick={() => onSeek(position + SKIP_SECONDS)} aria-label={`Forward ${SKIP_SECONDS} seconds`} title={`Forward ${SKIP_SECONDS} seconds`}>
+      <Button variant="ghost" size="icon" className="rd-listen-skip" onClick={() => onSeek(position + SKIP_SECONDS * speed)} aria-label={`Forward ${SKIP_SECONDS} seconds`} title={`Forward ${SKIP_SECONDS} seconds`}>
         <ArrowClockwise size={30} weight="light" aria-hidden="true" />
         <span aria-hidden="true">{SKIP_SECONDS}</span>
       </Button>
@@ -78,10 +74,12 @@ function sections(timeline: ReadAloudTimeline) {
  * the pointer grows, the tip names its minute and section, and letting go moves the voice
  * there; a range input on top carries it for the keyboard.
  */
-export function ReadAloudTrack({ timeline, prepared, position, target, onTarget, onSeek }: {
+export function ReadAloudTrack({ timeline, prepared, position, speed, target, onTarget, onSeek }: {
   timeline: ReadAloudTimeline;
   prepared: { ready: number; total: number; failed: boolean };
   position: number;
+  /** Times are told in listening time, the paper's divided by the speed. */
+  speed: number;
   target: number | null;
   onTarget: (seconds: number | null) => void;
   onSeek: (seconds: number) => void;
@@ -166,7 +164,7 @@ export function ReadAloudTrack({ timeline, prepared, position, target, onTarget,
         step={1}
         value={Math.round(shown)}
         aria-label="Position in the paper"
-        aria-valuetext={`${spokenClock(shown)}, ${[chapter.number, chapter.title].filter(Boolean).join(' ')}`}
+        aria-valuetext={`${spokenClock(shown / speed)}, ${[chapter.number, chapter.title].filter(Boolean).join(' ')}`}
         onChange={event => onTarget(Number(event.target.value))}
         onBlur={commit}
         onKeyUp={(event) => { if (event.key !== 'Escape') commit(); }}
@@ -178,7 +176,7 @@ export function ReadAloudTrack({ timeline, prepared, position, target, onTarget,
       />
       {pointed !== null && pointedChapter && (
         <span className="rd-listen-tip" aria-hidden="true" style={{ '--at': `${share(pointed)}%` }}>
-          {clock(pointed)}
+          {clock(pointed / speed)}
           <span>{tipText}</span>
         </span>
       )}
