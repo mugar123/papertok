@@ -34,7 +34,8 @@
 
 .rd-podcast-cover { margin-bottom: var(--space-8); }
 /* The section's name labels the sentence under it; the controls stand apart from both. */
-.rd-podcast-dock, .rd-podcast > .rd-listen-track { margin-bottom: var(--space-6); }
+.rd-podcast-player { flex: none; display: flex; flex-direction: column; align-items: center; width: min(100%, 640px); }
+.rd-podcast-player > .rd-podcast-dock, .rd-podcast-player > .rd-listen-track { width: 100%; margin-bottom: var(--space-6); }
 .rd-podcast-cover { flex: none; width: min(52vh, 420px, 100%); aspect-ratio: 1; }
 /* On a phone the sphere gives way to the caption and the controls, which must fit without scrolling. */
 @media (max-width: 600px) {
@@ -45,6 +46,7 @@
 
 /* The paper and the section the voice is in, small, over the caption. */
 .rd-podcast-title {
+  flex: none;
   max-width: min(100%, 760px);
   margin: 0 0 var(--space-2);
   overflow: hidden;
@@ -97,7 +99,6 @@
 }
 .rd-podcast .rd-listen-play:hover { background: var(--text-primary); color: var(--bg-primary); }
 .rd-podcast .rd-listen-play:active { scale: 0.96; }
-.rd-podcast > .rd-listen-track { width: min(100%, 760px); }
 .rd-podcast .rd-listen-track { height: 32px; }
 .rd-podcast .rd-listen-part-fill,
 .rd-podcast .rd-listen-thumb { background: var(--podcast-accent); }
@@ -167,4 +168,22 @@
   .rd-podcast-caption { transition: none; }
   .rd-podcast .rd-listen-play { transition: none; }
   .rd-podcast-chapters, .rd-podcast-chapters button { transition: none; }
+}
+
+/* On a phone the controls are a bar fixed to the bottom of the tab, within the thumb's reach and
+   ruled off from the sphere and the caption, which scroll behind it. */
+@media (max-width: 600px) {
+  .rd-podcast { justify-content: flex-start; padding-bottom: 0; }
+  .rd-podcast-player {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    width: calc(100% + 2 * var(--space-4));
+    margin: auto calc(-1 * var(--space-4)) 0;
+    padding: var(--space-3) var(--space-4) max(var(--space-3), env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border-subtle);
+    background: var(--bg-primary);
+    box-shadow: 0 -12px 24px -20px color-mix(in srgb, var(--text-primary) 40%, transparent);
+  }
+  .rd-podcast-player > .rd-podcast-dock, .rd-podcast-player > .rd-listen-track { margin-bottom: var(--space-3); }
 }

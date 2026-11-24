@@ -112,43 +112,47 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
         </p>
       </div>
 
-      {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
-        <div className="rd-podcast-dock">
-          {/* As a music player lays them out: the transport centred, the speed and the chapters at its sides. */}
-          <div className="rd-podcast-buttons">
-            <SpeedButton speed={speed} onSpeed={onSpeed} />
-            <ReadAloudTransport position={now} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
-            {timeline.chapters.length > 1 ? (
-              <Button variant="ghost" size="icon" aria-label="Chapters" title="Chapters" aria-expanded={chaptersOpen} aria-controls={drawerId} onClick={() => setChaptersOpen(open => !open)}>
-                <ListBullets size={20} aria-hidden="true" />
-              </Button>
-            ) : <span />}
+      {/* The controls: under the caption on a wide screen; on a phone, a bar fixed to the bottom of the
+          tab, ruled off from the sphere and the caption, which scroll behind it. */}
+      <div className="rd-podcast-player">
+        {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
+          <div className="rd-podcast-dock">
+            {/* As a music player lays them out: the transport centred, the speed and the chapters at its sides. */}
+            <div className="rd-podcast-buttons">
+              <SpeedButton speed={speed} onSpeed={onSpeed} />
+              <ReadAloudTransport position={now} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
+              {timeline.chapters.length > 1 ? (
+                <Button variant="ghost" size="icon" aria-label="Chapters" title="Chapters" aria-expanded={chaptersOpen} aria-controls={drawerId} onClick={() => setChaptersOpen(open => !open)}>
+                  <ListBullets size={20} aria-hidden="true" />
+                </Button>
+              ) : <span />}
+            </div>
+            {/* and under it the line, its minute at one end and what is left at the other. */}
+            <div className="rd-podcast-line">
+              <span className="rd-listen-time">{clock(shown)}</span>
+              <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} />
+              <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
+            </div>
           </div>
-          {/* and under it the line, its minute at one end and what is left at the other. */}
-          <div className="rd-podcast-line">
-            <span className="rd-listen-time">{clock(shown)}</span>
-            <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} />
-            <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
-          </div>
-        </div>
-      )}
+        )}
 
-      {!preparing && (
-        <div className="rd-podcast-tools">
-          <Button
-            variant="outline"
-            size="sm"
-            className="rd-podcast-chip"
-            onClick={onDownload}
-            disabled={unsaved}
-            focusableWhenDisabled
-            title={unsaved ? 'The audio cannot be saved: some paragraphs do not have PaperTok’s voice.' : 'Download the audio'}
-          >
-            <DownloadSimple size={16} aria-hidden="true" />
-            Download
-          </Button>
-        </div>
-      )}
+        {!preparing && (
+          <div className="rd-podcast-tools">
+            <Button
+              variant="outline"
+              size="sm"
+              className="rd-podcast-chip"
+              onClick={onDownload}
+              disabled={unsaved}
+              focusableWhenDisabled
+              title={unsaved ? 'The audio cannot be saved: some paragraphs do not have PaperTok’s voice.' : 'Download the audio'}
+            >
+              <DownloadSimple size={16} aria-hidden="true" />
+              Download
+            </Button>
+          </div>
+        )}
+      </div>
 
       {timeline.chapters.length > 1 && (
         <nav id={drawerId} className="rd-podcast-chapters" aria-label="Chapters" data-open={chaptersOpen || undefined} inert={!chaptersOpen}>
