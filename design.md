@@ -558,7 +558,9 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the list. `/settings/following` opens it, so the email updates window's link
   lands on it too. It keeps one height and only the list scrolls.
   Closing it goes back where it was opened from, and a followed page opened
-  from the list waits for it to leave. On a phone the same list is a full
+  from the list waits for it to leave. While it is open, an unfollow's Undo
+  sits in a line held at the top of the list instead of a toast, which would
+  be outside the dialog's focus trap. On a phone the same list is a full
   page from a link, and a sheet from Settings.
 - **Delete confirmation** (`custom-feeds/delete-feed-dialog.tsx`): an alert
   dialog titled with the feed's name and one sentence saying likes and saved

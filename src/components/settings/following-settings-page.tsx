@@ -21,7 +21,7 @@ import { openingFollowType } from './opening-follow-type.ts';
 import type { FollowRefusal, RefusalLine } from '../following/follow-refused-toast.ts';
 import { followRefusal, refusalShownTo, sayFollowRefused } from '../following/follow-refused-toast.ts';
 import type { ActionStart } from '../ui/toast.ts';
-import { sameAccount } from '../ui/toast.ts';
+import { afterOverlaysSince, sameAccount } from '../ui/toast.ts';
 import { followsListPress, unfollowOnLeave } from './follows-list-press.ts';
 import { focusAfterUnfollow, focusLeftByQuestion } from './focus-after-unfollow.ts';
 import { getFollowDisplayName } from '../../utils/follow-display-name.ts';
@@ -72,9 +72,10 @@ const RELEASE_MS = 280;
  * What the page, the phone sheet and the dialog share: the type on show, its follows in
  * order, and an unfollow that asks first. Confirming lets go of Petri's
  * balloon, closes the question, and unfollows once it has gone, so the row
- * leaves in sight of the list it returns to; a toast offers Undo.
+ * leaves in sight of the list it returns to. A toast offers Undo, or a line
+ * above the list in the dialog (`undoInList`).
  */
-function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
+function useFollowedView({ sheetOpen, undoInList = false }: { sheetOpen?: boolean; undoInList?: boolean } = {}) {
   const { language, locale } = useLanguage();
   const following = useFollowing();
   const { followedByType } = following;
@@ -84,6 +85,12 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
   const [errorLine, setErrorLine] = useState<RefusalLine<string> | null>(null);
   const actionError = refusalShownTo(errorLine, uid) ?? '';
   const setActionError = (message: string) => setErrorLine(message ? { uid, refused: message } : null);
+  // The last unfollow's Undo, said in the list rather than in a toast where
+  // the list is a dialog (`undoInList`): the toast sits outside the dialog's
+  // focus trap, where a keyboard cannot reach it before it leaves. Kept with
+  // the account that unfollowed, like the error line.
+  const [undoLine, setUndoLine] = useState<RefusalLine<{ entity: FollowEntity; name: string; startedAt: ActionStart }> | null>(null);
+  const lastUnfollow = refusalShownTo(undoLine, uid);
   const [unfollowing, setUnfollowing] = useState<FollowEntity | null>(null);
   const [unfollowOpen, setUnfollowOpen] = useState(false);
   // When Unfollow was pressed in the question, which lets go of the balloon.
@@ -156,6 +163,20 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     [activeType, followedByType, locale],
   );
 
+  const undoUnfollow = (entity: FollowEntity, displayName: string, startedAt: ActionStart) => {
+    // The account change puts the toast and the line away; a press as they
+    // leave would still follow for whoever signed in since.
+    if (!sameAccount(startedAt) || latest.current.isFollowing(entity)) return;
+    // A refused Undo is said in the list's status line while the list is on
+    // screen, as the palette does: the list is a sheet or a dialog, and a
+    // toast would sit over it outside its focus trap. The toast outlives the
+    // list, though, so an Undo pressed after it closed is answered in a toast.
+    setActionError('');
+    const undoStartedAt = pressStart('undo');
+    latest.current.toggleFollow(entity).catch((error: unknown) => {
+      sayRefused(followRefusal(error, { name: displayName, following: false }), undoStartedAt);
+    });
+  };
   const handleUnfollow = async (entity: FollowEntity, startedAt: ActionStart) => {
     setActionError('');
     const displayName = getFollowDisplayName(entity);
@@ -167,26 +188,26 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     }
     // Its Undo, pressed by whoever signed in since, would follow in their account.
     if (!sameAccount(startedAt)) return;
+    // A dialog closed while the write settled has no list to say it in. The
+    // line waits, as a refusal does, for an overlay opened since the press:
+    // under one it would change unseen and unannounced.
+    if (undoInList && inView.current) {
+      afterOverlaysSince(startedAt, () => setUndoLine({ uid, refused: { entity, name: displayName, startedAt } }), { inOverlay: true });
+      return;
+    }
     toast(`Unfollowed ${displayName}`, {
-      action: {
-        label: 'Undo',
-        onClick: () => {
-          // The account change puts this toast away; a press as it leaves
-          // would still follow for whoever signed in since.
-          if (!sameAccount(startedAt) || latest.current.isFollowing(entity)) return;
-          // A refused Undo is said in the list's status line while the list
-          // is on screen, as the palette does: the list is a sheet or a
-          // dialog, and a toast would sit over it outside its focus trap.
-          // The toast outlives the list, though, so an Undo pressed after it
-          // closed is answered in a toast.
-          setActionError('');
-          const undoStartedAt = pressStart('undo');
-          latest.current.toggleFollow(entity).catch((error: unknown) => {
-            sayRefused(followRefusal(error, { name: displayName, following: false }), undoStartedAt);
-          });
-        },
-      },
+      action: { label: 'Undo', onClick: () => undoUnfollow(entity, displayName, startedAt) },
     });
+  };
+
+  // The line's Undo leaves with the line. Focus goes to the type control: the
+  // row it brings back waits for its write, its Unfollow disabled until then.
+  const undoLastUnfollow = () => {
+    if (!lastUnfollow) return;
+    setUndoLine(null);
+    const key = getRowKey(lastUnfollow.entity);
+    unfollowFocus.current = { from: key, to: key };
+    undoUnfollow(lastUnfollow.entity, lastUnfollow.name, lastUnfollow.startedAt);
   };
 
   const askUnfollow = (entity: FollowEntity) => {
@@ -224,7 +245,13 @@ function useFollowedView({ sheetOpen }: { sheetOpen?: boolean } = {}) {
     setSelectedType,
     visibleEntities,
     actionError,
-    clearActionError: () => setActionError(''),
+    lastUnfollow,
+    undoLastUnfollow,
+    // A line left from this visit would greet the next one as news.
+    clearActionError: () => {
+      setActionError('');
+      setUndoLine(null);
+    },
     askUnfollow,
     unfollowing,
     unfollowOpen,
@@ -246,10 +273,16 @@ function followSummary({ loading, followedEntities }: FollowedView) {
 }
 
 /** The follows of the type on show, or its loading or empty state. */
-function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; onExplore: () => void; onOpenEntity?: (path: string) => void }) {
-  const { activeType, activeTab, language, loading, followedEntities, visibleEntities, isFollowPending, askUnfollow, actionError, unfollowButtons } = view;
+function FollowedList({ view, onExplore, onOpenEntity, withUndoLine = false }: { view: FollowedView; onExplore: () => void; onOpenEntity?: (path: string) => void; withUndoLine?: boolean }) {
+  const { activeType, activeTab, language, loading, followedEntities, visibleEntities, isFollowPending, askUnfollow, actionError, unfollowButtons, lastUnfollow, undoLastUnfollow } = view;
   return (
     <>
+      {withUndoLine && (
+        <div className="following-settings-undo">
+          <p role="status">{lastUnfollow ? `Unfollowed ${lastUnfollow.name}.` : ''}</p>
+          {lastUnfollow && <Button variant="outline" size="sm" onClick={undoLastUnfollow}>{'Undo'}</Button>}
+        </div>
+      )}
       {loading && followedEntities.length === 0 ? (
         <div className="following-settings-loading" role="status">
           <CircleNotch size={24} />
@@ -564,7 +597,7 @@ export function FollowingDialog({ open }: { open: boolean }) {
     const { activeElement, body } = document;
     if (activeElement === body || activeElement?.id === 'main-content') control.focus();
   }, [open]);
-  const view = useFollowedView({ sheetOpen: shown });
+  const view = useFollowedView({ sheetOpen: shown, undoInList: true });
   const { language, followedByType, activeType, setSelectedType, clearActionError, typeControl, unfollowing, setUnfollowOpen, finishUnfollow } = view;
   const countOf = (type: string) => followedByType[type]?.length || 0;
 
@@ -613,6 +646,7 @@ export function FollowingDialog({ open }: { open: boolean }) {
               view={view}
               onExplore={() => setLeaving({ to: '/search' })}
               onOpenEntity={path => setLeaving({ to: path })}
+              withUndoLine
             />
           </TabsContent>
         </Tabs>

@@ -113,6 +113,36 @@
   font-size: 12px;
 }
 
+/* The dialog's last unfollow and its Undo, above the list (FollowedList).
+   The status line is always there, so the message put into it is announced;
+   it takes no room while it is empty. */
+.following-settings-undo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* It stays at the top of the list's scroll, in view however far down the
+   row it answers was. */
+.following-settings-undo:has(> button) {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+}
+
+.following-settings-undo > p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
 .following-settings-list {
   display: grid;
 }
