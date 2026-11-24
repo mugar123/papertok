@@ -175,7 +175,8 @@ type Scene = { pos: Float32Array; form: number; shownAt: number; t: number; leve
 
 /** Every particle eases towards its place in the form at its own pace, so one form flows into the next. */
 function step(scene: Scene, seconds: number, speaking: boolean) {
-  scene.t += seconds;
+  // Paused, the forms' own motion stops too, so the play button is also what stills the cloud.
+  if (speaking) scene.t += seconds;
   const next = Array.from({ length: BANDS }, (_, i) => 0.3 + 0.25 * Math.sin(scene.t * (speaking ? 1.6 : 1.1) + i * 1.9));
   next.forEach((value, i) => { scene.bands[i] = (scene.bands[i] ?? 0) * 0.88 + value * 0.12; });
   scene.level += ((speaking ? 0.2 : 0.1) - scene.level) * 0.02;
@@ -183,8 +184,7 @@ function step(scene: Scene, seconds: number, speaking: boolean) {
   const pump = speaking ? 1 + 0.035 * Math.sin(scene.t * 2.3) + 0.02 * Math.sin(scene.t * 5.9) : 1;
   scene.pump += (pump - scene.pump) * Math.min(1, seconds * 6);
   // The forms move on only while the voice speaks; paused, the cloud holds the one it is in.
-  if (!speaking) scene.shownAt += seconds;
-  else if (scene.t - scene.shownAt > FORM_SECONDS) {
+  if (scene.t - scene.shownAt > FORM_SECONDS) {
     scene.form = (scene.form + 1) % FORMS.length;
     scene.shownAt = scene.t;
   }

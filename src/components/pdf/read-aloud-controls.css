@@ -19,8 +19,9 @@
   height: 4px;
   overflow: hidden;
   border-radius: 999px;
-  /* The rule's ink rather than the wash, so the blocks and the gaps between them read on paper. */
-  background: var(--border-default);
+  /* Three quarters of the quiet ink into the paper: 3:1 against it in both themes (WCAG 1.4.11),
+     so the chapters still to come read, and still apart from the played ones. */
+  background: color-mix(in srgb, var(--text-tertiary) 75%, var(--bg-primary));
   transition: height 150ms var(--ease-out);
 }
 .rd-listen-part-fill { position: absolute; inset: 0 auto 0 0; background: var(--text-primary); }

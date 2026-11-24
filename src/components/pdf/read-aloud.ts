@@ -29,7 +29,8 @@ export function spokenInlines(content: Inline[]): string {
   }).join('');
 }
 
-const tidy = (text: string) => text.replace(/\s+/g, ' ').replace(/\s+([,.;:)])/g, '$1').replace(/\(\s*\)|\[\s*\]/g, '').trim();
+// A citation's brackets with nothing left in them but its separators, as "[, ]" or "(;)", go with it.
+const tidy = (text: string) => text.replace(/\s*(\([\s,;]*\)|\[[\s,;]*\])/g, '').replace(/\s+/g, ' ').replace(/\s+([,.;:)])/g, '$1').trim();
 
 const sentenceSegmenter = typeof Intl.Segmenter === 'function'
   ? new Intl.Segmenter('en', { granularity: 'sentence' })

@@ -189,7 +189,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
         >
           <div className="rd-podcast-drawer-head">
             <p className="rd-podcast-drawer-heading" aria-hidden="true">Chapters</p>
-            <Button variant="ghost" size="icon-sm" aria-label="Close chapters" title="Close" onClick={closeDrawer}>
+            <Button variant="ghost" size="icon" className="rd-podcast-drawer-close" aria-label="Close chapters" title="Close" onClick={closeDrawer}>
               <X size={16} aria-hidden="true" />
             </Button>
           </div>

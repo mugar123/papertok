@@ -23,6 +23,14 @@ test('spoken text keeps inline maths as words and drops citation marks', () => {
   ]), 'The rate α doubles , as in Figure 3.');
 });
 
+test('the brackets a group of citations leaves behind are not read or shown', () => {
+  const cite = (n: number) => ({ t: 'ref' as const, target: `bib.bib${n}`, cites: true, children: [text(`${n}`)] });
+  const { queue } = fullTextListen(doc([
+    p(text('Word vectors ['), cite(82), text(', '), cite(102), text('] fed models ['), cite(24), text(',,'), cite(81), text(' ] ('), cite(5), text(').')),
+  ]), { withAbstract: false });
+  assert.deepEqual(queue[0].utterances, ['Word vectors fed models.']);
+});
+
 test('the listen reads headings before their text, announces display formulas and skips figures and tables', () => {
   const { queue, chapters } = fullTextListen(doc([
     heading('1', 'Introduction'),
