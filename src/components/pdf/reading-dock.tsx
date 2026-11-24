@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowSquareOut, CircleNotch, Headphones, NotePencil } from '@phosphor-icons/react';
+import { ArrowSquareOut, CircleNotch, DownloadSimple, Headphones, NotePencil } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
@@ -85,6 +85,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     setListening(open);
   };
   const podcast = listening && canListen;
+  const unsaved = readAloud.prepared.ready < readAloud.prepared.total;
   useEffect(() => {
     if (!scroll || !podcast) return undefined;
     scroll.toggleAttribute('inert', true);
@@ -93,9 +94,25 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
 
   return <>
     {canListen && topbar && createPortal(
-      <Toggle ref={listenButton} className="rd-listen-corner" pressed={podcast} onPressedChange={listen} aria-label="Listen to the paper as a podcast" title={podcast ? 'Back to the text' : 'Listen as a podcast'}>
-        <Headphones size={18} weight={podcast ? 'fill' : 'regular'} aria-hidden="true" />
-      </Toggle>,
+      <div className="rd-listen-corner">
+        {/* The podcast's download sits by the button that opened it; it waits for every paragraph's audio. */}
+        {podcast && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={downloadAudio}
+            disabled={unsaved}
+            focusableWhenDisabled
+            aria-label="Download the audio"
+            title={unsaved ? 'The audio cannot be saved yet: some paragraphs do not have PaperTok’s voice.' : 'Download the audio'}
+          >
+            <DownloadSimple size={18} aria-hidden="true" />
+          </Button>
+        )}
+        <Toggle ref={listenButton} className="rd-listen-toggle" pressed={podcast} onPressedChange={listen} aria-label="Listen to the paper as a podcast" title={podcast ? 'Back to the text' : 'Listen as a podcast'}>
+          <Headphones size={18} weight={podcast ? 'fill' : 'regular'} aria-hidden="true" />
+        </Toggle>
+      </div>,
       topbar,
     )}
     {/* Hidden rather than unmounted while the podcast tab covers it, so a Zotero send in flight finishes. */}
@@ -114,7 +131,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       timeline={readAloud.timeline} prepared={readAloud.prepared} paragraph={readAloud.paragraph}
       position={readAloud.position} playing={readAloud.playing} speed={readAloud.speed}
       timings={readAloud.timings} live={readAloud.live}
-      onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek} onDownload={downloadAudio}
+      onSpeed={readAloud.setSpeed} onPlayPause={playPause} onSeek={readAloud.seek}
     />}
   </>;
 }

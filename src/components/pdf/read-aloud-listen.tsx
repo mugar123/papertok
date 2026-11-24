@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { DownloadSimple, ListBullets, X } from '@phosphor-icons/react';
+import { ListBullets, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { CharacterTimings, ReadAloudTimeline, SpokenPassage } from './read-aloud.ts';
 import { chapterAt, clock, passageText, spokenWordAt, wordSpans, wordStarts } from './read-aloud.ts';
@@ -28,7 +28,7 @@ function spokenSentence(item: SpokenPassage, word: number) {
  * controls round the timeline (which shows the audio still to come, then where the voice
  * is), and the paper's sections as chapters in a drawer.
  */
-export default function ReadAloudListen({ title, queue, timeline, prepared, paragraph, position, playing, speed, timings, live, onSpeed, onPlayPause, onSeek, onDownload }: {
+export default function ReadAloudListen({ title, queue, timeline, prepared, paragraph, position, playing, speed, timings, live, onSpeed, onPlayPause, onSeek }: {
   title: string;
   queue: readonly SpokenPassage[];
   timeline: ReadAloudTimeline;
@@ -42,7 +42,6 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
   onSpeed: (speed: number) => void;
   onPlayPause: () => void;
   onSeek: (seconds: number) => void;
-  onDownload: () => void;
 }) {
   const preparing = !prepared.failed && prepared.ready < prepared.total;
   const percent = prepared.total ? Math.floor((prepared.ready / prepared.total) * 100) : 0;
@@ -104,7 +103,6 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
     return () => cancelAnimationFrame(frame);
   }, [item, live, span, starts]);
   const sentence = item ? spokenSentence(item, word) : null;
-  const unsaved = prepared.ready < prepared.total;
 
   return (
     <section className="rd-podcast" aria-labelledby="rd-podcast-title">
@@ -148,23 +146,6 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
               <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} target={target} onTarget={setTarget} onSeek={onSeek} />
               <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
             </div>
-          </div>
-        )}
-
-        {!preparing && (
-          <div className="rd-podcast-tools">
-            <Button
-              variant="outline"
-              size="sm"
-              className="rd-podcast-chip"
-              onClick={onDownload}
-              disabled={unsaved}
-              focusableWhenDisabled
-              title={unsaved ? 'The audio cannot be saved: some paragraphs do not have PaperTok’s voice.' : 'Download the audio'}
-            >
-              <DownloadSimple size={16} aria-hidden="true" />
-              Download
-            </Button>
           </div>
         )}
       </div>
