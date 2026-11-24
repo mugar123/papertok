@@ -15,7 +15,7 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
-import { READ_ALOUD_PATH, handleReadAloud } from './read-aloud-tts.ts';
+import { READ_ALOUD_PATH, VOICE_PAPERS_PATH, handleReadAloud, handleVoicePapers } from './read-aloud-tts.ts';
 import {
   EmailNotificationError,
   handleEmailNotificationRequest,
@@ -448,13 +448,22 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       );
     }
   }
-  if (url.pathname === READ_ALOUD_PATH) {
+  if (url.pathname === READ_ALOUD_PATH || url.pathname === VOICE_PAPERS_PATH) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
-      const { body, type } = await handleReadAloud(request, env, context ? work => context.waitUntil(work) : undefined);
+      if (url.pathname === VOICE_PAPERS_PATH) {
+        return json(await handleVoicePapers(request, env), 200, { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' });
+      }
+      const { body, type, key } = await handleReadAloud(request, env, context ? work => context.waitUntil(work) : undefined);
+      // The audio's name, which the viewer hands back to mark a paper whose every paragraph has audio.
       return new Response(body, {
-        headers: { ...corsHeaders(origin, env), 'content-type': type, 'cache-control': 'private, no-store' },
+        headers: {
+          ...corsHeaders(origin, env),
+          ...(key ? { 'x-tts-audio': key, 'access-control-expose-headers': 'retry-after, x-tts-audio' } : {}),
+          'content-type': type,
+          'cache-control': 'private, no-store',
+        },
       });
     } catch (error) {
       captureWorkerException(error);

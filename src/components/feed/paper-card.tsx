@@ -45,12 +45,14 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, Suspense } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, useSyncExternalStore, memo, Suspense } from 'react';
+import { askPaperVoiced, isPaperVoiced, subscribeVoicedPapers } from '../../services/read-aloud-service.ts';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
   ArrowLeft,
   ArrowRight,
   ArrowSquareOut,
+  Headphones,
   BookmarkSimple,
   Brain,
   Building,
@@ -517,6 +519,12 @@ const PaperCard = memo(function PaperCard({
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
   const { institution, user } = useAuth();
+  // Stored audio for every paragraph, which listening spends none of the day's papers on.
+  const hasCitations = paper.citationCountKnown || (paper.citationCount ?? 0) > 0;
+  const voiced = useSyncExternalStore(subscribeVoicedPapers, () => Boolean(user) && isPaperVoiced(paper.id));
+  useEffect(() => {
+    if (user) askPaperVoiced(paper.id);
+  }, [paper.id, user]);
   const { language } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
@@ -2024,7 +2032,7 @@ const PaperCard = memo(function PaperCard({
                 <span className="pc-date">{paper.year}</span>
               </>
             ) : null}
-            {(paper.citationCountKnown || paper.citationCount! > 0) && (
+            {hasCitations && (
               <>
                 {/* The modifier gives this dot the chip's fade: the two mount
                     together, and when enrichment runs past the ceiling they
@@ -2046,6 +2054,15 @@ const PaperCard = memo(function PaperCard({
                     {paper.citationCount!.toLocaleString('en-US')} {'citations'}
                   </span>
                 )}
+              </>
+            )}
+            {voiced && (
+              <>
+                {(categoryLabel || reason || paper.year || hasCitations) ? <span className="pc-meta-dot">·</span> : null}
+                <span className="pc-voiced">
+                  <Headphones size={12} weight="bold" aria-hidden="true" /> Audio ready
+                  <span className="visually-hidden">, free to listen</span>
+                </span>
               </>
             )}
             {(studyTypeLabel || trialUrl) && (

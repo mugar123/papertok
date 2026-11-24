@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ListBullets, X } from '@phosphor-icons/react';
+import { Headphones, ListBullets, X } from '@phosphor-icons/react';
+import UsesCount from '../reader/uses-count.tsx';
+import '../ui/tag.css';
 import { Button } from '../ui/button.tsx';
 import type { SpokenPassage } from './read-aloud.ts';
 import type { useReadAloud } from './use-read-aloud.ts';
@@ -47,11 +49,13 @@ function spokenSentence(item: SpokenPassage, word: number) {
  * controls round the timeline (which shows the audio still to come, then where the voice
  * is), and the paper's sections as chapters in a drawer.
  */
-export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
+export default function ReadAloudListen({ title, queue, player, voiceLeft = null, onPlayPause }: {
   title: string;
   queue: readonly SpokenPassage[];
   /** The voice the dock plays: where it is, how much is ready, and its controls. */
   player: Pick<ReturnType<typeof useReadAloud>, 'timeline' | 'startup' | 'buffering' | 'paragraph' | 'position' | 'playing' | 'speed' | 'timings' | 'live' | 'setSpeed' | 'seek'>;
+  /** New papers the account may still hear in PaperTok's voice today, when known. */
+  voiceLeft?: { papersLeft: number; dailyPapers: number } | null;
   onPlayPause: () => void;
 }) {
   const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek: onSeek } = player;
@@ -146,6 +150,14 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
       <span ref={statusRegion} className="visually-hidden" role="status" />
       <header className="rd-podcast-header">
         <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
+        {voiceLeft && (
+          <p className="rd-podcast-header-voice">
+            <span className="rd-tag rd-tag--ai rd-uses" role="status">
+              <Headphones size={12} aria-hidden="true" />
+              <UsesCount left={voiceLeft.papersLeft} limit={voiceLeft.dailyPapers} what="new papers with PaperTok’s voice" />
+            </span>
+          </p>
+        )}
       </header>
       <div className="rd-podcast-cover">
         <ReadAloudForms progress={preparing ? startup.ready / startup.total : 1} playing={playing && !buffering} />

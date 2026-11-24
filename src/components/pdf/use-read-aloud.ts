@@ -33,8 +33,10 @@ function clipSeconds(url: string) {
   });
 }
 
-export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, onFallback, onError, onBlocked }: {
+export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, paperId, onFallback, onError, onBlocked }: {
   title: string;
+  /** The paper the passages are from: its first new audio of the day counts against the account's papers. */
+  paperId?: string;
   onFallback: (error: unknown) => void;
   onError: () => void;
   /** The browser would not start the audio without another press; the voice is paused. */
@@ -64,6 +66,8 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   const run = useRef(0);
   const audio = useRef<HTMLAudioElement | null>(null);
   const clips = useRef(new Map<string, Promise<string>>());
+  // The name each passage's audio is stored under, as the Worker gave it.
+  const audioKeys = useRef(new Map<string, string>());
   const fetches = useRef<AbortController | null>(null);
   // The voice refused for want of credits: from then on, stored audio only.
   const storedOnly = useRef(false);
@@ -112,7 +116,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     };
   }, [pause]);
 
-  const request = async (text: string): Promise<Blob> => {
+  const request = async (text: string) => {
     await new Promise<void>((resolve) => {
       if (activeRequests.current < WORKERS + 1) {
         activeRequests.current += 1;
@@ -123,7 +127,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       for (let attempt = 0; ; attempt += 1) {
         fetches.current?.signal.throwIfAborted();
         try {
-          return await fetchParagraphAudio(text, { signal: fetches.current?.signal, storedOnly: storedOnly.current });
+          return await fetchParagraphAudio(text, { signal: fetches.current?.signal, storedOnly: storedOnly.current, paperId });
         } catch (error) {
           if (error instanceof ReadAloudError && error.code === 'AI_QUOTA_EXHAUSTED') storedOnly.current = true;
           if (!(error instanceof ReadAloudError && error.code === 'AI_BUSY') || attempt >= BUSY_RETRIES) throw error;
@@ -141,8 +145,9 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     const text = passageText(item);
     const known = clips.current.get(text);
     if (known) return known;
-    const pending = request(text).then((blob) => {
+    const pending = request(text).then(({ blob, key }) => {
       fetches.current?.signal.throwIfAborted();
+      if (key) audioKeys.current.set(text, key);
       const url = URL.createObjectURL(blob);
       void clipSeconds(url).then((seconds) => {
         setLengths(lengths => ({ ...lengths, [text]: seconds ?? readAloudTimeline([item], []).duration }));
@@ -445,6 +450,12 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   }, [at, paragraph, playing, progress, queue]);
 
   /** The paper's audio as one MP3, its clips in reading order; only once every passage has one. */
+  /** The stored name of every passage's audio, or null while one has none. */
+  const storedNames = useCallback(() => {
+    const keys = queue.map(item => audioKeys.current.get(passageText(item)));
+    return keys.every((key): key is string => Boolean(key)) ? keys : null;
+  }, [queue]);
+
   const audioFile = useCallback(async () => {
     const urls = await Promise.all(queue.map(item => clips.current.get(passageText(item)) ?? Promise.reject(new ReadAloudError('AI_AUDIO_NOT_STORED'))));
     const parts = await Promise.all(urls.map(url => fetch(url).then(response => response.blob())));
@@ -458,6 +469,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     buffering,
     startup: startup ?? { start: 0, ready: 0, total: Math.min(STARTUP_PASSAGES, queue.length), failed: false },
     audioFile,
+    audioKeys: storedNames,
     live,
     /** How much of the paper's audio exists yet; `failed` once a passage was refused and the rest will not come. */
     prepared: { ready, total: queue.length, failed: prepareDone && ready < queue.length },

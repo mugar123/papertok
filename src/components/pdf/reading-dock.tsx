@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { saveFile } from '../../utils/save-file.ts';
-import { ReadAloudError } from '../../services/read-aloud-service.ts';
+import { ReadAloudError, fetchVoiceUsage, markPaperVoiced } from '../../services/read-aloud-service.ts';
 import { Button } from '../ui/button.tsx';
 import { Toggle } from '../ui/toggle.ts';
 import { PaperDock } from './paper-info.tsx';
@@ -34,13 +34,27 @@ type ReadingDockProps = Pick<ComponentProps<typeof PaperDock>, 'scroll' | 'conte
 };
 
 export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canListen, topbar = null, notes, originalUrl, children }: ReadingDockProps) {
-  const { readingPreferences } = useAuth();
+  const { readingPreferences, user } = useAuth();
+  // How many new papers the account may still hear in PaperTok's voice today, read again when a
+  // paragraph is refused for them; kept with the account it was read for.
+  const [voiceRead, setVoiceRead] = useState(0);
+  const [voiceUsage, setVoiceUsage] = useState<{ uid: string; usage: Awaited<ReturnType<typeof fetchVoiceUsage>> } | null>(null);
+  const voiceLeft = voiceUsage && voiceUsage.uid === user?.uid ? voiceUsage.usage : null;
   const { trackEvent } = useAnalyticsConsent();
   const readAloud = useReadAloud(spoken?.queue ?? NO_PASSAGES, spoken?.chapters ?? NO_CHAPTERS, {
     title,
-    onFallback: cause => toast(cause instanceof ReadAloudError && (cause.code === 'AI_QUOTA_EXHAUSTED' || cause.code === 'AI_AUDIO_NOT_STORED')
-      ? 'Parts of this paper have no PaperTok audio yet, so this browser’s voice reads them.'
-      : 'PaperTok’s voice is not available right now, so this browser’s voice reads instead.'),
+    paperId: paper?.id,
+    onFallback: (cause) => {
+      const code = cause instanceof ReadAloudError ? cause.code : '';
+      if (code === 'AI_QUOTA_EXHAUSTED' && (cause as ReadAloudError).scope === 'user') {
+        setVoiceRead(read => read + 1);
+        toast('You have used today’s papers with PaperTok’s voice, so this browser’s voice reads the parts without it. More tomorrow.');
+      } else if (code === 'AI_QUOTA_EXHAUSTED' || code === 'AI_AUDIO_NOT_STORED') {
+        toast('Parts of this paper have no PaperTok audio yet, so this browser’s voice reads them.');
+      } else {
+        toast('PaperTok’s voice is not available right now, so this browser’s voice reads instead.');
+      }
+    },
     onError: () => toast.error('Reading aloud stopped. This browser could not play the voice.'),
     onBlocked: () => toast('The audio is ready. Press play to listen.'),
   });
@@ -90,7 +104,24 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     setListening(open);
   };
   const podcast = listening && canListen;
+  // Read once the first passages are ready, so the count already holds this paper.
+  const startupDone = readAloud.startup.failed || readAloud.startup.ready >= readAloud.startup.total;
+  const uid = user?.uid;
+  useEffect(() => {
+    if (!podcast || !startupDone || !uid) return undefined;
+    const controller = new AbortController();
+    void fetchVoiceUsage({ signal: controller.signal }).then((usage) => { if (!controller.signal.aborted) setVoiceUsage({ uid, usage }); });
+    return () => controller.abort();
+  }, [podcast, startupDone, uid, voiceRead]);
   const unsaved = readAloud.prepared.ready < readAloud.prepared.total;
+  // Every passage has stored audio: the Worker checks it and the feed shows the paper as voiced.
+  const paperId = paper?.id;
+  const voiced = Boolean(paperId) && readAloud.prepared.total > 0 && !unsaved;
+  const { audioKeys } = readAloud;
+  useEffect(() => {
+    const audio = voiced && paperId ? audioKeys() : null;
+    if (audio && paperId) void markPaperVoiced(paperId, audio);
+  }, [voiced, paperId, audioKeys]);
   useEffect(() => {
     if (!scroll || !podcast) return undefined;
     scroll.toggleAttribute('inert', true);
@@ -134,6 +165,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       title={paper?.title ?? title}
       queue={spoken.queue}
       player={readAloud}
+      voiceLeft={voiceLeft}
       onPlayPause={playPause}
     />}
   </>;

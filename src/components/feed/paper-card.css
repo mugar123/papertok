@@ -690,6 +690,9 @@ a.pc-citations {
    in `paper-status.ts` needs no new rule here — it picks a tone that already
    exists. The four tones are the whole vocabulary: amber warns, blue
    reassures, green opens, neutral limits. */
+/* In the kicker, a paper whose every paragraph has PaperTok's voice: hearing it spends no use. */
+.pc-voiced { display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); white-space: nowrap; }
+
 .pc-chips {
   display: flex;
   align-items: center;
