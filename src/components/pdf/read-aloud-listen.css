@@ -330,7 +330,9 @@
   .rd-podcast-caption { width: 100%; margin-bottom: 0; }
   /* Only the lines it has, so a one-line caption is centred on the visual like a longer one. */
   .rd-podcast-text { min-height: 0; text-align: start; text-wrap: pretty; }
-  .rd-podcast-player { grid-area: player; justify-self: center; }
+  /* As wide as the visual and the caption together, so the controls share their edges. */
+  .rd-podcast-player { grid-area: player; width: auto; }
+  .rd-podcast-dock { width: 100%; }
 }
 /* Narrower, the section and the caption are the column's own items, as they were before the group. */
 @media (max-width: 900px) {
