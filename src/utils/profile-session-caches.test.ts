@@ -12,6 +12,9 @@ import {
   rememberSavedAnswers,
   reviseOwnLists,
   savedAnswered,
+  authorMetricsAnswer,
+  forgetSettingsAnswers,
+  zoteroAnswer,
 } from './profile-session-caches.ts';
 
 /**
@@ -181,4 +184,43 @@ test('a subscriber hears each saved-read answer, and the answered set changes on
   rememberSavedAnswers('uid-sub', ['2601.00003']);
   assert.equal(heard, 3, 'an unsubscribed listener hears nothing');
   forgetListPapers('uid-sub');
+});
+
+const connected = { connected: true, username: 'reader', sentAt: null };
+const disconnected = { connected: false, username: null, sentAt: null };
+
+test('a settings read that was out when a disconnect finished does not bring the connection back, even from an earlier visit', () => {
+  const earlierVisit = zoteroAnswer.startRead('uid-s1');
+  const laterVisit = zoteroAnswer.startRead('uid-s1');
+  const disconnect = zoteroAnswer.startChange('uid-s1');
+  assert.equal(disconnect(disconnected), true);
+  assert.equal(earlierVisit(connected), false);
+  assert.equal(laterVisit(connected), false);
+  assert.deepEqual(zoteroAnswer.get('uid-s1'), disconnected);
+  assert.equal(zoteroAnswer.startRead('uid-s1')(connected), true, 'a read begun after the change is kept');
+  assert.deepEqual(zoteroAnswer.get('uid-s1'), connected);
+  forgetSettingsAnswers('uid-s1');
+});
+
+test('nothing begun before a sign-out lands in the cache, even after the same account signs back in', () => {
+  authorMetricsAnswer.startRead('uid-s2')(true);
+  const read = authorMetricsAnswer.startRead('uid-s2');
+  const save = authorMetricsAnswer.startChange('uid-s2');
+  forgetSettingsAnswers('uid-s2');
+  assert.equal(save(false), false);
+  assert.equal(read(true), false);
+  assert.equal(authorMetricsAnswer.get('uid-s2'), undefined);
+  assert.equal(authorMetricsAnswer.startRead('uid-s2')(false), true, 'the new session reads normally');
+  assert.equal(authorMetricsAnswer.get('uid-s2'), false);
+  forgetSettingsAnswers('uid-s2');
+});
+
+test('a saved switch does not make a Zotero check stale, nor another account\'s read', () => {
+  const zoteroRead = zoteroAnswer.startRead('uid-s3');
+  const otherAccount = authorMetricsAnswer.startRead('uid-s4');
+  authorMetricsAnswer.startChange('uid-s3')(false);
+  assert.equal(zoteroRead(connected), true);
+  assert.equal(otherAccount(true), true);
+  forgetSettingsAnswers('uid-s3');
+  forgetSettingsAnswers('uid-s4');
 });

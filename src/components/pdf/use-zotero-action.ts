@@ -7,6 +7,8 @@ import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { usePageRestored } from '../../hooks/use-page-restored.ts';
 import { connectZotero, sendToZotero, zoteroCitation, zoteroStatus, type ZoteroStatus } from '../../services/zotero-service.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
+import { zoteroAnswer } from '../../utils/profile-session-caches.ts';
+import { auth } from '../../services/firebase.ts';
 import { ZoteroMark } from './zotero-mark.tsx';
 
 const sentDate = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' });
@@ -72,6 +74,9 @@ export function useZoteroAction(paper: Paper, uid: string | null | undefined, wa
     working.current = true;
     setBusy(true);
     const sending = toast.loading('Sending to Zotero…');
+    // A toast's Try again can outlive the account, and the Worker answers for whoever is
+    // signed in: Settings records the answer only if this account asked and is still here.
+    const recordSettings = auth.currentUser?.uid === uid ? zoteroAnswer.startChange(uid!) : null;
     try {
       const { sentAt, highlights } = await sendToZotero(zoteroCitation(paper));
       setStatus({ connected: true, username: status?.username ?? null, sentAt });
@@ -82,7 +87,10 @@ export function useZoteroAction(paper: Paper, uid: string | null | undefined, wa
       void trackEvent('zotero_send', { result: 'failed' });
       const code = (error as { code?: string }).code;
       if (code === 'ZOTERO_NOT_CONNECTED') {
-        setStatus({ connected: false, username: null, sentAt: null });
+        const disconnected = { connected: false, username: null, sentAt: null };
+        setStatus(disconnected);
+        // Settings must not keep showing a connection Zotero has just refused.
+        if (recordSettings && auth.currentUser?.uid === uid) recordSettings(disconnected);
         toastError(getUiErrorMessage(code), { action: { label: 'Reconnect Zotero', onClick: () => { void connect(); } } });
       } else if (code === 'ZOTERO_RATE_LIMITED') {
         busyUntil.current = Date.now() + ((error as { retryAfter?: number | null }).retryAfter ?? 60) * 1000;

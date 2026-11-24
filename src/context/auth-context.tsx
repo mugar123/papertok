@@ -99,6 +99,7 @@ import { isReadTimeout, patientRead } from '../utils/bounded-read.ts';
 import { documentIsAuthoritative } from '../utils/cache-authority.ts';
 import { saveStoredOnboarding } from '../utils/user-scoped-storage.ts';
 import { adoptOnboardedProfile, closeAccountSession, openAccountSession } from './account-session.ts';
+import { forgetSettingsAnswers } from '../utils/profile-session-caches.ts';
 import { confirmOnboardingWrite, profileReadOutcome } from './profile-load.ts';
 import { writeOptimistically } from './optimistic-write.ts';
 import { clearRewriteCache } from '../services/paper-rewrite-service.ts';
@@ -191,7 +192,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const handleAuthChange = async (currentUser: User | null) => {
       const changeId = ++authChangeId;
       const uid = currentUser?.uid ?? null;
-      if (previousUid.current && previousUid.current !== uid) clearGuestInterests();
+      const outgoingUid = previousUid.current;
+      if (outgoingUid && outgoingUid !== uid) {
+        clearGuestInterests();
+        // Also when another tab signed out: a read still out in this one must not land.
+        forgetSettingsAnswers(outgoingUid);
+      }
       previousUid.current = uid;
       // Here rather than in signOut: another tab can end this session too.
       clearRewriteCache();
