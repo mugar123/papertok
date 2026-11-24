@@ -143,8 +143,6 @@ function DockMenu({ paper, doc, fromCard, onLeave, viewActions = [], view, setVi
   const signedIn = Boolean(useAuth().user);
   const { trackEvent } = useAnalyticsConsent();
   const close = () => setView('closed');
-  // A reader opened from a link has no card to mark or hide.
-  const { toggleRead, notInterested } = card;
   return (
     <PaperMenuBody
       title={paper.title}
@@ -153,9 +151,9 @@ function DockMenu({ paper, doc, fromCard, onLeave, viewActions = [], view, setVi
       actions={[...viewActions, ...paperActions({
         paper,
         isRead: card.isRead,
-        onAbout: card.about ? () => setView('about') : undefined,
-        onToggleRead: toggleRead && (() => { if (signedIn && card.isRead) toggleRead(); else onLeave(toggleRead); }),
-        onNotInterested: notInterested && (() => onLeave(notInterested)),
+        onAbout: () => setView('about'),
+        onToggleRead: () => { if (signedIn && card.isRead) card.toggleRead(); else onLeave(card.toggleRead); },
+        onNotInterested: () => onLeave(card.notInterested),
         notInterestedHint: card.notInterestedHint,
       })]}
       open={view === 'actions' || view === 'about'}
