@@ -919,6 +919,12 @@
   margin-top: var(--space-3);
 }
 
+/* A topic with one long word ("Telecommunications") has no space to wrap
+   at; in a tile too narrow for it, it would run under the box beside it. */
+.gw-subtopics .gw-area-name {
+  overflow-wrap: anywhere;
+}
+
 /* "Show more" under a folded group: a quiet text control, left-aligned
    under the grid it opens. */
 .gw-more {
@@ -1069,6 +1075,13 @@
   .gw-areas {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-top: var(--space-5);
+  }
+
+  /* Topic names run longer than area names ("Telecommunications"). Half
+     a 390px phone leaves them about 95px beside the glyph and the box, and
+     less on smaller ones, so they take the full width instead. */
+  .gw-subtopics .gw-areas {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .gw-area {
