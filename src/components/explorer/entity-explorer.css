@@ -295,6 +295,11 @@
   border: 0;
 }
 
+/* The cells' bottom border and the next section's top border are one line, not two. */
+.ehc-project-sheet .ehc-stats-grid:not(:last-child) {
+  margin-bottom: -1px;
+}
+
 .ehc-project-sheet .ehc-stat-box {
   gap: 6px;
   padding: 14px 16px;
@@ -521,6 +526,57 @@
 @media (max-width: 860px) {
   .ehc-layout--sheet {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* An institution's related institutions start on the sheet's line between its figures and its
+   links: the two columns share three rows (the name, the section's title, the cards) and the
+   figures span the first two, so the cards' top border meets that line whichever side is taller. */
+@media (min-width: 861px) {
+  .ehc-layout--sheet:has(> .ehc-layout-main > .project-participants) {
+    grid-template-rows: auto auto 1fr;
+    row-gap: 0;
+  }
+
+  .ehc-layout--sheet:has(> .ehc-layout-main > .project-participants) > :is(.ehc-layout-main, .ehc-project-aside),
+  .ehc-layout--sheet:has(> .ehc-layout-main > .project-participants) .ehc-project-sheet {
+    display: grid;
+    grid-row: 1 / -1;
+    grid-template-rows: subgrid;
+    row-gap: 0;
+  }
+
+  .ehc-layout--sheet:has(> .ehc-layout-main > .project-participants) .ehc-project-sheet > .ehc-stats-grid {
+    grid-row: 1 / 3;
+  }
+
+  .ehc-layout--sheet:has(> .ehc-layout-main > .project-participants) .ehc-project-sheet > .project-links-menu {
+    grid-row: 3;
+    align-self: start;
+  }
+
+  .ehc-layout--sheet .ehc-layout-main > .project-participants {
+    display: contents;
+  }
+
+  .ehc-layout--sheet .ehc-layout-main > .ehc-header {
+    grid-row: 1;
+    align-self: start;
+  }
+
+  .ehc-layout--sheet .ehc-layout-main > .project-participants > .project-section-title {
+    grid-row: 2;
+    align-self: end;
+    margin-top: var(--space-4);
+  }
+
+  .ehc-layout--sheet .ehc-layout-main > .project-participants > .project-participants-grid {
+    grid-row: 3;
+    align-self: start;
+  }
+
+  .ehc-layout--sheet .ehc-layout-main > .project-participants > * {
+    animation: rise var(--motion-base) var(--ease-out) 0.18s backwards;
   }
 }
 
