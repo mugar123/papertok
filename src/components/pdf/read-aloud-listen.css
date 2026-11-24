@@ -171,6 +171,7 @@
   color: var(--text-tertiary);
 }
 .rd-podcast-drawer-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-podcast-drawer-number { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .rd-podcast-tools { display: flex; gap: var(--space-2); justify-content: center; }
 .rd-podcast-chip { border-radius: 999px; }
