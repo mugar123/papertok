@@ -119,10 +119,20 @@
   width: min(360px, 90vw);
   padding: var(--space-4);
   overflow-y: auto;
-  background: var(--bg-secondary);
+  overscroll-behavior: contain;
+  /* Set off from the tab by a hairline, without a shadow. */
+  border-left: 1px solid var(--border-default);
+  background: var(--bg-card);
   translate: 100% 0;
-  transition: translate 240ms var(--ease-out);
+  transition: translate 240ms var(--ease-out), visibility 0s linear 240ms;
+  visibility: hidden;
 }
+.rd-podcast-drawer[data-open] { visibility: visible; transition: translate 240ms var(--ease-out), visibility 0s; }
+.rd-podcast-drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+.rd-podcast-drawer-head .rd-podcast-drawer-heading { margin: 0; }
+/* The paper's sections in ink and weight, their subsections quieter, so the eye finds the sections. */
+.rd-podcast-drawer ol button[data-section] { font-weight: 600; }
+.rd-podcast-drawer ol button:not([data-section]) .rd-podcast-drawer-title { color: var(--text-secondary); }
 .rd-podcast-drawer[data-open] { translate: 0 0; }
 .rd-podcast-drawer-heading {
   margin: 0 0 var(--space-3);
@@ -132,7 +142,7 @@
   color: var(--text-secondary);
 }
 .rd-podcast-drawer ol { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--border-subtle); }
-.rd-podcast-drawer button {
+.rd-podcast-drawer ol button {
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1fr) auto;
   gap: var(--space-2);
@@ -149,12 +159,12 @@
   cursor: pointer;
   transition: background-color 150ms ease;
 }
-.rd-podcast-drawer button:disabled { cursor: default; color: var(--text-tertiary); }
+.rd-podcast-drawer ol button:disabled { cursor: default; color: var(--text-tertiary); }
 @media (hover: hover) and (pointer: fine) {
-  .rd-podcast-drawer button:not(:disabled):hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+  .rd-podcast-drawer ol button:not(:disabled):hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
 }
-.rd-podcast-drawer button[aria-current] { font-weight: 600; }
-.rd-podcast-drawer button[aria-current] .rd-podcast-drawer-title { color: var(--podcast-accent); }
+.rd-podcast-drawer ol button[aria-current] { font-weight: 600; }
+.rd-podcast-drawer ol button[aria-current] .rd-podcast-drawer-title { color: var(--podcast-accent); }
 .rd-podcast-drawer-number, .rd-podcast-drawer-time {
   font: 500 0.75rem/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -170,7 +180,9 @@
   .rd-podcast { animation: none; }
   .rd-podcast-caption { transition: none; }
   .rd-podcast .rd-listen-play { transition: none; }
-  .rd-podcast-drawer, .rd-podcast-drawer button { transition: none; }
+  .rd-podcast-drawer, .rd-podcast-drawer[data-open] { translate: 0 0; opacity: 0; transition: opacity 150ms ease, visibility 0s linear 150ms; }
+  .rd-podcast-drawer[data-open] { opacity: 1; transition: opacity 150ms ease, visibility 0s; }
+  .rd-podcast-drawer ol button { transition: none; }
 }
 
 /* On a phone the controls are a bar fixed to the bottom of the tab, within the thumb's reach and

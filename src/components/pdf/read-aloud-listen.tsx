@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { DownloadSimple, ListBullets } from '@phosphor-icons/react';
+import { DownloadSimple, ListBullets, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import type { CharacterTimings, ReadAloudTimeline, SpokenPassage } from './read-aloud.ts';
 import { chapterAt, clock, passageText, spokenWordAt, wordSpans, wordStarts } from './read-aloud.ts';
@@ -66,6 +66,19 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
     return () => observer.disconnect();
   }, []);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerButton = useRef<HTMLButtonElement | null>(null);
+  const drawer = useRef<HTMLElement | null>(null);
+  // Open, the panel takes the focus to the chapter being read; closed, it gives it back to its button.
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    drawerButton.current?.focus();
+  };
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const panel = drawer.current;
+    (panel?.querySelector<HTMLElement>('button[aria-current]') ?? panel?.querySelector<HTMLElement>('ol button'))?.focus({ preventScroll: true });
+    panel?.querySelector('button[aria-current]')?.scrollIntoView({ block: 'center' });
+  }, [drawerOpen]);
   const drawerId = useId();
 
   const item = paragraph === null ? null : queue[paragraph] ?? null;
@@ -124,7 +137,7 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
               <SpeedButton speed={speed} onSpeed={onSpeed} />
               <ReadAloudTransport position={now} playing={playing} onPlayPause={onPlayPause} onSeek={onSeek} />
               {timeline.chapters.length > 1 ? (
-                <Button variant="ghost" size="icon" aria-label="All chapters" title="All chapters" aria-expanded={drawerOpen} aria-controls={drawerId} onClick={() => setDrawerOpen(open => !open)}>
+                <Button ref={drawerButton} variant="ghost" size="icon" aria-label="All chapters" title="All chapters" aria-expanded={drawerOpen} aria-controls={drawerId} onClick={() => setDrawerOpen(open => !open)}>
                   <ListBullets size={20} aria-hidden="true" />
                 </Button>
               ) : <span />}
@@ -158,8 +171,25 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
 
       {/* Every chapter at once, with its length, in a drawer from the side. */}
       {timeline.chapters.length > 1 && (
-        <nav id={drawerId} className="rd-podcast-drawer" aria-label="All chapters" data-open={drawerOpen || undefined} inert={!drawerOpen}>
-          <p className="rd-podcast-drawer-heading" aria-hidden="true">Chapters</p>
+        <nav
+          ref={drawer}
+          id={drawerId}
+          className="rd-podcast-drawer"
+          aria-label="All chapters"
+          data-open={drawerOpen || undefined}
+          inert={!drawerOpen}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape') return;
+            event.stopPropagation();
+            closeDrawer();
+          }}
+        >
+          <div className="rd-podcast-drawer-head">
+            <p className="rd-podcast-drawer-heading" aria-hidden="true">Chapters</p>
+            <Button variant="ghost" size="icon-sm" aria-label="Close chapters" title="Close" onClick={closeDrawer}>
+              <X size={16} aria-hidden="true" />
+            </Button>
+          </div>
           <ol>
             {timeline.chapters.map(part => (
               <li key={part.start}>
@@ -167,7 +197,8 @@ export default function ReadAloudListen({ title, queue, timeline, prepared, para
                   type="button"
                   disabled={preparing}
                   aria-current={(!preparing && part.start === chapter.start) || undefined}
-                  onClick={() => { onSeek(part.start); setDrawerOpen(false); }}
+                  data-section={!part.number.includes('.') || undefined}
+                  onClick={() => { onSeek(part.start); closeDrawer(); }}
                   aria-label={`${[part.number, part.title].filter(Boolean).join(' ')}, ${clock(part.end - part.start)}`}
                 >
                   <span className="rd-podcast-drawer-number">{part.number}</span>
