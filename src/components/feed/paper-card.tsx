@@ -834,6 +834,23 @@ const PaperCard = memo(function PaperCard({
   // above that rule: held at its closed height, the glyph stays put behind
   // the names instead of sliding down with the rule.
   const watermarkRef = useRef<HTMLSpanElement | null>(null);
+  // A separator the row wraps after is left hanging at the end of its line, as "2020 ·", so it is hidden there.
+  const metaRef = useRef<HTMLDivElement | null>(null);
+  const markLineEnds = useCallback(() => {
+    for (const dot of metaRef.current?.querySelectorAll<HTMLElement>('.pc-meta-dot') ?? []) {
+      const next = dot.nextElementSibling as HTMLElement | null;
+      dot.toggleAttribute('data-line-end', !next || next.offsetTop > dot.offsetTop + dot.offsetHeight / 2);
+    }
+  }, []);
+  // Each render, as a late citation count or a new tag can move the break; the observer covers resizes.
+  useLayoutEffect(markLineEnds);
+  useEffect(() => {
+    const meta = metaRef.current;
+    if (!meta) return undefined;
+    const observer = new ResizeObserver(markLineEnds);
+    observer.observe(meta);
+    return () => observer.disconnect();
+  }, [markLineEnds]);
   const holdWatermark = () => {
     const mark = watermarkRef.current;
     if (!mark || mark.style.height) return;
@@ -2047,7 +2064,7 @@ const PaperCard = memo(function PaperCard({
             />
           )}
         </div>
-        <div className="pc-meta">
+        <div ref={metaRef} className="pc-meta">
           {primaryTopic ? (
             <button
               type="button"
