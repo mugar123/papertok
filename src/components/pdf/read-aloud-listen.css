@@ -129,7 +129,18 @@
   visibility: hidden;
 }
 .rd-podcast-drawer[data-open] { visibility: visible; transition: translate 240ms var(--ease-out), visibility 0s; }
-.rd-podcast-drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+/* The heading and its close button stay at the top while the list scrolls under them. */
+.rd-podcast-drawer-head {
+  position: sticky;
+  top: calc(-1 * var(--space-4));
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: calc(-1 * var(--space-4)) 0 var(--space-2);
+  padding-top: var(--space-4);
+  background: var(--bg-card);
+}
 .rd-podcast-drawer-head .rd-podcast-drawer-heading { margin: 0; }
 /* The paper's sections in ink and weight, their subsections quieter, so the eye finds the sections. */
 .rd-podcast-drawer ol button[data-section] { font-weight: 600; }
@@ -235,4 +246,9 @@
   .rd-podcast-player { margin-top: 0; }
   .rd-podcast-buttons :is(.rd-listen-skip, .rd-listen-speed),
   .rd-podcast-buttons > button:last-child { min-width: 44px; min-height: 44px; }
+}
+
+/* On a phone the chapters take the whole screen under the bar, as the notes do in the reader. */
+@media (max-width: 600px) {
+  .rd-podcast-drawer { width: 100%; border-left: 0; padding-inline: var(--space-4); }
 }
