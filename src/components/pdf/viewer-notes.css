@@ -15,6 +15,18 @@
 ::highlight(viewer-passage-active-sky) { background-color: color-mix(in srgb, var(--accent-sky) 35%, var(--accent-sky-soft)); color: inherit; }
 ::highlight(viewer-passage-active-violet) { background-color: color-mix(in srgb, var(--accent-violet) 35%, var(--accent-violet-soft)); color: inherit; }
 ::highlight(viewer-passage-active-rose) { background-color: color-mix(in srgb, var(--accent-rose) 35%, var(--accent-rose-soft)); color: inherit; }
+/* A formula inside a highlight, painted as a box since its pieces leave gaps the text paint does not fill. */
+.ft-math[data-mark] { border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.ft-math[data-mark="yellow"] { background-color: var(--brand-yellow-soft); }
+.ft-math[data-mark="yellow"][data-mark-active] { background-color: color-mix(in srgb, var(--brand-yellow) 35%, var(--brand-yellow-soft)); }
+.ft-math[data-mark="teal"] { background-color: var(--accent-teal-soft); }
+.ft-math[data-mark="teal"][data-mark-active] { background-color: color-mix(in srgb, var(--accent-teal) 35%, var(--accent-teal-soft)); }
+.ft-math[data-mark="sky"] { background-color: var(--accent-sky-soft); }
+.ft-math[data-mark="sky"][data-mark-active] { background-color: color-mix(in srgb, var(--accent-sky) 35%, var(--accent-sky-soft)); }
+.ft-math[data-mark="violet"] { background-color: var(--accent-violet-soft); }
+.ft-math[data-mark="violet"][data-mark-active] { background-color: color-mix(in srgb, var(--accent-violet) 35%, var(--accent-violet-soft)); }
+.ft-math[data-mark="rose"] { background-color: var(--accent-rose-soft); }
+.ft-math[data-mark="rose"][data-mark-active] { background-color: color-mix(in srgb, var(--accent-rose) 35%, var(--accent-rose-soft)); }
 /* The highlight under the pointer, half as dark as the clicked one: a click on it opens its note. */
 ::highlight(viewer-passage-hover-yellow) { background-color: color-mix(in srgb, var(--brand-yellow) 18%, var(--brand-yellow-soft)); color: inherit; }
 ::highlight(viewer-passage-hover-teal) { background-color: color-mix(in srgb, var(--accent-teal) 18%, var(--accent-teal-soft)); color: inherit; }

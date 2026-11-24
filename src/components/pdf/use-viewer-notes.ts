@@ -140,6 +140,15 @@ export function usePaintedPassages(root: HTMLElement | null, passages: Pick<Pass
         CSS.highlights.set(`${HOVER}-${color}`, pointed);
       }
       CSS.highlights.set(PENDING, new Highlight(...ranges(pending ? [pending] : [])));
+      // A formula is drawn in boxes the painted text does not fill, so one a highlight covers takes its colour as a background.
+      const covering = passages.map(passage => ({ passage, ranges: ranges([passage]) }));
+      for (const formula of root.querySelectorAll<HTMLElement>('.ft-math')) {
+        const over = covering.find(({ passage, ranges: found }) => passage.id === active && found.some(range => range.intersectsNode(formula)))
+          ?? covering.find(({ ranges: found }) => found.some(range => range.intersectsNode(formula)));
+        if (over) formula.dataset.mark = highlightColor(over.passage);
+        else delete formula.dataset.mark;
+        formula.toggleAttribute('data-mark-active', over?.passage.id === active);
+      }
     };
     paint();
     let frame = 0;
@@ -157,6 +166,10 @@ export function usePaintedPassages(root: HTMLElement | null, passages: Pick<Pass
         CSS.highlights.delete(`${HOVER}-${color}`);
       }
       CSS.highlights.delete(PENDING);
+      for (const formula of root.querySelectorAll<HTMLElement>('.ft-math')) {
+        delete formula.dataset.mark;
+        formula.removeAttribute('data-mark-active');
+      }
     };
   }, [root, passages, pending, active, hovered]);
 }
