@@ -89,11 +89,64 @@ export async function fetchVoiceUsage({ signal }: { signal?: AbortSignal } = {})
 }
 
 /**
+ * Paragraphs already heard, kept in the browser so a paper opened again plays and jumps at once
+ * instead of asking the Worker for each one: at most 800 (three or four long papers), each for 30
+ * days, the oldest dropped first. The audio is the same for every reader. Where the browser keeps
+ * no cache (a private window), everything is asked for as before.
+ */
+const AUDIO_CACHE = 'papertok-voice-1';
+const MAX_CACHED_PARAGRAPHS = 800;
+const CACHED_FOR_MS = 30 * 24 * 60 * 60 * 1000;
+let keptSinceTrim = 0;
+
+async function cacheAddress(text: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return new URL(`/voice-cache/${hash}`, window.location.origin).href;
+}
+
+async function cachedAudio(text: string) {
+  try {
+    if (typeof caches === 'undefined') return null;
+    const cache = await caches.open(AUDIO_CACHE);
+    const address = await cacheAddress(text);
+    const kept = await cache.match(address);
+    if (!kept) return null;
+    if (Date.now() - Number(kept.headers.get('x-kept-at')) > CACHED_FOR_MS) {
+      await cache.delete(address);
+      return null;
+    }
+    return { blob: await kept.blob(), key: kept.headers.get('x-tts-audio') };
+  } catch {
+    return null;
+  }
+}
+
+async function keepAudio(text: string, blob: Blob, key: string | null) {
+  try {
+    if (typeof caches === 'undefined') return;
+    const cache = await caches.open(AUDIO_CACHE);
+    await cache.put(await cacheAddress(text), new Response(blob, {
+      headers: { 'content-type': 'audio/mpeg', 'x-kept-at': String(Date.now()), ...(key ? { 'x-tts-audio': key } : {}) },
+    }));
+    keptSinceTrim += 1;
+    if (keptSinceTrim < 25) return;
+    keptSinceTrim = 0;
+    const kept = await cache.keys();
+    await Promise.all(kept.slice(0, Math.max(0, kept.length - MAX_CACHED_PARAGRAPHS)).map(request => cache.delete(request)));
+  } catch {
+    // A cache that cannot be written only means asking the Worker next time.
+  }
+}
+
+/**
  * One paragraph spoken by PaperTok's voice, as MP3, with the name the Worker
  * stores it under. With `storedOnly` the Worker answers only from audio already
  * made, refusing with `AI_AUDIO_NOT_STORED` rather than spending credits.
  */
 export async function fetchParagraphAudio(text: string, { signal, storedOnly = false, paperId }: { signal?: AbortSignal; storedOnly?: boolean; paperId?: string } = {}) {
+  const kept = await cachedAudio(text);
+  if (kept) return kept;
   const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
   if (!apiBase) throw new ReadAloudError('AI_NOT_CONFIGURED');
   let response: Response;
@@ -111,7 +164,9 @@ export async function fetchParagraphAudio(text: string, { signal, storedOnly = f
     const body = await response.json().catch(() => null) as { code?: unknown; quota?: { scope?: unknown } } | null;
     throw new ReadAloudError(typeof body?.code === 'string' ? body.code : 'AI_UNAVAILABLE', typeof body?.quota?.scope === 'string' ? body.quota.scope : undefined);
   }
-  return { blob: await response.blob(), key: response.headers.get('x-tts-audio') };
+  const audio = { blob: await response.blob(), key: response.headers.get('x-tts-audio') };
+  void keepAudio(text, audio.blob, audio.key);
+  return audio;
 }
 
 /**
