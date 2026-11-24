@@ -6,13 +6,14 @@ import { FULL_TEXT_LEVEL, HIGHLIGHT_COLORS, MAX_QUOTE_LENGTH, highlightColor } f
 import { HIGHLIGHT_MIN_QUOTE_LENGTH } from '../../utils/text-highlights.ts';
 import type { PassageSelection } from './passage-range.ts';
 import type { HighlightColor } from '../../services/user-highlight-service.ts';
-import { blockPassage, blockText, overlapping, passageAt, passageRange, replacingHighlights, selectedPassage } from './passage-range.ts';
+import { annotationRange, blockPassage, blockText, overlapping, passageAt, replacingHighlights, selectedPassage } from './passage-range.ts';
 import { newestFirst } from './passage-order.ts';
 import { lastKnownAIUses, refreshAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 
 const PAINT = 'viewer-passage';
 const PENDING = 'viewer-passage-pending';
 const ACTIVE = 'viewer-passage-active';
+const HOVER = 'viewer-passage-hover';
 export const SAVE_ERROR = 'Could not save. Check your connection and try again.';
 
 export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string) {
@@ -41,7 +42,10 @@ export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string
     if (!passage || passage.quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return;
     setFailed(null);
     setOrigin(from);
-    notes.begin({ sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), occurrence: passage.occurrence, anchor: passage.anchor, context: passage.context.slice(0, 4_000) });
+    notes.begin({
+      sectionId: passage.sectionId, paragraphIndex: 0, quote: passage.quote.slice(0, MAX_QUOTE_LENGTH).trim(), occurrence: passage.occurrence, anchor: passage.anchor, context: passage.context.slice(0, 4_000),
+      ...(passage.endSectionId && passage.endQuote ? { endSectionId: passage.endSectionId, endQuote: passage.endQuote.slice(0, MAX_QUOTE_LENGTH).trim() } : {}),
+    });
   };
   const pick = (root: HTMLElement | null) => {
     if (root) pickPassage(selectedPassage(root), root);
@@ -58,9 +62,10 @@ export function useViewerNotes(paper: Paper, uid: string | null, aiLevel: string
   // A selection over the reader's own highlights replaces them, keeping their notes.
   const save = async (note: string, color?: HighlightColor) => {
     const passage = notes.pending;
-    const block = passage && document.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
+    // Only a passage inside one block replaces the highlights it overlaps there.
+    const block = passage && !passage.endSectionId && document.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
     const { note: text, replaced } = replacingHighlights(note, block && passage
-      ? overlapping(blockText(block), passage, passages.filter(item => item.kind === 'user' && item.sectionId === passage.sectionId))
+      ? overlapping(blockText(block), passage, passages.filter(item => item.kind === 'user' && item.sectionId === passage.sectionId && !item.endSectionId))
       : []);
     const saved = text ? await notes.saveNote(text, color) : await notes.highlight(color);
     if (saved) {
@@ -118,12 +123,13 @@ export function useTouchSelection(root: HTMLElement | null) {
   return root ? passage : null;
 }
 
-export function usePaintedPassages(root: HTMLElement | null, passages: Pick<PassageAnnotation, 'id' | 'sectionId' | 'quote' | 'color' | 'occurrence'>[], pending: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'> | null, active: string | null = null) {
+type Painted = Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence' | 'endSectionId' | 'endQuote'>;
+
+export function usePaintedPassages(root: HTMLElement | null, passages: (Painted & Pick<PassageAnnotation, 'id' | 'color'>)[], pending: Painted | null, active: string | null = null, hovered: string | null = null) {
   useEffect(() => {
     if (!root || typeof CSS === 'undefined' || !('highlights' in CSS)) return undefined;
-    const ranges = (list: Pick<PassageAnnotation, 'sectionId' | 'quote' | 'occurrence'>[]) => list.flatMap((passage) => {
-      const block = root.querySelector(`[data-passage="${CSS.escape(passage.sectionId)}"]`);
-      const range = block && passageRange(block, passage.quote, passage.occurrence);
+    const ranges = (list: Painted[]) => list.flatMap((passage) => {
+      const range = annotationRange(root, passage);
       return range ? [range] : [];
     });
     const paint = () => {
@@ -131,10 +137,23 @@ export function usePaintedPassages(root: HTMLElement | null, passages: Pick<Pass
         CSS.highlights.set(`${PAINT}-${color}`, new Highlight(...ranges(passages.filter(passage => highlightColor(passage) === color))));
         // The clicked passage is painted again, darker, above its colour's wash.
         const picked = new Highlight(...ranges(passages.filter(passage => passage.id === active && highlightColor(passage) === color)));
-        picked.priority = 1;
+        picked.priority = 2;
         CSS.highlights.set(`${ACTIVE}-${color}`, picked);
+        // The one under the pointer a shade darker too, as a click on it opens its note.
+        const pointed = new Highlight(...ranges(passages.filter(passage => passage.id === hovered && passage.id !== active && highlightColor(passage) === color)));
+        pointed.priority = 1;
+        CSS.highlights.set(`${HOVER}-${color}`, pointed);
       }
       CSS.highlights.set(PENDING, new Highlight(...ranges(pending ? [pending] : [])));
+      // A formula is drawn in boxes the painted text does not fill, so one a highlight covers takes its colour as a background.
+      const covering = passages.map(passage => ({ passage, ranges: ranges([passage]) }));
+      for (const formula of root.querySelectorAll<HTMLElement>('.ft-math')) {
+        const over = covering.find(({ passage, ranges: found }) => passage.id === active && found.some(range => range.intersectsNode(formula)))
+          ?? covering.find(({ ranges: found }) => found.some(range => range.intersectsNode(formula)));
+        if (over) formula.dataset.mark = highlightColor(over.passage);
+        else delete formula.dataset.mark;
+        formula.toggleAttribute('data-mark-active', over?.passage.id === active);
+      }
     };
     paint();
     let frame = 0;
@@ -149,8 +168,13 @@ export function usePaintedPassages(root: HTMLElement | null, passages: Pick<Pass
       for (const color of HIGHLIGHT_COLORS) {
         CSS.highlights.delete(`${PAINT}-${color}`);
         CSS.highlights.delete(`${ACTIVE}-${color}`);
+        CSS.highlights.delete(`${HOVER}-${color}`);
       }
       CSS.highlights.delete(PENDING);
+      for (const formula of root.querySelectorAll<HTMLElement>('.ft-math')) {
+        delete formula.dataset.mark;
+        formula.removeAttribute('data-mark-active');
+      }
     };
-  }, [root, passages, pending, active]);
+  }, [root, passages, pending, active, hovered]);
 }

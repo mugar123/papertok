@@ -570,11 +570,12 @@ service cloud.firestore {
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
             'paperId', 'level', 'language', 'sectionId', 'paragraphIndex',
-            'quote', 'endParagraphIndex', 'endQuote', 'kind', 'note',
+            'quote', 'endParagraphIndex', 'endQuote', 'endSectionId', 'kind', 'note',
             'color', 'occurrence', 'paperTitle', 'createdAt'
           ])
           && validNonEmptyString(request.resource.data.paperId, 400)
-          && validString(request.resource.data.quote, 1200)
+          // A note's passage, up to several paragraphs of the paper (MAX_QUOTE_LENGTH).
+          && validString(request.resource.data.quote, 10000)
           && request.resource.data.quote.size() >= 8
           && validNonEmptyString(request.resource.data.sectionId, 40)
           && request.resource.data.createdAt == request.time
@@ -614,9 +615,17 @@ service cloud.firestore {
             || (request.resource.data.endParagraphIndex is int
               && request.resource.data.endParagraphIndex > request.resource.data.paragraphIndex
               && request.resource.data.endParagraphIndex <= 100
-              && validNonEmptyString(request.resource.data.endQuote, 1200)))
+              && validNonEmptyString(request.resource.data.endQuote, 10000)))
+          // In the paper's own text a passage ends in another block, named by its id; never
+          // both ends at once, and only at that level.
+          && (!('endSectionId' in request.resource.data)
+            || (validNonEmptyString(request.resource.data.endSectionId, 40)
+              && request.resource.data.level == 'full-text'
+              && !('endParagraphIndex' in request.resource.data)
+              && validNonEmptyString(request.resource.data.endQuote, 10000)))
           && (!('endQuote' in request.resource.data)
-            || 'endParagraphIndex' in request.resource.data);
+            || 'endParagraphIndex' in request.resource.data
+            || 'endSectionId' in request.resource.data);
       }
 
       // The reader's own plain-words summaries (src/services/saved-summary-service.ts):

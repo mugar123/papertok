@@ -39,6 +39,7 @@ test('prepared passages update with clip metadata and queue changes, while seeki
       title: 'Results paper',
       onFallback: () => assert.fail('audio should be available'),
       onError: () => assert.fail('audio should play'),
+      onBlocked: () => assert.fail('the start should not be blocked'),
     }), { initialProps: { passages: queue } });
     unmount = view.unmount;
     assert.equal(view.result.current.prepared.ready, 0);
@@ -85,10 +86,12 @@ test('a refused passage is asked for again once the voice is back, and a blocked
     firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
     const queue: SpokenPassage[] = [{ passage: 'b0', utterances: ['The only result.'] }];
     const failures: string[] = [];
+    let stopsForPress = 0;
     const view = renderHook(() => useReadAloud(queue, [], {
       title: 'Results paper',
       onFallback: () => failures.push('fallback'),
       onError: () => failures.push('error'),
+      onBlocked: () => { stopsForPress += 1; },
     }));
     unmount = view.unmount;
     act(() => view.result.current.play(0));
@@ -107,11 +110,52 @@ test('a refused passage is asked for again once the voice is back, and a blocked
     await waitFor(() => assert.equal(view.result.current.playing, false));
     assert.equal(view.result.current.paragraph, 0);
     assert.equal(failures.length, 1);
+    assert.equal(stopsForPress, 1);
   } finally {
     unmount();
     worker.stop();
     await close();
     Clip.prototype.play = play;
+    if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
+    else Reflect.deleteProperty(globalThis, 'Audio');
+    Clip.instances = [];
+  }
+});
+
+test('the voice starts once every passage has arrived, and plays at the chosen speed', async () => {
+  const { useReadAloud, firebase, close } = await loadReadAloud();
+  const worker = stubWorker();
+  const route = worker.hold('/tts/paragraph');
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  let unmount = () => {};
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const queue: SpokenPassage[] = [
+      { passage: 'b0', utterances: ['The first result.'] },
+      { passage: 'b1', utterances: ['The second result.'] },
+    ];
+    const view = renderHook(() => useReadAloud(queue, [], {
+      title: 'Results paper',
+      onFallback: () => assert.fail('audio should be available'),
+      onError: () => assert.fail('audio should play'),
+      onBlocked: () => assert.fail('the start should not be blocked'),
+    }));
+    unmount = view.unmount;
+    act(() => { view.result.current.setSpeed(1.5); });
+    act(() => view.result.current.play(0));
+    await route.requested();
+    const playing = () => Clip.instances.find(clip => clip.src.startsWith('blob:'));
+    assert.equal(playing(), undefined, 'nothing plays while the audio is being prepared');
+    route.answer({});
+    await waitFor(() => assert.ok(playing()));
+    assert.equal((playing() as Clip & { playbackRate?: number }).playbackRate, 1.5);
+    act(() => { view.result.current.setSpeed(0.75); });
+    assert.equal((playing() as Clip & { playbackRate?: number }).playbackRate, 0.75);
+  } finally {
+    unmount();
+    worker.stop();
+    await close();
     if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
     else Reflect.deleteProperty(globalThis, 'Audio');
     Clip.instances = [];
@@ -154,6 +198,7 @@ test('system controls resume and seek the paper, and hidden playback advances to
       title,
       onFallback: () => assert.fail('audio should be available'),
       onError: () => assert.fail('audio should play'),
+      onBlocked: () => assert.fail('the start should not be blocked'),
     }), { initialProps: { title: 'A podcast paper' } });
     unmount = view.unmount;
     assert.equal(session.metadata, null);
@@ -210,6 +255,50 @@ test('system controls resume and seek the paper, and hidden playback advances to
   }
 });
 
+test('a browser voice that ends a sentence without starting it stops the reading instead of racing through the paper', async () => {
+  const { useReadAloud, firebase, close } = await loadReadAloud();
+  const worker = stubWorker();
+  const route = worker.hold('/tts/paragraph');
+  const spoken: Array<{ text: string; onend: (() => void) | null }> = [];
+  const originalSynthesis = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
+  const originalUtterance = Object.getOwnPropertyDescriptor(globalThis, 'SpeechSynthesisUtterance');
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { speak: (utterance: (typeof spoken)[number]) => spoken.push(utterance), cancel: () => {} } });
+  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', {
+    configurable: true,
+    value: class { text: string; lang = ''; onstart = null; onboundary = null; onend = null; onerror = null; constructor(text: string) { this.text = text; } },
+  });
+  let unmount = () => {};
+  let errors = 0;
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const view = renderHook(() => useReadAloud([{ passage: 'b0', utterances: ['Agents read untrusted text.', 'They follow it.'] }], [], {
+      title: 'Agents paper',
+      onFallback: () => {},
+      onError: () => { errors += 1; },
+      onBlocked: () => assert.fail('the start should not be blocked'),
+    }));
+    unmount = view.unmount;
+    act(() => view.result.current.play(0));
+    route.refuse(429, 'AI_QUOTA_EXHAUSTED');
+    await waitFor(() => assert.equal(spoken.length, 1));
+
+    act(() => spoken[0].onend?.());
+    assert.equal(errors, 1);
+    assert.equal(view.result.current.playing, false);
+    assert.equal(spoken.length, 1, 'the next sentence is not handed to a voice that said nothing');
+  } finally {
+    unmount();
+    worker.stop();
+    await close();
+    for (const [target, name, original] of [[window, 'speechSynthesis', originalSynthesis], [globalThis, 'SpeechSynthesisUtterance', originalUtterance], [globalThis, 'Audio', originalAudio]] as const) {
+      if (original) Object.defineProperty(target, name, original);
+      else Reflect.deleteProperty(target, name);
+    }
+  }
+});
+
 test('the browser voice\'s place moves with time when it reports no words, and follows its word boundaries when it does', async () => {
   const { useReadAloud, firebase, close } = await loadReadAloud();
   const worker = stubWorker();
@@ -235,6 +324,7 @@ test('the browser voice\'s place moves with time when it reports no words, and f
       title: 'Agents paper',
       onFallback: () => {},
       onError: () => assert.fail('the browser voice should read'),
+      onBlocked: () => assert.fail('the start should not be blocked'),
     }));
     unmount = view.unmount;
     act(() => view.result.current.play(0));

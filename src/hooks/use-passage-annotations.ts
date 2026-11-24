@@ -1,7 +1,7 @@
 import type { Paper } from '../models/paper.ts';
 import type { HighlightColor, UserHighlight } from '../services/user-highlight-service.ts';
 import type { ProductAnalyticsEvent } from '../services/analytics-service.ts';
-export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; occurrence?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
+export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; endSectionId?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; occurrence?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
 interface AnnotationOptions {
   uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
@@ -56,6 +56,12 @@ const IDLE = 'idle';
 export const FRESH_SETTLE_MS = 700;
 /** One frozen empty list, so "nothing to show" is a stable identity. */
 const EMPTY: readonly PassageAnnotation[] = Object.freeze([]);
+
+/** Where a passage ends when it runs past where it starts: a later paragraph of the rewrite, or a later block of the paper's text. */
+function passageEnd({ endParagraphIndex, endSectionId, endQuote }: PassageSelection) {
+  if (endSectionId !== undefined) return { endSectionId, endQuote };
+  return endParagraphIndex === undefined ? {} : { endParagraphIndex, endQuote };
+}
 
 export function usePassageAnnotations({
   uid,
@@ -153,8 +159,7 @@ export function usePassageAnnotations({
       sectionId: pending.sectionId,
       paragraphIndex: pending.paragraphIndex,
       quote: pending.quote,
-      endParagraphIndex: pending.endParagraphIndex,
-      endQuote: pending.endQuote,
+      ...passageEnd(pending),
       occurrence: pending.occurrence,
       kind,
       note,
@@ -225,8 +230,7 @@ export function usePassageAnnotations({
         sectionId: passage.sectionId,
         paragraphIndex: passage.paragraphIndex,
         quote: passage.quote,
-        endParagraphIndex: passage.endParagraphIndex,
-        endQuote: passage.endQuote,
+        ...passageEnd(passage),
         kind: 'ai',
         note: answer.note,
       });
@@ -243,7 +247,7 @@ export function usePassageAnnotations({
           sectionId: passage.sectionId,
           paragraphIndex: passage.paragraphIndex,
           quote: passage.quote,
-          ...(passage.endParagraphIndex === undefined ? {} : { endParagraphIndex: passage.endParagraphIndex, endQuote: passage.endQuote }),
+          ...passageEnd(passage),
           kind: 'ai',
           note: answer.note,
           fresh: true,

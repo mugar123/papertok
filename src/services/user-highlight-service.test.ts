@@ -159,6 +159,22 @@ test('a passage across paragraphs keeps where it ends', () => {
   assert.equal(noEndQuote && 'endParagraphIndex' in noEndQuote, false);
 });
 
+test('in the paper\'s own text a passage across blocks keeps the block it ends in, and only there', () => {
+  const base = { ...SPAN, level: 'full-text', sectionId: 'b12', paragraphIndex: 0 };
+  const stored = normalizeUserHighlight({ ...base, endSectionId: 'b14', endQuote: '  the third\n paragraph ' });
+  assert.equal(stored?.endSectionId, 'b14');
+  assert.equal(stored?.endQuote, 'the third paragraph');
+  assert.equal(stored && 'endParagraphIndex' in stored, false);
+  assert.notEqual(buildHighlightId(stored), buildHighlightId(normalizeUserHighlight(base)!), 'a longer passage is another highlight');
+
+  const sameBlock = normalizeUserHighlight({ ...base, endSectionId: 'b12', endQuote: 'the end' });
+  assert.equal(sameBlock && 'endSectionId' in sameBlock, false);
+  const rewrite = normalizeUserHighlight({ ...SPAN, endSectionId: 'b14', endQuote: 'the end' });
+  assert.equal(rewrite && 'endSectionId' in rewrite, false);
+  const long = normalizeUserHighlight({ ...base, quote: 'word '.repeat(2_500) });
+  assert.equal(long?.quote.length, 10_000);
+});
+
 // A font command the paragraph keeps (its removal would change a formula) must
 // stay in the stored quote: unwrapped on its own, the quote no longer occurs.
 test('a selection over a font command the paragraph keeps still marks after it is saved', () => {

@@ -139,10 +139,21 @@
 [data-passage-color="violet"] .rd-mark--pending.rd-mark--pending.rd-mark--pending { background: var(--accent-violet-soft); color: inherit; box-shadow: inset 0 -2px 0 var(--accent-violet); }
 [data-passage-color="rose"] .rd-mark--pending.rd-mark--pending.rd-mark--pending { background: var(--accent-rose-soft); color: inherit; box-shadow: inset 0 -2px 0 var(--accent-rose); }
 
+/* A saved highlight answers the pointer: an ink rule rises under it, since a click opens its note. */
+.rd-doc .rd-mark[data-highlight-id]:not([data-proposed], .rd-mark--pending) {
+  transition: box-shadow 150ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .rd-doc .rd-mark--user[data-highlight-id]:not([data-proposed], .rd-mark--pending):hover { box-shadow: inset 0 -2px 0 var(--accent-primary); }
+  .rd-doc:not([data-ai-marks='hidden']) .rd-mark--ai[data-highlight-id]:hover { box-shadow: inset 0 -3px 0 var(--accent-primary); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rd-mark[data-fresh] {
     animation: none;
   }
+
+  .rd-doc .rd-mark[data-highlight-id] { transition: none; }
 
   .rd-mark[data-fresh] {
     background-color: var(--rd-pen);

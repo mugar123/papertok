@@ -58,6 +58,7 @@ export async function loadReadAloud() {
       title: string;
       onFallback: (error: unknown) => void;
       onError: () => void;
+      onBlocked: () => void;
     }) => {
       playing: boolean;
       prepared: { ready: number; total: number; failed: boolean };
@@ -68,6 +69,7 @@ export async function loadReadAloud() {
       pause: () => void;
       seek: (seconds: number) => void;
       live: () => { seconds: number | null; fraction: number };
+      setSpeed: (speed: number) => void;
     } },
     import('./firebase-stub.ts').FirebaseStub,
   ]>('/src/components/pdf/use-read-aloud.ts', '/src/services/firebase.ts');
@@ -113,7 +115,7 @@ export async function loadReadingDock() {
     { ReadingDock: Component<{
       title: string; paper?: Paper; scroll: HTMLElement | null; contents: null;
       spoken: { queue: SpokenPassage[]; chapters: ReadAloudChapter[] } | null;
-      canListen: boolean; originalUrl: string;
+      canListen: boolean; topbar?: HTMLElement | null; originalUrl: string;
       notes: { id: string; open: boolean; count: number; onOpenChange: (open: boolean) => void } | null;
       children?: ReactNode;
     }> },

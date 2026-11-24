@@ -1,0 +1,22 @@
+/* The viewer's two tabs sit where the bar's title would. */
+.rd-reading-tabs { position: relative; justify-self: center; }
+/* The raised chip under the chosen tab; it slides on a switch, quickly, since tabs change often. */
+.rd-reading-chip {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+.rd-reading-tabs[data-placed] .rd-reading-chip {
+  transition: transform 200ms var(--ease-out), width 200ms var(--ease-out);
+}
+/* The chip draws the pressed tab's background, so the tab itself stays clear over it. */
+.rd-reading-tabs .rd-reading-tab { position: relative; z-index: 1; }
+.rd-reading-tabs .rd-reading-tab[data-pressed] { background: transparent; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rd-reading-tabs[data-placed] .rd-reading-chip { transition: none; }
+}

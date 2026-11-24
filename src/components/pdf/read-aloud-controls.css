@@ -1,0 +1,135 @@
+/* The voice's controls in the podcast tab. */
+
+/* One line, one block per section with a gap after it, as a video's chapters; a native range on top carries the semantics. */
+.rd-listen-track { position: relative; height: 24px; }
+.rd-listen-line {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 12px;
+  translate: 0 -50%;
+  pointer-events: none;
+}
+.rd-listen-part {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  min-width: 2px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  /* A light wash of the quiet ink, so what is still to play stands well apart from what has played;
+     where the voice is reads from the played ink and the thumb, and from the slider's value. */
+  background: color-mix(in srgb, var(--text-tertiary) 40%, var(--bg-primary));
+  transition: height 150ms var(--ease-out);
+}
+.rd-listen-part-fill { position: absolute; inset: 0 auto 0 0; background: var(--text-primary); }
+/* The line thickens under a mouse and while it is dragged, and the section under the pointer most. */
+@media (hover: hover) and (pointer: fine) {
+  .rd-listen-track:hover .rd-listen-part { height: 6px; }
+  .rd-listen-track:hover .rd-listen-part[data-pointed] { height: 10px; }
+}
+.rd-listen-track[data-dragging] .rd-listen-part { height: 6px; }
+.rd-listen-track[data-dragging] .rd-listen-part[data-pointed] { height: 10px; }
+.rd-listen-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  translate: -50% -50%;
+  border: 2px solid var(--bg-card);
+  border-radius: var(--radius-full);
+  background: var(--text-primary);
+  transition: scale 150ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .rd-listen-track:hover .rd-listen-thumb { scale: 1.2; }
+}
+.rd-listen-track[data-dragging] .rd-listen-thumb { scale: 1.4; }
+/* Until every passage has audio, the track is how much of it there is. */
+.rd-listen-progress {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  translate: 0 -50%;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--accent-secondary);
+  appearance: none;
+  overflow: hidden;
+}
+.rd-listen-progress::-webkit-progress-bar { background: var(--bg-secondary); }
+.rd-listen-progress::-webkit-progress-value { background: var(--accent-secondary); transition: width 200ms var(--ease-out); }
+.rd-listen-progress::-moz-progress-bar { background: var(--accent-secondary); }
+.rd-listen-track:not(:has(.rd-listen-progress)) { cursor: pointer; touch-action: none; }
+/* Keyboard only: the track reads the pointer itself, over the line's full width. */
+.rd-listen-track input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+/* The minute and section under the mouse, or where a drag would land, as a video names its chapter. */
+.rd-listen-tip {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: clamp(28px, var(--at, 50%), calc(100% - 28px));
+  display: flex;
+  gap: 6px;
+  padding: 3px 7px;
+  translate: -50% 0;
+  border-radius: var(--radius-sm);
+  background: var(--text-primary);
+  color: var(--bg-card);
+  font: 500 0.75rem/1.2 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+.rd-listen-tip span { font-family: var(--font-body); opacity: 0.85; }
+.rd-listen-track:has(input:focus-visible) { outline: 2px solid var(--accent-secondary); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+.rd-listen-transport { display: flex; align-items: center; gap: var(--space-2); }
+.rd-listen-time {
+  font: 500 0.75rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.rd-listen-left { justify-self: end; padding-right: var(--space-1); color: var(--text-tertiary); }
+.rd-listen-speed {
+  min-width: 44px;
+  font: 600 0.75rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.rd-listen-preparing {
+  padding-bottom: var(--space-2);
+  font: 500 0.75rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* The seconds written inside the circular arrow. */
+.rd-listen-skip { position: relative; }
+.rd-listen-skip span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+  font: 600 0.625rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-listen-part, .rd-listen-thumb { transition: none; }
+}

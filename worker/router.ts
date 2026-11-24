@@ -1,3 +1,5 @@
+import { readBoundedBytes } from './bounded-body.ts';
+import { MAX_REQUEST_BYTES as MAX_REWRITE_REQUEST_BYTES } from './ai-rewrite.ts';
 import { INSTITUTION_VERIFICATION_PATH, handleInstitutionVerificationRequest } from './institution-verification.ts';
 import { captureWorkerException } from './error-tracking.ts';
 import type { UpstreamError } from './provider-runtime.ts';
@@ -473,9 +475,14 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     try {
       const sessions = env.PAPER_REWRITE_SESSION;
       if (!sessions) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
-      // One object per request isolates generation CPU. Forward the body
-      // directly so the Free Worker does not execute per model fragment.
-      return await sessions.get(sessions.newUniqueId()).fetch(request);
+      // One object per request isolates generation CPU; its answer is relayed
+      // as it streams, so the Free Worker does not execute per model fragment.
+      // The request's own body, a few kilobytes, is read here first: the object
+      // can refuse before reading it, and a body still streaming into an object
+      // that has answered throws in the runtime.
+      const body = await readBoundedBytes(request, MAX_REWRITE_REQUEST_BYTES);
+      if (!body) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
+      return await sessions.get(sessions.newUniqueId()).fetch(new Request(request, { body }));
     } catch (error) {
       captureWorkerException(error);
       const knownError = error instanceof AIExplanationError;

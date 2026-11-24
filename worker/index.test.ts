@@ -3750,6 +3750,32 @@ test('a missing rewrite session binding fails closed instead of running on edge 
   assert.equal((await response.json<{ code: string }>()).code, 'AI_NOT_CONFIGURED');
 });
 
+test('a rewrite body over the cap is refused before it reaches the session, even without a declared length', async () => {
+  let sessions = 0;
+  const huge = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(JSON.stringify({ paper: { title: 'x'.repeat(120_000) }, level: 'university' })));
+      controller.close();
+    },
+  });
+  const request = new Request(REWRITE_ROUTE, {
+    method: 'POST',
+    body: huge,
+    duplex: 'half',
+    headers: { origin: 'https://mugar123.github.io', 'content-type': 'application/json', authorization: 'Bearer test-token' },
+  } as RequestInit);
+  const response = await reportApi.fetch(request, {
+    ...REWRITE_ENV,
+    PAPER_REWRITE_SESSION: {
+      newUniqueId: (() => 'rewrite-session') as unknown as Env['PAPER_REWRITE_SESSION']['newUniqueId'],
+      get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => { sessions += 1; return new Response(null); } })) as TestNamespace['get'],
+    } as Env['PAPER_REWRITE_SESSION'],
+  });
+  assert.equal(response.status, 413);
+  assert.equal((await response.json<{ code: string }>()).code, 'AI_REQUEST_TOO_LARGE');
+  assert.equal(sessions, 0);
+});
+
 test('an unavailable rewrite session returns a retryable error with CORS', async () => {
   const response = await reportApi.fetch(rewriteRequest(), {
     ...REWRITE_ENV,

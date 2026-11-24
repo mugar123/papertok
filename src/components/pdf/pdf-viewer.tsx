@@ -27,11 +27,16 @@ import { documentVisibility, startViewerTracking, viewerOutcome } from './viewer
 import { NotesSidebar, PassageEditor } from './viewer-notes.tsx';
 import { PassageHandles } from './passage-handles.tsx';
 import type { PassageSelection } from './passage-range.ts';
-import { passageAt, passageFromRange, passageRange } from './passage-range.ts';
+import { annotationRange, passageAt, passageFromRange } from './passage-range.ts';
 import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import UsesCount from '../reader/uses-count.tsx';
 import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-viewer-notes.ts';
 import { fullTextListen } from './read-aloud.ts';
+import { ReadingTabs } from './reading-tabs.tsx';
+import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
+import { passageQuote } from '../../services/user-highlight-service.ts';
+
+const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
@@ -175,6 +180,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // `consent` and `uid` drop it at once, and `analyticsSessionContext` checks again at each send.
   const { trackEvent, consent } = useAnalyticsConsent();
   const { user, readingPreferences } = useAuth();
+  // The plain-words reader as the viewer's second tab: it opens over the paper, and its Paper tab comes back.
+  const [plain, setPlain] = useState(false);
+  const canPlain = Boolean(user) && canRewritePaper(paper);
   const uid = user?.uid ?? '';
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
     void trackEvent(name, params, stillValid);
@@ -218,7 +226,11 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const [notesOpen, setNotesOpen] = useState(false);
   // The passage while its handles are dragged; it becomes the pending one when they are let go.
   const [dragged, setDragged] = useState<PassageSelection | null>(null);
-  usePaintedPassages(notesOn ? textScroll : null, notes.passages, dragged ?? notes.pending, notes.active);
+  // The highlight under the mouse, painted a shade darker.
+  const [hoveredPassage, setHoveredPassage] = useState<string | null>(null);
+  // The bar the podcast's round button is placed in.
+  const [topbar, setTopbar] = useState<HTMLDivElement | null>(null);
+  usePaintedPassages(notesOn ? textScroll : null, notes.passages, dragged ?? notes.pending, notes.active, hoveredPassage);
   // A note in the panel goes to its passage and marks it, as in the reader; on a phone the
   // notes cover the text, so they close to show it.
   const goToNote = (passage: PassageAnnotation) => {
@@ -231,7 +243,9 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // Over a highlight, a click opens the notes at it, so the pointer says so. The marks are
   // painted ranges, not elements, so the stylesheet cannot reach them.
   const pointAtHighlight = (event: ReactMouseEvent<HTMLDivElement>) => {
-    event.currentTarget.style.cursor = passageAt(event.target, notes.passages, event.clientX, event.clientY) ? 'pointer' : '';
+    const pointed = passageAt(event.target, notes.passages, event.clientX, event.clientY);
+    event.currentTarget.style.cursor = pointed ? 'pointer' : '';
+    setHoveredPassage(pointed?.id ?? null);
   };
   // A click on a highlight marks it and opens the notes at its entry. The text narrows as
   // the notes open, so the passage is brought back into view; on a phone the notes cover
@@ -268,14 +282,15 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
       >
         <div className="pdf-viewer">
           {/* Top bar */}
-          <div className="pdf-topbar">
+          <div className="pdf-topbar" ref={setTopbar}>
             <DialogClose render={<Button variant="ghost" size="icon-sm" />} aria-label={'Close paper'} title={'Close'}>
               <X size={18} aria-hidden="true" />
             </DialogClose>
 
             {/* The bar names the paper once the article's own title has scrolled
-                away, rising in from below; it leaves the way it came. */}
-            <AnimatePresence initial={false}>
+                away, rising in from below; it leaves the way it came. Where the paper
+                can be read in plain words, the bar holds the two tabs instead. */}
+            {canPlain ? <ReadingTabs current={plain ? 'plain' : 'paper'} onChange={view => setPlain(view === 'plain')} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
                   key="title"
@@ -288,10 +303,11 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                   {paper.title}
                 </motion.h3>
               )}
-            </AnimatePresence>
+            </AnimatePresence>}
           </div>
 
-          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined}>
+          {/* Under the Plain words tab the paper stays mounted, so its place waits, but out of reach. */}
+          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} inert={plain}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
                 <p>The text of this paper could not be loaded right now.</p>
@@ -303,7 +319,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             )}
 
             {fullText && showsText && (
-              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onMouseMove={notesOn && !coarsePointer ? pointAtHighlight : undefined} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
+              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onMouseMove={notesOn && !coarsePointer ? pointAtHighlight : undefined} onMouseLeave={() => setHoveredPassage(null)} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
                 const block = event.target as HTMLElement;
                 if (event.key !== 'Enter' || !block.matches('[data-passage]')) return;
                 event.preventDefault();
@@ -318,7 +334,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
               <PassageEditor
                 sheet={coarsePointer}
                 key={`${notes.pending.sectionId}:${notes.pending.quote}`}
-                quote={notes.pending.quote}
+                quote={passageQuote(notes.pending)}
                 anchor={notes.pending.anchor}
                 busy={notes.busy !== 'idle'}
                 error={notes.failed !== null}
@@ -345,8 +361,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
                 root={textScroll}
                 range={() => {
                   const shown = dragged ?? notes.pending;
-                  const block = shown && textScroll.querySelector(`[data-passage="${CSS.escape(shown.sectionId)}"]`);
-                  return block && shown ? passageRange(block, shown.quote, shown.occurrence) : null;
+                  return shown ? annotationRange(textScroll, shown) : null;
                 }}
                 onMove={(range) => setDragged(passageFromRange(textScroll, range))}
                 onEnd={(range) => {
@@ -375,7 +390,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {fullText !== undefined && (
             <ReadingDock
               title={paper.title} paper={paper} scroll={showsText ? textScroll : null}
-              spoken={spoken} canListen={Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
+              spoken={spoken} topbar={topbar} canListen={!plain && Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
               notes={notesOn ? { id: 'viewer-notes', open: notesOpen, count: notes.passages.length, onOpenChange: setNotesOpen } : null}
               originalUrl={dockUrl}
               menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText
@@ -441,6 +456,11 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             />}
           </div>
         </div>
+        {plain && (
+          <Suspense fallback={null}>
+            <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={() => setPlain(false)} />
+          </Suspense>
+        )}
       </DialogContent>
     </Dialog>
   );

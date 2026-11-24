@@ -135,7 +135,10 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { rewriteUseHint } from './rewrite-use-hint.ts';
+import { currentAIUses } from './current-ai-uses.ts';
+import { markSeparatorLineEnds } from './separator-line-ends.ts';
+import UsesCount from '../reader/uses-count.tsx';
+import '../ui/tag.css';
 import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
@@ -546,7 +549,7 @@ const PaperCard = memo(function PaperCard({
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
   const { institution, user, readingPreferences } = useAuth();
-  const { language, locale } = useLanguage();
+  const { language } = useLanguage();
   const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(user?.uid));
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
@@ -827,6 +830,17 @@ const PaperCard = memo(function PaperCard({
   // above that rule: held at its closed height, the glyph stays put behind
   // the names instead of sliding down with the rule.
   const watermarkRef = useRef<HTMLSpanElement | null>(null);
+  // A separator the row wraps after is left hanging at the end of its line, as "2020 ·", so it is hidden there.
+  const metaRef = useRef<HTMLDivElement | null>(null);
+  // When what the row holds changes, as a late citation count or the uses tag can move the break; the observer covers resizes.
+  useLayoutEffect(() => markSeparatorLineEnds(metaRef.current), [paper.id, paper.citationCount, paper.year, quota]);
+  useEffect(() => {
+    const meta = metaRef.current;
+    if (!meta) return undefined;
+    const observer = new ResizeObserver(() => markSeparatorLineEnds(meta));
+    observer.observe(meta);
+    return () => observer.disconnect();
+  }, []);
   const holdWatermark = () => {
     const mark = watermarkRef.current;
     if (!mark || mark.style.height) return;
@@ -1660,8 +1674,12 @@ const PaperCard = memo(function PaperCard({
     openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
   } : paper, [paper, resolvedOpenCopy]);
   const canRequestRewrite = canRewritePaper(readablePaper);
+  const usesNow = currentAIUses(quota, { now: Date.now(), online: navigator.onLine });
+  const firstTarget = openTargetsForPaper(paper, resolvedOpenCopy, currentInstitutionAccess)[0];
+  const inlineTarget = firstTarget?.mode === 'inline' ? firstTarget : null;
   const rewriteHint = canRequestRewrite && !publicMode && user && isCardVisible
-    ? rewriteUseHint(navigator.onLine ? quota : null, Boolean(getCachedRewrite(readablePaper, readingPreferences.aiExplanationLevel)), locale)
+    // The uses left are the masthead's tag; under the button only a saved version, which opens free.
+    ? (getCachedRewrite(readablePaper, readingPreferences.aiExplanationLevel) ? 'Open this version for free.' : '')
     : '';
 
   // Never the library link: it only opens for readers at that institution.
@@ -2023,83 +2041,93 @@ const PaperCard = memo(function PaperCard({
             />
           )}
         </div>
-        <div className="pc-meta">
-          {primaryTopic ? (
-            <button
-              type="button"
-              className="pc-masthead-field pc-topic-link"
-              onClick={(event) => openTopic(event, primaryTopic)}
-              title={`${'Explore'} ${categoryLabel}`}
-            >
-              {categoryLabel}
-            </button>
-          ) : categoryLabel && (
-            <span className="pc-masthead-field">{categoryLabel}</span>
-          )}
-          {/* Each item brings the dot in front of it. A paper can have no
-              year (a PubMed record printed next year), and a dot after the
-              field then stood beside an empty date. */}
-          {reason && (
-            <>
-              {categoryLabel && <span className="pc-meta-dot">·</span>}
-              <span className="pc-feed-reason">
-                {reason.kind === 'follow' && reason.followType === 'author' && <UserCheck size={12} aria-hidden="true" />} {reason.text}
-              </span>
-            </>
-          )}
-          {paper.year ? (
-            <>
-              {(categoryLabel || reason) && <span className="pc-meta-dot">·</span>}
-              <span className="pc-date">{paper.year}</span>
-            </>
-          ) : null}
-          {acceptedAt && (
-            <>
-              {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot">·</span> : null}
-              <span className="pc-accepted">{acceptedAt}</span>
-            </>
-          )}
-
-          {(paper.citationCountKnown || paper.citationCount! > 0) && (
-            <>
-              {/* El modificador es lo que le da a este punto el mismo fundido
-                  que al chip: los dos montan juntos, y cuando el
-                  enriquecimiento se pasa del techo montan tarde juntos. */}
-              {(categoryLabel || reason || paper.year || acceptedAt) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
-              {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
-                <a
-                  className="pc-citations"
-                  href={safeExternalUrl(paper.scopusCitedByUrl) || undefined}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => event.stopPropagation()}
-                  aria-label={`${paper.citationCount!.toLocaleString('en-US')} ${'citations on Scopus'}`}
-                >
-                  {paper.citationCount!.toLocaleString('en-US')} {'citations on Scopus'}
-                </a>
-              ) : (
-                <span className="pc-citations">
-                  {paper.citationCount!.toLocaleString('en-US')} {'citations'}
+        <div ref={metaRef} className="pc-meta">
+          {/* The paper's details wrap among themselves; the uses tag keeps to the first line's end. */}
+          <div className="pc-meta-items">
+            {primaryTopic ? (
+              <button
+                type="button"
+                className="pc-masthead-field pc-topic-link"
+                onClick={(event) => openTopic(event, primaryTopic)}
+                title={`${'Explore'} ${categoryLabel}`}
+              >
+                {categoryLabel}
+              </button>
+            ) : categoryLabel && (
+              <span className="pc-masthead-field">{categoryLabel}</span>
+            )}
+            {/* Each item brings the dot in front of it. A paper can have no
+                year (a PubMed record printed next year), and a dot after the
+                field then stood beside an empty date. */}
+            {reason && (
+              <>
+                {categoryLabel && <span className="pc-meta-dot">·</span>}
+                <span className="pc-feed-reason">
+                  {reason.kind === 'follow' && reason.followType === 'author' && <UserCheck size={12} aria-hidden="true" />} {reason.text}
                 </span>
-              )}
-            </>
-          )}
-          {(studyTypeLabel || trialUrl) && (
-            <div className="pc-evidence">
-              {studyTypeLabel && <span>{studyTypeLabel}</span>}
-              {trialUrl && (
-                <a
-                  href={trialUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`${paper.trialRegistration} on ClinicalTrials.gov (opens in a new tab)`}
-                  onClick={event => event.stopPropagation()}
-                >
-                  {paper.trialRegistration}
-                </a>
-              )}
-            </div>
-          )}
+              </>
+            )}
+            {paper.year ? (
+              <>
+                {(categoryLabel || reason) && <span className="pc-meta-dot">·</span>}
+                <span className="pc-date">{paper.year}</span>
+              </>
+            ) : null}
+            {acceptedAt && (
+              <>
+                {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot">·</span> : null}
+                <span className="pc-accepted">{acceptedAt}</span>
+              </>
+            )}
+
+            {(paper.citationCountKnown || paper.citationCount! > 0) && (
+              <>
+                {/* The modifier gives this dot the chip's fade: the two mount
+                    together, and when enrichment runs past the ceiling they
+                    mount late together. */}
+                {(categoryLabel || reason || paper.year || acceptedAt) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+                {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
+                  <a
+                    className="pc-citations"
+                    href={safeExternalUrl(paper.scopusCitedByUrl) || undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label={`${paper.citationCount!.toLocaleString('en-US')} ${'citations on Scopus'}`}
+                  >
+                    {paper.citationCount!.toLocaleString('en-US')} {'citations on Scopus'}
+                  </a>
+                ) : (
+                  <span className="pc-citations">
+                    {paper.citationCount!.toLocaleString('en-US')} {'citations'}
+                  </span>
+                )}
+              </>
+            )}
+            {(studyTypeLabel || trialUrl) && (
+              <div className="pc-evidence">
+                {studyTypeLabel && <span>{studyTypeLabel}</span>}
+                {trialUrl && (
+                  <a
+                    href={trialUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${paper.trialRegistration} on ClinicalTrials.gov (opens in a new tab)`}
+                    onClick={event => event.stopPropagation()}
+                  >
+                    {paper.trialRegistration}
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+          {/* The day's AI uses, as the reader shows them, at the first line's far end: what reading in plain words would spend. */}
+          {canRequestRewrite && !publicMode && user && usesNow ? (
+            <span className="rd-tag rd-tag--ai rd-uses pc-uses">
+              <Sparkle size={12} aria-hidden="true" />
+              <UsesCount left={usesNow.left} limit={usesNow.limit} />
+            </span>
+          ) : null}
         </div>
 
         {/* On a phone the title opens the abstract sheet, which shows it
@@ -2641,6 +2669,11 @@ const PaperCard = memo(function PaperCard({
             originRect={readerOrigin}
             closeRef={readerCloseRef}
             onClose={() => setShowReader(false)}
+            // The Paper tab only where Read would open the paper in the viewer, and with the copy Read would open.
+            onPaperTab={inlineTarget ? () => {
+              setShowReader(false);
+              void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}), pdfUrl: inlineTarget.url, openAccess: true }, analyticsSurface, readerMenu);
+            } : undefined}
           />
         </Suspense>,
         document.body,

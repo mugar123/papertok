@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Block, FullText, Inline } from '../../utils/full-text.ts';
-import { chapterAt, fullTextListen, locateInListen, matchSpokenWords, readAloudStart, readAloudTimeline, spokenInlines, spokenWordAt, wordStarts } from './read-aloud.ts';
+import { chapterAt, fullTextListen, locateInListen, readAloudStart, readAloudTimeline, spokenInlines, spokenWordAt, wordStarts } from './read-aloud.ts';
 
 const text = (value: string) => ({ t: 'text' as const, text: value });
 const p = (...children: Inline[]): Block => ({ t: 'p', children });
@@ -21,6 +21,14 @@ test('spoken text keeps inline maths as words and drops citation marks', () => {
     { t: 'ref', target: 'S2.F3', children: [text('Figure 3')] },
     text('.'),
   ]), 'The rate α doubles , as in Figure 3.');
+});
+
+test('the brackets a group of citations leaves behind are not read or shown', () => {
+  const cite = (n: number) => ({ t: 'ref' as const, target: `bib.bib${n}`, cites: true as const, children: [text(`${n}`)] });
+  const { queue } = fullTextListen(doc([
+    p(text('Word vectors ['), cite(82), text(', '), cite(102), text('] fed models ['), cite(24), text(',,'), cite(81), text(' ] ('), cite(5), text(').')),
+  ]), { withAbstract: false });
+  assert.deepEqual(queue[0].utterances, ['Word vectors fed models.']);
 });
 
 test('the listen reads headings before their text, announces display formulas and skips figures and tables', () => {
@@ -117,37 +125,5 @@ test('the word being spoken follows ElevenLabs\' timings, and is estimated from 
   assert.equal(wordStarts(text, { characters: [...'Other text'], character_start_times_seconds: [] }), null);
   assert.equal(spokenWordAt(text, null, { seconds: null, fraction: 0.5 }), 1);
   assert.equal(spokenWordAt(text, null, { seconds: null, fraction: 1 }), 2);
-});
-
-test('spoken words find their word on the page past citation marks and formulas read out', () => {
-  const page = 'learned using word vectors [82, 102] and fed to $x^2$ models'.split(' ');
-  const spoken = 'learned using word vectors and fed to x squared models'.split(' ');
-  assert.deepEqual(
-    matchSpokenWords(spoken, page).map(index => page[index]),
-    ['learned', 'using', 'word', 'vectors', 'and', 'fed', 'to', 'to', 'to', 'models'],
-  );
-});
-
-test('spoken words catch up past long runs of citations, and a heading read first is not matched', () => {
-  const words = (text: string) => text.split(' ');
-  const onPage = (spoken: string[], page: string[]) => matchSpokenWords(spoken, page).map(index => page[index]);
-
-  const numbered = words('we use Adam [1, 2, 3, 4, 5, 6, 7, 8, 9] to train the network');
-  assert.deepEqual(onPage(words('we use Adam to train the network'), numbered), ['we', 'use', 'Adam', 'to', 'train', 'the', 'network']);
-
-  const authorYear = words('as shown before (Smith et al., 2019; Jones et al., 2020; Lee et al., 2021) the models learn fast');
-  assert.deepEqual(onPage(words('as shown before the models learn fast'), authorYear), ['as', 'shown', 'before', 'the', 'models', 'learn', 'fast']);
-
-  // A citation between two words does not send them to the same pair in a later sentence.
-  const repeated = words('Language models [3] are powerful. Such models are used widely.');
-  assert.deepEqual(
-    onPage(words('Language models are powerful. Such models are used widely.'), repeated),
-    ['Language', 'models', 'are', 'powerful.', 'Such', 'models', 'are', 'used', 'widely.'],
-  );
-  assert.deepEqual(matchSpokenWords(words('Language models are powerful.'), repeated), [0, 1, 3, 4]);
-
-  // The heading "Methods." is said first; the caller blanks its words, as they are not in the block.
-  const paragraph = words('Methods matter. We describe methods here');
-  assert.deepEqual(onPage(['', ...words('Methods matter. We describe methods here')], paragraph), ['Methods', 'Methods', 'matter.', 'We', 'describe', 'methods', 'here']);
 });
 

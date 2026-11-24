@@ -11,6 +11,12 @@ interface PaperReaderProps {
   closeRef?: Ref<() => void> | null;
   /** The level to open at instead of the reader's default (the summary history opens the one it lists). */
   initialLevel?: ReadingLevel;
+  /** Opens the paper itself, when the reader is one of two tabs with the paper viewer. */
+  onPaperTab?: () => void;
+  /** Drawn inside the paper viewer as its Plain words tab, rather than as a dialog of its own. */
+  embedded?: boolean;
+  /** Inside the viewer, how a menu action leaves: the viewer closes, then the action runs. */
+  onLeave?: (then: () => void) => void;
 }
 export type ReaderCopy = typeof COPY.en;
 import { useCallback, useEffect, useEffectEvent, useId, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -69,7 +75,9 @@ import { OutlineList, OutlineRail } from '../pdf/full-text-outline.tsx';
 import { PassageHandles } from '../pdf/passage-handles.tsx';
 import { overlapping, quoteOffsets, replacingHighlights } from '../pdf/passage-range.ts';
 import { useOutlineActive } from '../pdf/use-outline.ts';
-import { ListRowAuthors } from '../lists/list-row.tsx';
+import { PaperAuthors } from '../pdf/paper-byline.tsx';
+import { ReadingTabs } from '../pdf/reading-tabs.tsx';
+import { acceptedConferenceText } from '../../utils/paper-status.ts';
 import HighlightedScientificText from './highlighted-scientific-text.tsx';
 import UsesCount from './uses-count.tsx';
 import ThinkingDots from './thinking-dots.tsx';
@@ -380,7 +388,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
   );
 }
 
-export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel }: PaperReaderProps) {
+export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel, onPaperTab, embedded = false, onLeave }: PaperReaderProps) {
   const { user, readingPreferences } = useAuth();
   const uid = user?.uid;
   const { trackEvent, consent } = useAnalyticsConsent();
@@ -443,8 +451,12 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
    * the one moment the card is told. The card keeps its one-line mount.
    */
   const afterClose = useRef<(() => void) | null>(null);
+  // The Paper tab closes the reader the way its X does, so the press ends on the reader rather
+  // than on whatever is under it once it is gone, and then hands over to the paper.
+  const toPaper = useRef(false);
   const [open, setOpen] = useState(true);
-  const requestClose = useCallback(() => setOpen(false), []);
+  // Inside the viewer there is no dialog of its own to play a leave: closing is the viewer's.
+  const requestClose = useCallback(() => (embedded ? onClose() : setOpen(false)), [embedded, onClose]);
   const readerOpenTracked = useRef(false);
   useEffect(() => {
     if (readerOpenTracked.current) return;
@@ -475,6 +487,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   const paperId = paper?.id || paper?.doi || paper?.arxivId || '';
   // The journal's name opens its Explorer page (ENG-123).
   const journal = journalExplorerLink(paper);
+  const acceptedAt = acceptedConferenceText(paper);
 
   const load = useCallback(async (targetLevel: string, {
     force = false,
@@ -1152,7 +1165,11 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
     clearAskError();
   }, [askError, clearAskError]);
 
-  return (
+  /* As the viewer's Plain words tab, the reader is a region of the viewer's own dialog, which
+     already owns the focus trap, Escape and the scrim; opened from a card, it is a dialog. */
+  const shell = (body: ReactNode) => (embedded ? (
+    <div className="rd rd--embedded" role="region" aria-label={copy.title}>{body}</div>
+  ) : (
     /* A full-screen Base UI Dialog: modal (FeedContainer's scroll guard reads
        the `aria-modal` it sets), with pointer dismissal off because a surface
        that covers the viewport has no outside to press — and the selection
@@ -1162,7 +1179,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
     <Dialog
       open={open}
       onOpenChange={(next) => { if (!next) requestClose(); }}
-      onOpenChangeComplete={(next) => { if (!next) { onClose(); afterClose.current?.(); } }}
+      onOpenChangeComplete={(next) => { if (!next) { if (toPaper.current && onPaperTab) onPaperTab(); else onClose(); afterClose.current?.(); } }}
       modal
       disablePointerDismissal
     >
@@ -1174,7 +1191,14 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
         aria-label={copy.title}
         style={{ '--rd-origin': transformOrigin }}
       >
-          <header className="rd-topbar">
+        {body}
+      </DialogContent>
+    </Dialog>
+  ));
+
+  return shell(<>
+          {/* As the viewer's tab, the viewer's own bar stays above the reader, its tabs and close included. */}
+          {!embedded && <header className="rd-topbar">
             <Button
               ref={closeButtonRef}
               variant="ghost"
@@ -1186,8 +1210,14 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
               <X size={18} aria-hidden="true" />
             </Button>
             {/* The bar names the paper once the document's own title has scrolled
-                away, rising in from below; it leaves the way it came. */}
-            <AnimatePresence initial={false}>
+                away, rising in from below; it leaves the way it came. Opened as the
+                viewer's tab, the bar holds the two tabs instead. */}
+            {onPaperTab ? <ReadingTabs current="plain" onChange={(view) => {
+              if (view !== 'paper') return;
+              if (embedded) { onPaperTab(); return; }
+              toPaper.current = true;
+              requestClose();
+            }} /> : <AnimatePresence initial={false}>
               {!titleInView && (
                 <motion.p
                   key="title"
@@ -1200,8 +1230,8 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
                   <ScientificText>{paper?.title}</ScientificText>
                 </motion.p>
               )}
-            </AnimatePresence>
-          </header>
+            </AnimatePresence>}
+          </header>}
 
         {/* The viewer's stage: the notes take the right of it, and the paper and its dock move over. */}
         <div className="pdf-stage rd-stage" data-notes-open={notesOpen || undefined}>
@@ -1215,7 +1245,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
-            {(usesQuota || sections.length > 0 || paper?.year || journal) && (
+            {(usesQuota || sections.length > 0 || paper?.year || journal || acceptedAt) && (
               <div className="rd-doc-tags">
                 {usesQuota && (
                   <span className="rd-tag rd-tag--ai rd-uses" role="status">
@@ -1230,6 +1260,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
                   </InfoTag>
                 )}
                 {paper?.year && <span className="rd-tag">{paper.year}</span>}
+                {acceptedAt && <span className="rd-tag">{acceptedAt}</span>}
                 {journal && (
                   <Link
                     to={journal.path}
@@ -1257,7 +1288,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             {/* The rule under the byline closes the head even with no authors to
                 list, as when a summary reopens from the history. */}
             <div className="rd-doc-byline">
-              {(paper?.authors?.length ?? 0) > 0 && <ListRowAuthors paper={paper} />}
+              {paper && <PaperAuthors paper={paper} />}
             </div>
 
             {/* Pointed at by every paragraph's `aria-describedby` below,
@@ -1476,7 +1507,11 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
           scroll={scrollElement} spoken={null} canListen={false}
           notes={{ id: 'reader-notes', open: notesOpen, count: orderedAnnotations.length, onOpenChange: setNotesOpen }}
           originalUrl={originalUrl}
-          menu={card ? { paper: card.paper, doc: null, fromCard: card.menu, onLeave: then => { afterClose.current = then; requestClose(); } } : undefined}
+          menu={card ? { paper: card.paper, doc: null, fromCard: card.menu, onLeave: then => {
+            if (embedded && onLeave) { onLeave(then); return; }
+            afterClose.current = then;
+            requestClose();
+          } } : undefined}
           contents={outline.items.length > 0 ? close => <OutlineList {...outline} onPick={close} /> : null}
         >
           <Select
@@ -1540,7 +1575,5 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             onCancel={() => { setFailedNote(null); annotations.dismiss(); }}
           />
         )}
-      </DialogContent>
-    </Dialog>
-  );
+  </>);
 }

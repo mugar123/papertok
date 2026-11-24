@@ -29,7 +29,8 @@ export function spokenInlines(content: Inline[]): string {
   }).join('');
 }
 
-const tidy = (text: string) => text.replace(/\s+/g, ' ').replace(/\s+([,.;:)])/g, '$1').replace(/\(\s*\)|\[\s*\]/g, '').trim();
+// A citation's brackets with nothing left in them but its separators, as "[, ]" or "(;)", go with it.
+const tidy = (text: string) => text.replace(/\s*(\([\s,;]*\)|\[[\s,;]*\])/g, '').replace(/\s+/g, ' ').replace(/\s+([,.;:)])/g, '$1').trim();
 
 const sentenceSegmenter = typeof Intl.Segmenter === 'function'
   ? new Intl.Segmenter('en', { granularity: 'sentence' })
@@ -126,6 +127,23 @@ export function fullTextListen(doc: Pick<FullText, 'abstract' | 'body'>, { withA
   return { queue, chapters: chapters.filter((chapter, index) => chapter.first < queue.length && chapter.first !== chapters[index + 1]?.first) };
 }
 
+/** Minutes and seconds, as a player shows them. */
+export function clock(seconds: number) {
+  const [minutes, rest] = minutesAndSeconds(seconds);
+  return `${minutes}:${String(rest).padStart(2, '0')}`;
+}
+
+/** The same time in words, for a screen reader: "3 min 7 s". */
+export function spokenClock(seconds: number) {
+  const [minutes, rest] = minutesAndSeconds(seconds);
+  return `${minutes} min ${rest} s`;
+}
+
+function minutesAndSeconds(seconds: number) {
+  const whole = Math.max(0, Math.floor(seconds));
+  return [Math.floor(whole / 60), whole % 60] as const;
+}
+
 /** The voice speaks about this many characters a second, until a clip's real length is known. */
 export const CHARS_PER_SECOND = 15;
 
@@ -203,36 +221,4 @@ export function spokenWordAt(text: string, starts: number[] | null, { seconds, f
   const at = fraction * text.length;
   const found = spans.findIndex(([, end]) => at < end);
   return found === -1 ? spans.length - 1 : found;
-}
-
-const letters = (word: string) => word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-
-/**
- * For each spoken word, the word on the page it reads. The voice leaves out
- * citation marks and reads formulas as words, so a word is matched by itself
- * within the next few words on the page; failing that, where it and the next
- * spoken word stand together further on, which catches up past a long run of
- * citations. A word with no letters, or one the page does not have, stays on
- * the last match.
- */
-export function matchSpokenWords(spoken: readonly string[], page: readonly string[], lookahead = 8) {
-  const said = spoken.map(letters);
-  const shown = page.map(letters);
-  let cursor = 0;
-  const take = (index: number) => {
-    cursor = index + 1;
-    return index;
-  };
-  return said.map((word, index) => {
-    if (word) {
-      for (let at = cursor; at < Math.min(shown.length, cursor + lookahead); at += 1) {
-        if (shown[at] === word) return take(at);
-      }
-      const next = said[index + 1];
-      for (let at = cursor; at < shown.length; at += 1) {
-        if (shown[at] === word && (!next || shown[at + 1] === next)) return take(at);
-      }
-    }
-    return Math.max(0, cursor - 1);
-  });
 }

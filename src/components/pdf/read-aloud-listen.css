@@ -1,0 +1,358 @@
+/* The way into the podcast tab: a round button in the top bar's last corner, the podcast's download beside it. */
+.rd-listen-corner { grid-column: 3; justify-self: end; display: flex; gap: var(--space-1); align-items: center; }
+.rd-listen-toggle { border-radius: 50%; }
+
+/* The podcast tab: over the paper's text in the viewer's stage, in the app's theme. The particles are
+   the brand's yellow, rose and violet; the accent marks the timeline and the chapters. */
+.rd-podcast {
+  --podcast-mesh: var(--text-tertiary);
+  --podcast-accent: var(--accent-primary);
+  --podcast-visual-from: var(--brand-yellow);
+  /* Lightened on paper; the night theme's own rose and violet are light already. */
+  --podcast-visual-via: color-mix(in oklab, var(--accent-rose) 60%, white);
+  --podcast-visual-to: color-mix(in oklab, var(--accent-violet) 60%, white);
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Centred while it fits; once taller than the stage (a phone), it starts at the top and scrolls. */
+  justify-content: safe center;
+  gap: 0;
+  padding: var(--space-6) var(--space-4) max(var(--space-10), env(safe-area-inset-bottom));
+  overflow: hidden auto;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  animation: rd-podcast-in 200ms var(--ease-out);
+  /* The chapters panel's width; on a wide screen the tab moves over by it, as the paper does for the notes. */
+  --podcast-drawer-w: min(360px, 90vw);
+  transition: padding-right 240ms var(--ease-out);
+}
+@media (min-width: 601px) {
+  .rd-podcast[data-chapters-open] { padding-right: calc(var(--podcast-drawer-w) + var(--space-4)); }
+}
+@keyframes rd-podcast-in { from { opacity: 0; } }
+
+:root[data-theme='dark'] .rd-podcast {
+  --podcast-visual-via: var(--accent-rose);
+  --podcast-visual-to: var(--accent-violet);
+  --podcast-accent: var(--brand-yellow);
+}
+
+.rd-podcast-cover { margin-bottom: var(--space-8); }
+/* The section's name labels the sentence under it; the controls stand apart from both. */
+.rd-podcast-player { flex: none; display: flex; flex-direction: column; align-items: center; width: min(100%, 640px); }
+.rd-podcast-player > .rd-podcast-dock, .rd-podcast-player > .rd-listen-track { width: 100%; margin-bottom: var(--space-6); }
+.rd-podcast-cover { flex: none; width: min(52vh, 420px, 100%); aspect-ratio: 1; }
+/* On a phone the forms are the cover at the top, large as a player's artwork, with room left for the caption. */
+@media (max-width: 600px) {
+  /* The screen's height less what the bars, the section and about four lines of caption need, so a
+     short phone shrinks the forms rather than hiding the caption under the controls; the header's room too. */
+  .rd-podcast-cover { width: min(84vw, max(96px, 100dvh - 540px)); margin-bottom: var(--space-5); }
+  .rd-podcast-caption { margin-bottom: var(--space-6); }
+}
+.rd-podcast-visual { display: block; width: 100%; height: 100%; }
+.rd-podcast-forms { position: relative; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.rd-podcast-forms > * { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rd-podcast-forms-glow { filter: blur(5px); }
+
+/* The paper and the section the voice is in, small, over the caption; on a narrow screen it wraps rather than cutting the title short. */
+.rd-podcast-title {
+  flex: none;
+  max-width: min(100%, 760px);
+  margin: 0 0 var(--space-2);
+  font: 600 0.8125rem/1.3 var(--font-body);
+  color: var(--text-secondary);
+  text-align: center;
+  text-wrap: balance;
+}
+/* The paper's title over everything, centred. */
+.rd-podcast-header { flex: none; width: 100%; margin-bottom: var(--space-6); text-align: center; }
+.rd-podcast-header-title { margin: 0; font: 600 1.125rem/1.3 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
+
+/* The sentence being read, as a large caption: spoken words in ink, the current one marked. */
+.rd-podcast-caption {
+  flex: none;
+  width: min(100%, 760px);
+  margin-bottom: var(--space-8);
+  overflow: hidden;
+  transition: height 250ms var(--ease-in-out);
+}
+.rd-podcast-text {
+  margin: 0;
+  min-height: calc(2 * 1.45em);
+  font: 400 clamp(1.25rem, 1rem + 1vw, 1.75rem)/1.45 var(--font-serif);
+  text-align: center;
+  text-wrap: balance;
+  color: var(--text-tertiary);
+}
+.rd-podcast-text [data-said] { color: var(--text-primary); }
+/* A new piece of caption and a new section enter softly: the piece, every few seconds, only rises and
+   fades in; the section, rarely, also comes out of a blur. Under reduced motion both only fade. */
+.rd-podcast-piece { display: block; animation: rd-podcast-piece-in 200ms var(--ease-out) both; }
+.rd-podcast-section { animation: rd-podcast-section-in 300ms var(--ease-out) both; }
+@keyframes rd-podcast-piece-in { from { opacity: 0; translate: 0 6px; } }
+@keyframes rd-podcast-section-in { from { opacity: 0; translate: 0 12px; filter: blur(4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .rd-podcast-piece, .rd-podcast-section { animation-name: rd-podcast-fade-in; }
+}
+@keyframes rd-podcast-fade-in { from { opacity: 0; } }
+.rd-podcast-text [data-current] {
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--podcast-accent) 28%, transparent);
+  color: var(--text-primary);
+}
+
+/* As a music player: the buttons in a row, the transport centred between the speed and the
+   chapters, and under it the line with its minute at one end and what is left at the other. */
+.rd-podcast-dock { display: grid; gap: var(--space-2); width: min(100%, 640px); }
+.rd-podcast-buttons { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+/* The speed's text starts where the minute under it does: its box reaches out by its own inset. */
+.rd-podcast-buttons > :first-child { justify-self: start; justify-content: flex-start; min-width: 0; padding-inline: var(--space-2); margin-inline-start: calc(-1 * var(--space-2)); }
+.rd-podcast-buttons > :last-child { justify-self: end; margin-inline-end: calc(-1 * var(--space-2)); }
+.rd-podcast-buttons .rd-listen-transport { gap: var(--space-4); }
+.rd-podcast-line { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; }
+/* The play button is the round one, filled with the text's ink. */
+.rd-podcast .rd-listen-play {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  transition: scale 120ms var(--ease-out);
+}
+.rd-podcast .rd-listen-play:hover { background: var(--text-primary); color: var(--bg-primary); }
+.rd-podcast .rd-listen-play:active { scale: 0.96; }
+.rd-podcast .rd-listen-track { height: 32px; }
+.rd-podcast .rd-listen-part-fill,
+.rd-podcast .rd-listen-thumb { background: var(--podcast-accent); }
+.rd-podcast .rd-listen-thumb { border-color: var(--bg-primary); }
+/* While the audio is prepared, the line is the mesh's grey, as the forms is. */
+.rd-podcast .rd-listen-progress { color: var(--podcast-mesh); }
+.rd-podcast .rd-listen-progress::-webkit-progress-value { background: var(--podcast-mesh); }
+.rd-podcast .rd-listen-progress::-moz-progress-bar { background: var(--podcast-mesh); }
+
+
+/* The sections as chapters, in a drawer from the side. */
+.rd-podcast-drawer {
+  /* Fixed to the screen under the viewer's bar, so it stays whole however far the tab has scrolled. */
+  position: fixed;
+  top: var(--pdf-topbar-h, 60px);
+  right: 0;
+  z-index: 3;
+  bottom: 0;
+  width: var(--podcast-drawer-w);
+  padding: var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-card);
+  translate: 100% 0;
+  transition: translate 240ms var(--ease-out), visibility 0s linear 240ms;
+  visibility: hidden;
+}
+.rd-podcast-drawer[data-open] { visibility: visible; transition: translate 240ms var(--ease-out), visibility 0s; }
+/* The heading and its close button stay at the top while the list scrolls under them. */
+.rd-podcast-drawer-head {
+  position: sticky;
+  top: calc(-1 * var(--space-4));
+  z-index: 2; /* over the rail's dots, which sit at 1 to cover the line */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: calc(-1 * var(--space-4)) 0 var(--space-2);
+  padding-top: var(--space-4);
+  background: var(--bg-card);
+}
+.rd-podcast-drawer-head .rd-podcast-drawer-heading { margin: 0; }
+/* The paper's sections in ink and weight, their subsections quieter, so the eye finds the sections. */
+.rd-podcast-drawer ol button[data-section] { font-weight: 600; }
+.rd-podcast-drawer ol button:not([data-section]) .rd-podcast-drawer-title { color: var(--text-secondary); }
+.rd-podcast-drawer[data-open] { translate: 0 0; }
+.rd-podcast-drawer-heading {
+  margin: 0 0 var(--space-3);
+  font: var(--mono-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+/* The chapters along a rail, each at its starting minute: the rail is inked as far as the voice
+   has got, and the chapter it is in has the large dot. */
+.rd-podcast-drawer ol { --from: 0; --rail-step: 240; display: grid; margin: 0; padding: 0; list-style: none; }
+.rd-podcast-drawer li { --row: 0; }
+.rd-podcast-drawer ol button {
+  --rail: var(--border-subtle);
+  position: relative;
+  display: grid;
+  grid-template-columns: 3.25rem 20px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  font: 400 0.9375rem/1.35 var(--font-serif);
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.rd-podcast-drawer ol button::before,
+.rd-podcast-drawer ol button::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--space-1) + 3.25rem + var(--space-2) + 9px);
+  width: 2px;
+  background: var(--border-subtle);
+}
+.rd-podcast-drawer li:first-child button::before,
+.rd-podcast-drawer li:first-child button::after { top: 50%; }
+.rd-podcast-drawer li:last-child button::before,
+.rd-podcast-drawer li:last-child button::after { bottom: 50%; }
+/* The ink over the rail. When the voice moves to another chapter it runs along the rows between,
+   one after another, so the rail reads as filling or emptying towards where the voice now is:
+   each row waits its distance from the chapter left, times one row's share of the whole run. */
+.rd-podcast-drawer ol button::after {
+  --rail-wait: calc(max(var(--row) - var(--from), var(--from) - var(--row)) * var(--rail-step) * 1ms);
+  background: var(--text-primary);
+  transform-origin: top;
+  scale: 1 0;
+  transition: scale calc(var(--rail-step) * 1ms) linear var(--rail-wait);
+}
+.rd-podcast-drawer ol button[data-played]::after { scale: 1 1; }
+.rd-podcast-drawer li:not(:first-child) button[aria-current]::after { scale: 1 0.5; }
+.rd-podcast-drawer-dot {
+  position: relative;
+  z-index: 1;
+  justify-self: center;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--bg-card);
+  border-radius: 50%;
+  box-sizing: content-box;
+  background: var(--border-default);
+  scale: 0.7;
+  transition-property: scale, background-color, outline-color;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+  transition-delay: calc(max(var(--row) - var(--from), var(--from) - var(--row)) * var(--rail-step) * 1ms);
+}
+.rd-podcast-drawer ol button[data-section] .rd-podcast-drawer-dot { scale: 0.85; }
+.rd-podcast-drawer ol button[data-played] .rd-podcast-drawer-dot { background: var(--text-primary); }
+.rd-podcast-drawer ol button[aria-current] .rd-podcast-drawer-dot {
+  scale: 1;
+  background: var(--podcast-accent);
+  outline: 4px solid color-mix(in srgb, var(--podcast-accent) 20%, transparent);
+}
+.rd-podcast-drawer ol button:disabled { cursor: default; color: var(--text-tertiary); }
+@media (hover: hover) and (pointer: fine) {
+  .rd-podcast-drawer ol button:not(:disabled):hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+}
+.rd-podcast-drawer ol button[aria-current] { font-weight: 600; }
+.rd-podcast-drawer ol button[aria-current] .rd-podcast-drawer-title { color: var(--text-primary); }
+.rd-podcast-drawer-number, .rd-podcast-drawer-time {
+  font: 500 0.75rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.rd-podcast-drawer-number { margin-inline-end: var(--space-2); }
+.rd-podcast-drawer-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-podcast { animation: none; transition: none; }
+  .rd-podcast-caption { transition: none; }
+  .rd-podcast .rd-listen-play { transition: none; }
+  .rd-podcast-drawer, .rd-podcast-drawer[data-open] { translate: 0 0; opacity: 0; transition: opacity 150ms ease, visibility 0s linear 150ms; }
+  .rd-podcast-drawer[data-open] { opacity: 1; transition: opacity 150ms ease, visibility 0s; }
+  .rd-podcast-drawer ol button, .rd-podcast-drawer ol button::after, .rd-podcast-drawer-dot { transition: none; }
+}
+
+/* On a phone the controls are a bar fixed to the bottom of the tab, within the thumb's reach and
+   ruled off from the forms and the caption, which scroll behind it. */
+@media (max-width: 600px) {
+  .rd-podcast { justify-content: flex-start; padding-bottom: 0; }
+  .rd-podcast-player {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    width: calc(100% + 2 * var(--space-4));
+    margin: auto calc(-1 * var(--space-4)) 0;
+    padding: var(--space-3) var(--space-4) max(var(--space-3), env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border-subtle);
+    background: var(--bg-primary);
+  }
+  .rd-podcast-player > .rd-podcast-dock, .rd-podcast-player > .rd-listen-track { margin-bottom: var(--space-3); }
+}
+
+/* On a phone the tab reads as a music player's: the section as the song's title under the paper
+   as its label, the sentence set left like a lyric, and in the bar the line first, its minutes
+   under its ends, then the transport, larger, within the thumb's reach. */
+@media (max-width: 600px) {
+  .rd-podcast-title { width: 100%; max-width: none; display: grid; gap: 2px; text-align: start; }
+  .rd-podcast-header { margin-bottom: var(--space-3); }
+  .rd-podcast-header-title { font-size: 0.9375rem; }
+  .rd-podcast-section { font: 700 1.375rem/1.25 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
+  .rd-podcast-text { text-align: start; text-wrap: pretty; }
+  .rd-podcast-dock { display: flex; flex-direction: column; gap: var(--space-3); }
+  /* The line before the buttons, as players on a phone stack them; the keyboard still meets the
+     buttons first, as it does on a wide screen. */
+  .rd-podcast-line { order: -1; grid-template-columns: 1fr 1fr; row-gap: 0; }
+  .rd-podcast-line > .rd-listen-track { grid-column: 1 / -1; grid-row: 1; }
+  .rd-podcast-line > .rd-listen-time:first-child { grid-row: 2; justify-self: start; }
+  .rd-podcast-line > .rd-listen-left { grid-row: 2; justify-self: end; padding-right: 0; }
+  .rd-podcast .rd-listen-play { width: 64px; height: 64px; }
+  .rd-podcast-buttons .rd-listen-transport { gap: var(--space-6); }
+}
+
+@media (max-width: 600px) {
+  .rd-podcast-player > .rd-podcast-dock { margin-bottom: var(--space-2); }
+}
+
+/* On a phone the forms and the section keep their place at the top while the caption grows and
+   shrinks under them, as lyrics do under a cover; the bar's buttons take a thumb's 44px. */
+@media (max-width: 600px) {
+  .rd-podcast-cover { margin-top: var(--space-2); }
+  .rd-podcast-caption { margin-bottom: auto; padding-bottom: var(--space-6); }
+  .rd-podcast-player { margin-top: 0; }
+  .rd-podcast-buttons :is(.rd-listen-skip, .rd-listen-speed),
+  .rd-podcast-buttons > button:last-child { min-width: 44px; min-height: 44px; }
+}
+
+/* On a phone the chapters take the whole screen under the bar, as the notes do in the reader. */
+@media (max-width: 600px) {
+  .rd-podcast-drawer { width: 100%; border-left: 0; padding-inline: var(--space-4); }
+  /* The only way out of the full-screen list, so the thumb's 44px as the player's buttons have. */
+  .rd-podcast-drawer-close { min-width: 44px; min-height: 44px; }
+}
+
+/* On a wide screen the section and the caption sit beside the forms, as a player sets a song's
+   name beside its cover, and the controls run under both; the three are centred as one group. */
+@media (min-width: 901px) {
+  .rd-podcast {
+    display: grid;
+    grid-template-columns: auto minmax(0, 560px);
+    /* The title keeps to the top, under the bar; the room left centres the visual, the caption and the controls. */
+    grid-template-rows: auto 1fr auto auto 1fr;
+    grid-template-areas: 'header header' '. .' 'cover words' 'player player' '. .';
+    justify-content: center;
+    column-gap: var(--space-6);
+  }
+  .rd-podcast-header { grid-area: header; margin-bottom: var(--space-6); }
+  .rd-podcast-cover { grid-area: cover; width: min(44vh, 360px); margin-bottom: var(--space-10); }
+  .rd-podcast-words { grid-area: words; align-self: center; margin-bottom: var(--space-10); }
+  .rd-podcast-title { text-align: start; }
+  .rd-podcast-caption { width: 100%; margin-bottom: 0; }
+  /* Only the lines it has, so a one-line caption is centred on the visual like a longer one. */
+  .rd-podcast-text { min-height: 0; text-align: start; text-wrap: pretty; }
+  /* As wide as the visual and the caption together, so the controls share their edges. */
+  .rd-podcast-player { grid-area: player; width: auto; }
+  .rd-podcast-dock { width: 100%; }
+}
+/* Narrower, the section and the caption are the column's own items, as they were before the group. */
+@media (max-width: 900px) {
+  .rd-podcast-words { display: contents; }
+}

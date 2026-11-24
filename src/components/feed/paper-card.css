@@ -515,13 +515,24 @@
 /* ── Masthead — the field, the year and the citations, above the headline ── */
 .pc-meta {
   display: flex;
-  align-items: center;
+  /* On the first line's baseline, so the uses tag sits level with the field however the details wrap. */
+  align-items: baseline;
   gap: 6px;
   margin-bottom: var(--space-3);
-  flex-wrap: wrap;
   font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
   color: var(--text-tertiary);
 }
+
+.pc-meta-items {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pc-uses { flex: none; }
 
 .pc-masthead-field {
   padding: 0;
@@ -566,6 +577,10 @@ button.pc-masthead-field:focus-visible {
 
 .pc-meta-dot {
   color: var(--border-strong);
+}
+
+.pc-meta-dot[data-line-end] {
+  visibility: hidden;
 }
 
 .pc-date,
