@@ -646,11 +646,25 @@ the paper's own; its menu then has no card actions (Mark as read, Not interested
 paper that cannot be loaded leaves for its page with a notice. A tab changes the address without
 a new history step; a tab not offered (Listen without an account) leaves for Paper. The paper viewer's top bar holds up to three tabs, Paper,
 Listen and AI summary, each where it applies, with a chip that slides to the one
-chosen (`pdf/reading-tabs.tsx`). A tab's view arrives from its side of the bar:
-the view left goes at once, and the one chosen is opaque from the start while its
-contents slide 16px in and fade up over 220ms (opacity only with reduced motion),
-so two texts never show through each other. Cards have no AI summary button: the
-viewer's tab is the way in. Switching
+chosen (`pdf/reading-tabs.tsx`). The view left goes at once, and the one chosen
+is opaque from the start, so two texts never show through each other. Paper and
+AI summary stay in place under a veil of the page colour that fades out over 220ms
+(120ms linear with reduced motion): a long paper holds too many nodes to move.
+Listen arrives from its side of the bar, its contents sliding 16px in and fading
+up over 220ms (opacity only with reduced motion). A view under another tab is
+skipped with `content-visibility: hidden`, which keeps its scroll; `inert` is the
+fallback where that is missing. The covered paper’s scroll region also leaves the
+keyboard tab order. The Listen animation’s direction is scoped to the podcast,
+so changing it does not invalidate styles across the paper. Summary styles load
+with the viewer, before a large article is laid out. With reduced motion, the
+podcast visual computes each static shape directly instead of simulating its
+arrival frames. Cards have no AI summary button: the
+viewer’s tab is the way in. The summary module loads during browser idle time after
+full text resolves; this does not mount the summary or request AI generation.
+Display equations with source MathML or an image retain that visual until they
+enter the viewport, then receive their typeset rendering. TeX-only equations
+render eagerly so their printed form is always available. Inline formulas also
+render eagerly because their text participates in saved annotation anchors. Switching
 to Paper keeps the dialog and its history entry mounted; it does not reveal the feed. The Listen tab
 opens the podcast (`pdf/read-aloud-listen.tsx`), with its download in the bar's corner, which reads the paper's text aloud:
 the paper's title over a particle visual, the sentence being read as a caption,

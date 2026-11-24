@@ -139,8 +139,17 @@ export async function loadReadingDock() {
 export async function loadPaperViewer() {
   const { modules: [viewer, contexts, firebase], close } = await loadModules<[
     { default: Component<{ paper: Paper; menu: { snapshot: () => { about: null; links: null; isRead: boolean; shareUrl: string; notInterested: () => void; toggleRead: () => void }; subscribe: () => () => void }; readingView: 'paper' | 'listen' | 'summary'; onViewChange: (view: 'paper' | 'listen' | 'summary') => void; onClose: () => void }> },
-    Record<'AuthContext' | 'AnalyticsContext' | 'FeedContext', Context<unknown>>,
+    Record<'AuthContext' | 'AnalyticsContext' | 'FeedContext' | 'LanguageContext', Context<unknown>>,
     import('./firebase-stub.ts').FirebaseStub,
   ]>('/src/components/pdf/pdf-viewer.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');
   return { Viewer: viewer.default, ...contexts, firebase, close };
+}
+
+export async function loadFullTextArticle() {
+  const { modules: [article, contexts, katex], close } = await loadModules<[
+    { default: Component<{ doc: import('../../src/utils/full-text.ts').FullText; paper: Paper }> },
+    Record<'LanguageContext', Context<unknown>>,
+    { loadKatex: () => Promise<unknown> },
+  ]>('/src/components/pdf/full-text-article.tsx', '/src/context/contexts.ts', '/src/utils/katex-loader.ts');
+  return { Article: article.default, ...contexts, ...katex, close };
 }
