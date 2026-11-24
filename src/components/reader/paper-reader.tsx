@@ -479,11 +479,6 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   // Where focus lands on open: the way back, as it always was
   // (`data-dialog-initial-focus`, now the popup's `initialFocus`).
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  // Opened as the viewer's tab, the reader takes the focus a dialog would give its close button.
-  const embeddedRoot = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (embedded) closeButtonRef.current?.focus({ preventScroll: true });
-  }, [embedded]);
   // Where focus goes when "Write it again" takes its own button off the page.
   const titleRef = useRef<HTMLHeadingElement | null>(null);
 
@@ -1172,7 +1167,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   /* As the viewer's Plain words tab, the reader is a region of the viewer's own dialog, which
      already owns the focus trap, Escape and the scrim; opened from a card, it is a dialog. */
   const shell = (body: ReactNode) => (embedded ? (
-    <div ref={embeddedRoot} className="rd rd--embedded" role="region" aria-label={copy.title}>{body}</div>
+    <div className="rd rd--embedded" role="region" aria-label={copy.title}>{body}</div>
   ) : (
     /* A full-screen Base UI Dialog: modal (FeedContainer's scroll guard reads
        the `aria-modal` it sets), with pointer dismissal off because a surface
@@ -1201,7 +1196,8 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   ));
 
   return shell(<>
-          <header className="rd-topbar">
+          {/* As the viewer's tab, the viewer's own bar stays above the reader, its tabs and close included. */}
+          {!embedded && <header className="rd-topbar">
             <Button
               ref={closeButtonRef}
               variant="ghost"
@@ -1234,7 +1230,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
                 </motion.p>
               )}
             </AnimatePresence>}
-          </header>
+          </header>}
 
         {/* The viewer's stage: the notes take the right of it, and the paper and its dock move over. */}
         <div className="pdf-stage rd-stage" data-notes-open={notesOpen || undefined}>

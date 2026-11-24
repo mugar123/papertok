@@ -273,8 +273,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
         closeLabel={'Close paper'}
         aria-label={'Paper viewer'}
       >
-        {/* Under the Plain words tab the paper stays mounted, so its place and audio wait, but out of reach. */}
-        <div className="pdf-viewer" inert={plain}>
+        <div className="pdf-viewer">
           {/* Top bar */}
           <div className="pdf-topbar">
             <DialogClose render={<Button variant="ghost" size="icon-sm" />} aria-label={'Close paper'} title={'Close'}>
@@ -284,7 +283,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {/* The bar names the paper once the article's own title has scrolled
                 away, rising in from below; it leaves the way it came. Where the paper
                 can be read in plain words, the bar holds the two tabs instead. */}
-            {canPlain ? <ReadingTabs current="paper" onChange={view => setPlain(view === 'plain')} /> : <AnimatePresence initial={false}>
+            {canPlain ? <ReadingTabs current={plain ? 'plain' : 'paper'} onChange={view => setPlain(view === 'plain')} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
                   key="title"
@@ -300,7 +299,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             </AnimatePresence>}
           </div>
 
-          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined}>
+          {/* Under the Plain words tab the paper stays mounted, so its place waits, but out of reach. */}
+          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} inert={plain}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
                 <p>The text of this paper could not be loaded right now.</p>
@@ -384,7 +384,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {fullText !== undefined && (
             <ReadingDock
               title={paper.title} paper={paper} scroll={showsText ? textScroll : null}
-              spoken={spoken} canListen={Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
+              spoken={spoken} canListen={!plain && Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
               notes={notesOn ? { id: 'viewer-notes', open: notesOpen, count: notes.passages.length, onOpenChange: setNotesOpen } : null}
               originalUrl={dockUrl}
               menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText
