@@ -15,7 +15,6 @@ import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from '../publi
 import { LibraryPreview } from '../public/guest-welcome-preferences.tsx';
 import { GUEST_SEED_PER_AREA, guestSeedCategoriesForAreas, guestSeedSizeForAreas, readGuestInterests } from '../../utils/guest-interests.ts';
 import { USER_PREFERENCES_MAX } from '../../utils/account-onboarding.ts';
-import { normalizeInterestSettings } from '../../utils/area-preferences.ts';
 import { Button } from '../ui/button.tsx';
 import { toastError } from '../ui/toast.ts';
 import Petri from './petri.tsx';
@@ -84,7 +83,6 @@ export default function OnboardingFlow() {
   const [stepIndex, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
   const [selectedAreas, setSelectedAreas] = useState(() => new Set(guestSeed ?? []));
-  const [interestSettings, setInterestSettings] = useState(() => normalizeInterestSettings(guestAnswer));
   const [selectedTopics, setSelectedTopics] = useState(() => new Set(guestAnswer?.topics ?? []));
   const [expandedAreas, setExpandedAreas] = useState(() => new Set<string>());
   // A welcome's answer starts saving on arrival (the finish screen).
@@ -192,7 +190,7 @@ export default function OnboardingFlow() {
     setSaving(true);
     setProfileError(null);
     try {
-      await completeOnboarding(preferences, interestSettings);
+      await completeOnboarding(preferences);
       void trackEvent('tutorial_complete', { language });
       void markActivation();
       if (guestAnswer?.institutionEmail) void verifyGuestUniversity(guestAnswer.institutionEmail);
@@ -282,7 +280,7 @@ export default function OnboardingFlow() {
         lede={stepCopy.lede}
       />
 
-      {step === 'topics' && <AreaPicker selected={selectedAreas} onToggle={toggleArea} label={COPY.topics.areasLabel} settings={interestSettings} onSettingsChange={setInterestSettings} />}
+      {step === 'topics' && <AreaPicker selected={selectedAreas} onToggle={toggleArea} label={COPY.topics.areasLabel} />}
 
       {step === 'subtopics' && (
         <SubtopicsPicker

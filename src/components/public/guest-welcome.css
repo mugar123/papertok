@@ -799,20 +799,6 @@
   text-align: left;
 }
 
-.gw-area-picker {
-  display: grid;
-  gap: var(--space-4);
-  width: 100%;
-  text-align: left;
-}
-
-.gw-area-choice {
-  display: grid;
-  align-content: start;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
 /* The shared Toggle, redrawn as a tile. Its own chip utilities (a 2rem row,
    nowrap, an ink fill when pressed) are undone here; this rule is
    unlayered, so it outranks the Tailwind layer they live in. */
@@ -987,11 +973,6 @@
 /* On the areas screen the tiles scroll under the foot, so it earns a rule. */
 .gw-stage--topics + .gw-foot {
   border-top: 1px solid var(--border-subtle);
-}
-
-/* Leave the picker's last fields visible when the keyboard reaches them. */
-.gw-stage:has(.gw-area-picker) + .gw-foot {
-  position: static;
 }
 
 .gw-dots {

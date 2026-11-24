@@ -141,36 +141,10 @@ test('signing back in after a sign-out reads the account\'s lists again', async 
 
 test('a profile that already holds its interests spends the guest answer waiting on this device', () => {
   const storage = deviceStorage();
-  saveGuestInterests({ areas: ['physics'], topics: [], areaPreferences: { physics: { priority: 'curiosity' } } }, storage);
+  saveGuestInterests({ areas: ['physics'], topics: [] }, storage);
 
-  adoptOnboardedProfile('account-a', ['cs.AI', 'cs.LG'], {}, storage);
+  adoptOnboardedProfile('account-a', ['cs.AI', 'cs.LG'], storage);
 
   assert.deepEqual(readStoredOnboarding('account-a', storage), { complete: true, preferences: ['cs.AI', 'cs.LG'] });
   assert.equal(readGuestInterests(storage), null, 'the next new account on this device is not seeded with A\'s pick');
-});
-
-test('switching accounts on one device loads each account’s own interest settings', async t => {
-  freshSession(t);
-  const storage = deviceStorage();
-  let signedIn = 'account-a';
-  const devices = { storage, currentUid: () => signedIn, readLists: async () => listsSnapshot([]) };
-  saveStoredOnboarding('account-b', { complete: true, preferences: ['quant-ph'] }, storage);
-  saveGuestInterests({
-    areas: ['ai', 'physics'],
-    areaPreferences: { ai: { priority: 'curiosity' } },
-    interestMix: 'half-and-half',
-  }, storage);
-  const answer = readGuestInterests(storage);
-  assert.ok(answer);
-  adoptOnboardedProfile('account-a', ['cs.AI', 'quant-ph'], answer, storage);
-  assert.deepEqual(openAccountSession('account-a', devices), {
-    complete: true,
-    preferences: ['cs.AI', 'quant-ph'],
-    interestMix: 'half-and-half',
-    areaPreferences: { ai: { priority: 'curiosity' } },
-  });
-
-  signedIn = 'account-b';
-  assert.deepEqual(openAccountSession('account-b', devices), { complete: true, preferences: ['quant-ph'] });
-  assert.equal(readGuestInterests(storage), null);
 });
