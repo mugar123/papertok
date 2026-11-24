@@ -1,4 +1,4 @@
-/* The authors and their places under a paper's title, in the paper viewer and the plain-words reader. */
+/* The authors and their places under a paper's title, in the paper viewer and the AI summary. */
 .ft-authors, .ft-affiliations {
   display: flex;
   flex-wrap: wrap;

@@ -130,7 +130,7 @@ export async function loadReadingDock() {
 
 export async function loadPaperViewer() {
   const { modules: [viewer, contexts, firebase], close } = await loadModules<[
-    { default: Component<{ paper: Paper; menu: { snapshot: () => { about: null; links: null; isRead: boolean; shareUrl: string; notInterested: () => void; toggleRead: () => void }; subscribe: () => () => void }; initialView: 'plain'; onClose: () => void; onPaperOpen: () => void }> },
+    { default: Component<{ paper: Paper; menu: { snapshot: () => { about: null; links: null; isRead: boolean; shareUrl: string; notInterested: () => void; toggleRead: () => void }; subscribe: () => () => void }; onClose: () => void }> },
     Record<'AuthContext' | 'AnalyticsContext' | 'FeedContext', Context<unknown>>,
     import('./firebase-stub.ts').FirebaseStub,
   ]>('/src/components/pdf/pdf-viewer.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');

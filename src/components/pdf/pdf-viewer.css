@@ -170,7 +170,7 @@
   text-decoration: none;
 }
 
-/* Touch targets in the bar grow to 44px; the Paper and Plain words tabs keep their 28px (over the
+/* Touch targets in the bar grow to 44px; the Paper and AI summary tabs keep their 28px (over the
    24px minimum) so the switcher stays one compact control. */
 @media (pointer: coarse) {
   .pdf-topbar :is(button, a):not(.rd-reading-tab) {
@@ -216,3 +216,16 @@
 }
 
 
+
+/* The AI summary tab: over the paper, under the viewer's own bar with its tabs. It slides in
+   from the side of its tab and fades over the paper, and leaves the same way, faster, in the
+   150ms pdf-viewer.tsx waits before removing it. No fill after the entrance, so nothing is left
+   translated once it is in. */
+.pdf-summary { position: absolute; inset: var(--pdf-topbar-h, 60px) 0 0; z-index: 5; animation: pdf-summary-in 220ms var(--ease-out) backwards; }
+.pdf-summary[data-leaving] { pointer-events: none; animation: pdf-summary-out 150ms var(--ease-out) forwards; }
+@keyframes pdf-summary-in { from { opacity: 0; translate: 16px 0; } }
+@keyframes pdf-summary-out { to { opacity: 0; translate: 16px 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .pdf-summary { animation: fadeIn 120ms linear backwards; }
+  .pdf-summary[data-leaving] { animation: fadeOut 120ms linear forwards; }
+}

@@ -51,7 +51,7 @@ test('shared reading tools: the round button opens the podcast and prepares the 
     const tree = (playable: boolean) => createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
       createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
         createElement(ReadingDock, {
-          title: 'Paper — In plain words', paper: paperLegacyAdapter({ id: '2611.00001', title: 'Paper' }), scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken: playable ? spoken : null,
+          title: 'Paper — AI summary', paper: paperLegacyAdapter({ id: '2611.00001', title: 'Paper' }), scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken: playable ? spoken : null,
           canListen: playable, originalUrl: 'https://doi.org/10.1234/paper',
           notes: { id: 'reader-notes', open: false, count: 2, onOpenChange: open => { notesOpened = open; } },
           children: createElement('button', {}, 'Explanation level'),
@@ -130,7 +130,8 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
     fireEvent.click(screen.getByRole('button', { name: LISTEN }));
     const tab = view.getByRole('region', { name: 'Paper' });
     const chapterList = () => within(view.getByRole('navigation', { name: 'All chapters' }));
-    assert.match(tab.textContent ?? '', /Preparing the first passages, 0%/);
+    assert.match(tab.textContent ?? '', /Preparing the first passages0% · 3 chapters/, 'what is prepared, how far, and how many chapters');
+    assert.equal(within(tab).queryByRole('button', { name: 'Play' }), null, 'no player before there is something to play');
     const status = within(tab).getByRole('status');
     await waitFor(() => assert.equal(status.textContent, 'Preparing the first passages', 'the player tells a screen reader it is preparing'));
     assert.equal(chapterList().getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), true, 'no jumps before the audio is there');

@@ -19,7 +19,7 @@ const LEVELS: { id: ReadingLevel; title: string; icon: Icon; description: string
 export function WelcomeReadingChoice({ level, onChange }: { level: ReadingLevel; onChange: (level: ReadingLevel) => void }) {
   return <div className="gw-preferences">
     <fieldset className="gw-levels">
-      <legend className="visually-hidden">Default plain words reading level</legend>
+      <legend className="visually-hidden">Default AI summary reading level</legend>
       {LEVELS.map(option => <label className="gw-level" key={option.id}>
         <input type="radio" name="welcome-reading-level" value={option.id} checked={level === option.id} onChange={() => onChange(option.id)}/>
         <option.icon size={24} aria-hidden="true"/>
@@ -27,7 +27,7 @@ export function WelcomeReadingChoice({ level, onChange }: { level: ReadingLevel;
         <span>{option.description}</span>
       </label>)}
     </fieldset>
-    <p className="gw-preference-note">With a free account, supported papers with full text can be read in plain words. You can change the level for any paper.</p>
+    <p className="gw-preference-note">With a free account, supported papers with full text have an AI summary. You can change the level for any paper.</p>
   </div>;
 }
 

@@ -141,7 +141,7 @@ test('labels original-text highlights without attributing them to a rewrite', ()
 test('labels each plain-words highlight with its reading level', () => {
   for (const [level, label] of [['beginner', 'Beginner'], ['university', 'University'], ['researcher', 'Researcher']]) {
     assert.equal(highlightsNote('A Paper', [{ quote: 'Rewritten quote', note: '', level }]),
-      `<h1>PaperTok highlights: A Paper</h1>\n<p><em>Quoted from PaperTok&#39;s plain-words version (${label}), not from the original text.</em></p>\n<blockquote><p>Rewritten quote</p></blockquote>`);
+      `<h1>PaperTok highlights: A Paper</h1>\n<p><em>Quoted from PaperTok&#39;s AI summary (${label}), not from the original text.</em></p>\n<blockquote><p>Rewritten quote</p></blockquote>`);
   }
 });
 
@@ -173,7 +173,7 @@ test('sends the paper with the reader\'s own highlights, then updates the same i
     assert.match(item.key, /^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$/);
     assert.equal(note.parentItem, item.key);
     assert.equal(note.note, '<h1>PaperTok highlights: A Paper</h1>\n'
-      + '<p><em>Quoted from PaperTok&#39;s plain-words version (University), not from the original text.</em></p>\n'
+      + '<p><em>Quoted from PaperTok&#39;s AI summary (University), not from the original text.</em></p>\n'
       + '<blockquote><p>A plain quote</p></blockquote><p>My note</p>\n'
       + '<p><em>Quoted from the paper&#39;s original text.</em></p>\n'
       + '<blockquote><p>An original quote</p></blockquote><p>Original note</p>');

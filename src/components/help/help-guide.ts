@@ -100,11 +100,8 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     entries: [
       entry('read', 'Read article', FileText,
         'Opens the paper by trying these in turn and stopping at the first that opens. First, your university’s library, if you linked one and it has the paper: a new tab. Then full text PaperTok finds for the paper, shown in PaperTok’s viewer; it looks for this, waiting a moment, when the paper has an arXiv, PubMed Central or DOI identifier and the first copy would not open in the viewer. Then, from this list in order: an open copy found for the paper (its PDF, then its page), the paper’s open-access PDF, its arXiv PDF, its own PDF link, a ChemRxiv page, and its landing page. Only a link on arxiv.org opens in PaperTok’s viewer; every other one, a repository PDF included, opens in a new tab. If none opens, PaperTok looks for an open copy by DOI, if the paper has one, and as a last resort opens the DOI page in a new tab. The label says what was found: Read full text, Read open version, Via followed by your university’s name, or Source.'),
-      entry('plain-words', 'Read in plain words', Sparkle,
-        'Opens the reader, where AI rewrites the paper’s full text in plainer language at your level. It shows only on papers whose full text can be read, and reads “Simple” on a screen 640px wide or less. The first rewrite of a paper at a level spends one AI use. A version already written opens free, and the line under the button says so or shows how many uses you have left.',
-        { allowance: 'ai-new', needsAccount: true }),
       entry('publisher', 'Publisher’s page', ArrowSquareOut,
-        'Shows on a card with no abstract when the paper has a DOI. Opens the publisher’s page in a new tab. Next to Read in plain words it shows only the arrow.'),
+        'Shows on a card with no abstract when the paper has a DOI. Opens the publisher’s page in a new tab.'),
       entry('like', 'Like', Heart,
         'Likes the paper. The heart fills in; press again to undo. Likes teach your For you feed what you want to see, and liked papers are listed under Favorites in My lists.',
         { needsAccount: true }),
@@ -165,18 +162,18 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
   },
   {
     id: 'reader',
-    title: 'The plain-words reader',
-    intro: 'Opens over the page you pressed Read in plain words on. The text is an AI adaptation of the full text and does not replace the paper.',
+    title: 'The AI summary',
+    intro: 'Opens from the AI summary tab in the paper viewer, or from a saved summary in Settings. The text is written by AI from the full text and does not replace the paper.',
     signedInOnly: true,
     entries: [
       entry('level', 'Level', Plant,
-        'Beginner, University or Researcher. The button shows the icon of the current level: a plant, a graduation cap or a flask. The starting level is your default in Settings under Reading & AI. Choosing a level this paper has not been written at spends one AI use; a level already written opens free. The level cannot be changed while a rewrite is being written.',
+        'Beginner, University or Researcher. The button shows the icon of the current level: a plant, a graduation cap or a flask. The starting level is your default in Settings under Reading & AI. Choosing a level this paper has not been written at spends one AI use; a level already written opens free. The level cannot be changed while a summary is being written.',
         { allowance: 'ai-new', needsAccount: true }),
       entry('write-again', 'Write it again', ArrowClockwise,
         'Shows under a reused summary. Writes a new version and replaces the saved one. Spends one AI use. If the new one stops early, the old one stays.',
         { allowance: 'ai', needsAccount: true }),
       entry('retry', 'Try again', ArrowClockwise,
-        'Shows when a rewrite failed or stopped early. Asks for the rewrite again and spends one AI use, unless a saved version turns up. The use is given back when the service is busy or unavailable, when the paper’s file cannot be downloaded, or when the provider’s own daily limit is reached. It is not given back after a timeout or an empty or unusable answer, or when you close the reader mid-rewrite.',
+        'Shows when a summary failed or stopped early. Asks for the summary again and spends one AI use, unless a saved version turns up. The use is given back when the service is busy or unavailable, when the paper’s file cannot be downloaded, or when the provider’s own daily limit is reached. It is not given back after a timeout or an empty or unusable answer, or when you close the summary while it is being written.',
         { allowance: 'ai-new', needsAccount: true }),
       entry('annotations', 'Annotations', NotePencil,
         'Opens or closes the notes panel: your highlights and notes, and the AI’s explanations on a tab of their own.',
@@ -204,8 +201,11 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
   {
     id: 'viewer',
     title: 'The paper viewer',
-    intro: 'Opens from Read article when PaperTok shows the paper itself: a copy on arxiv.org, or full text it found. Other copies open in a new tab. The viewer uses no AI.',
+    intro: 'Opens from Read article when PaperTok shows the paper itself: a copy on arxiv.org, or full text it found. Other copies open in a new tab. The viewer uses no AI, except its AI summary tab.',
     entries: [
+      entry('ai-summary', 'AI summary', Sparkle,
+        'The tab next to Paper at the top of the viewer, on papers whose full text can be read. Opens the AI summary over the paper, where AI writes the paper’s full text again in plainer language at your level; Paper goes back to the text. The first summary of a paper at a level spends one AI use. A version already written opens free.',
+        { allowance: 'ai-new', needsAccount: true }),
       entry('viewer-contents', 'Contents', ListBullets,
         'Opens the paper’s outline while the text is shown. Pick a section to jump to it.'),
       entry('viewer-notes', 'Notes', NotePencil,
@@ -318,7 +318,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       entry('edit-interests', 'Edit interests', PencilSimple,
         'Discovery page. Chooses the subjects that train your feed.'),
       entry('default-level', 'Default AI level', Sparkle,
-        'Reading & AI page. Sets the level Read in plain words starts at. The same page lists the papers you have read in plain words.'),
+        'Reading & AI page. Sets the level AI summaries start at. The same page lists your AI summaries.'),
       entry('email-updates', 'Configure email updates', GearSix,
         'Notifications page. Turns the Monday email on or off, and sets how many papers it holds.'),
       entry('analytics', 'Allow usage analytics', ShieldCheck,
@@ -354,14 +354,14 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         'Opens search. The slash does nothing while you are typing in a field.',
         { needsAccount: true }),
       entry('paragraph-enter', 'Enter on a paragraph', undefined,
-        'In the plain-words reader, opens the annotation options for the focused paragraph: highlight it, add a note, or ask the AI to explain it. Only Explain this to me spends an AI use.',
+        'In the AI summary, opens the annotation options for the focused paragraph: highlight it, add a note, or ask the AI to explain it. Only Explain this to me spends an AI use.',
         { needsAccount: true }),
     ],
   },
 ];
 
 /** The page's opening paragraph: the allowance and the controls that spend it. */
-export const HELP_OVERVIEW = `Each account has ${AI_USES_PER_DAY} AI uses a day, renewing at 00:00 UTC. Without an account there is no AI. Five things spend one: reading a paper in plain words for the first time at a level, choosing a level that paper has not been written at, Try again after a failed rewrite, Write it again, and Explain this to me. Everything else on this page spends no AI use.`;
+export const HELP_OVERVIEW = `Each account has ${AI_USES_PER_DAY} AI uses a day, renewing at 00:00 UTC. Without an account there is no AI. Five things spend one: reading a paper’s AI summary for the first time at a level, choosing a level that paper has not been written at, Try again after a failed summary, Write it again, and Explain this to me. Everything else on this page spends no AI use.`;
 
 /** What each stamp on a row means, for the legend at the top of the page. */
 export const HELP_ALLOWANCE_RULES: Record<HelpAllowance, string> = {
@@ -382,8 +382,8 @@ export function allowanceLabel(allowance: HelpAllowance) {
 }
 
 /**
- * Where the reader stands today, in the words the card uses under Read in plain
- * words. Empty until the count is known, and for an account with no limit.
+ * Where the reader stands today. Empty until the count is known, and for an
+ * account with no limit.
  */
 export function aiUsesLine(uses: AIUses | null, locale: string, now = Date.now()) {
   if (!uses || uses.unlimited || !uses.dailyLimit || !uses.resetAt) return '';

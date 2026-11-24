@@ -56,9 +56,9 @@ test('the per-day limits are the ones wrangler.toml sets for the Worker', () => 
 
 test('the controls marked as spending an AI use are the five the overview names', () => {
   const spenders = [...idsWith('ai'), ...idsWith('ai-new')];
-  assert.deepEqual(spenders.toSorted(), ['explain', 'level', 'plain-words', 'retry', 'write-again']);
+  assert.deepEqual(spenders.toSorted(), ['ai-summary', 'explain', 'level', 'retry', 'write-again']);
   assert.match(HELP_OVERVIEW, /Five things spend one:/);
-  assert.equal(allowanceOf('plain-words'), 'ai-new', 'a version already written opens free');
+  assert.equal(allowanceOf('ai-summary'), 'ai-new', 'a version already written opens free');
   assert.equal(allowanceOf('write-again'), 'ai');
   assert.equal(allowanceOf('explain'), 'ai');
 });

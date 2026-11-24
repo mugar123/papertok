@@ -282,7 +282,7 @@ export function highlightsNote(title: string, highlights: ZoteroHighlight[]) {
       let source = 'Quote source not recorded.';
       if (h.level === 'full-text') source = "Quoted from the paper's original text.";
       else if (Object.hasOwn(LEVEL_LABELS, h.level)) {
-        source = `Quoted from PaperTok's plain-words version (${LEVEL_LABELS[h.level]}), not from the original text.`;
+        source = `Quoted from PaperTok's AI summary (${LEVEL_LABELS[h.level]}), not from the original text.`;
       }
       return `<p><em>${escapeHtml(source)}</em></p>\n<blockquote><p>${escapeHtml(h.quote)}</p></blockquote>${h.note ? `<p>${escapeHtml(h.note)}</p>` : ''}`;
     }),

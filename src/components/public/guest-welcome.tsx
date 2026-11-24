@@ -86,7 +86,7 @@ const COPY = {
       title: 'You read science the way you scroll.',
       beats: [
         { title: 'One paper per screen', body: 'Title, authors and abstract. Swipe for the next one.' },
-        { title: 'Read it in plain words', body: 'With a free account, many can be read in plain words.' },
+        { title: 'Read its AI summary', body: 'With a free account, many have an AI summary.' },
         { title: 'Your feed learns', body: 'What you like and save decides what you see.' },
       ],
       cta: 'Choose my topics',
@@ -107,7 +107,7 @@ const COPY = {
     reading: {
       kicker: 'Your reading, your way',
       title: 'How deep do you want to go?',
-      lede: 'Choose your default for Read in plain words. Start simple, or keep the scientific depth.',
+      lede: 'Choose the level your AI summaries start at. Start simple, or keep the scientific depth.',
       cta: 'Continue',
     },
     inbox: {
@@ -172,7 +172,7 @@ function SwipeDemo({ still }: { still: boolean }) {
   );
 }
 
-function PlainWordsDemo({ still }: { still: boolean }) {
+function SummaryDemo({ still }: { still: boolean }) {
   // The dense abstract gives way to three short highlighted lines.
   return (
     <div className="gw-demo gw-demo--plain" aria-hidden="true">
@@ -270,7 +270,7 @@ function LearnDemo({ still }: { still: boolean }) {
   );
 }
 
-const BEAT_DEMOS = [SwipeDemo, PlainWordsDemo, LearnDemo];
+const BEAT_DEMOS = [SwipeDemo, SummaryDemo, LearnDemo];
 
 // One gesture in the row. It keeps its box from the first frame — the well
 // is drawn empty until its turn — so nothing shifts as the three arrive, and

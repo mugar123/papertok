@@ -1,4 +1,3 @@
-import type { ReadingView } from '../pdf/reading-tabs.tsx';
 import type { Variants } from 'framer-motion';
 import type { Paper } from '../../models/paper.ts';
 import type { ReaderMenu } from '../feed/paper-menu.tsx';
@@ -64,7 +63,7 @@ export default function PublicPaperPage({
   onSaveToList,
   isAuthenticated = false,
 }: Pick<PaperCardProps, 'onAuthRequired'> & {
-  onOpenPdf?: (paper: Paper, menu: ReaderMenu, initialView?: ReadingView, onPaperOpen?: () => void) => void;
+  onOpenPdf?: (paper: Paper, menu: ReaderMenu) => void;
   onSaveToList?: (paper: Paper) => void;
   isAuthenticated?: boolean;
 }) {
@@ -269,9 +268,9 @@ export default function PublicPaperPage({
     interactionIdFor,
   ), [interactionIdFor, likedPaperIds, readPaperIds, savedPaperIds]);
   const marks = paper && isAuthenticated ? getInteractionState(paper) : null;
-  const handleOpenPdf = useCallback((candidate: Paper, _surface: string | undefined, menu: ReaderMenu, initialView?: ReadingView) => {
-    if (isAuthenticated && initialView !== 'plain') void trackPdfOpened(candidate);
-    onOpenPdf?.(candidate, menu, initialView, isAuthenticated && initialView === 'plain' ? () => { void trackPdfOpened(candidate); } : undefined);
+  const handleOpenPdf = useCallback((candidate: Paper, _surface: string | undefined, menu: ReaderMenu) => {
+    if (isAuthenticated) void trackPdfOpened(candidate);
+    onOpenPdf?.(candidate, menu);
   }, [isAuthenticated, onOpenPdf, trackPdfOpened]);
 
   return (

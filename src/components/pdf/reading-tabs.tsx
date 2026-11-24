@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 import './reading-tabs.css';
 
-export type ReadingView = 'paper' | 'plain';
+type ReadingView = 'paper' | 'summary';
 
 /**
  * The paper's two ways to read, at the top of the viewer. The raised chip slides to the tab
@@ -28,11 +28,11 @@ export function ReadingTabs({ current, onChange }: { current: ReadingView; onCha
       data-placed={placed || undefined}
       aria-label="How to read this paper"
       value={[current]}
-      onValueChange={([next]) => { if (next === 'paper' || next === 'plain') onChange(next); }}
+      onValueChange={([next]) => { if (next === 'paper' || next === 'summary') onChange(next); }}
     >
       <span ref={chip} className="rd-reading-chip" aria-hidden="true" />
       <ToggleGroupItem value="paper" data-view="paper" className="rd-reading-tab">Paper</ToggleGroupItem>
-      <ToggleGroupItem value="plain" data-view="plain" className="rd-reading-tab">Plain words</ToggleGroupItem>
+      <ToggleGroupItem value="summary" data-view="summary" className="rd-reading-tab">AI summary</ToggleGroupItem>
     </ToggleGroup>
   );
 }

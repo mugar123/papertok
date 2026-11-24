@@ -128,10 +128,26 @@
 .rd-podcast .rd-listen-part-fill,
 .rd-podcast .rd-listen-thumb { background: var(--podcast-accent); }
 .rd-podcast .rd-listen-thumb { border-color: var(--bg-primary); }
-/* While the audio is prepared, the line is the mesh's grey, as the forms is. */
-.rd-podcast .rd-listen-progress { color: var(--podcast-mesh); }
-.rd-podcast .rd-listen-progress::-webkit-progress-value { background: var(--podcast-mesh); }
-.rd-podcast .rd-listen-progress::-moz-progress-bar { background: var(--podcast-mesh); }
+/* While the first passages are prepared: a ring round the forms fills with them, and under it what is
+   being prepared, centred, with the player held back until there is something to play. */
+.rd-podcast-cover { position: relative; }
+.rd-podcast-ring { position: absolute; inset: 0; width: 100%; height: 100%; rotate: -90deg; overflow: visible; pointer-events: none; }
+.rd-podcast-ring circle { fill: none; stroke-width: 3px; vector-effect: non-scaling-stroke; }
+.rd-podcast-ring circle:first-child { stroke: color-mix(in srgb, var(--podcast-mesh) 35%, transparent); }
+.rd-podcast-ring circle:last-child { stroke: var(--podcast-accent); stroke-linecap: round; transition: stroke-dashoffset 500ms var(--ease-out); }
+.rd-podcast-caption[hidden] { display: none; }
+.rd-podcast-wait { display: grid; gap: var(--space-2); text-align: center; }
+.rd-podcast-wait p { margin: 0; }
+.rd-podcast-wait-what { font: 500 1rem/1.4 var(--font-body); color: var(--text-secondary); }
+.rd-podcast-wait-meta { font: 500 0.75rem/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-tertiary); }
+.rd-podcast[data-preparing] { justify-content: safe center; }
+/* Once ready, the controls and the first words arrive under the forms. */
+.rd-podcast-dock, .rd-podcast-title { animation: rd-podcast-arrive 220ms var(--ease-out) backwards; }
+@keyframes rd-podcast-arrive { from { opacity: 0; translate: 0 6px; } }
+@media (prefers-reduced-motion: reduce) {
+  .rd-podcast-ring circle:last-child { transition: none; }
+  .rd-podcast-dock, .rd-podcast-title { animation-name: fadeIn; }
+}
 
 
 /* The sections as chapters, in a drawer from the side. */
@@ -351,6 +367,11 @@
   /* As wide as the visual and the caption together, so the controls share their edges. */
   .rd-podcast-player { grid-area: player; width: auto; }
   .rd-podcast-dock { width: 100%; }
+}
+@media (min-width: 901px) {
+  .rd-podcast[data-preparing] { grid-template-columns: auto; grid-template-areas: 'header' '.' 'cover' 'words' '.'; }
+  .rd-podcast[data-preparing] .rd-podcast-cover { margin-bottom: var(--space-6); }
+  .rd-podcast[data-preparing] .rd-podcast-words { margin-bottom: 0; }
 }
 /* Narrower, the section and the caption are the column's own items, as they were before the group. */
 @media (max-width: 900px) {
