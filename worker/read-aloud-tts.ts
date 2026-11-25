@@ -194,9 +194,13 @@ async function hasCachedMark(key: Request) {
   return Boolean(cached);
 }
 
+/**
+ * A mark is named by a paper's id, not by its content, so unlike a clip it is cached for a day
+ * rather than for good: a mark removed from R2 stops being served within that day.
+ */
 function cacheMark(key: Request, present: boolean) {
   return writeCache(key, new Response(null, {
-    headers: { 'cache-control': present ? IMMUTABLE_CACHE : 'public, max-age=300' },
+    headers: { 'cache-control': present ? 'public, max-age=86400' : 'public, max-age=300' },
   }));
 }
 
@@ -289,14 +293,12 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
   if (text.length > MAX_PARAGRAPH_CHARS) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
 
   const keys = await Promise.all(PROVIDERS.map(provider => audioKey(provider.name, text)));
-  const storedKey = async (includeCache: boolean) => {
+  const storedKey = async () => {
     for (const key of keys) {
-      if (includeCache) {
-        const cached = await readCache(cacheRequest(key));
-        if (cached?.body) {
-          await cached.body.cancel().catch(() => undefined);
-          if (cached.headers.has('content-length')) return key;
-        }
+      const cached = await readCache(cacheRequest(key));
+      if (cached?.body) {
+        await cached.body.cancel().catch(() => undefined);
+        if (cachedLength(cached) !== null) return key;
       }
       if (await store.head(`${key}.mp3`)) return key;
     }
@@ -305,7 +307,7 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
   // The audio served is the first stored in the providers' order, and timings
   // belong to that clip alone: another voice speaks the same words at other times.
   if (payload?.timings === true) {
-    const served = await storedKey(true);
+    const served = await storedKey();
     const timings = served === null ? null : await store.get(`${served}.json`);
     if (!timings) throw new AIExplanationError('AI_TIMINGS_NOT_STORED', 404);
     return { body: await timings.arrayBuffer(), type: 'application/json' };
@@ -315,11 +317,8 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
       const request = cacheRequest(key);
       const cached = await readCache(request);
       if (cached?.body) {
-        const length = cached.headers.get('content-length');
-        if (length !== null) {
-          const size = Number(length);
-          return { body: fixedLength(cached.body, size), size, type: 'audio/mpeg', key };
-        }
+        const size = cachedLength(cached);
+        if (size !== null) return { body: fixedLength(cached.body, size), size, type: 'audio/mpeg', key };
         await cached.body.cancel().catch(() => undefined);
       }
       const object = await store.get(`${key}.mp3`);
@@ -354,11 +353,12 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
     const made = await storedAudio();
     if (made) return made;
   }
-  const work = (async () => {
+  // The work may outlive its reader (`keepAlive`), so it never opens a stream: it answers with the
+  // clip it paid for, or null when the clip is already stored, which is then streamed below.
+  const work = (async (): Promise<ReadAloudResult | null> => {
     try {
       // Stored between this request's look at the bucket and its turn.
-      const made = await storedAudio();
-      if (made) return made;
+      if (await storedKey()) return null;
       const paper = account.unlimitedAI ? null : await takePaper(env, account.uid, paperId, dayOf());
       try {
         const { audio, alignment, key } = await synthesize(env, account.uid, text, keys, deadline);
@@ -368,13 +368,13 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
           httpMetadata: { contentType: 'audio/mpeg' },
         }).catch(logStorageError);
         let saved = await putAudio(true);
-        let winner: ReadAloudResult | null = null;
+        let beaten = false;
         if (!saved) {
-          // Another request stored this paragraph first: serve its clip, whose timings are its own.
-          winner = await storedAudio();
+          // Another request stored this paragraph first: its clip, whose timings are its own, is served.
+          beaten = Boolean(await storedKey());
           // Nothing is stored, so the create-only write was refused or failed rather than beaten.
           // Store the paid clip plainly instead of paying for it again on the next listen.
-          if (!winner) saved = await putAudio(false);
+          if (!beaten) saved = await putAudio(false);
         }
         if (saved) {
           if (alignment) {
@@ -387,7 +387,7 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
           else await cache;
         }
         await paper?.made().catch(() => undefined);
-        return winner ?? { body: audio, type: 'audio/mpeg', key };
+        return beaten ? null : { body: audio, type: 'audio/mpeg', key };
       } catch (error) {
         await paper?.giveBack().catch(() => undefined);
         throw error;
@@ -397,7 +397,18 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
     }
   })();
   keepAlive?.(work.catch(() => undefined));
-  return work;
+  const made = await work;
+  if (made) return made;
+  const served = await storedAudio();
+  if (!served) throw new AIExplanationError('AI_UNAVAILABLE', 502);
+  return served;
+}
+
+/** A cached clip's byte length, or null when the header is missing or not a positive whole number. */
+function cachedLength(cached: Response) {
+  const raw = cached.headers.get('content-length') ?? '';
+  const size = Number(raw);
+  return /^\d+$/.test(raw) && Number.isSafeInteger(size) && size > 0 ? size : null;
 }
 
 function logStorageError(error: unknown) {

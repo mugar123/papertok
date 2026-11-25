@@ -528,6 +528,20 @@ for (const [behaviour, conditionalPut] of [
   });
 }
 
+test('a cached clip without a usable length is skipped for the copy in R2', async () => {
+  const key = await audioKey('cartesia', TEXT);
+  const bucket = memoryBucket();
+  bucket.objects.set(`${key}.mp3`, CARTESIA_MP3);
+  const worker = env(recordingLedger(), bucket);
+  for (const length of ['', 'abc', '0']) {
+    const edge = memoryCache();
+    edge.entries.set(`https://papertok.internal/cache/read-aloud/${key}`, { bytes: new Uint8Array([1, 2]).buffer, headers: new Headers({ 'content-length': length }) });
+    const response = await signedIn(() => reportApi.fetch(paragraphRequest({ text: TEXT, storedOnly: true }), worker), edge);
+    assert.equal(response.status, 200, length);
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3, length);
+  }
+});
+
 test('two requests for the same new paragraph call the provider once, and both get its audio', async () => {
   const ledger = recordingLedger();
   const bucket = memoryBucket();
@@ -542,8 +556,8 @@ test('two requests for the same new paragraph call the provider once, and both g
     assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
   }
   assert.equal(calls.length, 1);
-  // The waiting request polls with GETs: a missing object costs what a HEAD does.
-  assert.deepEqual(bucket.heads, []);
+  // The waiting request polls with GETs; HEADs are only the made request's own checks.
+  assert.ok(bucket.heads.every(key => key.endsWith('.mp3')));
   assert.deepEqual(ledger.calls.map(call => [call.action, call.amount]), [['reserve', TEXT.length]]);
 });
 
@@ -560,7 +574,7 @@ test('when the request making a paragraph fails, a request waiting for it makes 
   assert.deepEqual(responses.map(response => response.status).sort(), [200, 502]);
   assert.equal(calls.length, 2);
   const keys = [`${await audioKey('cartesia', TEXT)}.mp3`, `${await audioKey('elevenlabs', TEXT)}.mp3`];
-  assert.deepEqual(bucket.heads, []);
+  assert.ok(bucket.heads.every(key => keys.includes(key)));
   assert.ok(bucket.gets.length > 0 && bucket.gets.every(key => keys.includes(key)));
   assert.deepEqual(ledger.calls.map(call => call.action), ['reserve', 'release', 'reserve']);
 });
@@ -587,7 +601,7 @@ test('paper marks cache misses and hits, and writing a mark supersedes a cached 
     assert.deepEqual(await ask({ papers: ['paper-a'] }), { voiced: ['paper-a'] });
     assert.deepEqual(await ask({ usage: true, paperId: 'paper-a' }), { papersLeft: 2, dailyPapers: 2, paperOpen: true });
     assert.deepEqual(bucket.heads, []);
-    assert.equal([...edge.entries.values()][1]?.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.equal([...edge.entries.values()][1]?.headers.get('cache-control'), 'public, max-age=86400');
   }, edge);
 });
 
