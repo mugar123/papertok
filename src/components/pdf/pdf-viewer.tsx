@@ -487,7 +487,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
         {summaryOpen && (
           <div className="pdf-summary">
             <Suspense fallback={null}>
-              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={() => choose('paper')} />
+              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={handleClose} onLeave={leaveThen} onPaperTab={() => choose('paper')} />
             </Suspense>
           </div>
         )}
