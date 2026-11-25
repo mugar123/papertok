@@ -60,7 +60,7 @@ import { documentVisibility } from '../pdf/viewer-outcome.ts';
 import { startReaderTime } from './reader-time.ts';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { journalExplorerLink } from '../../utils/explorer-paths.ts';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../onboarding/petri.tsx';
@@ -383,6 +383,21 @@ function InfoTag({ className, info, children }: { className: string; info: strin
       </PopoverContent>
     </Popover>
   );
+}
+
+function JournalLink({ journal, onClose, onLeave }: {
+  journal: NonNullable<ReturnType<typeof journalExplorerLink>>;
+  onClose: () => void;
+  onLeave?: (then: () => void) => void;
+}) {
+  const navigate = useNavigate();
+  return <Link to={journal.path} className="rd-tag rd-tag--link" onClick={(event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (onLeave) {
+      event.preventDefault();
+      onLeave(() => { void navigate(journal.path); });
+    } else onClose();
+  }}>{journal.name}</Link>;
 }
 
 export default function PaperReader({ paper, card, onClose, closeRef = null, initialLevel, onPaperTab, embedded = false, onLeave }: PaperReaderProps) {
@@ -1249,24 +1264,7 @@ export default function PaperReader({ paper, card, onClose, closeRef = null, ini
                 {paper?.year && <span className="rd-tag">{paper.year}</span>}
                 {acceptedAt && <span className="rd-tag">{acceptedAt}</span>}
                 {journal && (
-                  <Link
-                    to={journal.path}
-                    className="rd-tag rd-tag--link"
-                    // The reader leaves for the page, which may be the one
-                    // under it when it opened from that journal's Explorer page.
-                    // As with the Similar layer's links, the reader's history
-                    // entry stays under the new page: Back from it shows the
-                    // feed, and a second Back lands on the same feed URL and
-                    // seems to do nothing (use-overlay-history.ts). A
-                    // replacing navigation would remove it but give the page the
-                    // feed's history index, which the Explorer's back arrow and
-                    // the page transition read.
-                    onClick={(event) => {
-                      if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) requestClose();
-                    }}
-                  >
-                    {journal.name}
-                  </Link>
+                  <JournalLink journal={journal} onClose={requestClose} onLeave={embedded ? onLeave : undefined} />
                 )}
                 {meta?.cached && <InfoTag className="rd-tag" info={copy.cachedTitle}>{copy.cached}</InfoTag>}
               </div>

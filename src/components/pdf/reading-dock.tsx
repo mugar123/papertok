@@ -15,7 +15,7 @@ import type { ReadAloudChapter, SpokenPassage } from './read-aloud.ts';
 import { readAloudStart } from './read-aloud.ts';
 import { useReadAloud } from './use-read-aloud.ts';
 import { useZoteroAction } from './use-zotero-action.ts';
-import { skipsCoveredView } from './paper-view.ts';
+import { skipsCoveredView } from './covered-view.ts';
 import { ZoteroMark } from './zotero-mark.tsx';
 import ReadAloudListen from './read-aloud-listen.tsx';
 import UsesCount from '../reader/uses-count.tsx';

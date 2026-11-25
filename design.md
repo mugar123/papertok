@@ -638,13 +638,7 @@ menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
 new tab. Both readers use `pdf/reading-dock.tsx` for Notes and the
-original-paper link. The paper viewer is the paper's own route, `/paper/<key>/read`,
-`/listen` or `/summary` (`pdf/paper-view.ts`): a full-screen modal dialog over the page it was
-opened from, which stays mounted below it, so Back and the viewer's X return to that page where
-it was, and both play the viewer's leave. Opened from a link or a reload, the page under it is
-the paper's own; its menu then has no card actions (Mark as read, Not interested, About), and a
-paper that cannot be loaded leaves for its page with a notice. A tab changes the address without
-a new history step; a tab not offered (Listen without an account) leaves for Paper. The paper viewer's top bar holds up to three tabs, Paper,
+original-paper link. The paper viewer's top bar holds up to three tabs, Paper,
 Listen and AI summary, each where it applies, with a chip that slides to the one
 chosen (`pdf/reading-tabs.tsx`). The view left goes at once, and the one chosen
 is opaque from the start, so two texts never show through each other. Paper and

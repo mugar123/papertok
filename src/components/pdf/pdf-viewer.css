@@ -27,8 +27,8 @@
 }
 
 /* `data-open` / `data-closed` are the primitive's: it holds the popup in the
-   document until the closing animation has finished, and only then is the
-   viewer's route left (paper-view-route.tsx). The paper arrives and leaves as a detail
+   document until the closing animation has finished, and only then tells
+   app.tsx to unmount the viewer. The paper arrives and leaves as a detail
    page does, on the same keyframes and clocks as `enter` and `leave` in
    page-transition.css (280ms in, 240ms out). */
 .pdf-overlay[data-open] {
