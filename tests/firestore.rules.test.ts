@@ -1958,6 +1958,9 @@ test('ENG-249: no other account and no guest reads or writes it, and the client 
   await assertFails(setDoc(pmfSurveyDoc(asBob()), pmfSurveyRecord('0.4.0')));
   await assertFails(setDoc(pmfSurveyDoc(asGuest()), pmfSurveyRecord('0.4.0')));
   await assertFails(deleteDoc(pmfSurveyDoc(asAlice())));
+  for (const db of [asAlice(), asBob(), asGuest()]) {
+    await assertFails(getDocs(collection(db, 'users', ALICE, 'settings')));
+  }
 });
 
 test('ENG-249: the record holds one app version and nothing else, no answer among it', async () => {
