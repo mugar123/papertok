@@ -350,7 +350,7 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
     // A request that waited takes the turn only with time left for a provider's call; the viewer asks again.
     if (deadline - Date.now() < SYNTHESIS_TIMEOUT_MS + MAKING_POLL_MS) throw new AIExplanationError('AI_BUSY', 429);
     await new Promise(resolve => { setTimeout(resolve, MAKING_POLL_MS); });
-    if (!await storedKey(false)) continue;
+    // A GET of a missing object costs what a HEAD does, and a hit brings the audio with it.
     const made = await storedAudio();
     if (made) return made;
   }
@@ -363,10 +363,19 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
       try {
         const { audio, alignment, key } = await synthesize(env, account.uid, text, keys, deadline);
         // A turn can expire during synthesis. Keep the first clip and write only its timings.
-        const saved = await store.put(`${key}.mp3`, audio, {
-          onlyIf: new Headers({ 'if-none-match': '*' }),
+        const putAudio = (createOnly: boolean) => store.put(`${key}.mp3`, audio, {
+          ...(createOnly ? { onlyIf: new Headers({ 'if-none-match': '*' }) } : {}),
           httpMetadata: { contentType: 'audio/mpeg' },
         }).catch(logStorageError);
+        let saved = await putAudio(true);
+        let winner: ReadAloudResult | null = null;
+        if (!saved) {
+          // Another request stored this paragraph first: serve its clip, whose timings are its own.
+          winner = await storedAudio();
+          // Nothing is stored, so the create-only write was refused or failed rather than beaten.
+          // Store the paid clip plainly instead of paying for it again on the next listen.
+          if (!winner) saved = await putAudio(false);
+        }
         if (saved) {
           if (alignment) {
             await store.put(`${key}.json`, JSON.stringify(alignment), {
@@ -378,11 +387,7 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
           else await cache;
         }
         await paper?.made().catch(() => undefined);
-        if (saved === null) {
-          const winner = await storedAudio();
-          if (winner) return winner;
-        }
-        return { body: audio, type: 'audio/mpeg', key };
+        return winner ?? { body: audio, type: 'audio/mpeg', key };
       } catch (error) {
         await paper?.giveBack().catch(() => undefined);
         throw error;

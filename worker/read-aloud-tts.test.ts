@@ -503,6 +503,31 @@ test('a late synthesis serves the first stored bytes and leaves their timings in
   assert.equal(calls.length, 1);
 });
 
+for (const [behaviour, conditionalPut] of [
+  ['rejects', async () => { throw new Error('onlyIf not supported'); }],
+  ['answers null for a new object', async () => null],
+] as const) {
+  test(`when R2 ${behaviour} on the create-only write, the paid clip is still stored and not paid for again`, async () => {
+    const key = await audioKey('cartesia', TEXT);
+    const bucket = memoryBucket();
+    const put = bucket.put;
+    bucket.put = async (name: string, value: ArrayBuffer | string, options?: { onlyIf?: Headers }) => (options?.onlyIf
+      ? conditionalPut()
+      : put(name, value, options));
+    const worker = env(recordingLedger(), bucket);
+    const { calls } = await withProviders({ cartesia: cartesiaAudio }, () => signedIn(async () => {
+      const response = await reportApi.fetch(paragraphRequest(), worker);
+      assert.equal(response.headers.get('x-tts-audio'), key);
+      assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
+      assert.deepEqual(bucket.objects.get(`${key}.mp3`), CARTESIA_MP3);
+      const again = await reportApi.fetch(paragraphRequest({ text: TEXT, storedOnly: true }), worker);
+      assert.equal(again.status, 200);
+      assert.deepEqual(new Uint8Array(await again.arrayBuffer()), CARTESIA_MP3);
+    }));
+    assert.equal(calls.length, 1);
+  });
+}
+
 test('two requests for the same new paragraph call the provider once, and both get its audio', async () => {
   const ledger = recordingLedger();
   const bucket = memoryBucket();
@@ -517,7 +542,8 @@ test('two requests for the same new paragraph call the provider once, and both g
     assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
   }
   assert.equal(calls.length, 1);
-  assert.deepEqual(bucket.heads, [`${await audioKey('cartesia', TEXT)}.mp3`]);
+  // The waiting request polls with GETs: a missing object costs what a HEAD does.
+  assert.deepEqual(bucket.heads, []);
   assert.deepEqual(ledger.calls.map(call => [call.action, call.amount]), [['reserve', TEXT.length]]);
 });
 
@@ -534,8 +560,8 @@ test('when the request making a paragraph fails, a request waiting for it makes 
   assert.deepEqual(responses.map(response => response.status).sort(), [200, 502]);
   assert.equal(calls.length, 2);
   const keys = [`${await audioKey('cartesia', TEXT)}.mp3`, `${await audioKey('elevenlabs', TEXT)}.mp3`];
-  assert.deepEqual(bucket.heads, keys);
-  assert.deepEqual(bucket.gets, [...keys, ...keys, ...keys, ...keys]);
+  assert.deepEqual(bucket.heads, []);
+  assert.ok(bucket.gets.length > 0 && bucket.gets.every(key => keys.includes(key)));
   assert.deepEqual(ledger.calls.map(call => call.action), ['reserve', 'release', 'reserve']);
 });
 
