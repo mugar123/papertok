@@ -1,7 +1,7 @@
 import { readBoundedBytes } from './bounded-body.ts';
 import { MAX_REQUEST_BYTES as MAX_REWRITE_REQUEST_BYTES } from './ai-rewrite.ts';
 import { INSTITUTION_VERIFICATION_PATH, handleInstitutionVerificationRequest } from './institution-verification.ts';
-import { captureWorkerException } from './error-tracking.ts';
+import { captureWorkerException, captureWorkerTranslationFailure } from './error-tracking.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 
@@ -15,6 +15,7 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
+import { fullPaperTranslationAvailable, handleFullPaperTranslation } from './ai-full-paper-translation.ts';
 import { READ_ALOUD_PATH, VOICE_PAPERS_PATH, handleReadAloud, handleVoicePapers } from './read-aloud-tts.ts';
 import {
   EmailNotificationError,
@@ -32,7 +33,7 @@ import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAcces
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
 import { ZOTERO_PATHS, ZoteroError, handleZoteroRequest } from './zotero.ts';
 import { ORCID_PATHS, OrcidError, handleOrcidRequest } from './orcid.ts';
-import { allowedOrigins, corsHeaders, json } from './http.ts';
+import { allowedOrigins, corsHeaders, json, RESPONSE_SECURITY_HEADERS } from './http.ts';
 import { handleOpenAlex } from './openalex-api.ts';
 import { handleCitationGraph } from './citation-graph.ts';
 import { handleOpenAccess } from './open-access.ts';
@@ -420,6 +421,32 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
       });
+    }
+  }
+  if (url.pathname === '/ai/translate-paper') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+    if (!fullPaperTranslationAvailable(env)) {
+      return json({ code: 'AI_NOT_CONFIGURED' }, 404, { ...corsHeaders(origin, env), 'cache-control': 'no-store' });
+    }
+    if (!allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    try {
+      const body = await handleFullPaperTranslation(request, env);
+      return new Response(body, { headers: {
+        ...corsHeaders(origin, env),
+        ...RESPONSE_SECURITY_HEADERS,
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'cache-control': 'private, no-store',
+      } });
+    } catch (error) {
+      const knownError = error instanceof AIExplanationError;
+      const code = knownError ? error.code : 'AI_UNAVAILABLE';
+      const status = knownError ? error.status : 502;
+      captureWorkerTranslationFailure(code, status);
+      return json(
+        { code, ...(knownError && error.quota ? { quota: error.quota } : {}) },
+        status,
+        { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+      );
     }
   }
   // One passage, explained in place. Same daily allowance as /ai/rewrite —

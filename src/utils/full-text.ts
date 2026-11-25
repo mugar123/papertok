@@ -1,4 +1,5 @@
 // Nothing from the source is rendered as markup except MathML, rebuilt from an allowlist.
+import { PAPER_TRANSLATION_HTML_BYTES } from './full-paper-translation-contract.ts';
 import type { FullTextSource } from '../models/full-text.ts';
 import { safeCatalogUrl, safeExternalUrl } from './external-url.ts';
 
@@ -49,14 +50,63 @@ export type Note = { id: string; label: string; content: Inline[] };
 export type FullText = {
   source: FullTextSource;
   sourceUrl: string;
+  oversizedForTranslation?: boolean;
   license?: string;
   lang?: string;
+  title?: Extract<Block, { t: 'heading' }>;
   abstract: Block[];
   body: Block[];
   references: Reference[];
   notes: Note[];
   conversionErrors: number;
 };
+
+// This is the subset of the DOM used by the browser and the Worker's HTML parser.
+type PaperNode = {
+  nodeType: number;
+  textContent: string | null;
+  childNodes: Iterable<PaperNode>;
+  cloneNode(deep?: boolean): PaperNode;
+};
+
+type PaperElements = ArrayLike<PaperElement> & Iterable<PaperElement>;
+type PaperSelectors = {
+  querySelector(selector: string): PaperElement | null;
+  querySelectorAll(selector: string): PaperElements & { forEach(callback: (element: PaperElement) => void): void };
+  getElementsByTagName(name: string): PaperElements;
+  getElementsByTagNameNS(namespace: string | null, name: string): PaperElements;
+};
+
+type PaperElement = PaperNode & PaperSelectors & {
+  id: string;
+  localName: string;
+  namespaceURI: string | null;
+  outerHTML: string;
+  ownerDocument: PaperDocument;
+  attributes: Iterable<{ localName: string; value: string }>;
+  children: PaperElements;
+  classList: { contains(name: string): boolean };
+  getAttribute(name: string): string | null;
+  getAttributeNS(namespace: string | null, name: string): string | null;
+  setAttribute(name: string, value: string): void;
+  closest(selector: string): PaperElement | null;
+  append(...nodes: (PaperNode | string)[]): void;
+  remove(): void;
+};
+
+type PaperDocument = PaperSelectors & {
+  documentElement: PaperElement;
+  createElementNS(namespace: string | null, name: string): PaperElement;
+};
+
+type PaperInstruction = PaperNode & { target: string; data: string };
+
+function parseBrowserDocument(source: string, format: 'text/html' | 'application/xml'): PaperDocument {
+  const { DOMParser } = globalThis as typeof globalThis & {
+    DOMParser: new () => { parseFromString(input: string, type: typeof format): PaperDocument };
+  };
+  return new DOMParser().parseFromString(source, format);
+}
 
 const MATHML_NS = 'http://www.w3.org/1998/Math/MathML';
 const MATHML_ELEMENTS = new Set([
@@ -71,7 +121,11 @@ const MATHML_ATTRIBUTES = new Set([
   'width', 'height', 'depth', 'voffset',
 ]);
 
-const mo = (text: string) => {
+const ELEMENT_NODE = 1;
+const TEXT_NODE = 3;
+const PROCESSING_INSTRUCTION_NODE = 7;
+
+const mo = (document: PaperDocument, text: string) => {
   const out = document.createElementNS(MATHML_NS, 'mo');
   out.textContent = text;
   return out;
@@ -79,38 +133,39 @@ const mo = (text: string) => {
 
 // Browsers dropped `mfenced` with MathML Core, so a JATS formula that uses it
 // lost its brackets. It becomes the row of operators it stands for.
-function unfence(source: Element): Element {
+function unfence(source: PaperElement): PaperElement {
+  const document = source.ownerDocument;
   const out = document.createElementNS(MATHML_NS, 'mrow');
   const separators = (source.getAttribute('separators') ?? ',').replace(/\s/g, '');
-  const parts = [...source.children].map(cleanMath).filter((part): part is Element => Boolean(part));
-  out.append(mo(source.getAttribute('open') ?? '('));
+  const parts = [...source.children].map(cleanMath).filter((part): part is PaperElement => Boolean(part));
+  out.append(mo(document, source.getAttribute('open') ?? '('));
   parts.forEach((part, index) => {
-    if (index > 0 && separators) out.append(mo(separators[Math.min(index - 1, separators.length - 1)]));
+    if (index > 0 && separators) out.append(mo(document, separators[Math.min(index - 1, separators.length - 1)]));
     out.append(part);
   });
-  out.append(mo(source.getAttribute('close') ?? ')'));
+  out.append(mo(document, source.getAttribute('close') ?? ')'));
   return out;
 }
 
-function cleanMath(source: Element): Element | null {
+function cleanMath(source: PaperElement): PaperElement | null {
   const name = source.localName;
   if (!MATHML_ELEMENTS.has(name)) return null;
   if (name === 'mfenced') return unfence(source);
-  const out = document.createElementNS(MATHML_NS, name);
+  const out = source.ownerDocument.createElementNS(MATHML_NS, name);
   for (const attr of source.attributes) {
     if (MATHML_ATTRIBUTES.has(attr.localName)) out.setAttribute(attr.localName, attr.value);
   }
   for (const child of source.childNodes) {
-    if (child.nodeType === Node.TEXT_NODE) out.append(child.textContent ?? '');
-    else if (child.nodeType === Node.ELEMENT_NODE) {
-      const clean = cleanMath(child as Element);
+    if (child.nodeType === TEXT_NODE) out.append(child.textContent ?? '');
+    else if (child.nodeType === ELEMENT_NODE) {
+      const clean = cleanMath(child as PaperElement);
       if (clean) out.append(clean);
     }
   }
   return out;
 }
 
-const mathml = (el: Element) => cleanMath(el)?.outerHTML ?? '';
+const mathml = (el: PaperElement) => cleanMath(el)?.outerHTML ?? '';
 
 const INLINE_TAGS: Record<string, 'em' | 'strong' | 'sup' | 'sub' | 'code'> = {
   em: 'em', i: 'em', italic: 'em',
@@ -119,28 +174,30 @@ const INLINE_TAGS: Record<string, 'em' | 'strong' | 'sup' | 'sub' | 'code'> = {
   code: 'code', tt: 'code', monospace: 'code',
 };
 
-const hasClass = (el: Element, name: string) => el.classList?.contains(name) ?? false;
+const hasClass = (el: PaperElement, name: string) => el.classList?.contains(name) ?? false;
 
 type InlineRules = {
-  skip: (el: Element) => boolean;
-  ref: (el: Element) => string | null;
-  link: (el: Element) => string | null;
+  skip: (el: PaperElement) => boolean;
+  ref: (el: PaperElement) => string | null;
+  link: (el: PaperElement) => string | null;
   /** The TeX a source kept beside a formula's MathML. */
-  tex: (math: Element) => string | undefined;
+  tex: (math: PaperElement) => string | undefined;
   /** An element a source renders as something of its own: a footnote mark, a pictured formula. */
-  replace?: (el: Element) => Inline | null;
+  replace?: (el: PaperElement) => Inline | null;
 };
 
-function inlines(node: Node, rules: InlineRules): Inline[] {
+function inlines(node: PaperNode, rules: InlineRules): Inline[] {
   const out: Inline[] = [];
   for (const child of node.childNodes) {
-    if (child.nodeType === Node.TEXT_NODE) {
+    if (child.nodeType === TEXT_NODE) {
       const text = child.textContent ?? '';
-      if (text) out.push({ t: 'text', text });
+      const previous = out.at(-1);
+      if (previous?.t === 'text') previous.text += text;
+      else if (text) out.push({ t: 'text', text });
       continue;
     }
-    if (child.nodeType !== Node.ELEMENT_NODE) continue;
-    const el = child as Element;
+    if (child.nodeType !== ELEMENT_NODE) continue;
+    const el = child as PaperElement;
     if (el.localName === 'math') {
       out.push({ t: 'math', mathml: mathml(el), tex: rules.tex(el) });
       continue;
@@ -161,7 +218,7 @@ function inlines(node: Node, rules: InlineRules): Inline[] {
       out.push({ t: 'link', href, children: inlines(el, rules) });
       continue;
     }
-    const tag = INLINE_TAGS[el.localName];
+    const tag = hasClass(el, 'ltx_font_typewriter') ? 'code' : INLINE_TAGS[el.localName];
     if (tag) out.push({ t: tag, children: inlines(el, rules) });
     else out.push(...inlines(el, rules));
   }
@@ -215,7 +272,7 @@ const absoluteUrl = (value: string | null, base: string) => {
   }
 };
 
-const rows = (table: Element, rules: InlineRules): Cell[][] =>
+const rows = (table: PaperElement, rules: InlineRules): Cell[][] =>
   [...table.querySelectorAll('tr')].map(tr =>
     [...tr.children]
       .filter(cell => cell.localName === 'td' || cell.localName === 'th')
@@ -253,7 +310,7 @@ export function latexmlTex(alttext: string | null | undefined) {
 // split, and stays text.
 // arXiv appends two blocks of its own: "External Links:", whose external
 // identifier is a bare arXiv id, and "Cited by: §1, §2". Neither is the venue.
-function latexmlReference(item: Element, index: number): Reference {
+function latexmlReference(item: PaperElement, index: number): Reference {
   const own = [...item.querySelectorAll('.ltx_bibblock')]
     .filter(block => !block.classList.contains('ltx_bib_cited') && !block.querySelector('.ltx_bib_links'));
   const blocks = own.map(block => clean(block.textContent));
@@ -279,8 +336,8 @@ function latexmlReference(item: Element, index: number): Reference {
   };
 }
 
-export function parseArxivHtml(html: string, url: string): FullText | null {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
+export function parseArxivHtml(html: string, url: string, parse = (source: string): PaperDocument => parseBrowserDocument(source, 'text/html')): FullText | null {
+  const doc = parse(html.replace(/\r\n?/g, '\n'));
   const article = doc.querySelector('article.ltx_document');
   if (!article) return null;
   const notes: Note[] = [];
@@ -297,16 +354,16 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
       if (!hasClass(el, 'ltx_note') || !hasClass(el, 'ltx_role_footnote') || !el.id) return null;
       const label = clean(el.querySelector(':scope > .ltx_note_mark')?.textContent) || String(notes.length + 1);
       if (!notes.some(note => note.id === el.id)) {
-        const content = el.querySelector('.ltx_note_content')?.cloneNode(true) as Element | undefined;
+        const content = el.querySelector('.ltx_note_content')?.cloneNode(true) as PaperElement | undefined;
         content?.querySelectorAll('.ltx_note_mark, .ltx_note_type, .ltx_tag_note').forEach(part => part.remove());
         notes.push({ id: el.id, label, content: content ? inlines(content, rules) : [] });
       }
       return { t: 'sup', children: [{ t: 'ref', target: el.id, children: [{ t: 'text', text: label }] }] };
     },
   };
-  const label = (el: Element | null) => el?.querySelector(':scope > .ltx_tag, .ltx_tag')?.textContent?.trim().replace(/[:.]$/, '') || undefined;
-  const withoutTag = (el: Element) => {
-    const clone = el.cloneNode(true) as Element;
+  const label = (el: PaperElement | null) => el?.querySelector(':scope > .ltx_tag, .ltx_tag')?.textContent?.trim().replace(/[:.]$/, '') || undefined;
+  const withoutTag = (el: PaperElement) => {
+    const clone = el.cloneNode(true) as PaperElement;
     clone.querySelectorAll('.ltx_tag').forEach(tag => tag.remove());
     return clone;
   };
@@ -316,7 +373,7 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
   // A theorem's or a paragraph's run-in title ("Theorem 1.2.", "Proof.") opens
   // the paragraph that follows it, in bold, as the PDF prints it.
   let runIn: Inline[] | null = null;
-  const walk = (el: Element) => {
+  const walk = (el: PaperElement) => {
     for (const child of el.children) {
       const name = child.localName;
       if (hasClass(child, 'ltx_abstract') || hasClass(child, 'ltx_authors') || hasClass(child, 'ltx_title_document')
@@ -397,6 +454,7 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
   };
   walk(article);
 
+  const title = article.querySelector('.ltx_title_document');
   const abstract = [...article.querySelectorAll('.ltx_abstract p')].map(p => ({ t: 'p' as const, children: inlines(p, rules) }));
   // arXiv's page header names the licence; a link inside the paper is the authors' text.
   const license = [...doc.querySelectorAll('a[href*="creativecommons.org"], a[href*="arxiv.org/licenses"]')]
@@ -404,7 +462,9 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
   return withCitations({
     source: 'arxiv',
     sourceUrl: url,
+    ...(new TextEncoder().encode(html).length > PAPER_TRANSLATION_HTML_BYTES && { oversizedForTranslation: true }),
     license,
+    ...(title && { title: { t: 'heading', level: 1, children: inlines(title, rules) } }),
     lang: doc.documentElement.getAttribute('lang') || undefined,
     abstract,
     body,
@@ -417,14 +477,14 @@ export function parseArxivHtml(html: string, url: string): FullText | null {
 
 const XLINK = 'http://www.w3.org/1999/xlink';
 
-const instruction = (el: Element, target: string) => [...el.childNodes]
-  .find((node): node is ProcessingInstruction => node.nodeType === Node.PROCESSING_INSTRUCTION_NODE && (node as ProcessingInstruction).target === target)
+const instruction = (el: PaperElement, target: string) => [...el.childNodes]
+  .find((node): node is PaperInstruction => node.nodeType === PROCESSING_INSTRUCTION_NODE && (node as PaperInstruction).target === target)
   ?.data.trim();
 
 // Articles in PMC name their figure's copy on PMC's CDN in a processing
 // instruction, in one of two forms; preprints are served from Europe PMC's
 // file repository.
-function figureUrl(graphic: Element, fullTextId: string): string | null {
+function figureUrl(graphic: PaperElement, fullTextId: string): string | null {
   const blob = instruction(graphic, 'image-cloudpmc-urn')?.match(/^urn:cdn:(blobs\/.+)$/)?.[1]
     ?? (instruction(graphic, 'cloudpmc-bucket') === 'cdn' ? instruction(graphic, 'cloudpmc-path')?.match(/^blobs\/.+$/)?.[0] : undefined);
   if (blob) return safeExternalUrl(`https://cdn.ncbi.nlm.nih.gov/pmc/${blob}`) || null;
@@ -444,7 +504,7 @@ export function jatsTex(source: string | null | undefined) {
   return clean(body.replace(/^\s*(\$\$?|\\\[|\\\()/, '').replace(/(\$\$?|\\\]|\\\))\s*$/, '')) || undefined;
 }
 
-function jatsReference(ref: Element, index: number): Reference {
+function jatsReference(ref: PaperElement, index: number): Reference {
   const citation = ref.querySelector('element-citation, mixed-citation, citation') ?? ref;
   const field = (name: string) => clean(citation.getElementsByTagName(name)[0]?.textContent);
   const authors = [...citation.getElementsByTagName('person-group')]
@@ -481,16 +541,16 @@ function jatsReference(ref: Element, index: number): Reference {
 const BLOCKS_IN_PARAGRAPH = new Set(['disp-formula', 'list', 'fig', 'table-wrap']);
 
 export function parseJats(xml: string, url: string, fullTextId: string): FullText | null {
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const doc = parseBrowserDocument(xml, 'application/xml');
   if (doc.querySelector('parsererror')) return null;
-  const childNamed = (el: Element, name: string) => [...el.children].find(child => child.localName === name) ?? null;
-  const text = (el: Element | null) => el?.textContent?.trim() || undefined;
+  const childNamed = (el: PaperElement, name: string) => [...el.children].find(child => child.localName === name) ?? null;
+  const text = (el: PaperElement | null) => el?.textContent?.trim() || undefined;
   // Footnotes the text points at: the back matter's and a table's own. The
   // front matter's author notes are not part of the reading.
   const footnotes = [...doc.getElementsByTagName('fn')].filter(fn => fn.id && !fn.closest('front'));
   const noteLabels = new Map(footnotes.map((fn, index) => [fn.id, text(childNamed(fn, 'label')) ?? String(index + 1)]));
-  const formulaTex = (formula: Element | null) => jatsTex(formula?.getElementsByTagName('tex-math')[0]?.textContent);
-  const formulaImage = (formula: Element) => {
+  const formulaTex = (formula: PaperElement | null) => jatsTex(formula?.getElementsByTagName('tex-math')[0]?.textContent);
+  const formulaImage = (formula: PaperElement) => {
     const graphic = [...formula.getElementsByTagName('graphic'), ...formula.getElementsByTagName('inline-graphic')][0];
     return graphic ? figureUrl(graphic, fullTextId) ?? undefined : undefined;
   };
@@ -514,7 +574,7 @@ export function parseJats(xml: string, url: string, fullTextId: string): FullTex
       return src ? { t: 'formula-image', src } : null;
     },
   };
-  const figureImages = (el: Element): FigureImage[] => [...el.getElementsByTagName('graphic')]
+  const figureImages = (el: PaperElement): FigureImage[] => [...el.getElementsByTagName('graphic')]
     .filter(graphic => graphic.getAttribute('content-type') !== 'thumb')
     .flatMap(graphic => {
       const src = figureUrl(graphic, fullTextId);
@@ -522,7 +582,7 @@ export function parseJats(xml: string, url: string, fullTextId: string): FullTex
     });
 
   let droppedFormulas = 0;
-  const blocksOf = (el: Element, depth: number, out: Block[]) => {
+  const blocksOf = (el: PaperElement, depth: number, out: Block[]) => {
     for (const child of el.children) {
       switch (child.localName) {
         case 'title':
@@ -542,7 +602,7 @@ export function parseJats(xml: string, url: string, fullTextId: string): FullTex
             run = part();
           };
           for (const node of child.childNodes) {
-            if (node.nodeType === Node.ELEMENT_NODE && BLOCKS_IN_PARAGRAPH.has((node as Element).localName)) {
+            if (node.nodeType === ELEMENT_NODE && BLOCKS_IN_PARAGRAPH.has((node as PaperElement).localName)) {
               flush();
               const holder = part();
               holder.append(node.cloneNode(true));
@@ -602,7 +662,7 @@ export function parseJats(xml: string, url: string, fullTextId: string): FullTex
   const abstractEl = meta?.querySelector('abstract:not([abstract-type])') ?? meta?.querySelector('abstract');
   if (abstractEl) {
     // The reader titles the abstract itself.
-    const withoutTitle = abstractEl.cloneNode(true) as Element;
+    const withoutTitle = abstractEl.cloneNode(true) as PaperElement;
     [...withoutTitle.children].filter(child => child.localName === 'title').forEach(title => title.remove());
     blocksOf(withoutTitle, 1, abstract);
   }
