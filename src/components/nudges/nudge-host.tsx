@@ -40,7 +40,7 @@ import {
   type AccountNoticeRecord,
   type VisitNotices,
 } from '../../utils/nudges.ts';
-import { adoptAccountPmfSurvey, pmfSurveyAreas, pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown, syncLocalPmfSurvey, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
+import { adoptAccountPmfSurvey, pmfSurveyAreas, pmfSurveyDue, pmfSurveyVersionCovers, recordPmfSurveyDay, recordPmfSurveyShown, syncLocalPmfSurvey, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
 import { setCardsCovered } from '../../utils/visible-time.ts';
 import { pinAnalyticsContext } from '../pdf/viewer-outcome.ts';
 import NudgePanel from './nudge-panel.tsx';
@@ -194,23 +194,24 @@ export default function NudgeHost() {
     });
   }, [surveyOffered, signedIn, uid]);
 
-  // Read only while it can decide something: until the visit's choice is
-  // made, and while the survey is the notice picked. Another tab that showed
-  // it settles it here too. It is read before the minute of reading passes, so
-  // the account's answer below is in by the time the choice is made.
-  const surveyMatters = surveyOffered && signedIn && (picked === PMF_SURVEY_ID || !visit.choiceMade);
+  // Read only while it can decide something: as the visit's choice falls due,
+  // and while the survey is the notice picked. Another tab that showed it
+  // settles it here too.
+  const surveyMatters = surveyOffered && signedIn && (picked === PMF_SURVEY_ID || (dwellDone && !visit.choiceMade));
   const surveyDueHere = useSyncExternalStore(
     subscribeToOtherTabs,
     () => surveyMatters && pmfSurveyDue(uid, APP_VERSION),
     () => false,
   );
 
-  // Once this browser finds the survey due, the account says whether another
-  // device already asked: its record is copied here (adoptAccountPmfSurvey),
-  // which settles the survey in this browser too. The survey is due only once
-  // the account's answer for this uid is in. A failed read is not repeated in
-  // the visit, and asks nobody in it.
-  const [surveyAccountRead, setSurveyAccountRead] = useState<{ uid: string; ok: boolean } | null>(null);
+  // Once this browser finds the survey due, as the visit's choice falls due,
+  // the account says whether another device already asked. The choice waits
+  // for that answer (surveyPending), so it is the account's record of that
+  // moment that decides. The survey is due only if the record, kept here for
+  // the visit, does not cover this version; it is also copied to this browser
+  // (adoptAccountPmfSurvey), so the next visit here is settled without asking.
+  // A failed read is not repeated in the visit, and asks nobody in it.
+  const [surveyAccountRead, setSurveyAccountRead] = useState<{ uid: string; ok: boolean; version: string | null } | null>(null);
   const surveyAccountPending = surveyDueHere && Boolean(uid) && surveyAccountRead?.uid !== uid;
   useEffect(() => {
     if (!surveyAccountPending || !uid) return undefined;
@@ -218,15 +219,16 @@ export default function NudgeHost() {
     readAccountPmfSurvey(uid, controller.signal).then(version => {
       if (controller.signal.aborted) return;
       adoptAccountPmfSurvey(uid, version);
-      setSurveyAccountRead({ uid, ok: true });
+      setSurveyAccountRead({ uid, ok: true, version });
     }, (error: unknown) => {
       if (controller.signal.aborted) return;
       console.warn('Could not read whether the fit survey was asked', error);
-      setSurveyAccountRead({ uid, ok: false });
+      setSurveyAccountRead({ uid, ok: false, version: null });
     });
     return () => controller.abort();
   }, [surveyAccountPending, uid]);
-  const surveyDue = surveyDueHere && Boolean(uid) && surveyAccountRead?.uid === uid && surveyAccountRead?.ok === true;
+  const surveyAccount = uid && surveyAccountRead?.uid === uid ? surveyAccountRead : null;
+  const surveyDue = surveyDueHere && Boolean(surveyAccount?.ok) && !pmfSurveyVersionCovers(surveyAccount?.version, APP_VERSION);
 
   // Read again on every render and whenever another tab writes storage, so a
   // notice shown in another tab puts away the one waiting here as well.
@@ -267,6 +269,7 @@ export default function NudgeHost() {
     gates,
     privacyOwed,
     privacyPending,
+    surveyPending: surveyAccountPending,
     eligible: [...(emailProblem ? ['email-down'] : []), ...(surveyDue ? [PMF_SURVEY_ID] : [])],
     dismissed,
   });

@@ -843,3 +843,13 @@ test("who is told is decided from the account, its creation time, this browser's
   assert.equal(status({ uid: 'a' }, { storage }), 'settled', 'shown to this account in this browser');
   assert.equal(status({ uid: 'b' }, { storage }), 'owed', 'another account on the same browser');
 });
+
+test('ENG-249: a nudge choice waits for the account answer on the fit survey, and an owed privacy notice does not', () => {
+  const after = readingMinutePassed(VISIT_START);
+  const waiting = chooseVisitNotice(after, { gates: ON_FEED, privacyOwed: false, surveyPending: true, eligible: ['email-down'] });
+  assert.equal(waiting, after, 'nothing is chosen while the account is being asked');
+  const answered = chooseVisitNotice(waiting, { gates: ON_FEED, privacyOwed: false, eligible: [PMF_SURVEY_ID], random: () => 0 });
+  assert.equal(answered.picked, PMF_SURVEY_ID, 'the survey is chosen once the account says it was not asked');
+  const owed = chooseVisitNotice(VISIT_START, { gates: ON_FEED, privacyOwed: true, surveyPending: true });
+  assert.equal(owed.picked, PRIVACY_NOTICE_ID, 'an owed privacy notice is chosen at once');
+});
