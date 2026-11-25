@@ -188,6 +188,7 @@ test('past the day\'s papers, a paper not started today prepares nothing until t
     await waitFor(() => assert.match(tab.textContent ?? '', /You’ve used today’s 2 papers with PaperTok’s voice\. More tomorrow\./));
     await waitFor(() => assert.equal(within(tab).getByRole('status').textContent, 'You’ve used today’s 2 papers with PaperTok’s voice. More tomorrow.'));
     assert.equal(within(tab).queryByRole('button', { name: 'Play' }), null);
+    assert.doesNotMatch(tab.textContent ?? '', /Preparing your paper/, 'nothing is said to be preparing');
     await assert.rejects(audioRoute.requested(300), 'no audio is asked for');
     fireEvent.click(within(tab).getByRole('button', { name: 'Listen with this browser’s voice' }));
     await audioRoute.requested();

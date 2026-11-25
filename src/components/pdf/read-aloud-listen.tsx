@@ -64,7 +64,7 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause, arr
 }) {
   const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek } = player;
   const blocked = voice?.state === 'blocked';
-  const preparing = voice?.state === 'checking' || (!startup.failed && startup.ready < startup.total);
+  const preparing = !blocked && (voice?.state === 'checking' || (!startup.failed && startup.ready < startup.total));
   // The visual settles from the full tab into its place once, after a preparation this tab showed.
   const [showedPreparing, setShowedPreparing] = useState(preparing);
   if (preparing && !showedPreparing) setShowedPreparing(true);
