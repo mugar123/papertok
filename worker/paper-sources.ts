@@ -521,7 +521,7 @@ const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?
 // before a paper was enriched, so the nightly refresh of followed lanes has a
 // part of 700. Category and notable lanes run before it every night, so they
 // stop at 3,000, leaving 700 under the nightly cap. Enrichment has no part
-// cap. At the end of the nightly run, author lookups can spend up to 600 of the units
+// cap. At the end of the nightly run, author lookups can spend up to 2,500 of the units
 // remaining under both the nightly share and the feed tier's ceiling.
 type HarvestPart = 'categories' | 'nightly' | 'new';
 const HARVEST_OPENALEX_PARTS: Record<HarvestPart, HarvestAsk> = {
