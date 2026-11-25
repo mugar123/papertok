@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { sanitizeProductEventParams } from '../services/analytics-service.ts';
 import {
+  adoptAccountPmfSurvey,
   forgetPmfSurveyAsked,
   pmfSurveyDue,
   pmfSurveyAreas,
@@ -10,6 +11,8 @@ import {
   recordPmfSurveyDay,
   recordPmfSurveyPaper,
   recordPmfSurveyShown,
+  readPmfSurveyAsked,
+  syncLocalPmfSurvey,
 } from './pmf-survey.ts';
 import { clearUserScopedStorage, saveSeenPaperIds } from './user-scoped-storage.ts';
 
@@ -373,4 +376,73 @@ test('an account switch before the opening effect leaves the survey unrecorded',
   assert.deepEqual(sent, []);
   assert.equal(pmfSurveyDue('reader-a', '0.3.0', storage), true);
   assert.equal(storage.getItem('papertok_pmfSurveyAsked:reader-b'), null);
+});
+
+test('ENG-249: an ask on one device, kept in the account, settles that version on another device', async () => {
+  const phone = createStorage();
+  const laptop = createStorage();
+  const account = new Map<string, string>();
+  const saveToAccount = (uid: string, version: string) => {
+    account.set(uid, version);
+    return Promise.resolve();
+  };
+  openOn('reader', ['2026-11-18', '2026-11-19', '2026-11-20'], phone);
+  openOn('reader', ['2026-11-18', '2026-11-19', '2026-11-20'], laptop);
+  recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', storage: phone, track: noTrack, saveToAccount })?.close();
+  await Promise.resolve();
+  assert.equal(account.get('reader'), '0.3.0', 'opening it records the version in the account');
+  assert.equal(pmfSurveyDue('reader', '0.3.0', laptop), true, 'the laptop alone still finds it due');
+  adoptAccountPmfSurvey('reader', account.get('reader') ?? null, laptop);
+  assert.equal(pmfSurveyDue('reader', '0.3.0', laptop), false, 'the account record settles it on the laptop');
+  openOn('reader', ['2026-11-25', '2026-11-26'], laptop, '0.4.0');
+  assert.equal(pmfSurveyDue('reader', '0.4.0', laptop), true, 'a later version asks again after two days on it');
+});
+
+test('ENG-249: an older account record does not lower a later version this browser kept', () => {
+  const storage = createStorage();
+  showSurvey('reader', '0.10.0', storage);
+  adoptAccountPmfSurvey('reader', '0.9.0', storage);
+  adoptAccountPmfSurvey('reader', null, storage);
+  assert.equal(readPmfSurveyAsked('reader', storage), '0.10.0');
+});
+
+test('ENG-249: an account asked for an earlier version waits for two days on the new one, not the first-ask rule', () => {
+  const storage = createStorage();
+  openOn('reader', ['2026-11-18', '2026-11-19', '2026-11-20'], storage, '0.4.0');
+  assert.equal(pmfSurveyDue('reader', '0.4.0', storage), true, 'three days, never asked here');
+  adoptAccountPmfSurvey('reader', '0.3.0', storage);
+  assert.equal(pmfSurveyDue('reader', '0.4.0', storage), true, 'asked for 0.3.0 elsewhere, three days on 0.4.0');
+  const fresh = createStorage();
+  openOn('reader', ['2026-11-18', '2026-11-19'], fresh, '0.3.0');
+  openOn('reader', ['2026-11-20'], fresh, '0.4.0');
+  adoptAccountPmfSurvey('reader', '0.3.0', fresh);
+  assert.equal(pmfSurveyDue('reader', '0.4.0', fresh), false, 'only one day on 0.4.0');
+});
+
+test('ENG-249: a version this browser kept from before reaches the account, and a browser with none sends nothing', async () => {
+  const storage = createStorage();
+  const saved: string[] = [];
+  const saveToAccount = (_uid: string, version: string) => {
+    saved.push(version);
+    return Promise.resolve();
+  };
+  assert.equal(syncLocalPmfSurvey({ uid: 'reader', storage, saveToAccount }), undefined);
+  showSurvey('reader', '0.3.0', storage);
+  await syncLocalPmfSurvey({ uid: 'reader', storage, saveToAccount });
+  assert.deepEqual(saved, ['0.3.0']);
+});
+
+test('ENG-249: a failed account save leaves the survey settled in this browser', async () => {
+  const storage = createStorage();
+  const warn = console.warn;
+  const warnings: unknown[] = [];
+  console.warn = (...args: unknown[]) => { warnings.push(args[0]); };
+  try {
+    recordPmfSurveyShown({ uid: 'reader', signedInUid: 'reader', surveyOpen: true, version: '0.3.0', storage, track: noTrack, saveToAccount: () => Promise.reject(new Error('offline')) })?.close();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(readPmfSurveyAsked('reader', storage), '0.3.0');
+  assert.equal(warnings.length, 1);
 });

@@ -14,7 +14,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so the account record identifies the text behind the notice.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-24.13';
+export const PRIVACY_POLICY_VERSION = '2026-11-25.14';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -163,6 +163,12 @@ export const PRIVACY_POLICY_VERSION = '2026-11-24.13';
  * journals: a reader no longer follows a journal, and the journal follows
  * stored are deleted. It also collects less, so the summary and this instant
  * stay as 2026-11-24.12 left them.
+ *
+ * Version 2026-11-25.14 says the account also keeps the latest app version the
+ * fit survey was shown for, and deletes it with the account (ENG-249), so the
+ * survey is asked once per version across devices. Before, only each browser
+ * kept that version. It is one version string, no answer, used only to ask
+ * less often, so the summary and this instant stay as 2026-11-24.12 left them.
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-23T23:59:59Z';
 

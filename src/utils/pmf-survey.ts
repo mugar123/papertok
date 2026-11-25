@@ -25,6 +25,12 @@ type SurveyStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
  * does not ask again for the same version; deleting the account removes it
  * (forgetPmfSurveyAsked). Opening the survey settles its version, however it
  * is then closed.
+ *
+ * That version is also kept in the account (services/pmf-survey-service.ts),
+ * so one ask settles the version on every device and browser. This browser's
+ * copy is the first check; once it finds the survey due, the account's record
+ * is read (adoptAccountPmfSurvey) and the survey opens only if that record does
+ * not cover the version either. A failed read asks nobody in that visit.
  */
 
 const ACTIVE_DAYS = 3;
@@ -76,6 +82,14 @@ function versionAtLeast(version: string, than: string) {
     if (difference !== 0) return difference > 0;
   }
   return true;
+}
+
+/**
+ * Whether a survey asked for version `asked` settles `version`: the same
+ * release or a later one. Nothing asked settles nothing.
+ */
+export function pmfSurveyVersionCovers(asked: string | null | undefined, version: string) {
+  return Boolean(asked) && versionAtLeast(asked as string, version);
 }
 
 function isUsageDay(entry: unknown): entry is UsageDay {
@@ -173,6 +187,41 @@ export function pmfSurveyDue(uid: string | null | undefined, version: string, st
   return days.length >= ACTIVE_DAYS || papers.length >= DWELT_PAPERS;
 }
 
+/** The newest version this browser recorded the account as asked for, if any. */
+export function readPmfSurveyAsked(uid: string, storage?: SurveyStorage | null) {
+  const target = resolveStorage(storage);
+  return target ? readAsked(uid, target) : null;
+}
+
+/** Keeps `version` as asked in this browser unless a later one is already kept. */
+function rememberAsked(uid: string, version: string, storage: SurveyStorage | null) {
+  try {
+    if (!pmfSurveyVersionCovers(storage && readAsked(uid, storage), version)) storage?.setItem(askedKey(uid), version);
+  } catch {
+    // The account's record still settles it; this browser asks the account again next visit.
+  }
+}
+
+/**
+ * Takes the account's record for `uid` (null when it has none): what it holds
+ * is kept as this browser's copy, the newer of the two winning, so the next
+ * visit here is settled without asking the account, and a survey this browser
+ * found due is no longer due when another device already asked.
+ */
+export function adoptAccountPmfSurvey(uid: string, version: string | null, storage?: SurveyStorage | null) {
+  if (version) rememberAsked(uid, version, resolveStorage(storage));
+}
+
+/**
+ * Copies the version this browser recorded as asked to the account, for an
+ * ask from before the account kept it, so the other devices learn of it.
+ * Undefined when this browser has none.
+ */
+export function syncLocalPmfSurvey({ uid, storage, saveToAccount }: { uid: string; storage?: SurveyStorage | null; saveToAccount: (uid: string, version: string) => Promise<void> }) {
+  const asked = readPmfSurveyAsked(uid, storage);
+  return asked ? saveToAccount(uid, asked) : undefined;
+}
+
 /** For a deleted account: its uid has no business staying in this browser. */
 export function forgetPmfSurveyAsked(uid: string, storage?: SurveyStorage | null) {
   try {
@@ -230,9 +279,11 @@ export interface PmfSurveyShown {
  * `reader` as it was when the survey opened. Nothing is recorded before it
  * opens or if Firebase has already switched away from the rendered `uid`.
  * Both events carry `stillValid` so analytics can check the opening account
- * and consent again before capture.
+ * and consent again before capture. The version is also handed to
+ * `saveToAccount` for the account's own record; a failed save is reported and
+ * left, as this browser's copy still settles it here.
  */
-export function recordPmfSurveyShown({ uid, signedInUid, surveyOpen, version, reader, storage, track, stillValid }: {
+export function recordPmfSurveyShown({ uid, signedInUid, surveyOpen, version, reader, storage, track, stillValid, saveToAccount }: {
   uid: string | null | undefined;
   signedInUid: string | null | undefined;
   surveyOpen: boolean;
@@ -241,17 +292,16 @@ export function recordPmfSurveyShown({ uid, signedInUid, surveyOpen, version, re
   storage?: SurveyStorage | null;
   track: SurveyTrack;
   stillValid?: () => boolean;
+  saveToAccount?: (uid: string, version: string) => Promise<void>;
 }): PmfSurveyShown | null {
   if (!surveyOpen || !uid || uid !== signedInUid) return null;
   // The newest version asked is kept: a tab still running an earlier one does
-  // not write its version over it.
+  // not write its version over it, here or in the account.
   const target = resolveStorage(storage);
-  const asked = target && readAsked(uid, target);
-  try {
-    if (!asked || !versionAtLeast(asked, version)) target?.setItem(askedKey(uid), version);
-  } catch {
-    // The dialog still stays open until it is closed; it may return next visit.
-  }
+  rememberAsked(uid, version, target);
+  saveToAccount?.(uid, version).catch((error: unknown) => {
+    console.warn('Could not record in the account that the fit survey was shown', error);
+  });
   // Only the first ask reads the papers; the ones kept for it go now.
   writeUsage(uid, target, record => (record.papers.length ? { ...record, papers: [] } : null));
   void track('pmf_survey_shown', { app_version: version, ...readerParams(reader) }, stillValid);

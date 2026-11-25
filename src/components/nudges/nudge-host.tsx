@@ -8,9 +8,10 @@ import { useEmailNotifications } from '../../context/email-notifications-context
 import { useFeed } from '../../context/feed-context.tsx';
 import { useAnalyticsConsent } from '../../context/privacy-context.tsx';
 import { PRIVACY_NOTICE_SHOWN_FROM, PRIVACY_POLICY_EFFECTIVE_AT, PRIVACY_POLICY_VERSION } from '../../legal/privacy-policy.ts';
-import { ANALYTICS_CONSENT, trackPmfSurvey } from '../../services/analytics-service.ts';
+import { ANALYTICS_CONSENT, canSendAnalytics, trackPmfSurvey } from '../../services/analytics-service.ts';
 import { analyticsSessionContext } from '../../services/analytics-session.ts';
 import { auth } from '../../services/firebase.ts';
+import { readAccountPmfSurvey, saveAccountPmfSurvey } from '../../services/pmf-survey-service.ts';
 import { readAccountPrivacyNotice, saveAccountPrivacyNotice } from '../../services/privacy-notice-service.ts';
 import {
   NUDGE_DWELL_MS,
@@ -39,7 +40,7 @@ import {
   type AccountNoticeRecord,
   type VisitNotices,
 } from '../../utils/nudges.ts';
-import { pmfSurveyAreas, pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
+import { adoptAccountPmfSurvey, pmfSurveyAreas, pmfSurveyDue, recordPmfSurveyDay, recordPmfSurveyShown, syncLocalPmfSurvey, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
 import { setCardsCovered } from '../../utils/visible-time.ts';
 import { pinAnalyticsContext } from '../pdf/viewer-outcome.ts';
 import NudgePanel from './nudge-panel.tsx';
@@ -79,9 +80,10 @@ import PrivacyNotice from './privacy-notice.tsx';
 // dialog: over the feed's cards, never over another modal, only on the feed.
 // utils/pmf-survey.ts decides who is due; each mount, and each time the tab
 // is shown again, counts the day for the account. It is not offered while
-// analytics is off, where its answers would go nowhere. Once open, its version
-// counts as asked for the account however it is closed, and it does not open
-// again in the visit. Leaving the feed closes it as a dismissal.
+// analytics is off, nor away from production (localhost, Vercel previews),
+// where its answers would go nowhere. Once open, its version counts as asked
+// for the account, on every device, however it is closed, and it does not
+// open again in the visit. Leaving the feed closes it as a dismissal.
 
 // The product version this bundle was built from (package.json, through vite.config.ts).
 const APP_VERSION: string = import.meta.env.VITE_APP_VERSION;
@@ -141,6 +143,7 @@ export default function NudgeHost() {
   const { signedIn } = gates;
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
   const analyticsOn = useAnalyticsConsent().consent !== ANALYTICS_CONSENT.DENIED;
+  const surveyOffered = analyticsOn && canSendAnalytics();
 
   useEffect(() => {
     if (!signedIn || dwellDone) return undefined;
@@ -179,15 +182,51 @@ export default function NudgeHost() {
     return subscribeToTabVisibility(recordDay);
   }, [uid]);
 
-  // Read only while it can decide something: as the visit's choice falls due,
-  // and while the survey is the notice picked. Another tab that showed it
-  // settles it here too.
-  const surveyMatters = analyticsOn && signedIn && (picked === PMF_SURVEY_ID || (dwellDone && !visit.choiceMade));
-  const surveyDue = useSyncExternalStore(
+  // An ask this browser recorded before the account kept it reaches the
+  // account once per visit, so the other devices learn of it. A failure is
+  // left for the next visit.
+  const surveySyncAttemptedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!surveyOffered || !signedIn || !uid || surveySyncAttemptedFor.current === uid) return;
+    surveySyncAttemptedFor.current = uid;
+    void syncLocalPmfSurvey({ uid, saveToAccount: saveAccountPmfSurvey })?.catch((error: unknown) => {
+      console.warn('Could not sync the browser fit survey record to the account', error);
+    });
+  }, [surveyOffered, signedIn, uid]);
+
+  // Read only while it can decide something: until the visit's choice is
+  // made, and while the survey is the notice picked. Another tab that showed
+  // it settles it here too. It is read before the minute of reading passes, so
+  // the account's answer below is in by the time the choice is made.
+  const surveyMatters = surveyOffered && signedIn && (picked === PMF_SURVEY_ID || !visit.choiceMade);
+  const surveyDueHere = useSyncExternalStore(
     subscribeToOtherTabs,
     () => surveyMatters && pmfSurveyDue(uid, APP_VERSION),
     () => false,
   );
+
+  // Once this browser finds the survey due, the account says whether another
+  // device already asked: its record is copied here (adoptAccountPmfSurvey),
+  // which settles the survey in this browser too. The survey is due only once
+  // the account's answer for this uid is in. A failed read is not repeated in
+  // the visit, and asks nobody in it.
+  const [surveyAccountRead, setSurveyAccountRead] = useState<{ uid: string; ok: boolean } | null>(null);
+  const surveyAccountPending = surveyDueHere && Boolean(uid) && surveyAccountRead?.uid !== uid;
+  useEffect(() => {
+    if (!surveyAccountPending || !uid) return undefined;
+    const controller = new AbortController();
+    readAccountPmfSurvey(uid, controller.signal).then(version => {
+      if (controller.signal.aborted) return;
+      adoptAccountPmfSurvey(uid, version);
+      setSurveyAccountRead({ uid, ok: true });
+    }, (error: unknown) => {
+      if (controller.signal.aborted) return;
+      console.warn('Could not read whether the fit survey was asked', error);
+      setSurveyAccountRead({ uid, ok: false });
+    });
+    return () => controller.abort();
+  }, [surveyAccountPending, uid]);
+  const surveyDue = surveyDueHere && Boolean(uid) && surveyAccountRead?.uid === uid && surveyAccountRead?.ok === true;
 
   // Read again on every render and whenever another tab writes storage, so a
   // notice shown in another tab puts away the one waiting here as well.
@@ -309,6 +348,7 @@ export default function NudgeHost() {
       track: (eventName, params, stillValid) => trackPmfSurvey(eventName, params, { stillValid }),
       signedInUid: auth.currentUser?.uid,
       stillValid: pinAnalyticsContext(analyticsSessionContext),
+      saveToAccount: saveAccountPmfSurvey,
     });
     shownSurvey.current = shown;
     return () => shown?.close();
