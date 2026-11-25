@@ -110,7 +110,7 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
     if (podcast) readAloud.prepare(start);
   });
   const listen = useEffectEvent((open: boolean) => {
-    if (open && speaking === null && !voiceState) {
+    if (open && speaking === null && voiceState?.state !== 'checking') {
       void trackEvent('read_aloud_start', { surface: 'reader' });
       const start = startAt();
       if (!paperId) {
