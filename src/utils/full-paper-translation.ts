@@ -55,16 +55,21 @@ export function planFullPaperTranslation(doc: FullText) {
 
 // Only whitespace, brackets, quotes and sentence separators sit on the boundary with a
 // neighbouring citation or formula. Signs, percent marks and similar belong to the content.
-const BOUNDARY = /[\s\p{Ps}\p{Pe}\p{Pi}\p{Pf}".,;:!?，。、；：！？،؛؟]/u;
+const BOUNDARY = /[\s\p{Ps}\p{Pe}\p{Pi}\p{Pf}".,;:!?…，。、；：！？،؛؟]/u;
+const WORD = /[\p{L}\p{N}]/u;
 
 function splitEdges(text: string) {
   const chars = [...text];
-  const edge = (index: number) => BOUNDARY.test(chars[index]);
+  const at = (index: number) => chars[index] ?? '';
+  // Some marks bind to the word beside them: a decimal point (".5 mm", ".٥") or an
+  // apostrophe ("’90s", "the authors’"). They stay with the content.
+  const leadingBinds = (index: number) => (/[.,]/.test(at(index)) && /\p{Nd}/u.test(at(index + 1)))
+    || (at(index) === '’' && WORD.test(at(index + 1)));
+  const trailingBinds = (index: number) => at(index) === '’' && WORD.test(at(index - 1));
   let start = 0;
   let end = chars.length;
-  // A leading "." or "," before a digit is a decimal (".5 mm"), not a separator.
-  while (start < end && edge(start) && !(/[.,]/.test(chars[start]) && /\d/.test(chars[start + 1] ?? ''))) start++;
-  while (end > start && edge(end - 1)) end--;
+  while (start < end && BOUNDARY.test(at(start)) && !leadingBinds(start)) start++;
+  while (end > start && BOUNDARY.test(at(end - 1)) && !trailingBinds(end - 1)) end--;
   return {
     leading: chars.slice(0, start).join(''),
     body: chars.slice(start, end).join(''),
@@ -72,8 +77,10 @@ function splitEdges(text: string) {
   };
 }
 
+// Every source slot contains a letter, so a translation with no letter or digit
+// (only a dash, a dagger or an ellipsis) is not a translation and is refused.
 export function preserveTranslationEdges(source: string, translation: string) {
   const { leading, trailing } = splitEdges(source);
   const { body } = splitEdges(translation);
-  return body ? leading + body + trailing : '';
+  return WORD.test(body) ? leading + body + trailing : '';
 }

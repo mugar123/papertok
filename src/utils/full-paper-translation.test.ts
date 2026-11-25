@@ -42,6 +42,12 @@ test('keeps original edges and glues a closing bracket in RTL output', () => {
   assert.equal(preserveTranslationEdges('Text.', ' ... '), '');
   assert.equal(preserveTranslationEdges('The change was -5%.', '-5 % correspond au changement.'), '-5 % correspond au changement.');
   assert.equal(preserveTranslationEdges('.5 mm thick, as in', '.5 mm d’épaisseur, comme dans'), '.5 mm d’épaisseur, comme dans');
+  assert.equal(preserveTranslationEdges('Wait…', 'Attendez...'), 'Attendez…');
+  assert.equal(preserveTranslationEdges('Wait...', 'Attendez…'), 'Attendez...');
+  for (const punctuationOnly of [' … ', ' — ', ' † ']) assert.equal(preserveTranslationEdges('Text.', punctuationOnly), '');
+  assert.equal(preserveTranslationEdges('the ’90s.', '’90s.'), '’90s.');
+  assert.equal(preserveTranslationEdges('Text.', '.٥ mm'), '.٥ mm.');
+  assert.equal(preserveTranslationEdges('by the authors’ ', 'par les auteurs’ '), 'par les auteurs’ ');
   assert.deepEqual([...RTL_TRANSLATION_LANGUAGES].sort(), ['ar', 'fa', 'he', 'ur']);
   assert.equal(RTL_TRANSLATION_LANGUAGES.has('ja'), false);
 });
