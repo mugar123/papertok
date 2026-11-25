@@ -145,8 +145,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const leaveThen = useCallback((then: () => void) => {
     if (!open) return;
     afterClose.current = then;
-    setOpen(false);
-  }, [open]);
+    handleClose();
+  }, [handleClose, open]);
 
   useEffect(() => {
     startTimeRef.current = Date.now();
