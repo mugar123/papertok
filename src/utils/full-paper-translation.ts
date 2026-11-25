@@ -53,13 +53,18 @@ export function planFullPaperTranslation(doc: FullText) {
   };
 }
 
+// Only whitespace, brackets, quotes and sentence separators sit on the boundary with a
+// neighbouring citation or formula. Signs, percent marks and similar belong to the content.
+const BOUNDARY = /[\s\p{Ps}\p{Pe}\p{Pi}\p{Pf}".,;:!?，。、；：！？،؛؟]/u;
+
 function splitEdges(text: string) {
   const chars = [...text];
-  const edge = /[\s\p{P}]/u;
+  const edge = (index: number) => BOUNDARY.test(chars[index]);
   let start = 0;
   let end = chars.length;
-  while (start < end && edge.test(chars[start])) start++;
-  while (end > start && edge.test(chars[end - 1])) end--;
+  // A leading "." or "," before a digit is a decimal (".5 mm"), not a separator.
+  while (start < end && edge(start) && !(/[.,]/.test(chars[start]) && /\d/.test(chars[start + 1] ?? ''))) start++;
+  while (end > start && edge(end - 1)) end--;
   return {
     leading: chars.slice(0, start).join(''),
     body: chars.slice(start, end).join(''),

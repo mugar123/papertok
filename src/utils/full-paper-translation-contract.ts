@@ -34,7 +34,8 @@ export function isTranslationLanguage(value: unknown): value is TranslationLangu
 
 export const RTL_TRANSLATION_LANGUAGES: ReadonlySet<TranslationLanguage> = new Set(['ar', 'fa', 'he', 'ur']);
 
-const EXTENDED_OUTPUT_LANGUAGES = new Set<TranslationLanguage>(['ar', 'bn', 'fa', 'he', 'hi', 'ja', 'ko', 'ur', 'zh-Hans', 'zh-Hant']);
+// Every supported target outside the Latin script, which takes more output tokens per word.
+const EXTENDED_OUTPUT_LANGUAGES = new Set<TranslationLanguage>(['ar', 'bn', 'fa', 'he', 'hi', 'ja', 'ko', 'ru', 'uk', 'ur', 'zh-Hans', 'zh-Hant']);
 
 export function translatedChunkLimits(language: TranslationLanguage) {
   return EXTENDED_OUTPUT_LANGUAGES.has(language)

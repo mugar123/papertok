@@ -587,7 +587,8 @@ export async function preflightFullPaperTranslationQuota(env: WorkerEnv, uid: st
   const minute = Math.floor(Date.now() / 60_000);
   const rate = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
     periodKey: `translate-paper-check:${minute}`,
-    subject: uid,
+    // Namespaced per minute so the stored hash cannot be linked across windows.
+    subject: `translate-paper-check:${minute}:${uid}`,
     subjectLimit: FULL_PAPER_CHECKS_PER_MINUTE,
     globalLimit: FULL_PAPER_CHECKS_PER_MINUTE,
     globalAmount: 0,

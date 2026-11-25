@@ -48,6 +48,7 @@ function setUp(t: TestContext, ledgerReply = { accepted: true, remaining: 4 }) {
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
     FIREBASE_WEB_API_KEY: 'test-firebase-key',
     REQUEST_QUOTA_LEDGER: namespace as WorkerEnv['REQUEST_QUOTA_LEDGER'],
+    PDF_RATE_LIMIT_SECRET: 'test-caller-secret-at-least-32-characters',
   };
   const globals = globalThis as TestGlobals;
   const caches = globals.caches;
@@ -286,6 +287,13 @@ test('full-paper capabilities do not call the provider and submission requires a
   assert.deepEqual(await (await capabilities()).json(), { capabilities: { fullPaperTranslation: false } });
   enableFullPaper(env);
   assert.deepEqual(await (await capabilities()).json(), { capabilities: { fullPaperTranslation: true } });
+  for (const missing of ['FIREBASE_WEB_API_KEY', 'REQUEST_QUOTA_LEDGER', 'PDF_RATE_LIMIT_SECRET'] as const) {
+    const saved = env[missing];
+    delete env[missing];
+    assert.deepEqual(await (await capabilities()).json(), { capabilities: { fullPaperTranslation: false } }, missing);
+    assert.equal((await worker.fetch(fullRequest(), env)).status, 404, missing);
+    Object.assign(env, { [missing]: saved });
+  }
   for (const origin of ['', 'https://example.net']) {
     const request = fullRequest();
     if (origin) request.headers.set('origin', origin);

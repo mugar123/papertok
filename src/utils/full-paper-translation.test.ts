@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { parseHTML } from 'linkedom/worker';
 import { parseArxivHtml } from './full-text.ts';
 import type { Block, FullText, Inline } from './full-text.ts';
-import { RTL_TRANSLATION_LANGUAGES } from './full-paper-translation-contract.ts';
+import { RTL_TRANSLATION_LANGUAGES, TRANSLATION_LANGUAGES, translatedChunkLimits } from './full-paper-translation-contract.ts';
 import { planFullPaperTranslation, preserveTranslationEdges } from './full-paper-translation.ts';
 
 const formula: Inline = { t: 'math', tex: 'x^2', mathml: '' };
@@ -40,6 +40,8 @@ test('keeps original edges and glues a closing bracket in RTL output', () => {
   assert.equal(preserveTranslationEdges('  [Finding]. ', '  (نتيجة )، '), '  [نتيجة]. ');
   assert.equal(preserveTranslationEdges('after the citation)', 'après la citation )'), 'après la citation)');
   assert.equal(preserveTranslationEdges('Text.', ' ... '), '');
+  assert.equal(preserveTranslationEdges('The change was -5%.', '-5 % correspond au changement.'), '-5 % correspond au changement.');
+  assert.equal(preserveTranslationEdges('.5 mm thick, as in', '.5 mm d’épaisseur, comme dans'), '.5 mm d’épaisseur, comme dans');
   assert.deepEqual([...RTL_TRANSLATION_LANGUAGES].sort(), ['ar', 'fa', 'he', 'ur']);
   assert.equal(RTL_TRANSLATION_LANGUAGES.has('ja'), false);
 });
@@ -65,4 +67,11 @@ test('fits the captured arXiv heading hierarchy into one packed chunk', async ()
   assert.ok(plan);
   assert.equal(plan.chunks.length, 1);
   assert.equal(plan.source[0].at(-1), 'The model combines attention with a feed-forward network.');
+});
+
+test('every supported target outside the Latin script gets the larger output limit', () => {
+  const extended = Object.keys(TRANSLATION_LANGUAGES)
+    .filter(language => translatedChunkLimits(language as keyof typeof TRANSLATION_LANGUAGES).tokens === 14_000)
+    .sort();
+  assert.deepEqual(extended, ['ar', 'bn', 'fa', 'he', 'hi', 'ja', 'ko', 'ru', 'uk', 'ur', 'zh-Hans', 'zh-Hant']);
 });

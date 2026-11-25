@@ -32,6 +32,7 @@ import {
 } from '../src/utils/full-paper-translation-contract.ts';
 import { captureWorkerTranslationFailure } from './error-tracking.ts';
 import { readBoundedJson } from './bounded-body.ts';
+import { isCallerQuotaSecretConfigured } from './caller-quota.ts';
 import type { WorkerEnv } from './env.ts';
 
 const HAIKU_MODEL = 'claude-haiku-5-5';
@@ -54,9 +55,13 @@ async function beforeDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise
   }
 }
 
+// Everything a request needs, so the reader is never offered a route that answers 503:
+// sign-in check, daily ledger and the per-caller key for an uncached text look-up.
 export function fullPaperTranslationAvailable(env: WorkerEnv) {
   return env.FULL_PAPER_TRANSLATION_ENABLED === 'true'
-    && isAnthropicPrimary(env) && isAnthropicConfigured(env);
+    && isAnthropicPrimary(env) && isAnthropicConfigured(env)
+    && Boolean(env.FIREBASE_WEB_API_KEY) && Boolean(env.REQUEST_QUOTA_LEDGER)
+    && isCallerQuotaSecretConfigured(env.PDF_RATE_LIMIT_SECRET);
 }
 
 export async function handleFullPaperTranslation(request: Request, env: WorkerEnv) {
@@ -89,7 +94,13 @@ async function verifiedPaperChunks(request: Request, env: WorkerEnv, query: stri
   url.search = new URLSearchParams({ arxiv_id: ids.arxivId }).toString();
 
   const sourceSignal = AbortSignal.any([signal, AbortSignal.timeout(12_000)]);
-  const response = await beforeDeadline(handleFullText(new Request(url, { headers: request.headers, signal: sourceSignal }), env), sourceSignal);
+  // The relay reads only these two; the caller's token and cookies stay out of it.
+  const headers = new Headers();
+  for (const name of ['origin', 'cf-connecting-ip']) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  const response = await beforeDeadline(handleFullText(new Request(url, { headers, signal: sourceSignal }), env), sourceSignal);
   if (!response.ok) throw new AIExplanationError(response.status === 429 ? 'AI_BUSY' : 'AI_UNAVAILABLE', response.status === 429 ? 429 : 502);
   const invalid = () => new AIExplanationError('AI_INVALID_PAPER', 400);
   const source = await beforeDeadline(readBoundedJson<FullTextAnswer>(response, 8 * 1024 * 1024, { tooLarge: invalid, invalid }), sourceSignal);
