@@ -65,7 +65,8 @@ function splitEdges(text: string) {
   // apostrophe ("’90s", "the authors’"). They stay with the content.
   const leadingBinds = (index: number) => (/[.,]/.test(at(index)) && /\p{Nd}/u.test(at(index + 1)))
     || (at(index) === '’' && WORD.test(at(index + 1)));
-  const trailingBinds = (index: number) => at(index) === '’' && WORD.test(at(index - 1));
+  // After an opening ‘, a final ’ closes the quote (‘the authors’ view’), not a possessive.
+  const trailingBinds = (index: number) => at(index) === '’' && WORD.test(at(index - 1)) && !chars.slice(0, index).includes('‘');
   let start = 0;
   let end = chars.length;
   while (start < end && BOUNDARY.test(at(start)) && !leadingBinds(start)) start++;
@@ -77,10 +78,10 @@ function splitEdges(text: string) {
   };
 }
 
-// Every source slot contains a letter, so a translation with no letter or digit
-// (only a dash, a dagger or an ellipsis) is not a translation and is refused.
+// Every source slot contains a letter, so a translation with no letter, digit or
+// symbol (only a dash, a dagger or an ellipsis) is not a translation and is refused.
 export function preserveTranslationEdges(source: string, translation: string) {
   const { leading, trailing } = splitEdges(source);
   const { body } = splitEdges(translation);
-  return WORD.test(body) ? leading + body + trailing : '';
+  return /[\p{L}\p{N}\p{S}]/u.test(body) ? leading + body + trailing : '';
 }

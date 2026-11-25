@@ -48,6 +48,10 @@ test('keeps original edges and glues a closing bracket in RTL output', () => {
   assert.equal(preserveTranslationEdges('the ’90s.', '’90s.'), '’90s.');
   assert.equal(preserveTranslationEdges('Text.', '.٥ mm'), '.٥ mm.');
   assert.equal(preserveTranslationEdges('by the authors’ ', 'par les auteurs’ '), 'par les auteurs’ ');
+  assert.equal(preserveTranslationEdges('Text.', '‘mot’'), 'mot.');
+  assert.equal(preserveTranslationEdges('‘word’', 'mot'), '‘mot’');
+  assert.equal(preserveTranslationEdges('‘the authors’ view’', 'le point de vue des auteurs'), '‘le point de vue des auteurs’');
+  assert.equal(preserveTranslationEdges('Infinity', '∞'), '∞');
   assert.deepEqual([...RTL_TRANSLATION_LANGUAGES].sort(), ['ar', 'fa', 'he', 'ur']);
   assert.equal(RTL_TRANSLATION_LANGUAGES.has('ja'), false);
 });
