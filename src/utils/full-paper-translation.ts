@@ -65,8 +65,17 @@ function splitEdges(text: string) {
   // apostrophe ("’90s", "the authors’"). They stay with the content.
   const leadingBinds = (index: number) => (/[.,]/.test(at(index)) && /\p{Nd}/u.test(at(index + 1)))
     || (at(index) === '’' && WORD.test(at(index + 1)));
-  // After an opening ‘, a final ’ closes the quote (‘the authors’ view’), not a possessive.
-  const trailingBinds = (index: number) => at(index) === '’' && WORD.test(at(index - 1)) && !chars.slice(0, index).includes('‘');
+  // A final ’ closes a quote only while an earlier ‘ is still open (‘word’); after a
+  // closed quote it is a possessive again (the ‘baseline’ from the authors’).
+  const quoteOpen = (index: number) => {
+    let open = 0;
+    for (const char of chars.slice(0, index)) {
+      if (char === '‘') open++;
+      else if (char === '’' && open) open--;
+    }
+    return open > 0;
+  };
+  const trailingBinds = (index: number) => at(index) === '’' && WORD.test(at(index - 1)) && !quoteOpen(index);
   let start = 0;
   let end = chars.length;
   while (start < end && BOUNDARY.test(at(start)) && !leadingBinds(start)) start++;
