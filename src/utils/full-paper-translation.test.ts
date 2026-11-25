@@ -52,6 +52,9 @@ test('keeps original edges and glues a closing bracket in RTL output', () => {
   assert.equal(preserveTranslationEdges('‘word’', 'mot'), '‘mot’');
   assert.equal(preserveTranslationEdges('We used the ‘baseline’ from the authors’ ', 'Nous avons utilisé la « référence » issue de leur '),
     'Nous avons utilisé la « référence » issue de leur ');
+  assert.equal(preserveTranslationEdges('‘the model’s prediction’ ', 'la prédiction du modèle '), '‘la prédiction du modèle’ ');
+  assert.equal(preserveTranslationEdges('‘word’', '‘l’avis’'), '‘l’avis’');
+  assert.equal(preserveTranslationEdges('Text.', '‘l’avis’'), 'l’avis.');
   assert.equal(preserveTranslationEdges('Infinity', '∞'), '∞');
   assert.deepEqual([...RTL_TRANSLATION_LANGUAGES].sort(), ['ar', 'fa', 'he', 'ur']);
   assert.equal(RTL_TRANSLATION_LANGUAGES.has('ja'), false);

@@ -67,11 +67,12 @@ function splitEdges(text: string) {
     || (at(index) === '’' && WORD.test(at(index + 1)));
   // A final ’ closes a quote only while an earlier ‘ is still open (‘word’); after a
   // closed quote it is a possessive again (the ‘baseline’ from the authors’).
+  // A ’ with a letter or digit on both sides (l’avis, don’t) is inside a word and closes nothing.
   const quoteOpen = (index: number) => {
     let open = 0;
-    for (const char of chars.slice(0, index)) {
-      if (char === '‘') open++;
-      else if (char === '’' && open) open--;
+    for (let i = 0; i < index; i++) {
+      if (chars[i] === '‘') open++;
+      else if (chars[i] === '’' && open && !(WORD.test(at(i - 1)) && WORD.test(at(i + 1)))) open--;
     }
     return open > 0;
   };
