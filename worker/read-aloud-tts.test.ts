@@ -528,6 +528,38 @@ for (const [behaviour, conditionalPut] of [
   });
 }
 
+test('a clip stored while waiting for the turn is served without a provider or the paper being counted', async () => {
+  const key = await audioKey('cartesia', TEXT);
+  const bucket = memoryBucket();
+  const ledger = recordingLedger();
+  const turnFor = ledger.get;
+  ledger.get = (period: string) => {
+    const stub = turnFor(period);
+    return {
+      fetch: async (url: RequestInfo | URL, options?: RequestInit) => {
+        // Another request finishes the paragraph just as this one takes the turn.
+        if (period.startsWith('tts:making:') && JSON.parse(options!.body as string).action === 'reserve') bucket.objects.set(`${key}.mp3`, CARTESIA_MP3);
+        return stub.fetch(url, options);
+      },
+    };
+  };
+  const { response, calls } = await withProviders({ cartesia: cartesiaAudio }, () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, bucket))));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-tts-audio'), key);
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(ledger.calls, []);
+});
+
+test('a clip the bucket reports but cannot read is answered as unavailable, without a provider', async () => {
+  const key = await audioKey('cartesia', TEXT);
+  const bucket = memoryBucket();
+  bucket.head = async (name: string) => { bucket.heads.push(name); return name === `${key}.mp3` ? { key: name } : null; };
+  const { response, calls } = await withProviders({ cartesia: cartesiaAudio }, () => signedIn(() => reportApi.fetch(paragraphRequest(), env(recordingLedger(), bucket))));
+  assert.equal(response.status, 502);
+  assert.equal(calls.length, 0);
+});
+
 test('a cached clip without a usable length is skipped for the copy in R2', async () => {
   const key = await audioKey('cartesia', TEXT);
   const bucket = memoryBucket();
@@ -556,8 +588,8 @@ test('two requests for the same new paragraph call the provider once, and both g
     assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
   }
   assert.equal(calls.length, 1);
-  // The waiting request polls with GETs; HEADs are only the made request's own checks.
-  assert.ok(bucket.heads.every(key => key.endsWith('.mp3')));
+  // Only the request making the paragraph checks with HEADs, once; the waiting one polls with GETs.
+  assert.deepEqual(bucket.heads, [`${await audioKey('cartesia', TEXT)}.mp3`, `${await audioKey('elevenlabs', TEXT)}.mp3`]);
   assert.deepEqual(ledger.calls.map(call => [call.action, call.amount]), [['reserve', TEXT.length]]);
 });
 
@@ -574,7 +606,8 @@ test('when the request making a paragraph fails, a request waiting for it makes 
   assert.deepEqual(responses.map(response => response.status).sort(), [200, 502]);
   assert.equal(calls.length, 2);
   const keys = [`${await audioKey('cartesia', TEXT)}.mp3`, `${await audioKey('elevenlabs', TEXT)}.mp3`];
-  assert.ok(bucket.heads.every(key => keys.includes(key)));
+  // Each request that took the turn checked once with HEADs; waiting never does.
+  assert.deepEqual(bucket.heads, [...keys, ...keys]);
   assert.ok(bucket.gets.length > 0 && bucket.gets.every(key => keys.includes(key)));
   assert.deepEqual(ledger.calls.map(call => call.action), ['reserve', 'release', 'reserve']);
 });
