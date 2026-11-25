@@ -312,13 +312,14 @@ full-height cards; each card is a sheet of type with an action rail beside it.
 - **The navbar** is 64px on desktop and 52px on a phone (`--nav-height`,
   `--nav-height-mobile`); `--nav-total` adds the top safe-area inset in one
   place, and everything that offsets from the bar reads it.
-- **The card on a phone** is top-anchored: kicker, chips, title and authors
-  under the bar, the abstract filling the middle, the actions at the foot where
+- **The card on a phone** is top-anchored: kicker, the conference pill when
+  there is one, title and authors under the bar, the abstract filling
+  the middle, the actions at the foot where
   the thumb is. Only the abstract yields height, except on a card with the
   publisher's page, whose head rows yield after the panel and scroll (Cards /
   Containers, "A card with no abstract"). On a tablet the column stops at a
   40rem reading measure.
-- **The kicker** reads field · reason · year · conference acceptance · citations.
+- **The kicker** reads field · reason · year · citations.
   It wraps as needed, with dots only between visible items. The reason
   (`utils/feed-reason.ts`) uses `--text-secondary`. A notable
   For You card reads "Highly cited in [field]" when its lane identifies a
@@ -338,10 +339,13 @@ full-height cards; each card is a sheet of type with an action rail beside it.
   was fetched for, then the first picked secondary category if needed. A pick
   with the same label as the displayed field reads "In your area". Only picks
   with a taxonomy label qualify.
-  The Worker's `acceptedConference` supplies the mark in `--text-secondary`.
-  It reads "Accepted at NeurIPS 2026", or "Accepted at NeurIPS" when the
-  conference year is unknown. About this paper repeats it under Status. A
-  preprint keeps its preprint status.
+  The Worker's `acceptedConference` supplies the conference mark: a pill on a
+  line of its own under the kicker, so only an accepted paper's head grows.
+  It is built like a status chip in the blue tint (wash, hairline, ink, mono,
+  a seal icon) with fully rounded ends, and a long name wraps inside it. It
+  reads "Accepted at NeurIPS 2026", or "Accepted at NeurIPS" when the
+  conference year is unknown. About this paper repeats the same pill under
+  the Status chips. A preprint keeps its preprint status.
 - **Spacing** runs on `--space-1 … --space-24` (4px steps up to 2rem, then
   wider). Tight inside a group, generous between groups.
 
@@ -435,7 +439,9 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 
 ### Chips
 - **Style:** `1px` border, `sm` radius, mono or small Inter, tinted from the
-  field (`color-mix` of `--area-accent`) or from a status tint.
+  field (`color-mix` of `--area-accent`) or from a status tint. The conference
+  pill is the one fully rounded chip, so it reads as a label of the paper
+  rather than one more status chip.
 - **State:** toggles are `aria-pressed` chips (`toggle.ts`); a toggle group's
   `value` is always an array.
 
@@ -458,15 +464,10 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the panel is the first row to yield, down to 0px. When the rows above the
   action row are taller than the card, the head's rows give way after the
   panel and scroll, and the action row stays whole at the sheet's foot,
-  covering nothing. Beside `Read in plain words` the link is its
-  `ArrowSquareOut` glyph alone at every width, named and titled "Publisher's
-  page (opens in a new tab)", so Source and `Read in plain words` keep their
-  slots where the row has room for them, and that row draws no lock at any
-  width. On a phone it is also the glyph alone, with the same name, in a row
-  too narrow for its word beside Source. Beside Source it has no title: in
-  most rows its word shows, and a title would only repeat the name. On a
-  phone the three share a line when they fit;
-  otherwise Source takes the first line and the other two the second. On a
+  covering nothing. On a phone it is its `ArrowSquareOut` glyph alone, named
+  "Publisher's page (opens in a new tab)", in a row too narrow for its word
+  beside Source. It has no title: in most rows its word shows, and a title
+  would only repeat the name. On a
   screen short enough for the rail to reach the
   row, the row stops short of the rail. While the feed still asks a source
   for the abstract, the link holds its place in the row unseen, so the row
@@ -489,19 +490,17 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   each button and gesture does, in the Settings layout. It is a public page: a
   visitor reaches it from the Help icon in the welcome's bar, a signed-in reader
   from the last entry of the Settings menu. A signed-in reader keeps that menu,
-  rail and phone switcher alike, with the page's contents listed under Help on
-  the rail; a visitor gets the contents alone in the rail's column. The
-  contents mark the section being read with an ink rule and darker text. Under
-  901px, where the rail is hidden, the overview's row of section links stands
-  in for them. It is set in sections of ruled rows. A row with a
-  glyph puts it in a 40px tile beside the control's name, which is the row's
+  rail and phone switcher alike; a visitor gets the page alone, across the
+  settings column. It has no list of its sections: it is read from top to
+  bottom.
+  It is set in sections of ruled rows. A row with a glyph puts it in a 40px
+  tile beside the control's name, which is the row's
   heading, so the tile is decoration. A row with no glyph (text controls,
   gestures) takes the whole width. Under each sentence two mono stamps say what
   the control spends (amber for an AI use or a public-list change, neutral for
   nothing) and whether it needs an account. A section whose controls are all
   behind sign-in says so once under its intro instead. The page opens with a
-  legend of the stamps. A link to a section, in the contents or the row,
-  scrolls to that section's heading and moves focus to it.
+  legend of the stamps.
 
 ### Inputs / Fields
 - **Style:** a hairline frame on paper, near-square.
@@ -639,15 +638,44 @@ menu moves nothing inside it. The full-text reader's dock offers the same
 options, from the card that opened it, as the card that grows out of the dock
 (where Contents also opens); a topic or project opened from there opens in a
 new tab. Both readers use `pdf/reading-dock.tsx` for Notes and the
-original-paper link. The paper viewer's top bar holds two tabs, Paper and
-Plain words, with a chip that slides to the one chosen (`pdf/reading-tabs.tsx`);
-Plain words opens the plain-words reader inside the viewer, under the same bar,
-and Paper goes back to the text. A round headphones button at the bar's end opens
-the podcast tab (`pdf/read-aloud-listen.tsx`), which reads the paper's text aloud:
+original-paper link. The paper viewer's top bar holds up to three tabs, Paper,
+Listen and AI summary, each where it applies, with a chip that slides to the one
+chosen (`pdf/reading-tabs.tsx`). The view left goes at once, and the one chosen
+is opaque from the start, so two texts never show through each other. Paper and
+AI summary stay in place under a veil of the page colour that fades out over 220ms
+(120ms linear with reduced motion): a long paper holds too many nodes to move.
+Listen arrives from its side of the bar, its contents sliding 16px in and fading
+up over 220ms (opacity only with reduced motion). A view under another tab is
+skipped with `content-visibility: hidden`, which keeps its scroll; `inert` is the
+fallback where that is missing. The covered paper’s scroll region also leaves the
+keyboard tab order. The Listen animation’s direction is scoped to the podcast,
+so changing it does not invalidate styles across the paper. Summary styles load
+with the viewer, before a large article is laid out. With reduced motion, the
+podcast visual computes each static shape directly instead of simulating its
+arrival frames. Cards have no AI summary button: the
+viewer’s tab is the way in. The summary module loads during browser idle time after
+full text resolves; this does not mount the summary or request AI generation.
+Display equations with source MathML or an image retain that visual until they
+enter the viewport, then receive their typeset rendering. TeX-only equations
+render eagerly so their printed form is always available. Inline formulas also
+render eagerly because their text participates in saved annotation anchors. Switching
+to Paper keeps the dialog and its history entry mounted; it does not reveal the feed. The Listen tab
+opens the podcast (`pdf/read-aloud-listen.tsx`), with its download in the bar's corner, which reads the paper's text aloud:
 the paper's title over a particle visual, the sentence being read as a caption,
 and a player with speed, 15-second skips and a timeline cut into the paper's
-sections; its chapters open in a panel beside it, full screen on a phone. The
-plain-words reader has no audio; it keeps its reading level and AI highlights
+sections; its chapters open in a panel beside it, full screen on a phone. Opening
+the tab prepares three passages from the starting position (or the remaining
+passages for a shorter ending). While it does, the visual fills the room the paper's title and the
+tab's foot leave it, flowing from form to form every 2.5 seconds in the mesh's grey, and "Preparing
+your paper" sits at the foot over a running bar; no percentage is shown. Once they are in, the
+visual settles into its place from a larger size and fades into the brand's colours over 400ms, and
+the player and the caption arrive. With reduced motion the visual holds one form, the bar stands
+still at half opacity, and the change of size and colour is a short fade.
+Play becomes available when it is ready, without starting automatically;
+system playback controls respect the same initial buffer. Two
+background requests keep loading the rest. A jump to uncached audio shows
+“Loading this passage…” while the controls remain available. The download button's tooltip says how many parts are ready. The
+AI summary has no audio; it keeps its reading level and AI highlights
 alongside the shared tools. When opened from a paper card, it also receives the card's options and
 Zotero action; saved-summary history has no card actions. Its
 notes are the full-text reader's notes panel and its selection opens the same

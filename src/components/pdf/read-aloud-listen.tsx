@@ -11,8 +11,15 @@ import './read-aloud-listen.css';
 /** Where the chapters panel covers the tab (the stylesheet's own phone breakpoint, read-aloud-listen.css). */
 const PHONE = '(max-width: 600px)';
 
+/** What the tab says, and tells a screen reader, while the first passages' audio is fetched. */
+const PREPARING = 'Preparing your paper';
+
 /** About three lines of the caption on a wide screen and five on a phone; a longer sentence is shown a piece at a time, as lyrics are. */
 const CAPTION_WORDS = 20;
+
+/** How near a jump's place the voice must report itself before the line follows it again, and how long the line waits. */
+const LANDED_SECONDS = 1.5;
+const LANDING_MS = 4_000;
 
 /** The piece of a sentence's words that holds the one being said, the pieces as even as they can be. */
 function captionPiece(words: string[], current: number) {
@@ -44,29 +51,52 @@ function spokenSentence(item: SpokenPassage, word: number) {
  * controls round the timeline (which shows the audio still to come, then where the voice
  * is), and the paper's sections as chapters in a drawer.
  */
-export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
+export default function ReadAloudListen({ title, queue, player, onPlayPause, arrivalFrom = 0, voice = null, onBrowserVoice }: {
   title: string;
   queue: readonly SpokenPassage[];
   /** The voice the dock plays: where it is, how much is ready, and its controls. */
-  player: Pick<ReturnType<typeof useReadAloud>, 'timeline' | 'prepared' | 'paragraph' | 'position' | 'playing' | 'speed' | 'timings' | 'live' | 'setSpeed' | 'seek'>;
+  player: Pick<ReturnType<typeof useReadAloud>, 'timeline' | 'startup' | 'buffering' | 'paragraph' | 'position' | 'playing' | 'speed' | 'timings' | 'live' | 'setSpeed' | 'seek'>;
   onPlayPause: () => void;
+  arrivalFrom?: number;
+  /** Whether the day's papers allow PaperTok's voice for this one: being asked, or refused. */
+  voice?: { state: 'checking' | 'blocked'; dailyPapers?: number } | null;
+  onBrowserVoice: () => void;
 }) {
-  const { timeline, prepared, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek: onSeek } = player;
-  const preparing = !prepared.failed && prepared.ready < prepared.total;
-  const percent = prepared.total ? Math.floor((prepared.ready / prepared.total) * 100) : 0;
+  const { timeline, startup, buffering, paragraph, position, playing, speed, timings, live, setSpeed: onSpeed, seek } = player;
+  const blocked = voice?.state === 'blocked';
+  const preparing = !blocked && (voice?.state === 'checking' || (!startup.failed && startup.ready < startup.total));
+  // The visual settles from the full tab into its place once, after a preparation this tab showed.
+  const [showedPreparing, setShowedPreparing] = useState(preparing);
+  if (preparing && !showedPreparing) setShowedPreparing(true);
   // Where a drag along the line would move the voice, until it is let go.
   const [target, setTarget] = useState<number | null>(null);
   // The player's position moves when a clip reports its time, and with the browser's voice only
   // as each sentence ends; while it speaks, the tab reads where the voice is on every frame.
   const [voiceAt, setVoiceAt] = useState<number | null>(null);
-  const now = playing && voiceAt !== null ? voiceAt : position;
+  const reported = playing && voiceAt !== null ? voiceAt : position;
+  // After a jump the voice takes a moment to get there (its clip loading, and Safari placing a clip
+  // only once its metadata is in) and meanwhile reports where it was. The line holds the place asked
+  // for until the voice is near it (LANDED_SECONDS), or for LANDING_MS at most.
+  const [landing, setLanding] = useState<number | null>(null);
+  if (landing !== null && Math.abs(reported - landing) < LANDED_SECONDS) setLanding(null);
+  useEffect(() => {
+    if (landing === null) return undefined;
+    const timer = window.setTimeout(() => setLanding(null), LANDING_MS);
+    return () => clearTimeout(timer);
+  }, [landing]);
+  const onSeek = (seconds: number) => {
+    setLanding(Math.min(Math.max(0, seconds), timeline.duration));
+    seek(seconds);
+  };
+  const now = landing ?? reported;
   const shown = target ?? now;
   const chapter = chapterAt(timeline, shown);
   // The player's state, told to a screen reader as it changes: the section only when the voice
   // reaches a new one, never each word or percent. The region is mounted empty and filled after,
   // as a region that arrives holding its words is not reliably spoken.
   const reading = chapterAt(timeline, now);
-  const status = preparing ? 'Preparing the audio' : playing ? `Reading ${[reading.number, reading.title].filter(Boolean).join(' ')}` : 'Paused';
+  const usedUp = `You’ve used today’s ${voice?.dailyPapers ?? ''} papers with PaperTok’s voice. More tomorrow.`.replace('today’s  papers', 'today’s papers');
+  const status = blocked ? usedUp : preparing ? PREPARING : buffering ? 'Loading this passage' : playing ? `Reading ${[reading.number, reading.title].filter(Boolean).join(' ')}` : 'Paused';
   const statusRegion = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
     if (statusRegion.current) statusRegion.current.textContent = status;
@@ -135,26 +165,39 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
   const sentence = item ? spokenSentence(item, word) : null;
 
   return (
-    <section className="rd-podcast" aria-labelledby="rd-podcast-paper" data-chapters-open={drawerOpen || undefined}>
+    <section style={{ '--view-from': `${arrivalFrom}px` }} className="rd-podcast" aria-labelledby="rd-podcast-paper" data-chapters-open={drawerOpen || undefined} data-preparing={preparing || undefined}>
       {/* The paper heads the tab, as a player names the album over its cover. */}
       <span ref={statusRegion} className="visually-hidden" role="status" />
       <header className="rd-podcast-header">
         <p id="rd-podcast-paper" className="rd-podcast-header-title">{title}</p>
       </header>
-      <div className="rd-podcast-cover"><ReadAloudForms ready={!preparing} playing={playing} /></div>
+      <div className="rd-podcast-cover" data-settle={(showedPreparing && !preparing) || undefined}>
+        <ReadAloudForms loading={preparing} playing={playing && !buffering} />
+      </div>
 
       <div className="rd-podcast-words">
         {/* The section the voice is in: small over the caption on a wide screen, the large title on a phone, as a player names a song. */}
-        {!preparing && (
+        {!preparing && !blocked && (
           <h2 className="rd-podcast-title">
             <span key={chapter.start} className="rd-podcast-section">{[chapter.number, chapter.title].filter(Boolean).join(' ')}</span>
           </h2>
         )}
 
-        <div ref={caption} className="rd-podcast-caption">
+        {preparing && (
+          <div className="rd-podcast-wait">
+            <p className="rd-podcast-wait-what">{PREPARING}</p>
+            <div className="rd-podcast-wait-bar" aria-hidden="true" />
+          </div>
+        )}
+        {blocked && (
+          <div className="rd-podcast-wait">
+            <p className="rd-podcast-wait-what">{usedUp}</p>
+            <Button variant="outline" onClick={onBrowserVoice}>Listen with this browser’s voice</Button>
+          </div>
+        )}
+        <div ref={caption} className="rd-podcast-caption" hidden={preparing || blocked}>
           <p className="rd-podcast-text" lang="en">
-            {preparing
-              ? `Preparing the audio, ${percent}%`
+            {buffering ? 'Loading this passage…'
               : !sentence ? 'Press play to listen.' : (
                 <span key={`${paragraph}:${sentence.first}`} className="rd-podcast-piece">
                   {sentence.words.map((text, index) => (
@@ -168,8 +211,8 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
 
       {/* The controls: under the caption on a wide screen; on a phone, a bar fixed to the bottom of the
           tab, ruled off from the forms and the caption, which scroll behind it. */}
-      <div className="rd-podcast-player" inert={drawerOpen && drawerCovers}>
-        {preparing ? <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} speed={speed} target={target} onTarget={setTarget} onSeek={onSeek} /> : (
+      {!preparing && !blocked && (
+        <div className="rd-podcast-player" inert={drawerOpen && drawerCovers}>
           <div className="rd-podcast-dock">
             {/* As a music player lays them out: the transport centred, the speed and the chapters at its sides. */}
             <div className="rd-podcast-buttons">
@@ -187,12 +230,12 @@ export default function ReadAloudListen({ title, queue, player, onPlayPause }: {
             {/* and under it the line, its minute at one end and what is left at the other. */}
             <div className="rd-podcast-line">
               <span className="rd-listen-time">{clock(shown / speed)}</span>
-              <ReadAloudTrack timeline={timeline} prepared={prepared} position={now} speed={speed} target={target} onTarget={setTarget} onSeek={onSeek} />
+              <ReadAloudTrack timeline={timeline} position={now} speed={speed} target={target} onTarget={setTarget} onSeek={onSeek} />
               <span className="rd-listen-time rd-listen-left">−{clock((timeline.duration - shown) / speed)}</span>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Every chapter at once, with its length, in a drawer from the side. */}
       {timeline.chapters.length > 1 && (

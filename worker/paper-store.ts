@@ -111,6 +111,14 @@ const FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS = 1_500_000;
 // Daily order goes day by day by arrival (`rankCandidates`), and within a day
 // by similarity alone, then by publication date.
 const RECENCY_WEIGHT = { recent: 0.15, relevance: 0, daily: 0 } as const;
+// How much of a paper's stored quality score (`work_quality.score`, at most
+// 0.05) its rank score takes: at most 0.02, against the 0.15 a paper published
+// now takes for recency. At the whole score the newest papers, whose authors
+// OpenAlex has seldom indexed yet (23% of those under two days old had a score
+// on 2026-11-24, 84% of those four to seven days old), left the first pages of
+// a reader without likes: 218 of the 360 first-45 places of eight lanes changed
+// paper, against 46 at this weight (ENG-239).
+const QUALITY_WEIGHT = 0.4;
 const RECENCY_HALF_LIFE_DAYS = 7;
 const DAY_MS = 86_400_000;
 
@@ -1112,7 +1120,7 @@ function rejection(embedding: Float64Array | null, rejectedVectors: Float64Array
 
 /**
  * Semantic relevance with near-copy rejection and a bounded diversity pass.
- * Missing vectors retain recency so the feed remains usable during embedding.
+ * Papers awaiting an embedding keep their recency and any eligible quality score.
  * Rows it cannot tell apart keep their order (`readCandidates`).
  * A request ranks through `rankByUnitVectors`; this entry, which normalizes
  * every vector it is given, is the one the ranking tests call.
@@ -1126,12 +1134,12 @@ export function rankBySimilarity<T extends { embedding: Int8Array | null; publis
  * request normalizes each candidate and like once, however many interest
  * groups rank it.
  */
-function rankByUnitVectors<T extends { published: string }>(rows: T[], unitOf: (row: T) => Float64Array | null, likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order }: { now: number; order: keyof typeof RECENCY_WEIGHT }) {
+function rankByUnitVectors<T extends Pick<Candidate, 'published' | 'quality'>>(rows: T[], unitOf: (row: T) => Float64Array | null, likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order }: { now: number; order: keyof typeof RECENCY_WEIGHT }) {
   const scoreOf = scorer(likedVectors, rejectedVectors, { now, order });
   const ranked = rows
     .map(row => {
       const embedding = unitOf(row);
-      const { score, semanticScore } = scoreOf(embedding, row.published);
+      const { score, semanticScore } = scoreOf(embedding, row);
       return { row, embedding, score, semanticScore };
     })
     .sort((a, b) => scoreOrder(a.score, a.row.published, b.score, b.row.published));
@@ -1146,21 +1154,22 @@ function rankByUnitVectors<T extends { published: string }>(rows: T[], unitOf: (
 
 /**
  * A candidate's score by these likes and rejections, from its unit vector
- * (null when it has none) and its date. Without a vector, or near no
- * rejection, a candidate without likes scores its recency alone, the most it
- * can score (`readDecidingVectors`).
+ * and its base score. Without likes, recency plus eligible quality is an
+ * upper bound because a rejection can only lower the score.
  */
 function scorer(likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order }: { now: number; order: keyof typeof RECENCY_WEIGHT }) {
   const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
-  const recency = (published: string) => 0.5 ** (Math.max(0, now - Date.parse(published)) / DAY_MS / RECENCY_HALF_LIFE_DAYS);
-  return (embedding: Float64Array | null, published: string) => {
+  return (embedding: Float64Array | null, { published, quality }: Pick<Candidate, 'published' | 'quality'>) => {
+    const age = Math.max(0, now - Date.parse(published)) / DAY_MS;
+    const recency = weight * 0.5 ** (age / RECENCY_HALF_LIFE_DAYS);
+    const bonus = QUALITY_WEIGHT * (quality ?? 0);
     const similarity = likedVectors.length && embedding
       ? likedVectors.reduce((best, positive) => Math.max(best, cosine(embedding, positive)), -1) : 0;
     const negative = rejection(embedding, rejectedVectors);
     // A fixed scale keeps an uninformative page from stretching its best
     // match to 100%. The client's contribution is bounded independently.
     const semanticScore = Math.max(0, Math.min(1, (similarity - 0.4) / 0.4)) - negative;
-    return { score: similarity - NEGATIVE_WEIGHT * negative + weight * recency(published), semanticScore };
+    return { score: similarity - NEGATIVE_WEIGHT * negative + recency + bonus, semanticScore };
   };
 }
 
@@ -1367,7 +1376,8 @@ export async function writeLaneRanks(env: StoreEnv, lane: string, paperIds: stri
 
 // `arrival`, read only for a daily page: the earliest of the candidate's
 // arrivals in the asked lanes (`readCandidates`).
-interface Candidate { workId: number; published: string; lanes: string[]; arrival?: string }
+interface Candidate { workId: number; published: string; lanes: string[]; arrival?: string; quality?: number }
+interface LaneRow { work_id: number; published: string; arrival?: string; quality?: number | null }
 
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
@@ -1376,22 +1386,29 @@ interface Candidate { workId: number; published: string; lanes: string[]; arriva
 // order among papers it cannot tell apart: one night's articles of two areas
 // share their date, and take turns between the areas instead of following the
 // order the lanes were asked in.
-// `byArrival`, each lane's newest arrivals instead, through `work_lanes_arrival`:
+// Daily order reads each lane's newest arrivals instead, through `work_lanes_arrival`:
 // the candidate's `arrival` is when it entered the lane, or its publication
 // date when it came with the lane's first load, and `published` stays its
 // publication date.
-// `keywordSince`: of a keyword lane, only the papers published since then. The
+// Outside an exact request, only recent keyword papers are eligible. The
 // lane also keeps its keyword's best matches of any year, which are a custom
 // feed's to read and not Following's.
-async function readCandidates(db: D1Database, lanes: string[], byArrival: boolean, keywordSince?: string): Promise<Candidate[]> {
+async function readCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<Candidate[]> {
+  const keywordSince = query.exact ? undefined : daysFromNow(-CORPUS_DAYS, now);
   const areaLanes = lanes.filter(lane => AREA_LANES.has(lane)).length;
   const share = (lane: string) => (AREA_LANES.has(lane)
     ? Math.floor(AREA_CANDIDATE_LIMIT / areaLanes)
     : Math.ceil(FEED_CANDIDATE_LIMIT / (lanes.length - areaLanes)));
-  const read = (columns: string, order: string) => db.batch<{ work_id: number; published: string; arrival?: string }>(lanes.map(lane => (keywordSince && isKeywordLane(lane)
-    ? db.prepare(`SELECT ${columns} FROM work_lanes WHERE lane = ? AND published >= ? ORDER BY ${order} LIMIT ?`).bind(lane, keywordSince, share(lane))
-    : db.prepare(`SELECT ${columns} FROM work_lanes WHERE lane = ? ORDER BY ${order} LIMIT ?`).bind(lane, share(lane)))));
-  if (!byArrival) return mergeLaneRows(lanes, await read('work_id, published', 'published DESC'));
+  const read = (columns: string, order: string, ...columnParams: string[]) => db.batch<LaneRow>(lanes.map(lane => (keywordSince && isKeywordLane(lane)
+    ? db.prepare(`SELECT ${columns} FROM work_lanes WHERE lane = ? AND published >= ? ORDER BY ${order} LIMIT ?`).bind(...columnParams, lane, keywordSince, share(lane))
+    : db.prepare(`SELECT ${columns} FROM work_lanes WHERE lane = ? ORDER BY ${order} LIMIT ?`).bind(...columnParams, lane, share(lane)))));
+  if (ranksWithQuality(query)) {
+    // A journal lane can keep a later publication date than the work.
+    const columns = `work_id, published, (SELECT q.score FROM work_quality q
+      WHERE q.work_id = work_lanes.work_id AND q.published > ?) AS quality`;
+    return mergeLaneRows(lanes, await read(columns, 'published DESC', daysFromNow(-CORPUS_DAYS, now)));
+  }
+  if (query.order !== 'daily') return mergeLaneRows(lanes, await read('work_id, published', 'published DESC'));
   // In the order of `work_lanes_arrival`, which reads only the share. One
   // ingest files its papers at one instant (a page of arXiv's harvest, or
   // every page of another source's harvest of a lane), and the share keeps
@@ -1490,16 +1507,22 @@ function daySlice<T extends { published: string }>(rows: T[], offset: number) {
 // several lanes comes once, at its first turn, with every lane, its newest
 // date and, read by arrival, its earliest arrival: the first day any of the
 // lanes held it.
-function mergeLaneRows(lanes: string[], perLane: Array<{ results: Array<{ work_id: number; published: string; arrival?: string }> }>): Candidate[] {
-  const byWork = new Map<number, { published: string; lanes: string[]; arrival?: string }>();
+function mergeLaneRows(lanes: string[], perLane: Array<{ results: LaneRow[] }>): Candidate[] {
+  const byWork = new Map<number, Omit<Candidate, 'workId'>>();
   const longest = Math.max(...perLane.map(({ results }) => results.length));
   for (let position = 0; position < longest; position += 1) {
     perLane.forEach(({ results }, index) => {
       const row = results[position];
       if (!row) return;
       const candidate = byWork.get(row.work_id);
-      if (!candidate) byWork.set(row.work_id, { published: row.published, lanes: [lanes[index]], ...(row.arrival === undefined ? {} : { arrival: row.arrival }) });
-      else {
+      if (!candidate) {
+        byWork.set(row.work_id, {
+          published: row.published,
+          lanes: [lanes[index]],
+          ...(row.arrival === undefined ? {} : { arrival: row.arrival }),
+          ...(row.quality == null ? {} : { quality: row.quality }),
+        });
+      } else {
         candidate.lanes.push(lanes[index]);
         if (row.published > candidate.published) candidate.published = row.published;
         if (row.arrival !== undefined && row.arrival < candidate.arrival!) candidate.arrival = row.arrival;
@@ -1587,8 +1610,8 @@ export interface FeedQuery {
 
 /**
  * A page of corpus papers in the asked categories and followed entities,
- * ordered by the closest of the reader's liked or saved papers, or newest
- * first without any. Each paper says which asked categories it was found in
+ * ranked by the reader's examples, recency and any eligible quality score.
+ * Each paper says which asked categories it was found in
  * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  */
 /**
@@ -1627,9 +1650,9 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * (`paperId`), the entry tells which ranks at the top of the reader's
  * ranking their filter held.
  *
- * An order ranked without likes from the vectors that decide its first ranks
- * alone (`readDecidingVectors`) is not final, and says how many ranks it
- * decided (`decided`): within 15 minutes, by the same inputs, it serves the
+ * Without likes, recency plus each candidate's eligible quality bounds its
+ * rank score. An order that read only the deciding vectors records how many
+ * ranks are exact (`decided`). Within 15 minutes, by the same inputs, it serves the
  * pages that end within those ranks as they are. Worker versions before
  * `decided` see an order that is not final, and rank again.
  */
@@ -1666,6 +1689,12 @@ const RANKING_KEPT_MS = 15 * 60_000;
 // minutes (ENG-103); privacy.html states this lifetime.
 const WALK_KEPT_MS = 2 * 60 * 60_000;
 
+// The main For You request sends groups and no follows. A followed topic can
+// have no lane of its own, but its request still turns off areaLanes.
+function ranksWithQuality(query: FeedQuery) {
+  return query.sendsGroups && query.areaLanes && !query.exact && RECENCY_WEIGHT[query.order] > 0;
+}
+
 // How a page that sends interest groups is ranked from the same inputs: since
 // 2026-11-13 its notable papers go by group, and unless it is daily a group
 // without likes takes its categories in turns. A daily page that asks for no
@@ -1676,7 +1705,11 @@ const WALK_KEPT_MS = 2 * 60 * 60_000;
 // the notable papers a request names, and the one group a notable paper
 // belongs to (PR #520's reviews), keep the version: no deployed Worker had
 // named it before them.
-const GROUPS_RANKING = '2026-11-13';
+// Since 2026-11-24 the pages that add the quality score (`ranksWithQuality`)
+// name a version of their own, and it changes with `QUALITY_WEIGHT`; the other
+// pages that send groups rank as before and keep theirs.
+const GROUPS_RANKING = '2026-11-24';
+const GROUPS_RANKING_WITHOUT_QUALITY = '2026-11-13';
 
 /**
  * The lanes in their order, `order`, the likes, the rejections and the
@@ -1698,7 +1731,9 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
   const inputs = JSON.stringify({
     lanes, order: query.order, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), groups,
     ...(query.exact ? { exact: true, areas: [...query.areas].sort() } : {}),
-    ...(query.sendsGroups && (query.order !== 'daily' || query.notable > 0) ? { groupsRanking: GROUPS_RANKING } : {}),
+    ...(query.sendsGroups && (query.order !== 'daily' || query.notable > 0) ? {
+      groupsRanking: ranksWithQuality(query) ? GROUPS_RANKING : GROUPS_RANKING_WITHOUT_QUALITY,
+    } : {}),
   });
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(inputs));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
@@ -1706,8 +1741,8 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
 
 /**
  * A page of corpus papers in the asked categories and followed entities,
- * ordered by the closest of the reader's liked or saved papers, or newest
- * first without any. Each paper says which asked categories it was found in
+ * ranked by the reader's examples, recency and any eligible quality score.
+ * Each paper says which asked categories it was found in
  * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  *
  * The first page ranks every candidate and leaves the order in `cache`; a
@@ -2138,7 +2173,7 @@ async function readAreaLanes(db: D1Database, workIds: number[]) {
 }
 
 // Two D1 round trips, one after the other. The first reads the works the
-// request's ids name with the likes' and rejections' vectors, the candidates,
+// request's ids name with the likes' and rejections' vectors, the candidates and their eligible quality scores,
 // the notable lanes' window and the keyword lanes' ranks; the second, the
 // candidates' vectors beside the notable check and the rows of the likes no
 // group names. Of the pages that read vectors, those with a like with a
@@ -2164,7 +2199,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // crowded out by a busy one; the area lanes share AREA_CANDIDATE_LIMIT.
     // The window is the corpus's own: what is past it has been evicted.
     // Only an exact request, a custom feed's, reads a keyword lane's older papers.
-    readCandidates(db, lanes, query.order === 'daily', query.exact ? undefined : daysFromNow(-CORPUS_DAYS, now)),
+    readCandidates(db, lanes, query, now),
     notableLanes.length ? readNotableCandidates(db, notableLanes, now) : { inLanes: new Set<number>(), slice: [], offered: async () => [] },
     readKeywordRanks(db, keywordLanes),
   ]);
@@ -2221,7 +2256,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const checked = notableRead.offered(timings);
   const [notableCandidates, everyRank, ungroupedWorks, ungroupedAreaLanes] = await Promise.all([
     checked,
-    // Without a positive or negative vector, recency needs no candidate vectors.
+    // Recency and quality are known before reading any candidate vectors.
     // With rejections alone, a page asked by number needs only the vectors
     // that decide its ranks, when it offers no notable paper; a walk past seen
     // papers can reach any rank, and so can a daily page, whose days reorder
@@ -2391,10 +2426,10 @@ const DECIDING_MARGIN = 100;
 
 /**
  * Reads, a round trip each `readRound`, the vectors of a ranking without likes,
- * `offered` newest first, until the first `ranks` of each of `members` are
+ * highest possible score first, until the first `ranks` of each of `members` are
  * decided (each group's candidates and, when a group takes its categories in
  * turns, each of its categories'), and returns whether it read every
- * candidate's. Without likes a candidate scores at most its recency, what it
+ * candidate's. Without likes its upper bound is recency plus eligible quality, what it
  * scores without a vector (`scorer`): once `ranks` candidates read come before
  * the first unread one of their list even at that one's most, no unread
  * candidate can reach those ranks, which hold the diversity pool. The ranks
@@ -2409,7 +2444,7 @@ async function readDecidingVectors(
   ranks: number,
 ) {
   const position = new Map(offered.map((candidate, index) => [candidate.workId, index]));
-  const most = new Map(offered.map(candidate => [candidate.workId, scoreOf(null, candidate.published).score]));
+  const most = new Map(offered.map(candidate => [candidate.workId, scoreOf(null, candidate).score]));
   // A date that does not parse has no score to order by.
   if (![...most.values()].every(Number.isFinite)) {
     await readRound(offered.map(candidate => candidate.workId));
@@ -2418,12 +2453,12 @@ async function readDecidingVectors(
   // The ranking's order, and where it ties the candidates' own (a stable sort).
   const compare = (score: number, candidate: Candidate, otherScore: number, other: Candidate) => scoreOrder(score, candidate.published, otherScore, other.published)
     || position.get(candidate.workId)! - position.get(other.workId)!;
-  const newest = [...offered].sort((a, b) => compare(most.get(a.workId)!, a, most.get(b.workId)!, b));
-  const readAt = new Map(newest.map((candidate, index) => [candidate.workId, index]));
+  const byUpperBound = [...offered].sort((a, b) => compare(most.get(a.workId)!, a, most.get(b.workId)!, b));
+  const readAt = new Map(byUpperBound.map((candidate, index) => [candidate.workId, index]));
   const scores = new Map<number, number>();
   const scoreRead = (candidate: Candidate) => {
     let score = scores.get(candidate.workId);
-    if (score === undefined) scores.set(candidate.workId, (score = scoreOf(unitOf(candidate), candidate.published).score));
+    if (score === undefined) scores.set(candidate.workId, (score = scoreOf(unitOf(candidate), candidate).score));
     return score;
   };
   const decided = (group: Candidate[], read: number) => {
@@ -2441,12 +2476,12 @@ async function readDecidingVectors(
     return before >= ranks;
   };
   // Each round reads on to twice as far as the last, so a page deep in the
-  // order, or a group few of the newest candidates are in, costs a few round
+  // order, or a group with few high-scoring candidates, costs a few round
   // trips, not one per candidate it needs.
   for (let read = 0, upTo = ranks + DECIDING_MARGIN; ; upTo *= 2) {
-    await readRound(newest.slice(read, upTo).map(candidate => candidate.workId));
-    read = Math.min(upTo, newest.length);
-    if (read === newest.length) return true;
+    await readRound(byUpperBound.slice(read, upTo).map(candidate => candidate.workId));
+    read = Math.min(upTo, byUpperBound.length);
+    if (read === byUpperBound.length) return true;
     if (members.every(group => decided(group, read))) return false;
   }
 }
@@ -2520,8 +2555,7 @@ function byCategory<T>(rows: T[], categories: string[], lanesOf: (row: T) => str
 /**
  * A group's ranking without likes with its categories in turns (2026-11-13):
  * the places its papers found under its categories hold go to them in turns,
- * each category's in the ranking's order (newest first, near copies of a
- * rejected paper lower), the first category of the group first; a paper
+ * each category's in score order, the first category of the group first; a paper
  * several of them list counts for the first. So a thin category beside busy
  * ones comes early instead of after their newer papers. A paper found only in
  * an area's journal lane, the working-paper series or a follow keeps its place.

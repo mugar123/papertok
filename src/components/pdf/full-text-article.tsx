@@ -1,7 +1,7 @@
 import type { MouseEvent, ReactNode } from 'react';
 import type { Block, Cell, FullText, Inline, Reference } from '../../utils/full-text.ts';
 import { blockInlines } from '../../utils/full-text.ts';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { getKatex, loadKatex } from '../../utils/katex-loader.ts';
 import { getTemml, loadTemml, temmlMarkup } from '../../utils/temml-loader.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
@@ -62,12 +62,44 @@ const subscribeMath = (listener: () => void) => {
   return () => { mathListeners.delete(listener); };
 };
 
+const waitingFormulas = new Map<Element, () => void>();
+let formulaObserver: IntersectionObserver | null = null;
+
+function observeFormula(element: Element, reveal: () => void) {
+  formulaObserver ??= new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      waitingFormulas.get(entry.target)?.();
+      waitingFormulas.delete(entry.target);
+      formulaObserver?.unobserve(entry.target);
+    }
+  }, { rootMargin: '600px 0px' });
+  waitingFormulas.set(element, reveal);
+  formulaObserver.observe(element);
+  return () => {
+    waitingFormulas.delete(element);
+    formulaObserver?.unobserve(element);
+    if (waitingFormulas.size === 0) {
+      formulaObserver?.disconnect();
+      formulaObserver = null;
+    }
+  };
+}
+
 function Formula({ mathml, tex, image, display }: { mathml?: string; tex?: string; image?: string; display: boolean }) {
   useSyncExternalStore(subscribeMath, mathReady);
-  const html = formulaHtml(tex, display) ?? mathml;
+  const element = useRef<HTMLElement | null>(null);
+  const [seen, setSeen] = useState(false);
+  // Saved prose annotations depend on the typeset text of inline formulas.
+  const visible = !display || !(mathml || image) || seen;
+  useEffect(() => {
+    if (!tex || !element.current || visible) return;
+    return observeFormula(element.current, () => setSeen(true));
+  }, [tex, visible]);
+  const html = (visible ? formulaHtml(tex, display) : null) ?? mathml;
   // A formula is not words for a browser's translator to rewrite.
-  if (html) return <span className="ft-math" translate="no" dangerouslySetInnerHTML={{ __html: html }} />;
-  if (image) return <img className="ft-formula-image" src={image} alt={tex ?? 'Formula'} loading="lazy" referrerPolicy="no-referrer" />;
+  if (html) return <span ref={node => { element.current = node; }} className="ft-math" translate="no" dangerouslySetInnerHTML={{ __html: html }} />;
+  if (image) return <img ref={node => { element.current = node; }} className="ft-formula-image" src={image} alt={tex ?? 'Formula'} loading="lazy" referrerPolicy="no-referrer" />;
   return tex ? <code className="ft-tex" translate="no">{tex}</code> : null;
 }
 
@@ -360,7 +392,11 @@ function needsMath(doc: FullText) {
     || [...doc.abstract, ...doc.body].some(block => (block.t === 'equation' ? Boolean(block.tex) : blockInlines(block).some(hasTex)));
 }
 
-export default function FullTextArticle({ doc, paper, showAbstract = true, passageHint }: { doc: FullText; paper: Paper; showAbstract?: boolean; passageHint?: string }) {
+/**
+ * The paper's text, tens of thousands of nodes on a long paper: memoized, so a change around it (a
+ * tab, the notes, the dock) does not render it again while its own props stay the same.
+ */
+export default memo(function FullTextArticle({ doc, paper, showAbstract = true, passageHint }: { doc: FullText; paper: Paper; showAbstract?: boolean; passageHint?: string }) {
   const wantsMath = useMemo(() => needsMath(doc), [doc]);
   useEffect(() => {
     if (!wantsMath || mathReady()) return undefined;
@@ -448,4 +484,4 @@ export default function FullTextArticle({ doc, paper, showAbstract = true, passa
       <ReferencePeek reference={shownReference} open={referenceOpen} onOpenChange={setReferenceOpen} anchor={citation} scroll={citationScroll} lang={doc.lang} />
     </article>
   );
-}
+});

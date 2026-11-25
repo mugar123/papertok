@@ -451,6 +451,7 @@
    (direction 0, no lateral flag) still composes under the atom veil. */
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-sheet,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-meta,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-accepted-row,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-title,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-authors,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-abstract,
@@ -515,7 +516,6 @@
 /* ── Masthead — the field, the year and the citations, above the headline ── */
 .pc-meta {
   display: flex;
-  /* On the first line's baseline, so the uses tag sits level with the field however the details wrap. */
   align-items: baseline;
   gap: 6px;
   margin-bottom: var(--space-3);
@@ -531,8 +531,6 @@
   gap: 6px;
   min-width: 0;
 }
-
-.pc-uses { flex: none; }
 
 .pc-masthead-field {
   padding: 0;
@@ -632,14 +630,43 @@ a.pc-citations {
   }
 }
 
-.pc-accepted {
-  color: var(--text-secondary);
+.pc-accepted-row,
+.pc-about-accepted {
+  display: flex;
+  margin: 0;
 }
 
-.pc-about-accepted {
-  margin: 0;
-  font: var(--fw-medium) var(--fs-sm)/1.4 var(--font-body);
-  color: var(--text-secondary);
+/* The kicker's items wrap; the pill takes a line of its own after them, so
+   the kicker keeps its single text height and only an accepted paper's head
+   grows. The row gap plus this margin gives the pill the space under the
+   kicker (`--pc-accepted-step`, which the landscape phone halves) from the line
+   above. A mark that arrives with a later page adds the row to a card on
+   screen: it fades in as the late citations do, and the head below moves. */
+.pc-accepted-row {
+  flex-basis: 100%;
+  margin-top: calc(var(--pc-accepted-step, var(--space-3)) - 6px);
+  animation: appear var(--motion-base) linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-accepted-row {
+    animation: none;
+  }
+}
+
+/* A conference acceptance is a state: a status chip in the blue tone
+   (`data-tone="blue"`). Fully rounded, it reads as a label of the paper
+   rather than one more chip of the Status row. */
+.pc-chip.pc-accepted {
+  gap: 5px;
+  padding: 2px 9px 2px 7px;
+  border-radius: var(--radius-full);
+  /* The longest catalogue name ("Accepted at IEEE Swarm Intelligence
+     Symposium 2026") is wider than a 375px phone's column: it wraps inside
+     the pill rather than run past the card. */
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .pc-feed-reason {
@@ -663,6 +690,9 @@ a.pc-citations {
    in `paper-status.ts` needs no new rule here — it picks a tone that already
    exists. The four tones are the whole vocabulary: amber warns, blue
    reassures, green opens, neutral limits. */
+/* In the kicker, a paper whose every paragraph has PaperTok's voice: hearing it spends no use. */
+.pc-voiced { display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); white-space: nowrap; }
+
 .pc-chips {
   display: flex;
   align-items: center;
@@ -713,6 +743,12 @@ a.pc-citations {
   border-color: var(--tint-green-line);
   background: var(--tint-green-bg);
   color: var(--tint-green-fg);
+}
+
+.pc-chip[data-tone='blue'] {
+  border-color: var(--tint-blue-line);
+  background: var(--tint-blue-bg);
+  color: var(--tint-blue-fg);
 }
 
 /* `data-tone="neutral"` is the base rule already — a subscription is a limit,
@@ -1135,15 +1171,6 @@ button.pc-topics-pop-item:focus-visible {
   height: min(100%, 860px);
 }
 
-.pc-rewrite-hint {
-  color: var(--text-secondary);
-  flex-basis: 100%;
-}
-
-.pc-rewrite-hint:empty {
-  position: absolute;
-}
-
 .pc-action-bar {
   display: flex;
   align-items: center;
@@ -1207,10 +1234,10 @@ button.pc-topics-pop-item:focus-visible {
   flex: 1 0 auto;
 }
 
-/* Two fixed slots, so neither reading action moves: the Read label can
-   change after the card is shown (a free copy found, the library's answer)
-   and "Read in plain words" can arrive with that copy, but a label only
-   changes the text inside its own slot. A label too long for its slot is
+/* Two fixed slots, so neither control moves: the Read label can change
+   after the card is shown (a free copy found, the library's answer), but a
+   label only changes the text inside its own slot. The publisher's page of
+   a card with no abstract takes the second. A label too long for its slot is
    cut with an ellipsis; the accessible name keeps it whole. */
 .pc-action-primary {
   display: grid;
@@ -1220,40 +1247,10 @@ button.pc-topics-pop-item:focus-visible {
   margin-right: auto;
 }
 
-/* The publisher's page of a card with no abstract is the row's last control
-   (paper-card.tsx): the second slot, or beside "Read in plain words" its
-   glyph alone in a 40px column at every width, named on the link. With its
-   label, as a third 14rem slot, the three shared the 40rem column, and a
-   visitor's "Read in plain words" with its lock was cut from 641px to about
-   1216px wide. Source and "Read in plain words" keep their 14rem slots
-   where the row has room for them; with large text in a narrower row they
-   share it with the glyph. The row draws no lock at any width: beside the
-   glyph it cut a visitor's "Read in plain words" at 200% text, and the
-   button keeps "Needs a free account" as its description. The link adds no
-   line to the row, except on a phone row too narrow for the three (below). */
-.pc-action-primary--three {
-  grid-template-columns: repeat(2, minmax(0, 14rem)) auto;
-}
-
-.pc-action-primary--three .pc-action-lock {
-  display: none;
-}
-
-.pc-action-primary--three > .pc-action-publisher {
-  width: 40px;
-  padding-inline: 0;
-}
-
-.pc-action-primary--three > .pc-action-publisher > :is(.pc-action-label, .pc-action-label--short) {
-  display: none;
-}
-
 /* While the feed still asks a source for the abstract, the publisher's page
    holds its place in the row unseen (paper-card.tsx), so the row and the
    rows that give way to it have the shape they keep when the wait ends with
-   none. Added only then, the link took a three-control row on a phone at
-   200% text to two lines, and "Read in plain words" landed where Source had
-   been. Hidden, it is out of the tab order, the accessibility tree and the
+   none. Hidden, it is out of the tab order, the accessibility tree and the
    reach of a tap. */
 .pc-action-publisher--pending {
   visibility: hidden;
@@ -1347,14 +1344,6 @@ button.pc-topics-pop-item:focus-visible {
     mask-image: none;
     opacity: 0.62;
   }
-}
-
-/* A guest's «Leer en simple» needs an account; the lock says so before the
-   press (the button also carries an aria-describedby hint). Decorative for
-   assistive tech, which hears the hint instead. */
-.pc-action-lock {
-  flex: none;
-  opacity: 0.8;
 }
 
 /* ── Side rail ──
@@ -1631,8 +1620,9 @@ button.pc-topics-pop-item:focus-visible {
 /* On a short window the panel only has what the rows above it leave, and at
    1280×600 that was 89px: the Graph/Similar header and a 15px sliver of map.
    While the graph is open the paper above it steps back instead:
-   the topic row, the project badge and the accent rule go (the kicker still
-   names the field), the title keeps two lines, and the steps between rows
+   the topic row, the project badge, the conference pill and the accent rule
+   go (the kicker still names the field; About this paper keeps the
+   acceptance), the title keeps two lines, and the steps between rows
    halve. The panel gets 220px or more there, a funded paper with a two-line
    title included; the actions stay on the sheet. The flag is set in the
    same commit as the panel, so the slot's morph measures the room it lands
@@ -1652,6 +1642,10 @@ button.pc-topics-pop-item:focus-visible {
 
   .pc-sheet[data-connections] :is(.pc-meta, .pc-title) {
     margin-bottom: var(--space-2);
+  }
+
+  .pc-sheet[data-connections] .pc-accepted-row {
+    display: none;
   }
 
   .pc-sheet[data-connections] .pc-body {
@@ -2976,6 +2970,10 @@ button.pc-topics-pop-item:focus-visible {
       margin-bottom: var(--space-2);
     }
 
+    .pc-meta {
+      --pc-accepted-step: var(--space-2);
+    }
+
     .pc-body {
       --pc-head-step: var(--space-2);
     }
@@ -3075,46 +3073,17 @@ button.pc-topics-pop-item:focus-visible {
      (paper-card.tsx): with its word it cut "Publisher" at 390px with text
      at 200%. */
   @container action-row (max-width: calc(94px + 9em)) {
-    .pc-action-primary:not(.pc-action-primary--three) {
+    .pc-action-primary {
       grid-template-columns: minmax(0, 1fr) auto;
     }
 
-    .pc-action-primary:not(.pc-action-primary--three) > .pc-action-publisher {
+    .pc-action-primary > .pc-action-publisher {
       width: 40px;
       padding-inline: 0;
     }
 
-    .pc-action-primary:not(.pc-action-primary--three) > .pc-action-publisher > .pc-action-label--short {
+    .pc-action-primary > .pc-action-publisher > .pc-action-label--short {
       display: none;
-    }
-  }
-
-  /* Beside "Read in plain words" the publisher's page is its glyph alone in
-     a 40px column, as on a wider screen: three equal slots cut "Simple" and
-     "Publisher" at 375px with text at 150%. In a row wide enough for the
-     three (124px plus 7.75em) they share one line. In a narrower one Source
-     is on the first line and the other two on the second, in the order the
-     keyboard reaches them: side by side, the two reading actions cut
-     "Simple" at 360px with text at 200%, and at 150% on a screen short
-     enough for the rail. Source keeps out of the glyph's column, which is
-     where the rail comes down beside a row that tall: across the whole
-     line, the rail covered its end at 360x640 with text at 150%. As on a
-     wider screen, the row draws no lock. */
-  .pc-action-primary--three {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .pc-action-primary--three > :is(.pc-action-read, .pc-action-simple) {
-    grid-column: 1;
-  }
-
-  @container action-row (width > calc(124px + 7.75em)) {
-    .pc-action-primary--three {
-      grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
-    }
-
-    .pc-action-primary--three > :is(.pc-action-read, .pc-action-simple) {
-      grid-column: auto;
     }
   }
 

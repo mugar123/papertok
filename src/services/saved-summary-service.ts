@@ -50,7 +50,7 @@ import { getPaperKey, parsePaperKey } from '../utils/public-navigation.ts';
 import { AI_EXPLANATION_LEVEL_IDS } from '../utils/user-settings.ts';
 
 /**
- * The plain-words summaries a reader keeps in their own account.
+ * The AI summaries a reader keeps in their own account.
  *
  * Two documents per paper and level, written in one batch: `summaries` holds
  * the text and is read one at a time when a paper opens, and `summaryHistory`
@@ -144,7 +144,7 @@ export async function saveSummary(uid: string | null | undefined, paper: Summary
     await batch.commit();
     return true;
   } catch (error) {
-    console.warn('Could not save the plain-words summary', error);
+    console.warn('Could not save the AI summary', error);
     return false;
   }
 }

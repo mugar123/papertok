@@ -182,7 +182,7 @@
    card's arrival on top of the travel, as they do not on a feed reached by
    the back arrow (paper-card.css). `--returned` outlives the travel because
    putting the animation back once it lands would start it then. */
-.feed-snap-item--returned :is(.pc-sheet, .pc-meta, .pc-title, .pc-authors, .pc-abstract, .pc-side-actions) {
+.feed-snap-item--returned :is(.pc-sheet, .pc-meta, .pc-accepted-row, .pc-title, .pc-authors, .pc-abstract, .pc-side-actions) {
   animation: none;
 }
 

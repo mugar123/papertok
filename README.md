@@ -85,7 +85,8 @@ connections. This local capture uses recorded [OpenAlex data](https://openalex.o
 [Why Most Published Research Findings Are False](https://doi.org/10.1371/journal.pmed.0020124),
 PLOS Medicine (2005), distributed under a Creative Commons Attribution license.*
 
-**Read in plain words** uses AI to adapt supported full text to one of three levels:
+**Read article → AI summary** opens an AI adaptation of supported full text when
+the paper opens in PaperTok’s viewer. Sign in to choose one of three levels:
 
 | Level | What to expect |
 | --- | --- |
@@ -97,9 +98,9 @@ PLOS Medicine (2005), distributed under a Creative Commons Attribution license.*
   <a href="docs/assets/readme-tour/reading-levels.jpg"><img src="docs/assets/readme-tour/reading-levels.jpg" width="900" alt="Reading and AI settings showing Beginner, University and Researcher levels, with University selected"></a>
 </p>
 
-*Set your default level in Settings → Reading & AI. Previously read plain-words summaries appear below it.*
+*Set your default level in Settings → Reading & AI. Previously read AI summaries appear below it.*
 
-In the plain-words reader, select a passage to highlight it, with an optional note, or
+In the AI summary, select a passage to highlight it, with an optional note, or
 choose **Explain this to me**. **Annotations** in the bottom bar opens your notes beside
 the text; its **AI** tab shows only the explanations. On a touch screen, select with the
 handles, then tap **Highlight**. AI adaptations are labeled and do not replace the

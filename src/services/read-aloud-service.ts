@@ -1,22 +1,169 @@
+import { auth } from './firebase.ts';
 import { authenticatedWorkerFetch } from './worker-api-client.ts';
 
 const PARAGRAPH_TIMEOUT_MS = 40_000;
+/** Papers asked about in one request, the most the Worker answers for (`/tts/papers`). */
+const VOICED_PAGE = 60;
 
 export class ReadAloudError extends Error {
   declare code: string;
-  constructor(code: string) {
+  /** Whose allowance a refusal spent: `user` (the account's papers or characters), `global` or `provider`. */
+  declare scope?: string;
+  constructor(code: string, scope?: string) {
     super(code);
     this.name = 'ReadAloudError';
     this.code = code;
+    this.scope = scope;
+  }
+}
+
+function postToVoice(body: unknown, signal?: AbortSignal) {
+  const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
+  if (!apiBase) return Promise.resolve(null);
+  return authenticatedWorkerFetch(`${apiBase}/tts/papers`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  }, PARAGRAPH_TIMEOUT_MS).catch(() => null);
+}
+
+/**
+ * Hands the Worker the name of every paragraph's audio, so it marks the paper as voiced once it
+ * finds them all stored, and the feed can show it.
+ */
+export async function markPaperVoiced(paperId: string, audio: string[]) {
+  const response = await postToVoice({ paperId, voiced: true, audio });
+  const body = response?.ok ? await response.json().catch(() => null) as { voiced?: unknown } | null : null;
+  if (body?.voiced === true) noteVoiced([paperId]);
+}
+
+const voiced = new Map<string, boolean>();
+const asked = new Set<string>();
+const voicedChanges = new EventTarget();
+let asking: ReturnType<typeof setTimeout> | null = null;
+
+function noteVoiced(ids: string[], all = ids) {
+  for (const id of all) voiced.set(id, ids.includes(id));
+  voicedChanges.dispatchEvent(new Event('change'));
+}
+
+export function subscribeVoicedPapers(listener: () => void) {
+  voicedChanges.addEventListener('change', listener);
+  return () => voicedChanges.removeEventListener('change', listener);
+}
+
+/** Whether the paper has PaperTok's audio for every paragraph, as far as this page has asked. */
+export const isPaperVoiced = (paperId: string) => voiced.get(paperId) === true;
+
+/**
+ * Asks once per page load whether a paper has PaperTok's audio, gathering the cards that ask in the
+ * same moment into one request. A failed request leaves them unknown, which shows nothing.
+ */
+export function askPaperVoiced(paperId: string) {
+  if (!paperId || voiced.has(paperId) || asked.has(paperId)) return;
+  asked.add(paperId);
+  asking ??= setTimeout(() => {
+    asking = null;
+    const ids = [...asked].filter(id => !voiced.has(id));
+    for (let start = 0; start < ids.length; start += VOICED_PAGE) {
+      const page = ids.slice(start, start + VOICED_PAGE);
+      void postToVoice({ papers: page })
+        .then(response => (response?.ok ? response.json() as Promise<{ voiced?: unknown }> : null))
+        .then((body) => {
+          if (Array.isArray(body?.voiced)) noteVoiced(body.voiced.filter((id): id is string => typeof id === 'string'), page);
+          else for (const id of page) asked.delete(id);
+        }, () => { for (const id of page) asked.delete(id); });
+    }
+  }, 50);
+}
+
+/**
+ * How many new papers the account may still have read in PaperTok's voice today. Null when
+ * unknown, and for an account whose AI is unlimited, so neither shows a count.
+ */
+export async function fetchVoiceUsage({ paperId, signal }: { paperId?: string; signal?: AbortSignal } = {}) {
+  const response = await postToVoice({ usage: true, ...(paperId ? { paperId } : {}) }, signal);
+  const body = response?.ok ? await response.json().catch(() => null) as { papersLeft?: unknown; dailyPapers?: unknown; paperOpen?: unknown } | null : null;
+  const { papersLeft, dailyPapers, paperOpen } = body ?? {};
+  if (!Number.isInteger(papersLeft) || !Number.isInteger(dailyPapers)) return null;
+  // With `paperId`: whether that paper can still be heard in PaperTok's voice without a new paper.
+  return { papersLeft: papersLeft as number, dailyPapers: dailyPapers as number, ...(typeof paperOpen === 'boolean' ? { paperOpen } : {}) };
+}
+
+/**
+ * Paragraphs already heard, kept in the browser so a paper opened again plays and jumps at once
+ * instead of asking the Worker for each one: at most 800 (three or four long papers), each for 30
+ * days, the first kept dropped first. One cache per account, since what was heard is the
+ * account's reading history; another account's is deleted when this one keeps audio. Where the
+ * browser keeps no cache (a private window), everything is asked for as before.
+ */
+const AUDIO_CACHE_PREFIX = 'papertok-voice-1:';
+const MAX_CACHED_PARAGRAPHS = 800;
+const CACHED_FOR_MS = 30 * 24 * 60 * 60 * 1000;
+/** Kept paragraphs between two trims of the cache; the first of each page load trims too. */
+const TRIM_EVERY = 25;
+let keptSinceTrim = TRIM_EVERY - 1;
+
+const audioCacheName = () => (auth.currentUser ? `${AUDIO_CACHE_PREFIX}${auth.currentUser.uid}` : null);
+
+async function openAudioCache() {
+  const name = audioCacheName();
+  return typeof caches === 'undefined' || !name ? null : { name, cache: await caches.open(name) };
+}
+
+async function cacheAddress(text: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return new URL(`/voice-cache/${hash}`, window.location.origin).href;
+}
+
+async function cachedAudio(text: string) {
+  try {
+    const opened = await openAudioCache();
+    if (!opened) return null;
+    const { cache } = opened;
+    const address = await cacheAddress(text);
+    const kept = await cache.match(address);
+    if (!kept) return null;
+    if (Date.now() - Number(kept.headers.get('x-kept-at')) > CACHED_FOR_MS) {
+      await cache.delete(address);
+      return null;
+    }
+    return { blob: await kept.blob(), key: kept.headers.get('x-tts-audio') };
+  } catch {
+    return null;
+  }
+}
+
+async function keepAudio(text: string, blob: Blob, key: string | null) {
+  try {
+    const opened = await openAudioCache();
+    if (!opened) return;
+    const { name, cache } = opened;
+    await cache.put(await cacheAddress(text), new Response(blob, {
+      headers: { 'content-type': 'audio/mpeg', 'x-kept-at': String(Date.now()), ...(key ? { 'x-tts-audio': key } : {}) },
+    }));
+    keptSinceTrim += 1;
+    if (keptSinceTrim < TRIM_EVERY) return;
+    keptSinceTrim = 0;
+    const others = (await caches.keys()).filter(other => other.startsWith(AUDIO_CACHE_PREFIX) && other !== name);
+    await Promise.all(others.map(other => caches.delete(other)));
+    const kept = await cache.keys();
+    await Promise.all(kept.slice(0, Math.max(0, kept.length - MAX_CACHED_PARAGRAPHS)).map(request => cache.delete(request)));
+  } catch {
+    // A cache that cannot be written only means asking the Worker next time.
   }
 }
 
 /**
- * One paragraph spoken by PaperTok's voice, as MP3. With `storedOnly` the
- * Worker answers only from audio already made, refusing with
- * `AI_AUDIO_NOT_STORED` rather than spending credits.
+ * One paragraph spoken by PaperTok's voice, as MP3, with the name the Worker
+ * stores it under. With `storedOnly` the Worker answers only from audio already
+ * made, refusing with `AI_AUDIO_NOT_STORED` rather than spending credits.
  */
-export async function fetchParagraphAudio(text: string, { signal, storedOnly = false }: { signal?: AbortSignal; storedOnly?: boolean } = {}) {
+export async function fetchParagraphAudio(text: string, { signal, storedOnly = false, paperId }: { signal?: AbortSignal; storedOnly?: boolean; paperId?: string } = {}) {
+  const kept = await cachedAudio(text);
+  if (kept) return kept;
   const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
   if (!apiBase) throw new ReadAloudError('AI_NOT_CONFIGURED');
   let response: Response;
@@ -24,17 +171,19 @@ export async function fetchParagraphAudio(text: string, { signal, storedOnly = f
     response = await authenticatedWorkerFetch(`${apiBase}/tts/paragraph`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(storedOnly ? { text, storedOnly } : { text }),
+      body: JSON.stringify({ text, ...(storedOnly ? { storedOnly } : {}), ...(paperId ? { paperId } : {}) }),
       signal,
     }, PARAGRAPH_TIMEOUT_MS);
   } catch (error) {
     throw new ReadAloudError((error as { name?: string } | null)?.name === 'WorkerApiAuthError' ? 'AI_AUTH_REQUIRED' : 'AI_UNAVAILABLE');
   }
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { code?: unknown } | null;
-    throw new ReadAloudError(typeof body?.code === 'string' ? body.code : 'AI_UNAVAILABLE');
+    const body = await response.json().catch(() => null) as { code?: unknown; quota?: { scope?: unknown } } | null;
+    throw new ReadAloudError(typeof body?.code === 'string' ? body.code : 'AI_UNAVAILABLE', typeof body?.quota?.scope === 'string' ? body.quota.scope : undefined);
   }
-  return response.blob();
+  const audio = { blob: await response.blob(), key: response.headers.get('x-tts-audio') };
+  void keepAudio(text, audio.blob, audio.key);
+  return audio;
 }
 
 /**

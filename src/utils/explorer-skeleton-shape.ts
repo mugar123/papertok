@@ -65,9 +65,7 @@ export function hasAuthorsTab(type: string|undefined, entity: { _localTopic?: bo
  *   (budget, funding, dates, participants) and two is what usually lands;
  *   four reserved where two arrive shrank the grid by a row at the handover.
  * - `impact` — whether the grid's last cell is the recent-impact one, whose
- *   detail wraps to two lines once the score is known. Measured 2026-09-09:
- *   unreserved, the cell grew 64.5 → 77.5px when the score landed and the
- *   ORCID card under the header dropped 10.3px in one frame.
+ *   class pins the grid's width.
  */
 export function explorerSkeletonShape(type: string|undefined) {
   const authorish = type === 'author';
@@ -78,11 +76,8 @@ export function explorerSkeletonShape(type: string|undefined) {
     identity: institutionish ? 'meta' : 'none',
     aside: projectish ? 'summary' : 'none',
     stats: projectish ? 2 : 4,
-    // Whether the fourth cell is the recent-impact one, with a detail line
-    // under its label. `RecentImpactStat` mounts for authors and institutions
-    // (entity-explorer.tsx); the skeleton reserves its two-line detail so the
-    // grid is born at the height it will have once the score lands, and the
-    // ORCID card under the header does not drop when it does.
+    // Whether the fourth cell is the recent-impact one. `RecentImpactStat`
+    // mounts for authors and institutions (entity-explorer.tsx).
     impact: authorish || institutionish,
     // Every type the Explorer serves can be followed — `followEntity` covers
     // author, institution, project, concept and topic — so the button is part

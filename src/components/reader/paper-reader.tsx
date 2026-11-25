@@ -7,13 +7,12 @@ import type { ReadingLevel } from '../../utils/user-settings.ts';
 interface PaperReaderProps {
   card?: { paper: Paper; menu: ReaderMenu };
   paper: Partial<Paper>; onClose: () => void;
-  originRect?: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'> | null;
   closeRef?: Ref<() => void> | null;
   /** The level to open at instead of the reader's default (the summary history opens the one it lists). */
   initialLevel?: ReadingLevel;
   /** Opens the paper itself, when the reader is one of two tabs with the paper viewer. */
   onPaperTab?: () => void;
-  /** Drawn inside the paper viewer as its Plain words tab, rather than as a dialog of its own. */
+  /** Drawn inside the paper viewer as its AI summary tab, rather than as a dialog of its own. */
   embedded?: boolean;
   /** Inside the viewer, how a menu action leaves: the viewer closes, then the action runs. */
   onLeave?: (then: () => void) => void;
@@ -61,7 +60,7 @@ import { documentVisibility } from '../pdf/viewer-outcome.ts';
 import { startReaderTime } from './reader-time.ts';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { journalExplorerLink } from '../../utils/explorer-paths.ts';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../onboarding/petri.tsx';
@@ -109,28 +108,28 @@ const LEVEL_ICONS = { beginner: Plant, university: GraduationCap, researcher: Fl
 
 const COPY = {
   en: {
-    title: 'Read in plain words',
+    title: 'AI summary',
     close: 'Close reader',
     level: 'Level',
-    writing: 'Rewriting the paper',
+    writing: 'Writing the summary',
     writingHint: 'Sections appear as they are written.',
     cached: 'Free to reopen',
-    cachedTitle: 'A rewrite made earlier, reused: no AI use was spent.',
-    adaptationTag: 'AI adaptation',
+    cachedTitle: 'A summary written earlier, reused: no AI use was spent.',
+    adaptationTag: 'AI summary',
     original: 'View the original paper',
-    adaptation: 'AI adaptation generated from the full text. It does not replace the original article.',
+    adaptation: 'AI summary written from the full text. It does not replace the original article.',
     stages: {
       saved: 'Looking for your saved summary',
       source: 'Downloading the paper',
       reading: 'The model is reading the paper',
-      writing: 'Rewriting the paper',
+      writing: 'Writing the summary',
     },
     retry: 'Try again',
-    incomplete: 'The rewrite stopped before finishing. You can try again.',
+    incomplete: 'The summary stopped before finishing. You can try again.',
     reusedNote: 'Written earlier and reused, so it spent no AI use. Writing it again spends one.',
     writeAgain: 'Write it again',
     writeAgainFailed: (reason: string) => `${reason}. The summary above was not replaced.`,
-    writeAgainIncomplete: 'The new rewrite stopped before finishing',
+    writeAgainIncomplete: 'The new summary stopped before finishing',
     sections: 'sections',
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
@@ -164,7 +163,7 @@ const ERROR_COPY = {
     },
     AI_AUTH_REQUIRED: {
       title: 'You need to sign in',
-      body: 'Rewriting papers with AI is a feature for signed-in accounts.',
+      body: 'AI summaries are a feature for signed-in accounts.',
     },
     AI_QUOTA_EXHAUSTED: {
       title: 'Today’s uses have run out',
@@ -175,7 +174,7 @@ const ERROR_COPY = {
       body: 'The ceiling is the model provider’s, not yours: your own uses are untouched. It usually frees up before long.',
     },
     AI_NOT_CONFIGURED: {
-      title: 'Rewriting is not available',
+      title: 'AI summaries are not available',
       body: 'This feature is not switched on here yet. It is not the paper’s fault.',
     },
     AI_TIMEOUT: {
@@ -187,8 +186,8 @@ const ERROR_COPY = {
       body: 'Too many requests at once. Wait a moment and try again.',
     },
     AI_INVALID_PAPER: {
-      title: 'This paper cannot be put in plain words',
-      body: 'The PDF does not carry enough text to rewrite. Usually a scan, or a one-page article.',
+      title: 'This paper cannot be summarized',
+      body: 'The PDF does not carry enough text to summarize. Usually a scan, or a one-page article.',
     },
     AI_INVALID_RESPONSE: {
       title: 'The model answered in another format',
@@ -306,11 +305,9 @@ const GHOST_LINES = Object.freeze([
 ]);
 
 /*
- * The reader's own entrance and exit — growing out of the button that opened
- * it, collapsing back into it, the floating chrome a beat behind — are CSS
- * now, on the `[data-open]` / `[data-closed]` attributes the Base UI Dialog
- * sets (see `.rd[data-open]` in paper-reader.css). The origin still comes from
- * the card: it travels as the `--rd-origin` variable set on the shell below.
+ * The reader's own entrance and exit, the floating chrome a beat behind, are
+ * CSS, on the `[data-open]` / `[data-closed]` attributes the Base UI Dialog
+ * sets (see `.rd[data-open]` in paper-reader.css).
  */
 
 /**
@@ -388,7 +385,22 @@ function InfoTag({ className, info, children }: { className: string; info: strin
   );
 }
 
-export default function PaperReader({ paper, card, onClose, originRect = null, closeRef = null, initialLevel, onPaperTab, embedded = false, onLeave }: PaperReaderProps) {
+function JournalLink({ journal, onClose, onLeave }: {
+  journal: NonNullable<ReturnType<typeof journalExplorerLink>>;
+  onClose: () => void;
+  onLeave?: (then: () => void) => void;
+}) {
+  const navigate = useNavigate();
+  return <Link to={journal.path} className="rd-tag rd-tag--link" onClick={(event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (onLeave) {
+      event.preventDefault();
+      onLeave(() => { void navigate(journal.path); });
+    } else onClose();
+  }}>{journal.name}</Link>;
+}
+
+export default function PaperReader({ paper, card, onClose, closeRef = null, initialLevel, onPaperTab, embedded = false, onLeave }: PaperReaderProps) {
   const { user, readingPreferences } = useAuth();
   const uid = user?.uid;
   const { trackEvent, consent } = useAnalyticsConsent();
@@ -1114,15 +1126,6 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
   const errorPose = providerQuota ? 'thinking' : ERROR_POSES[shownError as keyof typeof ERROR_POSES] || 'upset';
   const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError!));
 
-  /* The reader grows from wherever it was opened. `.rd` is `inset: 0`, so its
-     own box is the viewport and the button's viewport coordinates are already
-     the right origin — no measuring, no offset parent to correct for. Handed
-     to the stylesheet as `--rd-origin`, which the arrival and the leave
-     keyframes read as their `transform-origin`. */
-  const transformOrigin = originRect
-    ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
-    : '50% 62%';
-
   const usesQuota = quota && !quota.unlimited && quota.dailyLimit ? { left: quota.remainingUses, limit: quota.dailyLimit } : null;
   // The seed draws the pill but never refuses a use: it may be yesterday's.
   const quotaConfirmed = quota !== null && quota !== seededQuota;
@@ -1165,7 +1168,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
     clearAskError();
   }, [askError, clearAskError]);
 
-  /* As the viewer's Plain words tab, the reader is a region of the viewer's own dialog, which
+  /* As the viewer's AI summary tab, the reader is a region of the viewer's own dialog, which
      already owns the focus trap, Escape and the scrim; opened from a card, it is a dialog. */
   const shell = (body: ReactNode) => (embedded ? (
     <div className="rd rd--embedded" role="region" aria-label={copy.title}>{body}</div>
@@ -1189,7 +1192,6 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
         showClose={false}
         initialFocus={closeButtonRef}
         aria-label={copy.title}
-        style={{ '--rd-origin': transformOrigin }}
       >
         {body}
       </DialogContent>
@@ -1212,7 +1214,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
             {/* The bar names the paper once the document's own title has scrolled
                 away, rising in from below; it leaves the way it came. Opened as the
                 viewer's tab, the bar holds the two tabs instead. */}
-            {onPaperTab ? <ReadingTabs current="plain" onChange={(view) => {
+            {onPaperTab ? <ReadingTabs current="summary" onChange={(view) => {
               if (view !== 'paper') return;
               if (embedded) { onPaperTab(); return; }
               toPaper.current = true;
@@ -1262,24 +1264,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
                 {paper?.year && <span className="rd-tag">{paper.year}</span>}
                 {acceptedAt && <span className="rd-tag">{acceptedAt}</span>}
                 {journal && (
-                  <Link
-                    to={journal.path}
-                    className="rd-tag rd-tag--link"
-                    // The reader leaves for the page, which may be the one
-                    // under it when it opened from that journal's Explorer page.
-                    // As with the Similar layer's links, the reader's history
-                    // entry stays under the new page: Back from it shows the
-                    // feed, and a second Back lands on the same feed URL and
-                    // seems to do nothing (use-overlay-history.ts). A
-                    // replacing navigation would remove it but give the page the
-                    // feed's history index, which the Explorer's back arrow and
-                    // the page transition read.
-                    onClick={(event) => {
-                      if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) requestClose();
-                    }}
-                  >
-                    {journal.name}
-                  </Link>
+                  <JournalLink journal={journal} onClose={requestClose} onLeave={embedded ? onLeave : undefined} />
                 )}
                 {meta?.cached && <InfoTag className="rd-tag" info={copy.cachedTitle}>{copy.cached}</InfoTag>}
               </div>
@@ -1503,7 +1488,7 @@ export default function PaperReader({ paper, card, onClose, originRect = null, c
         )}
 
         <ReadingDock
-          title={`${paper.title ?? 'Paper'} — In plain words`} paper={card?.paper}
+          title={`${paper.title ?? 'Paper'} — AI summary`} paper={card?.paper}
           scroll={scrollElement} spoken={null} canListen={false}
           notes={{ id: 'reader-notes', open: notesOpen, count: orderedAnnotations.length, onOpenChange: setNotesOpen }}
           originalUrl={originalUrl}

@@ -10,6 +10,10 @@ const PACE = 0.5;
 const BANDS = 6;
 /** Seconds each form holds before the cloud moves on to the next. */
 const FORM_SECONDS = 10;
+/** While the paper is prepared the forms are the loading sign, so they follow one another sooner. */
+const LOADING_FORM_SECONDS = 2.5;
+/** How long the cloud takes to go from the mesh's grey to the brand's colours once the paper is ready. */
+const TINT_SECONDS = 0.4;
 const TAU = Math.PI * 2;
 
 /** The same 0..1 for a particle every frame, so it keeps its place in a form. */
@@ -171,20 +175,23 @@ function project([x, y, z]: Vec3, yaw: number): Vec3 {
   return [cx * p, ty * p, p];
 }
 
-type Scene = { pos: Float32Array; form: number; shownAt: number; t: number; level: number; bands: number[]; pump: number };
+type Scene = { pos: Float32Array; form: number; shownAt: number; t: number; level: number; bands: number[]; pump: number; tint: number };
 
 /** Every particle eases towards its place in the form at its own pace, so one form flows into the next. */
-function step(scene: Scene, seconds: number, speaking: boolean) {
-  // Paused, the forms' own motion stops too, so the play button is also what stills the cloud.
-  if (speaking) scene.t += seconds;
+function step(scene: Scene, seconds: number, speaking: boolean, loading: boolean, moving = true) {
+  // Once the audio is there the cloud takes the brand's colours and its full size, in TINT_SECONDS.
+  scene.tint = Math.min(1, Math.max(0, scene.tint + (loading ? -1 : 1) * (seconds / TINT_SECONDS)));
+  // While the paper is prepared the cloud flows from form to form as its loading sign; paused, the
+  // forms' own motion stops, so the play button is also what stills the cloud.
+  if (speaking || (loading && moving)) scene.t += seconds;
   const next = Array.from({ length: BANDS }, (_, i) => 0.3 + 0.25 * Math.sin(scene.t * (speaking ? 1.6 : 1.1) + i * 1.9));
   next.forEach((value, i) => { scene.bands[i] = (scene.bands[i] ?? 0) * 0.88 + value * 0.12; });
   scene.level += ((speaking ? 0.2 : 0.1) - scene.level) * 0.02;
   // The pump: while the voice speaks the cloud swells and settles a little, as a speaker's cone does.
   const pump = speaking ? 1 + 0.035 * Math.sin(scene.t * 2.3) + 0.02 * Math.sin(scene.t * 5.9) : 1;
   scene.pump += (pump - scene.pump) * Math.min(1, seconds * 6);
-  // The forms move on only while the voice speaks; paused, the cloud holds the one it is in.
-  if (scene.t - scene.shownAt > FORM_SECONDS) {
+  // The forms move on while the voice speaks or, with motion, while the paper is prepared; paused, the cloud holds the one it is in.
+  if (scene.t - scene.shownAt > (loading ? LOADING_FORM_SECONDS : FORM_SECONDS)) {
     scene.form = (scene.form + 1) % FORMS.length;
     scene.shownAt = scene.t;
   }
@@ -202,7 +209,8 @@ function step(scene: Scene, seconds: number, speaking: boolean) {
 }
 
 /** Dots in three colour groups, larger when nearer and as the voice swells; the glow is a blurred copy behind. */
-function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene, ready: boolean) {
+function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene) {
+  const { tint } = scene;
   const context = sharp.getContext('2d');
   const glowContext = glow.getContext('2d');
   if (!context || !glowContext) return;
@@ -215,13 +223,16 @@ function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene,
     }
   }
   const style = getComputedStyle(sharp);
-  // Until the audio is there the cloud is the faint mesh colour; then it takes the brand's.
-  const colours = ready ? ['--podcast-visual-from', '--podcast-visual-via', '--podcast-visual-to'].map(name => style.getPropertyValue(name).trim()) : Array<string>(3).fill(style.getPropertyValue('--podcast-mesh').trim());
-  if (colours.some(colour => !colour)) return;
+  // Until the audio is there the cloud is the faint mesh colour; then it fades into the brand's.
+  const brand = ['--podcast-visual-from', '--podcast-visual-via', '--podcast-visual-to'].map(name => style.getPropertyValue(name).trim());
+  const mesh = style.getPropertyValue('--podcast-mesh').trim();
+  if (!mesh || brand.some(colour => !colour)) return;
   const half = (size / 2) * ratio;
-  const radius = size * ratio * SETTINGS.size * scene.pump * (1 + scene.level * 0.2) * (ready ? 1 : 0.86);
+  const radius = size * ratio * SETTINGS.size * scene.pump * (1 + scene.level * 0.2) * (0.86 + 0.14 * tint);
   const yaw = scene.t * SETTINGS.spin;
   context.clearRect(0, 0, sharp.width, sharp.height);
+  // One pass, each group's colour mixed from the grey towards its brand colour as the tint rises.
+  const colours = brand.map(colour => (tint >= 1 ? colour : tint <= 0 ? mesh : `color-mix(in oklab, ${colour} ${Math.round(tint * 100)}%, ${mesh})`));
   colours.forEach((colour, group) => {
     context.fillStyle = colour;
     context.beginPath();
@@ -241,42 +252,44 @@ function render(sharp: HTMLCanvasElement, glow: HTMLCanvasElement, scene: Scene,
 /**
  * The podcast tab's visualizer: a cloud of particles that flows from one scientific form to
  * the next (a geodesic sphere, an atom, DNA, a crystal, a galaxy, a wave) while the voice speaks, swelling and
- * settling with it, and holds its form while paused. It has a soft glow, and
- * pressing it shows the next form. With reduced motion it settles into each form and holds still.
+ * settling with it, and holds its form while paused. While the paper is prepared (`loading`) it
+ * flows from form to form in the mesh's grey as the loading sign. It has a soft glow, and pressing
+ * it shows the next form. With reduced motion it settles into each form and holds still.
  */
-export default function ReadAloudForms({ ready, playing }: { ready: boolean; playing: boolean }) {
+export default function ReadAloudForms({ loading, playing }: { loading: boolean; playing: boolean }) {
+  const ready = !loading;
   const sharp = useRef<HTMLCanvasElement | null>(null);
   const glow = useRef<HTMLCanvasElement | null>(null);
-  const scene = useRef<Scene>({ pos: new Float32Array(SETTINGS.particles * 3), form: 0, shownAt: 0, t: 0, level: 0.1, bands: [], pump: 1 });
+  const scene = useRef<Scene>({ pos: new Float32Array(SETTINGS.particles * 3), form: 0, shownAt: 0, t: 0, level: 0.1, bands: [], pump: 1, tint: loading ? 0 : 1 });
   useEffect(() => {
     const [canvas, behind] = [sharp.current, glow.current];
     if (!canvas || !behind) return undefined;
     const state = scene.current;
     const speaking = playing && ready;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false);
-      render(canvas, behind, state, ready);
+      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false, loading, false);
+      render(canvas, behind, state);
       return undefined;
     }
     let frame = 0;
     let last = performance.now();
     const tick = (now: number) => {
-      step(state, Math.min(0.1, (now - last) / 1000), speaking);
+      step(state, Math.min(0.1, (now - last) / 1000), speaking, loading);
       last = now;
-      render(canvas, behind, state, ready);
+      render(canvas, behind, state);
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, ready]);
+  }, [loading, playing, ready]);
   // A press moves the cloud on to the next form, as a beat does in the playground.
   const next = () => {
     const state = scene.current;
     state.form = (state.form + 1) % FORMS.length;
     state.shownAt = state.t;
     if (sharp.current && glow.current && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false);
-      render(sharp.current, glow.current, state, ready);
+      for (let settle = 0; settle < 120; settle++) step(state, 1 / 60, false, loading, false);
+      render(sharp.current, glow.current, state);
     }
   };
   return (

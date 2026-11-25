@@ -1,6 +1,5 @@
-/* The way into the podcast tab: a round button in the top bar's last corner, the podcast's download beside it. */
+/* In the bar's last corner while the Listen tab is open: the day's voice papers and the podcast's download. */
 .rd-listen-corner { grid-column: 3; justify-self: end; display: flex; gap: var(--space-1); align-items: center; }
-.rd-listen-toggle { border-radius: 50%; }
 
 /* The podcast tab: over the paper's text in the viewer's stage, in the app's theme. The particles are
    the brand's yellow, rose and violet; the accent marks the timeline and the chapters. */
@@ -24,7 +23,6 @@
   overflow: hidden auto;
   background: var(--bg-primary);
   color: var(--text-primary);
-  animation: rd-podcast-in 200ms var(--ease-out);
   /* The chapters panel's width; on a wide screen the tab moves over by it, as the paper does for the notes. */
   --podcast-drawer-w: min(360px, 90vw);
   transition: padding-right 240ms var(--ease-out);
@@ -32,7 +30,6 @@
 @media (min-width: 601px) {
   .rd-podcast[data-chapters-open] { padding-right: calc(var(--podcast-drawer-w) + var(--space-4)); }
 }
-@keyframes rd-podcast-in { from { opacity: 0; } }
 
 :root[data-theme='dark'] .rd-podcast {
   --podcast-visual-via: var(--accent-rose);
@@ -128,10 +125,28 @@
 .rd-podcast .rd-listen-part-fill,
 .rd-podcast .rd-listen-thumb { background: var(--podcast-accent); }
 .rd-podcast .rd-listen-thumb { border-color: var(--bg-primary); }
-/* While the audio is prepared, the line is the mesh's grey, as the forms is. */
-.rd-podcast .rd-listen-progress { color: var(--podcast-mesh); }
-.rd-podcast .rd-listen-progress::-webkit-progress-value { background: var(--podcast-mesh); }
-.rd-podcast .rd-listen-progress::-moz-progress-bar { background: var(--podcast-mesh); }
+/* While the first passages are prepared the forms fill the room the paper's title and the line at the
+   tab's foot leave them, flowing from form to form, and what is being prepared sits at the foot over
+   a running bar; the player is held back until there is something to play. Once it is there the
+   forms settle into their place from a larger size (`data-settle`, a transform, not a resize). */
+.rd-podcast-caption[hidden] { display: none; }
+.rd-podcast[data-preparing] .rd-podcast-cover { width: min(92vw, 640px, max(160px, 100dvh - 340px)); margin-block: auto; }
+.rd-podcast-cover[data-settle] { animation: rd-podcast-cover-settle 400ms var(--ease-out) backwards; }
+@keyframes rd-podcast-cover-settle { from { opacity: 0.6; scale: 1.4; } }
+.rd-podcast-wait { display: grid; justify-items: center; gap: var(--space-3); padding-block: var(--space-4) var(--space-6); text-align: center; }
+.rd-podcast-wait p { margin: 0; }
+.rd-podcast-wait-what { font: 500 1rem/1.4 var(--font-body); color: var(--text-secondary); }
+.rd-podcast-wait-bar { position: relative; width: 180px; height: 3px; overflow: hidden; border-radius: var(--radius-full); background: color-mix(in srgb, var(--text-tertiary) 30%, transparent); }
+.rd-podcast-wait-bar::after { content: ''; position: absolute; inset: 0; width: 40%; border-radius: inherit; background: var(--text-primary); animation: rd-podcast-wait-run 1300ms var(--ease-in-out) infinite; }
+@keyframes rd-podcast-wait-run { from { translate: -100% 0; } to { translate: 250% 0; } }
+/* Once ready, the controls and the first words arrive under the forms. */
+.rd-podcast-dock, .rd-podcast-title { animation: rd-podcast-arrive 220ms var(--ease-out) backwards; }
+@keyframes rd-podcast-arrive { from { opacity: 0; translate: 0 6px; } }
+@media (prefers-reduced-motion: reduce) {
+  .rd-podcast-cover[data-settle] { animation: fadeIn 120ms linear backwards; }
+  .rd-podcast-wait-bar::after { animation: none; width: 100%; opacity: 0.5; }
+  .rd-podcast-dock, .rd-podcast-title { animation-name: fadeIn; }
+}
 
 
 /* The sections as chapters, in a drawer from the side. */
@@ -351,6 +366,11 @@
   /* As wide as the visual and the caption together, so the controls share their edges. */
   .rd-podcast-player { grid-area: player; width: auto; }
   .rd-podcast-dock { width: 100%; }
+}
+@media (min-width: 901px) {
+  .rd-podcast[data-preparing] { grid-template-columns: auto; grid-template-rows: auto 1fr auto 1fr auto; grid-template-areas: 'header' '.' 'cover' '.' 'words'; }
+  .rd-podcast[data-preparing] .rd-podcast-cover { justify-self: center; margin-bottom: 0; }
+  .rd-podcast[data-preparing] .rd-podcast-words { justify-self: center; margin-bottom: 0; }
 }
 /* Narrower, the section and the caption are the column's own items, as they were before the group. */
 @media (max-width: 900px) {

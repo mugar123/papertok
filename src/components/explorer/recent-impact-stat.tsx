@@ -63,14 +63,6 @@ export default function RecentImpactStat({ impact, isLoading, error }: ImpactPro
   const title = impact?.available
     ? (`${impact.stale ? 'Last saved calculation. ' : ''}PaperTok estimate based on ${impact.sampleSize} recent publications with FWCI. Median FWCI: ${impact.medianFwci}; ${Math.round(impact.highImpactShare! * 100)}% exceeds twice the expected impact.`)
     : unavailable.title;
-  const detail = isLoading
-    ? ('Calculating…')
-    : impact?.available
-      ? impact.stale
-        ? `${'Saved'} · ${impact.period?.label || ''}`
-        : `${localizedLevel} · ${impact.period?.label || ''}`
-      : unavailable.detail;
-
   const unavailableChip = !isLoading && !impact?.available;
   return (
     <div
@@ -89,10 +81,9 @@ export default function RecentImpactStat({ impact, isLoading, error }: ImpactPro
           {isLoading ? '…' : impact?.available ? impact.score!.toFixed(1) : '—'}
           <span className="ehc-stat-scale">/ 10</span>
         </span>
-        {unavailableChip && <span className="ehc-stat-detail ehc-stat-detail--chip">{detail}</span>}
+        {unavailableChip && <span className="ehc-stat-detail ehc-stat-detail--chip">{unavailable.detail}</span>}
       </span>
       <span className="ehc-stat-label">{'Recent impact'}</span>
-      {!unavailableChip && <span className="ehc-stat-detail">{detail}</span>}
     </div>
   );
 }

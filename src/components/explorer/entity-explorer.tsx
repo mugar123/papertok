@@ -1836,17 +1836,13 @@ export default function EntityExplorer({
                 <div className="ehc-stats-grid">
                   {Array.from({ length: shape.stats }, (_, i) => {
                     // The last cell IS the recent-impact one on the pages that
-                    // carry it, so it takes that cell's class — the stylesheet
-                    // pins the grid's width through it — and the detail box
-                    // whose two reserved lines are the cell's real height.
+                    // carry it, so it takes that cell's class: the stylesheet
+                    // pins the grid's width through it.
                     const isImpact = shape.impact && i === shape.stats - 1;
                     return (
                       <div key={i} className={`ehc-stat-box${isImpact ? ' ehc-stat-box--impact' : ''}`}>
                         <span className="ex-skel ex-skel-stat-value"></span>
                         <span className="ex-skel ex-skel-stat-label"></span>
-                        {isImpact && (
-                          <span className="ehc-stat-detail"><span className="ex-skel ex-skel-stat-detail"></span></span>
-                        )}
                       </div>
                     );
                   })}
@@ -2450,6 +2446,15 @@ export default function EntityExplorer({
                 <p className="ehc-meta">
                   {[entity.geo?.city, entity.geo?.country].filter(Boolean).join(', ')}
                 </p>
+              )}
+              {/* The article the institution's Wikidata item names, the one its image comes from. */}
+              {type === 'institution' && visibleWikiInfo?.source === 'wikipedia' && (
+                <div className="ehc-about">
+                  <p className="ehc-about-text" lang={visibleWikiInfo.language}>{visibleWikiInfo.extract}</p>
+                  {safeExternalUrl(visibleWikiInfo.url) && (
+                    <a className="ehc-about-source" href={safeExternalUrl(visibleWikiInfo.url)} target="_blank" rel="noopener noreferrer">From Wikipedia <ArrowSquareOut size={11} aria-hidden="true" /></a>
+                  )}
+                </div>
               )}
               {type === 'project' && (entity.subjects?.length as number) > 0 ? (
                 <div className="ehc-tag-row">

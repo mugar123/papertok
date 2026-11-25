@@ -4,8 +4,9 @@ import { CHARS_PER_SECOND, locateInListen, passageText, readAloudTimeline } from
 import { ReadAloudError, fetchParagraphAudio, fetchParagraphTimings } from '../../services/read-aloud-service.ts';
 
 const hasBrowserVoice = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
-/** Passages one listener asks for at once, well inside the plan's concurrent generations shared by every listener. */
-const WORKERS = 3;
+// Two background requests leave a third slot for a seek to an uncached passage.
+const WORKERS = 2;
+const STARTUP_PASSAGES = 3;
 // A moment of silence played within the press: Safari on iOS lets an audio element that has
 // played once from a press play again later, when its clip arrives after the network wait.
 const SILENCE = 'data:audio/wav;base64,UklGRjQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YRAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -32,17 +33,10 @@ function clipSeconds(url: string) {
   });
 }
 
-/**
- * Reads the paper aloud in PaperTok's voice. Starting asks for every passage,
- * a couple at a time from where the listen begins, so the whole paper is there
- * to seek through, and the timeline swaps each estimate for the clip's real
- * length as it arrives. Once the voice's credits are spent, only audio already
- * made is asked for, so every stored passage still plays in PaperTok's voice;
- * a passage without audio is read by the browser's own voice, which can only
- * start a passage from its beginning.
- */
-export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, onFallback, onError, onBlocked }: {
+export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[], { title, paperId, onFallback, onError, onBlocked }: {
   title: string;
+  /** The paper the passages are from: its first new audio of the day counts against the account's papers. */
+  paperId?: string;
   onFallback: (error: unknown) => void;
   onError: () => void;
   /** The browser would not start the audio without another press; the voice is paused. */
@@ -67,17 +61,32 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   const pace = useRef({ chars: 0, seconds: 0 });
   // Every passage has been asked for, so any still missing will not come.
   const [prepareDone, setPrepareDone] = useState(false);
+  const [startup, setStartup] = useState<{ start: number; ready: number; total: number; failed: boolean } | null>(null);
+  const [buffering, setBuffering] = useState(false);
   const run = useRef(0);
   const audio = useRef<HTMLAudioElement | null>(null);
   const clips = useRef(new Map<string, Promise<string>>());
+  // The name each passage's audio is stored under, as the Worker gave it.
+  const audioKeys = useRef(new Map<string, string>());
   const fetches = useRef<AbortController | null>(null);
   // The voice refused for want of credits: from then on, stored audio only.
   const storedOnly = useRef(false);
+  const activeRequests = useRef(0);
+  const waitingRequests = useRef<Array<() => void>>([]);
   const told = useRef(false);
   // The queue whose passages are being fetched in full; a new queue starts over.
-  const fetchingAll = useRef<SpokenPassage[] | null>(null);
-  // Settles once that queue's passages have all been asked for, or the asking stopped.
-  const preparation = useRef<Promise<void>>(Promise.resolve());
+  /**
+   * The paper's audio being fetched: what is left, in the order wanted, what has settled, and the
+   * first passages the tab opened at, which its progress counts.
+   */
+  const fetchingAll = useRef<{
+    items: SpokenPassage[];
+    remaining: SpokenPassage[];
+    settled: Set<SpokenPassage>;
+    start: number;
+    initial: SpokenPassage[];
+    opening: boolean;
+  } | null>(null);
   const [speed, setSpeedState] = useState<number>(1);
   // Read when a clip or sentence starts, so a change made meanwhile applies to it.
   const speedNow = useRef(1);
@@ -90,6 +99,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     audio.current?.pause();
     if (hasBrowserVoice()) window.speechSynthesis.cancel();
     setPlaying(false);
+    setBuffering(false);
   }, []);
 
   const reset = useCallback(() => {
@@ -117,15 +127,28 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     };
   }, [pause]);
 
-  const request = async (text: string): Promise<Blob> => {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return await fetchParagraphAudio(text, { signal: fetches.current?.signal, storedOnly: storedOnly.current });
-      } catch (error) {
-        if (error instanceof ReadAloudError && error.code === 'AI_QUOTA_EXHAUSTED') storedOnly.current = true;
-        if (!(error instanceof ReadAloudError && error.code === 'AI_BUSY') || attempt >= BUSY_RETRIES) throw error;
-        await wait(800 * (attempt + 1));
+  const request = async (text: string) => {
+    await new Promise<void>((resolve) => {
+      if (activeRequests.current < WORKERS + 1) {
+        activeRequests.current += 1;
+        resolve();
+      } else waitingRequests.current.push(resolve);
+    });
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        fetches.current?.signal.throwIfAborted();
+        try {
+          return await fetchParagraphAudio(text, { signal: fetches.current?.signal, storedOnly: storedOnly.current, paperId });
+        } catch (error) {
+          if (error instanceof ReadAloudError && error.code === 'AI_QUOTA_EXHAUSTED') storedOnly.current = true;
+          if (!(error instanceof ReadAloudError && error.code === 'AI_BUSY') || attempt >= BUSY_RETRIES) throw error;
+          await wait(800 * (attempt + 1));
+        }
       }
+    } finally {
+      const next = waitingRequests.current.shift();
+      if (next) next();
+      else activeRequests.current -= 1;
     }
   };
 
@@ -133,7 +156,9 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     const text = passageText(item);
     const known = clips.current.get(text);
     if (known) return known;
-    const pending = request(text).then((blob) => {
+    const pending = request(text).then(({ blob, key }) => {
+      fetches.current?.signal.throwIfAborted();
+      if (key) audioKeys.current.set(text, key);
       const url = URL.createObjectURL(blob);
       void clipSeconds(url).then((seconds) => {
         setLengths(lengths => ({ ...lengths, [text]: seconds ?? readAloudTimeline([item], []).duration }));
@@ -148,44 +173,68 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     return pending;
   };
 
-  /**
-   * Asks for every passage, from `start` to the end and then the ones before it.
-   * A passage refused for credits or not stored is skipped; any other failure
-   * (the Worker down, a timeout) stops the rest.
-   */
-  const fetchAll = (start: number) => {
-    if (fetchingAll.current === queue) return preparation.current;
-    const items = queue;
-    fetchingAll.current = items;
+  /** The first passages a tab opened at `start` prepares before Play is offered. */
+  const firstPassages = (start: number) => queue.slice(start, start + STARTUP_PASSAGES);
+
+  const reportStartup = (batch: NonNullable<typeof fetchingAll.current>, failed = false) => {
+    if (!batch.opening) return;
+    const ready = batch.initial.filter(item => batch.settled.has(item)).length;
+    setStartup({ start: batch.start, ready, total: batch.initial.length, failed });
+  };
+
+  const fetchAll = (start: number, opening = false) => {
+    const order = (items: SpokenPassage[]) => [...items.slice(start), ...items.slice(0, start)];
+    const running = fetchingAll.current;
+    // Already fetching this paper: what is left comes from the new place, and a tab opened there
+    // counts its own first passages, those already settled included, not the last opening's.
+    if (running?.items === queue) {
+      const pending = new Set(running.remaining);
+      running.remaining = order(queue).filter(item => pending.has(item));
+      if (opening) Object.assign(running, { opening, start, initial: firstPassages(start) });
+      reportStartup(running);
+      return;
+    }
+    const batch = { items: queue, remaining: order(queue), settled: new Set<SpokenPassage>(), start, initial: firstPassages(start), opening };
+    fetchingAll.current = batch;
     setPrepareDone(false);
-    let settle = () => {};
-    preparation.current = new Promise<void>((resolve) => { settle = resolve; });
-    const order = [...items.slice(start), ...items.slice(0, start)];
-    let next = 0;
+    reportStartup(batch);
     let stopped = false;
     let working = WORKERS;
     const work = async () => {
-      while (!stopped && next < order.length && fetchingAll.current === items) {
+      while (!stopped && batch.remaining.length && fetchingAll.current === batch && !fetches.current?.signal.aborted) {
+        const item = batch.remaining.shift();
+        if (!item) break;
         try {
-          await clip(order[next++]);
+          await clip(item);
         } catch (error) {
-          if (!skippable(error) && !stopped) {
+          if (!skippable(error)) {
             stopped = true;
-            fetchingAll.current = null;
-            setPrepareDone(true);
-            settle();
+            if (fetchingAll.current === batch) {
+              fetchingAll.current = null;
+              setPrepareDone(true);
+              reportStartup(batch, true);
+            }
           }
         }
+        batch.settled.add(item);
+        if (fetchingAll.current === batch) reportStartup(batch);
       }
       working -= 1;
-      if (working === 0 && fetchingAll.current === items) setPrepareDone(true);
-      if (working === 0) settle();
+      if (working === 0 && fetchingAll.current === batch) setPrepareDone(true);
     };
     for (let count = 0; count < WORKERS; count += 1) void work();
-    return preparation.current;
+  };
+
+  /** `storedOnly`: PaperTok's voice only where its audio is stored, the browser's for the rest. */
+  const prepare = (start: number, { storedOnly: onlyStored = false } = {}) => {
+    if (onlyStored) storedOnly.current = true;
+    setParagraph(start);
+    setProgress(0);
+    fetchAll(start, true);
   };
 
   const play = (start: number, fraction = 0) => {
+    if (startup && !startup.failed && startup.ready < startup.total) return;
     const token = ++run.current;
     const current = () => token === run.current;
     // A jump while either voice is speaking silences it before the new place starts.
@@ -215,6 +264,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       utterance.rate = speedNow.current;
       const before = item.utterances.slice(0, sentence).reduce((sum, text) => sum + text.length + 1, 0) + skip;
       voice.current = 'browser';
+      setBuffering(false);
       spokenChars.current = before;
       const said = { before, length: line.length, startedAt: 0, heard: false };
       browserSentence.current = said;
@@ -287,6 +337,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       setParagraph(index);
       setProgress(from);
       voice.current = null;
+      setBuffering(true);
       clip(queue[index]).then((url) => {
         if (!current()) return undefined;
         const element = (audio.current ??= new Audio());
@@ -310,7 +361,7 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
             if (found) setTimings(known => ({ ...known, [text]: found }));
           });
         }
-        return element.play();
+        return element.play().then(() => { if (current()) setBuffering(false); });
       }).catch((error: unknown) => {
         // The browser refused to start audio without a fresh press: the clip is fine, so wait for one.
         if (error instanceof DOMException && error.name === 'NotAllowedError') {
@@ -323,19 +374,26 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
       });
     }
 
-    // The whole paper's audio is prepared before the voice starts, so it plays through without waits.
-    void fetchAll(start).then(() => next(start, fraction));
+    fetchAll(start);
+    next(start, fraction);
   };
 
   const at = paragraph === null ? null : timeline.passages[paragraph];
   const position = at ? at.start + progress * (at.end - at.start) : 0;
 
   const seek = (seconds: number) => {
+    if (!queue.length) return;
     const target = locateInListen(timeline, Math.min(Math.max(0, seconds), timeline.duration));
     if (playing) play(target.index, target.fraction);
     else {
       setParagraph(target.index);
       setProgress(target.fraction);
+      const token = ++run.current;
+      setBuffering(true);
+      fetchAll(target.index);
+      void clip(queue[target.index]).catch(() => undefined).finally(() => {
+        if (token === run.current) setBuffering(false);
+      });
     }
   };
 
@@ -417,6 +475,12 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   }, [at, paragraph, playing, progress, queue]);
 
   /** The paper's audio as one MP3, its clips in reading order; only once every passage has one. */
+  /** The stored name of every passage's audio, or null while one has none. */
+  const storedNames = useCallback(() => {
+    const keys = queue.map(item => audioKeys.current.get(passageText(item)));
+    return keys.every((key): key is string => Boolean(key)) ? keys : null;
+  }, [queue]);
+
   const audioFile = useCallback(async () => {
     const urls = await Promise.all(queue.map(item => clips.current.get(passageText(item)) ?? Promise.reject(new ReadAloudError('AI_AUDIO_NOT_STORED'))));
     const parts = await Promise.all(urls.map(url => fetch(url).then(response => response.blob())));
@@ -426,7 +490,11 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
   return {
     timeline,
     timings,
+    prepare,
+    buffering,
+    startup: startup ?? { start: 0, ready: 0, total: Math.min(STARTUP_PASSAGES, queue.length), failed: false },
     audioFile,
+    audioKeys: storedNames,
     live,
     /** How much of the paper's audio exists yet; `failed` once a passage was refused and the rest will not come. */
     prepared: { ready, total: queue.length, failed: prepareDone && ready < queue.length },

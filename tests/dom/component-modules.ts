@@ -61,6 +61,9 @@ export async function loadReadAloud() {
       onBlocked: () => void;
     }) => {
       playing: boolean;
+      buffering: boolean;
+      startup: { start: number; ready: number; total: number; failed: boolean };
+      prepare: (start: number) => void;
       prepared: { ready: number; total: number; failed: boolean };
       timeline: ReadAloudTimeline;
       paragraph: number | null;
@@ -110,12 +113,20 @@ export async function loadWelcomeProjectSupport() {
 }
 
 
+/** The podcast tab alone, handed a player the test drives. */
+export async function loadReadAloudListen() {
+  const { modules: [listen], close } = await loadModules<[
+    { default: Component<{ title: string; queue: SpokenPassage[]; player: Record<string, unknown>; onPlayPause: () => void }> },
+  ]>('/src/components/pdf/read-aloud-listen.tsx');
+  return { ReadAloudListen: listen.default, close };
+}
+
 export async function loadReadingDock() {
   const { modules: [dock, contexts, firebase], close } = await loadModules<[
     { ReadingDock: Component<{
       title: string; paper?: Paper; scroll: HTMLElement | null; contents: null;
       spoken: { queue: SpokenPassage[]; chapters: ReadAloudChapter[] } | null;
-      canListen: boolean; topbar?: HTMLElement | null; originalUrl: string;
+      canListen: boolean; listening?: boolean; topbar?: HTMLElement | null; originalUrl: string;
       notes: { id: string; open: boolean; count: number; onOpenChange: (open: boolean) => void } | null;
       children?: ReactNode;
     }> },
@@ -123,4 +134,22 @@ export async function loadReadingDock() {
     import('./firebase-stub.ts').FirebaseStub,
   ]>('/src/components/pdf/reading-dock.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');
   return { ...dock, ...contexts, firebase, close };
+}
+
+export async function loadPaperViewer() {
+  const { modules: [viewer, contexts, firebase], close } = await loadModules<[
+    { default: Component<{ paper: Paper; menu: { snapshot: () => { about: null; links: null; isRead: boolean; shareUrl: string; notInterested: () => void; toggleRead: () => void }; subscribe: () => () => void }; onClose: () => void }> },
+    Record<'AuthContext' | 'AnalyticsContext' | 'FeedContext' | 'LanguageContext', Context<unknown>>,
+    import('./firebase-stub.ts').FirebaseStub,
+  ]>('/src/components/pdf/pdf-viewer.tsx', '/src/context/contexts.ts', '/src/services/firebase.ts');
+  return { Viewer: viewer.default, ...contexts, firebase, close };
+}
+
+export async function loadFullTextArticle() {
+  const { modules: [article, contexts, katex], close } = await loadModules<[
+    { default: Component<{ doc: import('../../src/utils/full-text.ts').FullText; paper: Paper }> },
+    Record<'LanguageContext', Context<unknown>>,
+    { loadKatex: () => Promise<unknown> },
+  ]>('/src/components/pdf/full-text-article.tsx', '/src/context/contexts.ts', '/src/utils/katex-loader.ts');
+  return { Article: article.default, ...contexts, ...katex, close };
 }

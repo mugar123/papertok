@@ -10,6 +10,8 @@ import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { readShowAbstract, subscribeShowAbstract } from '../../utils/reader-preferences.ts';
 import './pdf-viewer.css';
+import '../reader/paper-reader.css';
+import '../reader/annotations.css';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paper-open-targets.ts';
 import { getFullText } from '../../services/full-text-service.ts';
@@ -17,6 +19,7 @@ import type { FullText } from '../../utils/full-text.ts';
 import FullTextArticle from './full-text-article.tsx';
 import { OutlineList, OutlineRail } from './full-text-outline.tsx';
 import { useOutline } from './use-outline.ts';
+import { skipsCoveredView } from './covered-view.ts';
 import { ReadingDock } from './reading-dock.tsx';
 import ViewerLoading from './viewer-loading.tsx';
 import { NewTabHint } from './new-tab-hint.tsx';
@@ -32,11 +35,12 @@ import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import UsesCount from '../reader/uses-count.tsx';
 import { usePaintedPassages, useTouchSelection, useViewerNotes } from './use-viewer-notes.ts';
 import { fullTextListen } from './read-aloud.ts';
-import { ReadingTabs } from './reading-tabs.tsx';
+import { ReadingTabs, type ReadingView } from './reading-tabs.tsx';
 import { canRewritePaper } from '../../services/paper-rewrite-service.ts';
 import { passageQuote } from '../../services/user-highlight-service.ts';
+import { connectionIsFrugal, lazyWithPreload } from '../../utils/lazy-preload.ts';
 
-const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
+const PaperReader = lazyWithPreload(() => import('../reader/paper-reader.tsx'));
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.
@@ -51,6 +55,9 @@ const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/
  * also owns what the old overlay did by hand — the focus trap, Escape, the
  * scroll lock and the restore to the button that opened it.
  */
+/** The viewer's tabs in the bar's order, which sets the side a view arrives from. */
+const VIEW_ORDER: readonly ReadingView[] = ['paper', 'listen', 'summary'];
+
 export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { paper: Paper; menu: ReaderMenu; onClose: () => void; closeRef?: Ref<() => void> | null }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
@@ -129,8 +136,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // The X and Escape land here, so the bounce is counted once, whichever it was.
   const handleClose = useCallback(() => {
     if (!open) return;
-    const elapsed = (Date.now() - startTimeRef.current!) / 1000;
-    if (elapsed < 5) {
+    if (startTimeRef.current !== null && Date.now() - startTimeRef.current < 5000) {
       void trackPdfBounce(paper);
     }
     setOpen(false);
@@ -139,8 +145,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   const leaveThen = useCallback((then: () => void) => {
     if (!open) return;
     afterClose.current = then;
-    setOpen(false);
-  }, [open]);
+    handleClose();
+  }, [handleClose, open]);
 
   useEffect(() => {
     startTimeRef.current = Date.now();
@@ -180,9 +186,12 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
   // `consent` and `uid` drop it at once, and `analyticsSessionContext` checks again at each send.
   const { trackEvent, consent } = useAnalyticsConsent();
   const { user, readingPreferences } = useAuth();
-  // The plain-words reader as the viewer's second tab: it opens over the paper, and its Paper tab comes back.
-  const [plain, setPlain] = useState(false);
-  const canPlain = Boolean(user) && canRewritePaper(paper);
+  // The tab chosen, and the side the view it shows arrives from: a tab to the right comes in from
+  // the right. The view left goes at once, so two texts never show through each other.
+  const [tab, setTab] = useState<{ view: ReadingView; from: number; turn: number }>({ view: 'paper', from: 0, turn: 0 });
+  const choose = (view: ReadingView) => setTab(current => (current.view === view ? current
+    : { view, from: Math.sign(VIEW_ORDER.indexOf(view) - VIEW_ORDER.indexOf(current.view)), turn: current.turn + 1 }));
+  const canSummarize = Boolean(user) && canRewritePaper(paper);
   const uid = user?.uid ?? '';
   const sendViewerEvent = useEffectEvent((name: Parameters<typeof trackEvent>[0], params: Record<string, unknown>, stillValid: () => boolean) => {
     void trackEvent(name, params, stillValid);
@@ -262,6 +271,25 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
 
   // Read aloud: the paper's prose in PaperTok's voice, for a signed-in reader of an English text.
   const spoken = useMemo(() => (fullText ? fullTextListen(fullText, { withAbstract: abstractShown }) : null), [fullText, abstractShown]);
+  // Listening needs the paper's English text, read as text, for a signed-in reader.
+  const listenable = Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '');
+  // The same list while the same tabs apply: the tabs measure their layout when it changes.
+  const tabs = useMemo(() => VIEW_ORDER.filter(item => item === 'paper' || (item === 'summary' ? canSummarize : listenable)), [canSummarize, listenable]);
+  // A tab that is no longer offered (the text turned to the PDF, say) falls back to the paper.
+  const shown = tabs.includes(tab.view) ? tab.view : 'paper';
+  const summaryOpen = shown === 'summary';
+  useEffect(() => {
+    if (!canSummarize || fullText === undefined || connectionIsFrugal()) return;
+    const prepare = () => { void PaperReader.preload().catch(() => undefined); };
+    if ('requestIdleCallback' in window) {
+      const idle = window.requestIdleCallback(prepare);
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timer = setTimeout(prepare, 1000);
+    return () => clearTimeout(timer);
+  }, [canSummarize, fullText]);
+  // A tab no longer offered once the paper's text is in (the text turned to the PDF) is left for the paper.
+  if (fullText !== undefined && shown !== tab.view) setTab({ view: 'paper', from: 0, turn: tab.turn });
 
   return (
     <Dialog
@@ -289,8 +317,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
 
             {/* The bar names the paper once the article's own title has scrolled
                 away, rising in from below; it leaves the way it came. Where the paper
-                can be read in plain words, the bar holds the two tabs instead. */}
-            {canPlain ? <ReadingTabs current={plain ? 'plain' : 'paper'} onChange={view => setPlain(view === 'plain')} /> : <AnimatePresence initial={false}>
+                has other tabs (an AI summary, Listen), the bar holds them instead. */}
+            {tabs.length > 1 ? <ReadingTabs current={shown} views={tabs} onChange={choose} /> : <AnimatePresence initial={false}>
               {!tucked && (
                 <motion.h3
                   key="title"
@@ -306,8 +334,8 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             </AnimatePresence>}
           </div>
 
-          {/* Under the Plain words tab the paper stays mounted, so its place waits, but out of reach. */}
-          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} inert={plain}>
+          {/* Under the AI summary tab the paper stays mounted, so its place waits, but out of reach. */}
+          <div className="pdf-stage" data-notes-open={(notesOn && notesOpen) || undefined} data-arrive={(shown === 'paper' && tab.turn > 0) || undefined} data-covered={shown === 'paper' ? undefined : shown} inert={summaryOpen && !skipsCoveredView}>
             {textFailed && (
               <div className="pdf-text-failed" role="status">
                 <p>The text of this paper could not be loaded right now.</p>
@@ -319,7 +347,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             )}
 
             {fullText && showsText && (
-              <div className="ft-scroll" tabIndex={0} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onMouseMove={notesOn && !coarsePointer ? pointAtHighlight : undefined} onMouseLeave={() => setHoveredPassage(null)} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
+              <div className="ft-scroll" tabIndex={shown === 'paper' ? 0 : -1} role="region" aria-label="Paper text" ref={textScrollRef} onMouseUp={notesOn && !coarsePointer ? () => notes.pick(textScroll) : undefined} onClick={notesOn ? openHighlightAt : undefined} onMouseMove={notesOn && !coarsePointer ? pointAtHighlight : undefined} onMouseLeave={() => setHoveredPassage(null)} onKeyUp={notesOn && !coarsePointer ? (event) => { if (event.key === 'Shift') notes.pick(textScroll); } : undefined} onKeyDown={notesOn ? (event) => {
                 const block = event.target as HTMLElement;
                 if (event.key !== 'Enter' || !block.matches('[data-passage]')) return;
                 event.preventDefault();
@@ -390,7 +418,7 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             {fullText !== undefined && (
             <ReadingDock
               title={paper.title} paper={paper} scroll={showsText ? textScroll : null}
-              spoken={spoken} topbar={topbar} canListen={!plain && Boolean(uid) && showsText && Boolean(spoken?.queue.length) && /^en\b/i.test(fullText?.lang ?? '')}
+              spoken={spoken} topbar={topbar} canListen={listenable} listening={shown === 'listen'} arrivalFrom={tab.from * 16}
               notes={notesOn ? { id: 'viewer-notes', open: notesOpen, count: notes.passages.length, onOpenChange: setNotesOpen } : null}
               originalUrl={dockUrl}
               menu={{ paper, doc: fullText, fromCard: menu, onLeave: leaveThen, viewActions: fullText && !showsText
@@ -456,10 +484,12 @@ export default function PDFViewer({ paper, menu, onClose, closeRef = null }: { p
             />}
           </div>
         </div>
-        {plain && (
-          <Suspense fallback={null}>
-            <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={onClose} onLeave={leaveThen} onPaperTab={() => setPlain(false)} />
-          </Suspense>
+        {summaryOpen && (
+          <div className="pdf-summary">
+            <Suspense fallback={null}>
+              <PaperReader embedded paper={paper} card={{ paper, menu }} onClose={handleClose} onLeave={leaveThen} onPaperTab={() => choose('paper')} />
+            </Suspense>
+          </div>
         )}
       </DialogContent>
     </Dialog>

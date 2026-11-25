@@ -1,4 +1,4 @@
-import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
+import type { MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
 import type { Icon, IconWeight } from '@phosphor-icons/react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/paper.ts';
 type OpenCopy = Awaited<ReturnType<typeof findOpenAccessCopy>>;
@@ -45,13 +45,14 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useSyncExternalStore, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, useSyncExternalStore, memo, Suspense } from 'react';
+import { askPaperVoiced, isPaperVoiced, subscribeVoicedPapers } from '../../services/read-aloud-service.ts';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
   ArrowLeft,
   ArrowRight,
   ArrowSquareOut,
+  Headphones,
   BookmarkSimple,
   Brain,
   Building,
@@ -74,23 +75,21 @@ import {
   Heart,
   Heartbeat,
   Lightning,
-  Lock,
   LockKey,
   LockKeyOpen,
   NotePencil,
   Package,
   Planet,
+  SealCheck,
   Sigma,
   TestTube,
   Intersect,
-  Sparkle,
   TrendUp,
   UserCheck,
   Warning,
   X,
 } from '@phosphor-icons/react';
 import { useSimilarFeed } from '../../hooks/use-similar-feed.ts';
-import { useOverlayHistory } from '../../hooks/use-overlay-history.ts';
 import { useIsPageArriving } from '../../hooks/use-page-arrival.ts';
 import ScientificText from '../scientific-text.ts';
 import { Button } from '../ui/button.tsx';
@@ -135,11 +134,8 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { getRelatedResearchResources } from '../../services/data-cite-service.ts';
 import { getHuggingFaceResearchResources } from '../../services/hugging-face-service.ts';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topic-navigation.ts';
-import { currentAIUses } from './current-ai-uses.ts';
 import { markSeparatorLineEnds } from './separator-line-ends.ts';
-import UsesCount from '../reader/uses-count.tsx';
 import '../ui/tag.css';
-import { canRewritePaper, getCachedRewrite, lastKnownAIUses, subscribeAIUses } from '../../services/paper-rewrite-service.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paper-figure-service.ts';
 import { areaAccentForPaper, areaKeyForPaper } from '../../utils/area-accent.ts';
 import { acceptedConferenceText, accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paper-status.ts';
@@ -215,15 +211,6 @@ function ClippedName({ name }: { name: string }) {
     </Tooltip>
   );
 }
-
-// The reader drags in the annotations layer, LaTeX export and their CSS
-// (paper-reader.css, annotations.css, Export.css — ~53 KB raw source, ~28 KB
-// once minified) — none of it belongs in the boot graph when most sessions
-// never tap "read". It opens over a card that has already painted, so there
-// is nothing to placehold while the chunk loads; `fallback={null}` is
-// correct here, unlike the route-level `RouteFallback` used for `app.tsx`'s
-// lazy routes.
-const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 
 // One quiet watermark per research area, engraved in the head of the sheet.
 // It replaces the old animated icon constellation: the same visual cue about
@@ -495,23 +482,6 @@ const PaperCard = memo(function PaperCard({
   // Once the connections have stood in the slot, the abstract coming back is
   // a swap, not the card's arrival: it slides in and does not replay that.
   const [slotSwapped, setSlotSwapped] = useState(false);
-  const [showReader, setShowReader] = useState(false);
-  // Back closes the reader instead of leaving PaperTok: see use-overlay-history.ts.
-  // It must ASK the reader to close (its own `requestClose`, which the X and
-  // Escape also use) rather than unmount it here — the dialog owns `open` and
-  // tells this card only once its leave has played. `setShowReader(false)` is
-  // the fallback for the one window where there is nothing to ask: the lazy
-  // chunk has not mounted yet, so the ref is still empty.
-  const readerCloseRef = useRef<(() => void) | null>(null);
-  const requestReaderClose = useCallback(() => {
-    if (readerCloseRef.current) readerCloseRef.current();
-    else setShowReader(false);
-  }, []);
-  useOverlayHistory(showReader, requestReaderClose, 'reader');
-  /* Where the reader should grow from. The rewrite button's rectangle at the
-     moment it was pressed, so the full-screen reader can open out of it and
-     collapse back into it rather than appearing from nowhere. */
-  const [readerOrigin, setReaderOrigin] = useState<ComponentProps<typeof PaperReader>['originRect']>(null);
   const [pendingRelatedPaper, setPendingRelatedPaper] = useState<Paper | null>(null);
   const [selectedRelatedPaper, setSelectedRelatedPaper] = useState<Paper | null>(null);
   const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
@@ -548,9 +518,14 @@ const PaperCard = memo(function PaperCard({
   // played over a card that had already stopped moving.
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
-  const { institution, user, readingPreferences } = useAuth();
+  const { institution, user } = useAuth();
+  // Stored audio for every paragraph, which listening spends none of the day's papers on.
+  const hasCitations = paper.citationCountKnown || (paper.citationCount ?? 0) > 0;
+  const voiced = useSyncExternalStore(subscribeVoicedPapers, () => Boolean(user) && isPaperVoiced(paper.id));
+  useEffect(() => {
+    if (user) askPaperVoiced(paper.id);
+  }, [paper.id, user]);
   const { language } = useLanguage();
-  const quota = useSyncExternalStore(subscribeAIUses, () => lastKnownAIUses(user?.uid));
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
   // (hooks/use-stable-navigate.ts says what it cost).
@@ -832,8 +807,8 @@ const PaperCard = memo(function PaperCard({
   const watermarkRef = useRef<HTMLSpanElement | null>(null);
   // A separator the row wraps after is left hanging at the end of its line, as "2020 ·", so it is hidden there.
   const metaRef = useRef<HTMLDivElement | null>(null);
-  // When what the row holds changes, as a late citation count or the uses tag can move the break; the observer covers resizes.
-  useLayoutEffect(() => markSeparatorLineEnds(metaRef.current), [paper.id, paper.citationCount, paper.year, quota]);
+  // Late citation counts can change the line breaks; the observer covers resizes.
+  useLayoutEffect(() => markSeparatorLineEnds(metaRef.current), [paper.id, paper.citationCount, paper.year]);
   useEffect(() => {
     const meta = metaRef.current;
     if (!meta) return undefined;
@@ -1281,10 +1256,6 @@ const PaperCard = memo(function PaperCard({
   const requireAuthentication = useCallback((action: string) => {
     onAuthRequired?.(action);
   }, [onAuthRequired]);
-  // Describes «Leer en simple» to a guest: it needs an account. A
-  // description, not part of the name, so the name stays what the button
-  // shows (WCAG 2.5.3, see the button).
-  const rewriteHintId = useId();
   const TitleTag = titleAs === 'h1' ? 'h1' : 'h2';
 
   // Marking a paper read used to fade the whole card out and, 1.5 s later,
@@ -1313,6 +1284,13 @@ const PaperCard = memo(function PaperCard({
     [paper, followed, analyticsSurface, categoryLabel],
   );
   const acceptedAt = acceptedConferenceText(paper);
+  // The same pill on the card, under its kicker, and in About this paper under Status.
+  const acceptedPill = acceptedAt ? (
+    <span className="pc-chip pc-accepted" data-tone="blue">
+      <SealCheck size={12} weight="bold" aria-hidden="true" />
+      {acceptedAt}
+    </span>
+  ) : null;
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
@@ -1668,19 +1646,6 @@ const PaperCard = memo(function PaperCard({
   const reviewTag = reviewTagForPaper(paper);
   const accessTag = accessTagForPaper(paper, { openCopy: resolvedOpenCopy });
   const researchResources = linkedResources.paperId === paper.id ? linkedResources.items : [];
-  const readablePaper = useMemo(() => resolvedOpenCopy ? {
-    ...paper,
-    openAccess: true,
-    openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
-  } : paper, [paper, resolvedOpenCopy]);
-  const canRequestRewrite = canRewritePaper(readablePaper);
-  const usesNow = currentAIUses(quota, { now: Date.now(), online: navigator.onLine });
-  const firstTarget = openTargetsForPaper(paper, resolvedOpenCopy, currentInstitutionAccess)[0];
-  const inlineTarget = firstTarget?.mode === 'inline' ? firstTarget : null;
-  const rewriteHint = canRequestRewrite && !publicMode && user && isCardVisible
-    // The uses left are the masthead's tag; under the button only a saved version, which opens free.
-    ? (getCachedRewrite(readablePaper, readingPreferences.aiExplanationLevel) ? 'Open this version for free.' : '')
-    : '';
 
   // Never the library link: it only opens for readers at that institution.
   const bestAvailableUrl = safeExternalUrl(resolvedOpenCopy?.pdfUrl)
@@ -1778,15 +1743,11 @@ const PaperCard = memo(function PaperCard({
   // on its side that panel is 0px tall, and no touch reaches a link in it.
   // This row keeps its height and its place (paper-card.css), so the link is
   // here at every size and nothing measures the panel to decide where it
-  // goes. It is a link drawn as the row's outline button. Beside "Read in
-  // plain words", and where the row has no room for its word, it shows the
-  // glyph alone (paper-card.css), so its name is set here: the full label
-  // and the new tab at every width, which contains the word a phone shows
-  // (WCAG 2.5.3). Beside "Read in plain words" it is always the glyph, and
-  // the same words are its `title`, so a pointer resting on it reads where
-  // it goes, as on the reader's link to the original. Beside Source alone it
-  // shows its word, except in a phone's row too narrow for it, so it has no
-  // `title`: with the word showing, a title only repeats the name as its
+  // goes. It is a link drawn as the row's outline button. Where the row has
+  // no room for its word, it shows the glyph alone (paper-card.css), so its
+  // name is set here: the full label and the new tab at every width, which
+  // contains the word a phone shows (WCAG 2.5.3). It has no `title`: with the
+  // word showing, a title only repeats the name as its
   // description. While the feed still asks a source for the abstract, the
   // link holds its place in the row unseen (`--pending`): the row then has
   // the shape it keeps when the wait ends with none, and no control moves
@@ -1800,7 +1761,6 @@ const PaperCard = memo(function PaperCard({
       role="link"
       render={<a href={publisher.url} target="_blank" rel="noopener noreferrer" />}
       aria-label={publisherName}
-      title={canRequestRewrite ? publisherName : undefined}
       onClick={swallowClick}
     >
       <ArrowSquareOut size={16} aria-hidden="true" />
@@ -1910,7 +1870,7 @@ const PaperCard = memo(function PaperCard({
       })()}
     </AnimatePresence>
             </div>
-            {acceptedAt && <p className="pc-about-accepted">{acceptedAt}</p>}
+            {acceptedPill && <p className="pc-about-accepted">{acceptedPill}</p>}
           </section>
           {topicItems.length > 0 && (
             <section className="pc-about-section">
@@ -2042,7 +2002,6 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
         <div ref={metaRef} className="pc-meta">
-          {/* The paper's details wrap among themselves; the uses tag keeps to the first line's end. */}
           <div className="pc-meta-items">
             {primaryTopic ? (
               <button
@@ -2073,19 +2032,12 @@ const PaperCard = memo(function PaperCard({
                 <span className="pc-date">{paper.year}</span>
               </>
             ) : null}
-            {acceptedAt && (
-              <>
-                {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot">·</span> : null}
-                <span className="pc-accepted">{acceptedAt}</span>
-              </>
-            )}
-
-            {(paper.citationCountKnown || paper.citationCount! > 0) && (
+            {hasCitations && (
               <>
                 {/* The modifier gives this dot the chip's fade: the two mount
                     together, and when enrichment runs past the ceiling they
                     mount late together. */}
-                {(categoryLabel || reason || paper.year || acceptedAt) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+                {(categoryLabel || reason || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
                 {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                   <a
                     className="pc-citations"
@@ -2104,6 +2056,15 @@ const PaperCard = memo(function PaperCard({
                 )}
               </>
             )}
+            {voiced && (
+              <>
+                {(categoryLabel || reason || paper.year || hasCitations) ? <span className="pc-meta-dot">·</span> : null}
+                <span className="pc-voiced">
+                  <Headphones size={12} weight="bold" aria-hidden="true" /> Audio ready
+                  <span className="visually-hidden">, free to listen</span>
+                </span>
+              </>
+            )}
             {(studyTypeLabel || trialUrl) && (
               <div className="pc-evidence">
                 {studyTypeLabel && <span>{studyTypeLabel}</span>}
@@ -2120,14 +2081,9 @@ const PaperCard = memo(function PaperCard({
                 )}
               </div>
             )}
+            {/* A line of its own under the kicker's items, read after them and before the title. */}
+            {acceptedPill && <span className="pc-accepted-row">{acceptedPill}</span>}
           </div>
-          {/* The day's AI uses, as the reader shows them, at the first line's far end: what reading in plain words would spend. */}
-          {canRequestRewrite && !publicMode && user && usesNow ? (
-            <span className="rd-tag rd-tag--ai rd-uses pc-uses">
-              <Sparkle size={12} aria-hidden="true" />
-              <UsesCount left={usesNow.left} limit={usesNow.limit} />
-            </span>
-          ) : null}
         </div>
 
         {/* On a phone the title opens the abstract sheet, which shows it
@@ -2393,53 +2349,11 @@ const PaperCard = memo(function PaperCard({
             read is the decision, sharing and related work are afterthoughts.
             On a card with no abstract the publisher's page comes last. */}
         <div className="pc-action-bar">
-          <div className={`pc-action-primary${publisherAction && canRequestRewrite ? ' pc-action-primary--three' : ''}`}>
+          <div className="pc-action-primary">
             {readAction}
 
-            {canRequestRewrite && (
-              <Button
-                variant="brand"
-                className="pc-action-simple"
-                aria-describedby={publicMode || rewriteHint ? rewriteHintId : undefined}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (publicMode) {
-                    requireAuthentication('paper_rewrite');
-                    return;
-                  }
-                  const bounds = event.currentTarget.getBoundingClientRect();
-                  setReaderOrigin({
-                    left: bounds.left,
-                    top: bounds.top,
-                    width: bounds.width,
-                    height: bounds.height,
-                  });
-                  setShowReader(true);
-                }}
-              >
-                {/* Sin `aria-label`. Este botón dibuja DOS rótulos y enseña uno
-                    u otro según el ancho, así que un `aria-label` fijo no puede
-                    contener a los dos: el que había («Leer este paper en
-                    simple») no contenía a ninguno, y fallaba 2.5.3 tanto a 1440
-                    como a 390. Sin él, el nombre lo pone el rótulo que de
-                    verdad está puesto — «Leer en simple» ancho, «Simple»
-                    estrecho — y no puede desviarse de lo que se lee. */}
-                <Sparkle size={16} />
-                <span className="pc-action-label">{'Read in plain words'}</span>
-                <span className="pc-action-label--short">{'Simple'}</span>
-                {publicMode && <Lock size={13} className="pc-action-lock" aria-hidden="true" />}
-              </Button>
-            )}
-            {canRequestRewrite && publicMode && (
-              <span id={rewriteHintId} className="visually-hidden">
-                {'Needs a free account'}
-              </span>
-            )}
             {publisherAction}
           </div>
-          {canRequestRewrite && !publicMode && (
-            <small id={rewriteHintId} className="pc-rewrite-hint" role="status">{rewriteHint}</small>
-          )}
 
         </div>
         </div>
@@ -2656,28 +2570,6 @@ const PaperCard = memo(function PaperCard({
             onSelectPaper={selectRelatedPaper}
           />
         </Suspense>
-      )}
-      {showReader && createPortal(
-        // The reader opens over a card that already painted, so there is no
-        // layout to hold a place for — fallback={null} is a deliberate no-op
-        // while the chunk downloads (a first open only; the browser caches it).
-        <Suspense fallback={null}>
-          <PaperReader
-            key={user?.uid}
-            paper={readablePaper}
-            card={{ paper, menu: readerMenu }}
-            originRect={readerOrigin}
-            closeRef={readerCloseRef}
-            onClose={() => setShowReader(false)}
-            // The Paper tab only where Read would open the paper in the viewer, and with the copy Read would open.
-            onPaperTab={inlineTarget ? () => {
-              setShowReader(false);
-              void onOpenPdf({ ...paper, ...(resolvedOpenCopy || {}), pdfUrl: inlineTarget.url, openAccess: true }, analyticsSurface, readerMenu);
-            } : undefined}
-          />
-        </Suspense>,
-        document.body,
-        'papertok-paper-reader',
       )}
       {/* A related paper opens as a full-screen Base UI Dialog over this
           card. The primitive owns the focus trap, Escape and the restore to

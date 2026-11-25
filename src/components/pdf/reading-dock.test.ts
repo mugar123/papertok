@@ -31,9 +31,8 @@ function viewerFrame() {
   document.body.append(viewer);
   return { scroll, topbar, remove: () => viewer.remove() };
 }
-const LISTEN = 'Listen to the paper as a podcast';
 
-test('shared reading tools: the round button opens the podcast and starts the voice, leaving it stops the voice, and it goes with the explanation', async () => {
+test('shared reading tools: the Listen tab opens the podcast and prepares the voice, leaving it stops the voice, and it goes with the explanation', async () => {
   const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
   const worker = stubWorker();
   const audioRoute = worker.hold('/tts/paragraph');
@@ -48,11 +47,11 @@ test('shared reading tools: the round button opens the podcast and starts the vo
   try {
     firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
     const spoken = { queue: [{ passage: 'intro:0', utterances: ['An explanation.'] }], chapters: [] };
-    const tree = (playable: boolean) => createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
+    const tree = (playable: boolean, listening = false) => createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
       createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
         createElement(ReadingDock, {
-          title: 'Paper — In plain words', paper: paperLegacyAdapter({ id: '2611.00001', title: 'Paper' }), scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken: playable ? spoken : null,
-          canListen: playable, originalUrl: 'https://doi.org/10.1234/paper',
+          title: 'Paper — AI summary', paper: paperLegacyAdapter({ id: '2611.00001', title: 'Paper' }), scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken: playable ? spoken : null,
+          canListen: playable, listening, originalUrl: 'https://doi.org/10.1234/paper',
           notes: { id: 'reader-notes', open: false, count: 2, onOpenChange: open => { notesOpened = open; } },
           children: createElement('button', {}, 'Explanation level'),
         })));
@@ -65,25 +64,29 @@ test('shared reading tools: the round button opens the podcast and starts the vo
     assert.equal(notesOpened, true);
     assert.equal(view.getByRole('link', { name: 'Open in a new tab' }).getAttribute('href'), 'https://doi.org/10.1234/paper');
     assert.equal(view.queryByRole('button', { name: 'Voice, read aloud' }), null, 'the dock has no Voice of its own');
-    fireEvent.click(screen.getByRole('button', { name: LISTEN }));
-    assert.ok(screen.getByRole('region', { name: 'Paper' }), 'the podcast tab opens and starts the voice');
+    act(() => view.rerender(tree(true, true)));
+    assert.ok(screen.getByRole('region', { name: 'Paper' }), 'the podcast tab opens');
+    assert.ok(screen.getByRole('button', { name: 'Download the audio' }), 'its download is in the bar');
     await audioRoute.requested();
     audioRoute.answer({});
+    await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Play' })));
+    assert.equal(Clip.instances.some(clip => clip.preload !== 'metadata'), false);
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
     await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Pause' })));
     await waitFor(() => assert.ok(Clip.instances.some(clip => clip.preload !== 'metadata')));
     const player = Clip.instances.find(clip => clip.preload !== 'metadata');
     assert.ok(player);
     const before = player.pauses;
-    fireEvent.click(screen.getByRole('button', { name: LISTEN }));
+    act(() => view.rerender(tree(true)));
     assert.ok(player.pauses > before, 'leaving the podcast stops the voice');
     assert.equal(screen.queryByRole('region', { name: 'Paper' }), null);
     assert.equal(screen.queryByRole('button', { name: 'Pause' }), null, 'no player is left behind');
     assert.ok(view.getByRole('button', { name: 'Explanation level' }), 'the dock is back');
     assert.equal(view.getByRole('button', { name: 'Send to Zotero' }).getAttribute('aria-busy'), 'true', 'a send in flight survived the podcast');
     await act(async () => zoteroSend.answer({ sentAt: '2026-11-23T12:00:00Z', highlights: 0 }));
-    fireEvent.click(screen.getByRole('button', { name: LISTEN }));
-    await act(async () => view.rerender(tree(false)));
-    assert.equal(screen.queryByRole('button', { name: LISTEN }), null);
+    act(() => view.rerender(tree(true, true)));
+    await act(async () => view.rerender(tree(false, true)));
+    assert.equal(screen.queryByRole('button', { name: 'Download the audio' }), null);
     assert.equal(screen.queryByRole('region', { name: 'Paper' }), null);
     assert.ok(view.getByRole('button', { name: 'Explanation level' }));
   } finally {
@@ -99,7 +102,7 @@ test('shared reading tools: the round button opens the podcast and starts the vo
   }
 });
 
-test('the podcast tab rings the audio still to come, then lists the chapters to jump to and the sentence being read', async () => {
+test('the podcast tab says it is preparing the paper, then lists the chapters to jump to and the sentence being read', async () => {
   const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
   const worker = stubWorker();
   const audioRoute = worker.hold('/tts/paragraph');
@@ -122,14 +125,14 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
     const view = render(createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
       createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
         createElement(ReadingDock, {
-          title: 'Paper', scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken, canListen: true, originalUrl: '', notes: null,
+          title: 'Paper', scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken, canListen: true, listening: true, originalUrl: '', notes: null,
         }))));
-    fireEvent.click(screen.getByRole('button', { name: LISTEN }));
     const tab = view.getByRole('region', { name: 'Paper' });
     const chapterList = () => within(view.getByRole('navigation', { name: 'All chapters' }));
-    assert.match(tab.textContent ?? '', /Preparing the audio, 0%/);
+    assert.match(tab.textContent ?? '', /Preparing your paper/, 'the tab says it is preparing the paper');
+    assert.equal(within(tab).queryByRole('button', { name: 'Play' }), null, 'no player before there is something to play');
     const status = within(tab).getByRole('status');
-    await waitFor(() => assert.equal(status.textContent, 'Preparing the audio', 'the player tells a screen reader it is preparing'));
+    await waitFor(() => assert.equal(status.textContent, 'Preparing your paper', 'the player tells a screen reader it is preparing'));
     assert.equal(chapterList().getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), true, 'no jumps before the audio is there');
     await audioRoute.requested();
     audioRoute.answer({});
@@ -137,7 +140,9 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
       for (const clip of Clip.instances.filter(clip => clip.preload === 'metadata')) clip.onloadedmetadata?.();
     });
     await waitFor(() => assert.equal(chapterList().getByRole('button', { name: /^2 Results, / }).hasAttribute('disabled'), false));
-    assert.match(tab.textContent ?? '', /1\. Method\./);
+    assert.equal(status.textContent, 'Paused');
+    fireEvent.click(within(tab).getByRole('button', { name: 'Play' }));
+    await waitFor(() => assert.match(tab.textContent ?? '', /1\. Method\./));
     await waitFor(() => assert.equal(status.textContent, 'Reading 1 Method', 'and then the section the voice is reading'));
     assert.equal(tab.querySelectorAll('.rd-listen-part').length, 2, 'the line has a block per section, the subsection inside its section');
     assert.ok(chapterList().getByRole('button', { name: /^1\.1 Data, / }), 'the chapter list still names the subsection');
@@ -153,6 +158,94 @@ test('the podcast tab rings the audio still to come, then lists the chapters to 
     else Reflect.deleteProperty(globalThis, 'Audio');
     if (originalAnimation) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimation);
     else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    Clip.instances = [];
+  }
+});
+
+test('past the day\'s papers, a paper not started today prepares nothing until the browser\'s voice is chosen', async () => {
+  const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
+  const worker = stubWorker();
+  const audioRoute = worker.hold('/tts/paragraph');
+  const usageRoute = worker.hold('/tts/papers');
+  worker.hold('/zotero/status');
+  const frame = viewerFrame();
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const spoken = {
+      queue: [{ passage: 'b0', utterances: ['1. Method.', 'We fit the model.'], heading: '1. Method.' }],
+      chapters: [{ number: '1', title: 'Method', first: 0 }],
+    };
+    const paper = paperLegacyAdapter({ id: '2611.00001', title: 'Paper', abstract: 'An abstract.' });
+    const view = render(createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
+      createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
+        createElement(ReadingDock, {
+          title: 'Paper', paper, scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken, canListen: true, listening: true, originalUrl: '', notes: null,
+        }))));
+    const tab = view.getByRole('region', { name: 'Paper' });
+    assert.match(tab.textContent ?? '', /Preparing your paper/, 'the tab waits while the day\'s papers are asked for');
+    await usageRoute.requested();
+    usageRoute.answer({ papersLeft: 0, dailyPapers: 2, paperOpen: false });
+    await waitFor(() => assert.match(tab.textContent ?? '', /You’ve used today’s 2 papers with PaperTok’s voice\. More tomorrow\./));
+    await waitFor(() => assert.equal(within(tab).getByRole('status').textContent, 'You’ve used today’s 2 papers with PaperTok’s voice. More tomorrow.'));
+    assert.equal(within(tab).queryByRole('button', { name: 'Play' }), null);
+    assert.doesNotMatch(tab.textContent ?? '', /Preparing your paper/, 'nothing is said to be preparing');
+    await assert.rejects(audioRoute.requested(300), 'no audio is asked for');
+    fireEvent.click(within(tab).getByRole('button', { name: 'Listen with this browser’s voice' }));
+    await audioRoute.requested();
+    assert.doesNotMatch(tab.textContent ?? '', /used today’s/);
+  } finally {
+    cleanup();
+    frame.remove();
+    worker.stop();
+    await close();
+  }
+});
+
+test('reopening Listen rechecks a blocked paper after its allowance resets', async () => {
+  const { ReadingDock, AuthContext, AnalyticsContext, firebase, close } = await loadReadingDock();
+  const worker = stubWorker();
+  const audioRoute = worker.hold('/tts/paragraph');
+  const usageRoute = worker.hold('/tts/papers');
+  worker.hold('/zotero/status');
+  const originalAudio = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  Object.defineProperty(globalThis, 'Audio', { configurable: true, value: Clip });
+  const frame = viewerFrame();
+  try {
+    firebase.auth.currentUser = { uid: 'listener', getIdToken: async () => 'test-token' };
+    const spoken = {
+      queue: [{ passage: 'b0', utterances: ['1. Method.', 'We fit the model.'], heading: '1. Method.' }],
+      chapters: [{ number: '1', title: 'Method', first: 0 }],
+    };
+    const paper = paperLegacyAdapter({ id: '2611.00001', title: 'Paper', abstract: 'An abstract.' });
+    const tree = (listening: boolean) => createElement(AuthContext.Provider, { value: { user: { uid: 'listener' }, readingPreferences: { readAloudFromPosition: false } } },
+      createElement(AnalyticsContext.Provider, { value: { trackEvent: () => Promise.resolve() } },
+        createElement(ReadingDock, {
+          title: 'Paper', paper, scroll: frame.scroll, topbar: frame.topbar, contents: null, spoken, canListen: true, listening, originalUrl: '', notes: null,
+        })));
+    const view = render(tree(true));
+    const tab = view.getByRole('region', { name: 'Paper' });
+    assert.match(tab.textContent ?? '', /Preparing your paper/, 'the tab waits while the day\'s papers are asked for');
+    await usageRoute.requested();
+    usageRoute.answer({ papersLeft: 0, dailyPapers: 2, paperOpen: false });
+    await waitFor(() => assert.match(tab.textContent ?? '', /You’ve used today’s 2 papers with PaperTok’s voice\. More tomorrow\./));
+    await waitFor(() => assert.equal(within(tab).getByRole('status').textContent, 'You’ve used today’s 2 papers with PaperTok’s voice. More tomorrow.'));
+    assert.equal(within(tab).queryByRole('button', { name: 'Play' }), null);
+    assert.doesNotMatch(tab.textContent ?? '', /Preparing your paper/, 'nothing is said to be preparing');
+    await assert.rejects(audioRoute.requested(300), 'no audio is asked for');
+    act(() => view.rerender(tree(false)));
+    usageRoute.answer({ papersLeft: 2, dailyPapers: 2, paperOpen: false });
+    act(() => view.rerender(tree(true)));
+    await audioRoute.requested(1000);
+    audioRoute.answer({});
+    await waitFor(() => assert.ok(view.getByRole('button', { name: 'Play' })));
+    assert.doesNotMatch(view.getByRole('region', { name: 'Paper' }).textContent ?? '', /used today’s/);
+  } finally {
+    cleanup();
+    frame.remove();
+    worker.stop();
+    await close();
+    if (originalAudio) Object.defineProperty(globalThis, 'Audio', originalAudio);
+    else Reflect.deleteProperty(globalThis, 'Audio');
     Clip.instances = [];
   }
 });
