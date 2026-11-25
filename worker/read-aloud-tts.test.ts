@@ -433,6 +433,10 @@ test('an account\'s new papers are counted once each, a third is refused, and st
   assert.equal(stored.response.status, 200, 'audio already made is served to a paper past the day\'s');
   assert.equal(stored.calls.length, 0);
   assert.equal((await ask(`${TEXT} Five.`, 'paper-a')).response.status, 200, 'a paper counted today keeps its new audio');
+
+  const usageFor = async (paperId: string) => (await signedIn(() => reportApi.fetch(papersRequest({ usage: true, paperId }), environment))).json<{ papersLeft: number; paperOpen: boolean }>();
+  assert.deepEqual(await usageFor('paper-a'), { papersLeft: 0, dailyPapers: 2, paperOpen: true }, 'a paper counted today stays open');
+  assert.equal((await usageFor('paper-c')).paperOpen, false, 'a paper not counted today and not voiced is closed past the day\'s');
 });
 
 test('a paper whose first new paragraph fails at both providers is given back', async () => {

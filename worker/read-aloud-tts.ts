@@ -338,7 +338,9 @@ async function synthesize(env: WorkerEnv, store: NonNullable<WorkerEnv['TTS_AUDI
 
 /**
  * The voice's day for an account and its feed's sign. `{ usage: true }` says how many new papers the
- * account has left today (`unlimited` when its AI is). `{ paperId, voiced: true, audio }`, with the
+ * account has left today (`unlimited` when its AI is); with `paperId`, also whether that paper can
+ * still be heard in PaperTok's voice without one (`paperOpen`): it was counted today, or all its
+ * audio is stored. `{ paperId, voiced: true, audio }`, with the
  * name of every paragraph's audio the viewer was served, marks the paper as voiced once each of them
  * is in the bucket: the mark stands for audio made by Cartesia or ElevenLabs, never the browser's.
  * `{ papers }` names which of a page's papers are marked.
@@ -354,11 +356,19 @@ export async function handleVoicePapers(request: Request, env: WorkerEnv) {
   });
   if (payload?.usage === true) {
     if (account.unlimitedAI) return { unlimited: true };
-    const papers = papersToday(env, account.uid, dayOf());
-    const reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, papers);
+    const day = dayOf();
+    const ledger = env.REQUEST_QUOTA_LEDGER ?? null;
+    const papers = papersToday(env, account.uid, day);
+    const reading = await peekRequestQuota(ledger, papers);
     if (reading.code) throw ledgerFailure(reading.code);
     if (reading.remaining === undefined) throw new AIExplanationError('AI_UNAVAILABLE', 503);
-    return { papersLeft: reading.remaining, dailyPapers: papers.subjectLimit };
+    const usage = { papersLeft: reading.remaining, dailyPapers: papers.subjectLimit };
+    const paperId = typeof payload.paperId === 'string' ? payload.paperId.trim() : '';
+    if (!paperId || paperId.length > MAX_PAPER_ID_CHARS) return usage;
+    const counted = await peekRequestQuota(ledger, (await paperMarkers(account.uid, paperId, day)).counted);
+    if (counted.code) throw ledgerFailure(counted.code);
+    const voiced = Boolean(await env.TTS_AUDIO?.head(await voicedKey(paperId)));
+    return { ...usage, paperOpen: counted.remaining === 0 || voiced };
   }
   const store = env.TTS_AUDIO;
   if (!store) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);

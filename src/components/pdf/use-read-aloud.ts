@@ -225,7 +225,9 @@ export function useReadAloud(queue: SpokenPassage[], chapters: ReadAloudChapter[
     for (let count = 0; count < WORKERS; count += 1) void work();
   };
 
-  const prepare = (start: number) => {
+  /** `storedOnly`: PaperTok's voice only where its audio is stored, the browser's for the rest. */
+  const prepare = (start: number, { storedOnly: onlyStored = false } = {}) => {
+    if (onlyStored) storedOnly.current = true;
     setParagraph(start);
     setProgress(0);
     fetchAll(start, true);
