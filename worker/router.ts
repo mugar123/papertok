@@ -482,13 +482,14 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       if (url.pathname === VOICE_PAPERS_PATH) {
         return json(await handleVoicePapers(request, env), 200, { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' });
       }
-      const { body, type, key } = await handleReadAloud(request, env, context ? work => context.waitUntil(work) : undefined);
+      const { body, type, key, size } = await handleReadAloud(request, env, context ? work => context.waitUntil(work) : undefined);
       // The audio's name, which the viewer hands back to mark a paper whose every paragraph has audio.
       return new Response(body, {
         headers: {
           ...corsHeaders(origin, env),
           ...(key ? { 'x-tts-audio': key, 'access-control-expose-headers': 'retry-after, x-tts-audio' } : {}),
           'content-type': type,
+          ...(size === undefined ? {} : { 'content-length': String(size) }),
           'cache-control': 'private, no-store',
         },
       });
