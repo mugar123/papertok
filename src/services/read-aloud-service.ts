@@ -82,11 +82,13 @@ export function askPaperVoiced(paperId: string) {
  * How many new papers the account may still have read in PaperTok's voice today. Null when
  * unknown, and for an account whose AI is unlimited, so neither shows a count.
  */
-export async function fetchVoiceUsage({ signal }: { signal?: AbortSignal } = {}) {
-  const response = await postToVoice({ usage: true }, signal);
-  const body = response?.ok ? await response.json().catch(() => null) as { papersLeft?: unknown; dailyPapers?: unknown } | null : null;
-  const { papersLeft, dailyPapers } = body ?? {};
-  return Number.isInteger(papersLeft) && Number.isInteger(dailyPapers) ? { papersLeft: papersLeft as number, dailyPapers: dailyPapers as number } : null;
+export async function fetchVoiceUsage({ paperId, signal }: { paperId?: string; signal?: AbortSignal } = {}) {
+  const response = await postToVoice({ usage: true, ...(paperId ? { paperId } : {}) }, signal);
+  const body = response?.ok ? await response.json().catch(() => null) as { papersLeft?: unknown; dailyPapers?: unknown; paperOpen?: unknown } | null : null;
+  const { papersLeft, dailyPapers, paperOpen } = body ?? {};
+  if (!Number.isInteger(papersLeft) || !Number.isInteger(dailyPapers)) return null;
+  // With `paperId`: whether that paper can still be heard in PaperTok's voice without a new paper.
+  return { papersLeft: papersLeft as number, dailyPapers: dailyPapers as number, ...(typeof paperOpen === 'boolean' ? { paperOpen } : {}) };
 }
 
 /**

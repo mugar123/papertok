@@ -100,13 +100,39 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   // player's Play button; leaving it stops the voice. The text under it is left out of the
   // keyboard's way while the tab covers it.
   const podcast = listening && canListen;
+  // Past the day's papers, a paper not counted today and without all its audio stored prepares
+  // nothing: the tab says so and offers the browser's voice instead.
+  const [voiceCheck, setVoiceCheck] = useState<{ paperId: string; state: 'checking' | 'blocked'; dailyPapers?: number } | null>(null);
+  const paperId = paper?.id;
+  const voiceState = voiceCheck && voiceCheck.paperId === paperId ? voiceCheck : null;
+  // The answer can come after the tab was left, which then prepares nothing.
+  const prepareIfOpen = useEffectEvent((start: number) => {
+    if (podcast) readAloud.prepare(start);
+  });
   const listen = useEffectEvent((open: boolean) => {
-    if (open && speaking === null) {
+    if (open && speaking === null && voiceState?.state !== 'checking') {
       void trackEvent('read_aloud_start', { surface: 'reader' });
-      readAloud.prepare(startAt());
+      const start = startAt();
+      if (!paperId) {
+        readAloud.prepare(start);
+        return;
+      }
+      setVoiceCheck({ paperId, state: 'checking' });
+      void fetchVoiceUsage({ paperId }).catch(() => null).then((usage) => {
+        if (usage?.papersLeft === 0 && usage.paperOpen === false) {
+          setVoiceCheck({ paperId, state: 'blocked', dailyPapers: usage.dailyPapers });
+          return;
+        }
+        setVoiceCheck(null);
+        prepareIfOpen(start);
+      });
     }
     if (!open) readAloud.pause();
   });
+  const browserVoice = () => {
+    setVoiceCheck(null);
+    readAloud.prepare(startAt(), { storedOnly: true });
+  };
   const opened = useRef(false);
   useEffect(() => {
     if (podcast === opened.current) return;
@@ -126,7 +152,6 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
   const downloadNoteId = useId();
   const downloadNote = `${readAloud.prepared.ready} of ${readAloud.prepared.total} parts ready. The download needs PaperTok’s voice for all of them.`;
   // Every passage has stored audio: the Worker checks it and the feed shows the paper as voiced.
-  const paperId = paper?.id;
   const voiced = Boolean(paperId) && readAloud.prepared.total > 0 && !unsaved;
   const { audioKeys } = readAloud;
   useEffect(() => {
@@ -183,6 +208,8 @@ export function ReadingDock({ title, paper, scroll, contents, menu, spoken, canL
       queue={spoken.queue}
       player={readAloud}
       onPlayPause={playPause}
+      voice={voiceState}
+      onBrowserVoice={browserVoice}
     />}
   </>;
 }
