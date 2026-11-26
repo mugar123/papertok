@@ -18,6 +18,7 @@ export type WorkerEnv = {
   | 'GEMINI_API_KEY'
   | 'GETFTR_API_KEY'
   | 'GETFTR_API_URL'
+  | 'MCP_AGENT_TOKEN_SECRET'
   | 'NAN_API_KEY'
   | 'NASA_ADS_API_TOKEN'
   | 'NCBI_API_KEY'

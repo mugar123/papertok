@@ -150,11 +150,12 @@ test('the in-app notice announces the version this page is dated', () => {
   assert.equal(revision ? `${dated} (revision ${revision})` : dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacy-policy.ts');
 });
 
-test('the current notice announces read aloud, the 23 November changes and the 20 November Anthropic point', () => {
+test('the current notice announces read aloud, the connected assistant, the 23 November count and the 20 November Anthropic point', () => {
   const notice = PRIVACY_POLICY_CHANGE.join(' ');
   assert.match(notice, /paragraph is sent to Cartesia, or to ElevenLabs/i);
-  assert.match(notice, /OpenAlex lookups now count per IP address each day.*scheduled for deletion within three days/i);
-  assert.match(notice, /Cloudflare's 30-day recovery history may keep any deleted request counter/i);
+  assert.match(notice, /An AI assistant you connect to PaperTok can read your lists and custom feeds/i);
+  assert.match(notice, /with permission, create private ones/i);
+  assert.match(notice, /OpenAlex lookups now count per IP address each day, under a protected day identifier/i);
   assert.match(notice, /Anthropic may run rewrites\/explanations outside the EU/i);
 });
 

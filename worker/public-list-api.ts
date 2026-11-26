@@ -76,6 +76,9 @@ const MAX_BODY_BYTES = 1_000_000;
 const DEFAULT_USER_DAILY_LIMIT = 60;
 const DEFAULT_GLOBAL_DAILY_LIMIT = 2_000;
 const SHARE_ID_PATTERN = /^[a-f0-9]{32}$/;
+// The papers a private list holds at most: what `firestore.rules` accepts of
+// `paperIds` in `users/{uid}/lists/{listId}`.
+export const MAX_LIST_PAPER_IDS = 500;
 
 export class PublicListApiError extends Error {
   declare code: string;
@@ -236,7 +239,7 @@ export function mergePreparedPayload({ header, byRawId, requestIds }: ReturnType
   const ids = source
     .map(id => (typeof id === 'string' ? id.trim() : ''))
     .filter(Boolean);
-  if (ids.length > 500) throw new PublicListApiError('INVALID_BODY', 400);
+  if (ids.length > MAX_LIST_PAPER_IDS) throw new PublicListApiError('INVALID_BODY', 400);
 
   const byPublishedKey = new Map<string, ListEntry>();
   for (const paper of Array.isArray(existing?.papers) ? existing.papers : []) {

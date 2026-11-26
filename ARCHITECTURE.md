@@ -26,7 +26,7 @@ flowchart TD
     Web -->|"SDK / REST"| Rules
     Rules --> Firestore
     Web -->|"ID token on protected routes"| Worker
-    Agents -->|"POST /mcp · public, read-only"| Worker
+    Agents -->|"POST /mcp · read-only; account tools, some writing, with an agent token"| Worker
     Worker -->|"Verify identity"| Auth
     Worker -->|"Privileged operations"| Firestore
     Worker --> Providers
@@ -109,9 +109,16 @@ flowchart TD
   [worker/index.ts](worker/index.ts) handles requests and schedules;
   [router.ts](worker/router.ts) dispatches HTTP routes.
   Route and handler checks enforce methods, origins and identity as applicable.
-  [mcp-server.ts](worker/mcp-server.ts) serves `/mcp`, a public, read-only MCP
-  server whose tools call the provider routes in-process
-  ([contract](worker/README.md#mcp-server)).
+  [mcp-server.ts](worker/mcp-server.ts) serves `/mcp`, an MCP server whose
+  tools call the provider routes in-process. Without a credential it is public
+  and read-only. With an agent token, which
+  [agent-token.ts](worker/agent-token.ts) mints at `/mcp/token` for a signed-in
+  reader, it also reads that account's lists and custom feeds from Firestore.
+  A token that asked for a write scope can also create private lists and
+  custom feeds there and add papers to private lists, with the Firestore
+  service account; it publishes and deletes nothing
+  ([contract](worker/README.md#mcp-server)). The lists page opens one of the
+  account's lists at `/lists/:listId`, the address those tools return.
 - [provider-runtime.ts](worker/provider-runtime.ts) owns shared provider
   caching, deadlines and quota reservations. Durable Objects own atomic quotas,
   email delivery reservations and rewrite sessions. KV holds notification state,

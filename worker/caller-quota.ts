@@ -51,12 +51,17 @@ export async function callerSubject(request: Request, env: WorkerEnv, scope: str
   // Cloudflare overwrites this header on ingress; never use a client-supplied
   // forwarding header or a shared fallback identity when it is absent.
   const address = normalizeCallerAddress(request.headers.get('cf-connecting-ip') || '');
+  return address ? keyedSubject(env, `${scope}:${address}`) : null;
+}
+
+// Null when the secret is missing or short.
+async function keyedSubject(env: WorkerEnv, message: string) {
   const secret = env.PDF_RATE_LIMIT_SECRET;
-  if (!address || !isCallerQuotaSecretConfigured(secret)) return null;
+  if (!isCallerQuotaSecretConfigured(secret)) return null;
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
   );
-  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${scope}:${address}`));
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
   return Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
@@ -68,27 +73,62 @@ export interface CallerMinute {
   reservation?: QuotaRequest;
 }
 
+// A window's length and how many characters of an ISO date name it.
+const MINUTE = Object.freeze({ ms: 60_000, keyLength: 16 });
+const DAY = Object.freeze({ ms: 24 * 60 * 60_000, keyLength: 10 });
+
+const accountSubject = (uid: string, env: WorkerEnv) => async (scope: string) => (uid ? keyedSubject(env, `${scope}:account:${uid}`) : null);
+
 /**
  * One unit of the caller's allowance for this UTC minute, for a route with no
  * shared reservation to carry the caller as a second subject. Only the caller
  * is counted (`globalAmount: 0`), and the counter is deleted a minute after its
  * window ends. A missing identity reads `CALLER_IDENTITY_NOT_CONFIGURED`.
  */
-export async function reserveCallerMinute(request: Request, env: WorkerEnv, namespace: string, limit: number): Promise<CallerMinute> {
+export function reserveCallerMinute(request: Request, env: WorkerEnv, namespace: string, limit: number): Promise<CallerMinute> {
+  return reserveWindow(env, namespace, 'caller', limit, 1, MINUTE, scope => callerSubject(request, env, scope));
+}
+
+/**
+ * `amount` units of the same allowance for a signed-in account, whatever
+ * address it calls from. The subject is the HMAC of the namespace, the UTC
+ * minute and the Firebase user ID, so no counter holds the ID. A missing or
+ * short secret reads `CALLER_IDENTITY_NOT_CONFIGURED`, as a missing address
+ * does above.
+ */
+export function reserveAccountMinute(uid: string, env: WorkerEnv, namespace: string, limit: number, amount = 1): Promise<CallerMinute> {
+  return reserveWindow(env, namespace, 'account', limit, amount, MINUTE, accountSubject(uid, env));
+}
+
+/**
+ * `amount` units of an account's allowance for this UTC day, counted as its
+ * minute is above. `reservation` names the day and the amount, so a caller
+ * whose work did not happen gives back what it took (`releaseRequestQuota`).
+ */
+export function reserveAccountDay(uid: string, env: WorkerEnv, namespace: string, limit: number, amount = 1): Promise<CallerMinute> {
+  return reserveWindow(env, namespace, 'account', limit, amount, DAY, accountSubject(uid, env));
+}
+
+// Addresses and accounts count in separate ledger objects of one namespace.
+async function reserveWindow(
+  env: WorkerEnv, namespace: string, counted: 'caller' | 'account', limit: number, amount: number,
+  window: { ms: number; keyLength: number }, subjectOf: (scope: string) => Promise<string | null>,
+): Promise<CallerMinute> {
   const now = Date.now();
-  const minute = new Date(now).toISOString().slice(0, 16);
-  const nextMinute = (Math.floor(now / 60_000) + 1) * 60_000;
-  const retryAfter = String(Math.ceil((nextMinute - now) / 1000));
-  const subject = await callerSubject(request, env, `${namespace}:${minute}`);
+  const period = new Date(now).toISOString().slice(0, window.keyLength);
+  const nextWindow = (Math.floor(now / window.ms) + 1) * window.ms;
+  const retryAfter = String(Math.ceil((nextWindow - now) / 1000));
+  const subject = await subjectOf(`${namespace}:${period}`);
   if (!subject) return { reading: { accepted: false, code: 'CALLER_IDENTITY_NOT_CONFIGURED' }, retryAfter };
   const reservation = {
-    periodKey: `${namespace}:caller:${minute}`,
+    periodKey: `${namespace}:${counted}:${period}`,
     subject,
     subjectLimit: limit,
     // The ledger requires a ceiling; with nothing spent against it, it is never read.
     globalLimit: limit,
+    amount,
     globalAmount: 0,
-    expiresAt: nextMinute + 60_000,
+    expiresAt: nextWindow + 60_000,
   };
   const reading = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, reservation);
   return { reading, retryAfter, reservation };

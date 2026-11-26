@@ -48,9 +48,30 @@ function normalize(pathname: string) {
 
 type NamedFeed = { id: string; name: string }
 
-/** A custom feed's page is called by the feed's name; an id the reader has no feed for has none. */
+// One list of the account's, opened on the lists page (`/lists/:listId`).
+const OWN_LIST_PATH = /^\/lists\/[^/]+$/
+
+/**
+ * The page an address belongs to, as the key of the routes: addresses with
+ * one key keep one mounted page and move inside it without a page transition.
+ * The settings pages share theirs, and so do the lists and a list opened on
+ * them by its address.
+ */
+export function routePageKey(pathname: string) {
+  if (pathname.startsWith('/settings/')) return '/settings'
+  if (pathname.startsWith('/lists/')) return '/lists'
+  return pathname
+}
+
+/**
+ * A custom feed's page is called by the feed's name; an id the reader has no
+ * feed for has none. A list opened by its address is called as the lists are:
+ * the page learns the list's name after the route is announced, and the id is
+ * no name.
+ */
 export function routeLabel(pathname: string, feeds: readonly NamedFeed[] = []) {
   const normalized = normalize(pathname)
+  if (OWN_LIST_PATH.test(normalized)) return LABELS['/lists']
   if (isConferencePath(normalized)) {
     const id = matchRoutes([{ path: '/conferences/:editionId' }], normalized)?.[0]?.params.editionId
     return id ? findConferenceEdition(id)?.name ?? 'Conference not found' : 'Conference calendar'

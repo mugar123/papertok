@@ -515,11 +515,11 @@ export function isPublicRoutePath(path: string) {
 
 /**
  * The pages that keep the signed-in navbar: a paper, a shared list, an
- * entity page and a custom feed.
+ * entity page, a custom feed and one of the account's lists by its address.
  */
 export function keepsNavbarPath(path: string) {
   if (isConferencePath(path)) return true;
-  return [['paper'], ['public', 'list'], ['explorer'], ['feeds']].some(prefix => startsWithSegments(path, prefix));
+  return [['paper'], ['public', 'list'], ['explorer'], ['feeds'], ['lists']].some(prefix => startsWithSegments(path, prefix));
 }
 
 export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {

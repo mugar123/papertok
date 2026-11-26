@@ -1,4 +1,4 @@
-import type { DocumentData, QuerySnapshot } from 'firebase/firestore';
+import type { DocumentData, DocumentSnapshot, QuerySnapshot } from 'firebase/firestore';
 import type { Paper } from '../../models/paper.ts';
 import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import type { OwnList } from '../../utils/own-lists.ts';
@@ -8,10 +8,11 @@ import type { PublicPaperInput } from '../../services/public-list-payload.ts';
 import type { ComponentProps, ReactElement } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import { useState, useEffect, useId, useLayoutEffect, useMemo, useCallback, useRef, useSyncExternalStore } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../services/firebase.ts';
 import {
   collection,
+  getDoc,
   getDocs,
   getDocsFromCache,
   query,
@@ -38,6 +39,7 @@ import { removeRowOnce, rowRemovalKey } from './remove-row-once.ts';
 import { focusMovedOut, rowAfterOverlay, rowsTakingFocus } from './rows-taking-focus.ts';
 import { writeNewList } from './write-new-list.ts';
 import { createIndexReturn } from './lists-index-return.ts';
+import { linkedListNeedsRead, linkedListView, type LinkedListAnswer } from './linked-list.ts';
 import SaveToListModal from './save-to-list-modal.tsx';
 import ListAbstract from './list-abstract.tsx';
 import ListNote from './list-note.tsx';
@@ -120,9 +122,9 @@ import {
   savedAnswersOf,
   subscribeSavedAnswers,
 } from '../../utils/profile-session-caches.ts';
-import { OWN_LISTS_PAGE_SIZE, snapshotIsAuthoritative } from '../../utils/own-lists.ts';
+import { OWN_LISTS_PAGE_SIZE, mergeCreatedLists, snapshotIsAuthoritative } from '../../utils/own-lists.ts';
 import { readStoredLists, saveStoredLists } from '../../utils/user-scoped-storage.ts';
-import { queryIsAuthoritative } from '../../utils/cache-authority.ts';
+import { documentIsAuthoritative, queryIsAuthoritative } from '../../utils/cache-authority.ts';
 import {
   PAPER_METADATA_BATCH_SIZE,
   answeredIds,
@@ -285,6 +287,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   useEffect(() => { activeUid.current = user?.uid; }, [user?.uid]);
   const location = useLocation();
   const navigate = useNavigate();
+  // The list the address names (`/lists/:listId`), which the page opens as it
+  // reopens the list a return from a paper names in the history entry.
+  const { listId: linkedListId } = useParams();
+  const targetOpenId: string | undefined = linkedListId ?? location.state?.openListId;
   const { trackEvent } = useAnalyticsConsent();
   const { language, locale } = useLanguage();
   const {
@@ -503,7 +509,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // A warm return can paint before the opening effect. Cold membership or
   // missing titles still need that effect to establish the loading state.
   const [expandedList, setExpandedList] = useState<string | null>(() => {
-    const target = displayLists.find(list => list.id === location.state?.openListId);
+    const target = displayLists.find(list => list.id === targetOpenId);
     if (!target || (PRIVATE_LIST_IDS.has(target.id) && !personalLibraryReady)) return null;
     const titlesReady = (target.paperIds ?? []).every(id => {
       const paper = getPaper(id);
@@ -1247,7 +1253,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const [indexReturn] = useState(() => createIndexReturn(window));
   const autoOpenedListId = useRef<string | null>(null);
   useEffect(() => {
-    const targetId = location.state?.openListId;
+    const targetId = targetOpenId;
     if (!targetId || autoOpenedListId.current === targetId) return undefined;
     // `displayLists`, not `lists`: Favorites, Read later and Reading history
     // are assembled here rather than stored, and they must restore too.
@@ -1263,7 +1269,48 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       void openList(target);
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [displayLists, location.state, openList, indexReturn]);
+  }, [displayLists, location.state, targetOpenId, openList, indexReturn]);
+
+  /**
+   * The list the address names, asked for by itself when the page's own read
+   * ended without it (linked-list.ts). Found, it joins the page's lists and
+   * the effect above opens it. The answer is kept with the list and the load
+   * it followed, so "Try again" asks once more.
+   */
+  const [linkedAnswer, setLinkedAnswer] = useState<{ listId: string; load: number; answer: LinkedListAnswer } | null>(null);
+  const linkedView = linkedListView({
+    listId: linkedListId,
+    held: displayLists.some(entry => entry.id === linkedListId),
+    loading,
+    answer: linkedAnswer && linkedAnswer.listId === linkedListId && linkedAnswer.load === reloadToken ? linkedAnswer.answer : null,
+  });
+  const linkedNeedsRead = linkedListNeedsRead(linkedView, loading);
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!linkedNeedsRead || !uid || !linkedListId) return undefined;
+    const controller = new AbortController();
+    const settle = (snapshot: DocumentSnapshot<DocumentData>) => {
+      // A newer address, a left screen or another account owns no answer.
+      if (controller.signal.aborted || auth.currentUser?.uid !== uid) return;
+      if (!snapshot.exists()) {
+        setLinkedAnswer({ listId: linkedListId, load: reloadToken, answer: 'missing' });
+        return;
+      }
+      setLists(current => mergeCreatedLists(current, [{ id: snapshot.id, ...snapshot.data() }]));
+    };
+    patientRead(() => getDoc(doc(db, 'users', uid, 'lists', linkedListId)), {
+      label: 'linked list',
+      // A list the local cache does not hold is not a list that does not exist.
+      isAnswer: documentIsAuthoritative,
+      signal: controller.signal,
+      onLateResult: settle,
+    }).then(settle, (readError: unknown) => {
+      if (controller.signal.aborted) return;
+      console.warn('The linked list could not be read', readError);
+      setLinkedAnswer({ listId: linkedListId, load: reloadToken, answer: 'failed' });
+    });
+    return () => controller.abort();
+  }, [linkedNeedsRead, linkedListId, reloadToken, user?.uid]);
 
   /**
    * A paper in a list opens its card, not the PDF: the card is the whole
@@ -1346,8 +1393,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     setFieldRetryWaiting(false);
     setExpandedList(null);
     // Drop the restore marker, or a later visit would reopen a list the user
-    // has explicitly closed.
-    if (location.state?.openListId) {
+    // has explicitly closed. A list the address names closes onto the index's
+    // own address, in the same history entry.
+    if (linkedListId) {
+      void navigate('/lists', { replace: true, state: null });
+    } else if (location.state?.openListId) {
       void navigate(location.pathname, { replace: true, state: null });
     }
     setPendingPaperIds(new Set());
@@ -1415,6 +1465,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     await deleteDoc(doc(db, 'users', user!.uid, 'lists', listId));
     setLists((prev) => prev.filter((l) => l.id !== listId));
     if (expandedList === listId) setExpandedList(null);
+    // The address of a deleted list is the index's from now on.
+    if (linkedListId === listId) void navigate('/lists', { replace: true, state: null });
   };
 
   // Firestore retries transient failures itself and rejects only a write that
@@ -1841,13 +1893,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     };
   }, [afterPageArrival]);
 
-  const targetOpenId = location.state?.openListId;
-  // A restore target absent from the initial cache still needs its first read.
+  // A restore target absent from the initial cache still needs its first read,
+  // and a list the address names may need a read of its own after that.
   const pendingOpen = Boolean(
     targetOpenId
     && !expandedList
-    && (loading || displayLists.some((entry) => entry.id === targetOpenId)),
+    && (loading || linkedView === 'waiting' || displayLists.some((entry) => entry.id === targetOpenId)),
   );
+  // The address names a list the account does not have, or one that could not be asked for.
+  const linkedListAbsent = !expandedList && !pendingOpen && (linkedView === 'missing' || linkedView === 'unavailable');
 
   const deleteListTitle = deletingList ? `Delete "${deletingList.name}"?` : 'Delete this list?';
   const deleteListDescription = `Only the list goes: its papers stay saved with their notes and tags. ${deletingList?.publicShareId
@@ -2269,6 +2323,27 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               <PaperRowSkeletonBars />
             </div>
           ))}
+        </motion.div>
+      ) : linkedListAbsent ? (
+        <motion.div key="absent" className="lists-expanded" {...listViewMotion}>
+          <EmptyState
+            as="h1"
+            role={linkedView === 'unavailable' ? 'alert' : 'status'}
+            art={<Petri pose="blankPage" className="lists-empty-petri" />}
+            title={linkedView === 'missing' ? 'List not found' : 'This list could not be loaded'}
+            actions={(
+              <>
+                {linkedView === 'unavailable' && (
+                  <Button variant="outline" onClick={() => setReloadToken(token => token + 1)}>{'Try again'}</Button>
+                )}
+                <Button onClick={() => { void navigate('/lists', { replace: true, state: null }); }}>{'Go to My lists'}</Button>
+              </>
+            )}
+          >
+            {linkedView === 'missing'
+              ? 'It may have been deleted, or it belongs to another account.'
+              : 'Check your connection and try again.'}
+          </EmptyState>
         </motion.div>
       ) : (
         <motion.div key="index" {...listViewMotion}>

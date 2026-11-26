@@ -121,7 +121,7 @@ test('a new account from a paper page door is onboarded and a signed-in reader k
   for (const path of ['/feed', '/papers/abc', '/settings', '/paper', '/p%61pers/abc']) {
     assert.equal(isPublicRoutePath(path), false, path);
   }
-  for (const path of ['/paper/abc', '/Paper/abc', '/Public/List/x', '/EXPLORER/author/1']) {
+  for (const path of ['/paper/abc', '/Paper/abc', '/Public/List/x', '/EXPLORER/author/1', '/lists/list_0a1b', '/Lists/list_0a1b']) {
     assert.equal(keepsNavbarPath(path), true, path);
   }
   for (const path of ['/p%61per/abc', '/public/l%69st/x', '/%50UBLIC/%4cist/x', '/%65xplorer/author/1']) {

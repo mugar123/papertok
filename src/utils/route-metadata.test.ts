@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { routeTitle, routeLabel } from './route-metadata.ts'
+import { routePageKey, routeTitle, routeLabel } from './route-metadata.ts'
 
 test('titles the main authenticated routes', () => {
   assert.equal(routeTitle('/feed'), 'For you | PaperTok')
@@ -15,6 +15,24 @@ test('titles the main authenticated routes', () => {
 
 test('normalizes trailing slashes', () => {
   assert.equal(routeTitle('/lists/'), 'My lists | PaperTok')
+})
+
+test("one of the account's lists is titled and announced as the lists are, without its id", () => {
+  assert.equal(routeLabel('/lists/list_0a1b2c3d4e5f60718293a4b5'), 'My lists')
+  assert.equal(routeTitle('/lists/list_1732600000000/'), 'My lists | PaperTok')
+  // Nothing deeper is a route.
+  assert.equal(routeLabel('/lists/list_1/extra'), null)
+  assert.equal(routeTitle('/lists/list_1/extra'), null)
+})
+
+test('the lists and a list opened by its address are one page, as the settings pages are', () => {
+  assert.equal(routePageKey('/lists'), '/lists')
+  assert.equal(routePageKey('/lists/list_0a1b2c3d4e5f60718293a4b5'), '/lists')
+  assert.equal(routePageKey('/settings/privacy'), '/settings')
+  // Every other address is its own page: two feeds are two pages.
+  assert.equal(routePageKey('/feeds/abcd1234'), '/feeds/abcd1234')
+  assert.equal(routePageKey('/feed'), '/feed')
+  assert.equal(routePageKey('/listserv'), '/listserv')
 })
 
 test('announces and titles public conference pages', () => {

@@ -36,7 +36,9 @@ import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
 import { pmfSurveyRecord } from '../src/services/pmf-survey-service.ts';
 import { orcidWorkDecisionWrite } from '../src/services/orcid-work-decisions-service.ts';
 import { PRIVACY_POLICY_VERSION } from '../src/legal/privacy-policy.ts';
+import { WRITTEN_ARXIV_COPY, WRITTEN_FALLBACK_COPY, WRITTEN_OPENALEX_COPY, writtenFeeds, writtenList } from '../worker/test-support/mcp-written-documents.ts';
 import {
+  arrayUnion,
   deleteDoc,
   deleteField,
   doc,
@@ -2045,4 +2047,57 @@ test('library rules reject malformed conference marks and corpus revisions on bo
       await assertFails(write({ acceptedConference: mark }));
     }
   }
+});
+
+test("the documents the MCP write tools make stay the owner's to read, edit and delete", async () => {
+  await reset();
+  // The Worker writes these with the service account, which passes no rule.
+  // They are stated once, in worker/test-support/mcp-written-documents.ts:
+  // worker/mcp-server.test.ts asserts the Worker writes exactly them, so a
+  // change in what it writes reaches this test through that file.
+  const list = writtenList('list_0a1b2c3d4e5f60718293a4b5');
+  const feeds = writtenFeeds('0a1b2c3d4e5f6071');
+  // A copy arXiv answered for, one OpenAlex answered for (with its
+  // `primaryTopic` map and DOI), and one OpenAlex answered for arXiv, whose
+  // classification is the app's unknown: '' and no categories.
+  const copies = [
+    ['2603.01234', WRITTEN_ARXIV_COPY],
+    ['openalex:W4400000001', WRITTEN_OPENALEX_COPY],
+    ['2603.09999', WRITTEN_FALLBACK_COPY],
+  ] as const;
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const admin = context.firestore();
+    await setDoc(doc(admin, 'users', ALICE, 'lists', list.id), list);
+    for (const [id, copy] of copies) await setDoc(doc(admin, 'users', ALICE, 'savedPapers', id), copy);
+    await setDoc(doc(admin, 'users', ALICE, 'settings', 'customFeeds'), feeds);
+  });
+
+  const db = asAlice();
+  const listRef = doc(db, 'users', ALICE, 'lists', list.id);
+  const feedsRef = doc(db, 'users', ALICE, 'settings', 'customFeeds');
+  assert.equal((await assertSucceeds(getDoc(listRef))).data()?.name, list.name);
+  // The app's own writes to them: the edit window, a paper saved to the list, a second feed.
+  await assertSucceeds(updateDoc(listRef, { name: 'Renamed', emoji: 'Atom', color: 'teal', updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(listRef, { paperIds: arrayUnion('2604.00001'), updatedAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(feedsRef, { feeds: [...feeds.feeds, { ...feeds.feeds[0], id: 'abcdefgh1234', name: 'Second' }], updatedAt: serverTimestamp() }));
+  for (const [id, copy] of copies) {
+    const copyRef = doc(db, 'users', ALICE, 'savedPapers', id);
+    assert.deepEqual((await assertSucceeds(getDoc(copyRef))).data(), copy, id);
+    // The copy as the Worker wrote it is one the rules would take from the
+    // owner too, as a new document.
+    await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'savedPapers', `again-${id}`), copy));
+    // The reader's own save of the same paper merges into it, and a late
+    // OpenAlex topic is added to it (feed-context.tsx).
+    const { summary, ...paper } = { summary: undefined, ...copy };
+    await assertSucceeds(setDoc(copyRef, copyForMergeWrite(buildSavedPaperPayload({ ...paper, id, abstract: summary }, serverTimestamp())), { merge: true }));
+    await assertSucceeds(updateDoc(copyRef, { primaryTopic: { id: 'https://openalex.org/T10001', display_name: 'Graphene and two-dimensional materials' } }));
+    await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'savedPapers', id)));
+    await assertSucceeds(deleteDoc(copyRef));
+  }
+  // Another account reads and writes none of them.
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'lists', list.id)));
+  await assertFails(updateDoc(doc(asBob(), 'users', ALICE, 'lists', list.id), { name: 'Taken' }));
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'settings', 'customFeeds')));
+  await assertSucceeds(deleteDoc(listRef));
+  await assertSucceeds(deleteDoc(feedsRef));
 });
