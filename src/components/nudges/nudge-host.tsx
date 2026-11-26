@@ -40,7 +40,7 @@ import {
   type AccountNoticeRecord,
   type VisitNotices,
 } from '../../utils/nudges.ts';
-import { adoptAccountPmfSurvey, pmfSurveyAreas, pmfSurveyDue, pmfSurveyVersionCovers, recordPmfSurveyDay, recordPmfSurveyShown, syncLocalPmfSurvey, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
+import { adoptAccountPmfSurvey, pmfSurveyAreas, pmfSurveyDue, pmfSurveyOffered, pmfSurveyVersionCovers, recordPmfSurveyDay, recordPmfSurveyShown, syncLocalPmfSurvey, type PmfSurveyAnswer, type PmfSurveyShown } from '../../utils/pmf-survey.ts';
 import { setCardsCovered } from '../../utils/visible-time.ts';
 import { pinAnalyticsContext } from '../pdf/viewer-outcome.ts';
 import NudgePanel from './nudge-panel.tsx';
@@ -81,7 +81,7 @@ import PrivacyNotice from './privacy-notice.tsx';
 // utils/pmf-survey.ts decides who is due; each mount, and each time the tab
 // is shown again, counts the day for the account. It is not offered while
 // analytics is off, nor away from production (localhost, Vercel previews),
-// where its answers would go nowhere. Once open, its version counts as asked
+// where its answers would go nowhere, nor before 0.4 (pmfSurveyOffered). Once open, its version counts as asked
 // for the account, on every device, however it is closed, and it does not
 // open again in the visit. Leaving the feed closes it as a dismissal.
 
@@ -143,7 +143,7 @@ export default function NudgeHost() {
   const { signedIn } = gates;
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
   const analyticsOn = useAnalyticsConsent().consent !== ANALYTICS_CONSENT.DENIED;
-  const surveyOffered = analyticsOn && canSendAnalytics();
+  const surveyOffered = analyticsOn && canSendAnalytics() && pmfSurveyOffered(APP_VERSION);
 
   useEffect(() => {
     if (!signedIn || dwellDone) return undefined;

@@ -37,6 +37,13 @@ const ACTIVE_DAYS = 3;
 const DWELT_PAPERS = 20;
 const DAYS_ON_NEW_VERSION = 2;
 
+/**
+ * The first version the survey is offered in. Pablo decided on 2026-11-25
+ * (ENG-249) that it stops for the rest of 0.3, where the team had already
+ * seen it too often, and that the once-per-version rule starts with 0.4.
+ */
+const FIRST_SURVEY_VERSION = '0.4.0';
+
 const ASKED_KEY_PREFIX = 'papertok_pmfSurveyAsked:';
 
 interface UsageDay { day: string; version: string }
@@ -82,6 +89,11 @@ function versionAtLeast(version: string, than: string) {
     if (difference !== 0) return difference > 0;
   }
   return true;
+}
+
+/** Whether the survey is offered at all in `version` (FIRST_SURVEY_VERSION and later). */
+export function pmfSurveyOffered(version: string) {
+  return versionAtLeast(version, FIRST_SURVEY_VERSION);
 }
 
 /**

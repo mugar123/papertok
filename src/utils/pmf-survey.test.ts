@@ -6,6 +6,7 @@ import {
   adoptAccountPmfSurvey,
   forgetPmfSurveyAsked,
   pmfSurveyDue,
+  pmfSurveyOffered,
   pmfSurveyAreas,
   pmfSurveyParams,
   recordPmfSurveyDay,
@@ -445,4 +446,9 @@ test('ENG-249: a failed account save leaves the survey settled in this browser',
   }
   assert.equal(readPmfSurveyAsked('reader', storage), '0.3.0');
   assert.equal(warnings.length, 1);
+});
+
+test('ENG-249: the survey is not offered for the rest of 0.3, and is from 0.4 on', () => {
+  for (const version of ['0.3.0', '0.3.9', '0.3.10']) assert.equal(pmfSurveyOffered(version), false, version);
+  for (const version of ['0.4.0', '0.4.1', '0.10.0', '1.0.0']) assert.equal(pmfSurveyOffered(version), true, version);
 });
