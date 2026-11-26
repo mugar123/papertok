@@ -63,15 +63,34 @@ function recordingLedger({ accepted = true, scope = '', refused = {} }: { accept
 
 function memoryBucket(initial: Record<string, Uint8Array> = {}) {
   const objects = new Map(Object.entries(initial));
+  const gets: string[] = [];
+  const heads: string[] = [];
   return {
     objects,
+    gets,
+    heads,
     get: async (key: string) => {
+      gets.push(key);
       const bytes = objects.get(key);
-      return bytes ? { arrayBuffer: async () => bytes.buffer } : null;
+      if (!bytes) return null;
+      const response = new Response(bytes);
+      return {
+        body: response.body,
+        size: bytes.byteLength,
+        arrayBuffer: () => {
+          assert.ok(!key.endsWith('.mp3'), 'stored MP3 must be streamed');
+          return response.arrayBuffer();
+        },
+      };
     },
-    head: async (key: string) => (objects.has(key) ? { key } : null),
-    put: async (key: string, value: ArrayBuffer | string) => {
+    head: async (key: string) => {
+      heads.push(key);
+      return objects.has(key) ? { key } : null;
+    },
+    put: async (key: string, value: ArrayBuffer | string, options?: { onlyIf?: Headers }) => {
+      if (options?.onlyIf?.get('if-none-match') === '*' && objects.has(key)) return null;
       objects.set(key, typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value));
+      return { key };
     },
   };
 }
@@ -98,19 +117,44 @@ function paragraphRequest(body: unknown = { text: TEXT, paperId: 'paper-1' }, au
   });
 }
 
-async function signedIn<Result>(callback: () => Promise<Result>) {
+function memoryCache() {
+  const entries = new Map<string, { bytes: ArrayBuffer | null; headers: Headers }>();
+  const urlOf = (request: RequestInfo | URL) => String(request instanceof Request ? request.url : request);
+  return {
+    entries,
+    match: async (request: RequestInfo | URL) => {
+      const entry = entries.get(urlOf(request));
+      return entry ? new Response(entry.bytes, { headers: entry.headers }) : null;
+    },
+    put: async (request: RequestInfo | URL, response: Response) => {
+      entries.set(urlOf(request), {
+        bytes: response.body ? await response.arrayBuffer() : null,
+        headers: response.headers,
+      });
+    },
+  };
+}
+
+async function signedIn<Result>(callback: () => Promise<Result>, cache = memoryCache()) {
   const original = (globalThis as TestGlobals).caches;
+  const fixedLength = Object.getOwnPropertyDescriptor(globalThis, 'FixedLengthStream');
+  class TestFixedLengthStream extends TransformStream {
+    constructor() { super(); }
+  }
+  Object.defineProperty(globalThis, 'FixedLengthStream', { configurable: true, value: TestFixedLengthStream });
   (globalThis as TestGlobals).caches = {
     default: {
       match: async (request: RequestInfo | URL) => (String(request instanceof Request ? request.url : request).includes('/auth/')
         ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
-        : null),
-      put: async () => undefined,
+        : cache.match(request)),
+      put: cache.put,
     },
   };
   try {
     return await callback();
   } finally {
+    if (fixedLength) Object.defineProperty(globalThis, 'FixedLengthStream', fixedLength);
+    else Reflect.deleteProperty(globalThis, 'FixedLengthStream');
     if (original === undefined) delete (globalThis as TestGlobals).caches;
     else (globalThis as TestGlobals).caches = original;
   }
@@ -154,8 +198,8 @@ test('a paragraph nobody has heard is read by Cartesia once, charged by its leng
     () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, bucket), { waitUntil: work => { outlives.push(work); } })),
   );
   // The making of the paragraph is handed to the runtime, so it ends even when its reader has left.
-  assert.equal(outlives.length, 1);
-  await outlives[0];
+  assert.equal(outlives.length, 2);
+  await Promise.all(outlives);
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'audio/mpeg');
@@ -373,6 +417,163 @@ test('asked for timings, a paragraph returns ElevenLabs\' stored timings only wh
   assert.equal(ledger.calls.length + ledger.turns.length, 0);
 });
 
+test('stored audio streams in provider order and warms the edge cache', async () => {
+  const cartesiaKey = await audioKey('cartesia', TEXT);
+  const elevenLabsKey = await audioKey('elevenlabs', TEXT);
+  const bucket = memoryBucket({
+    [`${elevenLabsKey}.mp3`]: MP3,
+    [`${elevenLabsKey}.json`]: new TextEncoder().encode(JSON.stringify(ALIGNMENT)),
+  });
+  const worker = env(recordingLedger(), bucket);
+  const edge = memoryCache();
+  const background: Promise<unknown>[] = [];
+  const request = () => reportApi.fetch(paragraphRequest({ text: TEXT, storedOnly: true }), worker, {
+    waitUntil: work => { background.push(work); },
+  });
+  const timings = () => reportApi.fetch(paragraphRequest({ text: TEXT, timings: true }), worker);
+
+  await signedIn(async () => {
+    const fallback = await request();
+    assert.equal(fallback.headers.get('x-tts-audio'), elevenLabsKey);
+    assert.deepEqual(new Uint8Array(await fallback.arrayBuffer()), MP3);
+    assert.deepEqual(bucket.gets.splice(0), [`${cartesiaKey}.mp3`, `${elevenLabsKey}.mp3`]);
+    await Promise.all(background);
+    assert.deepEqual(await (await timings()).json(), ALIGNMENT);
+
+    bucket.gets.length = 0;
+    bucket.objects.set(`${cartesiaKey}.mp3`, CARTESIA_MP3);
+    const primary = await request();
+    assert.equal(primary.headers.get('x-tts-audio'), cartesiaKey);
+    assert.equal(primary.headers.get('content-length'), String(CARTESIA_MP3.byteLength));
+    assert.equal(primary.headers.get('cache-control'), 'private, no-store');
+    assert.equal(primary.headers.get('access-control-expose-headers'), 'retry-after, x-tts-audio');
+    assert.deepEqual(new Uint8Array(await primary.arrayBuffer()), CARTESIA_MP3);
+    assert.deepEqual(bucket.gets.splice(0), [`${cartesiaKey}.mp3`]);
+    await Promise.all(background);
+    assert.deepEqual([...edge.entries.values()].map(entry => entry.headers.get('cache-control')), [
+      'public, max-age=31536000, immutable', 'public, max-age=31536000, immutable',
+    ]);
+
+    bucket.heads.length = 0;
+    const cached = await request();
+    assert.equal(cached.headers.get('x-tts-audio'), cartesiaKey);
+    assert.equal(cached.headers.get('content-length'), String(CARTESIA_MP3.byteLength));
+    assert.deepEqual(new Uint8Array(await cached.arrayBuffer()), CARTESIA_MP3);
+    assert.deepEqual(bucket.gets, []);
+    assert.deepEqual(bucket.heads, []);
+    const absent = await timings();
+    assert.equal(absent.status, 404);
+    assert.equal((await absent.json<{ code: string }>()).code, 'AI_TIMINGS_NOT_STORED');
+  }, edge);
+});
+
+test('fresh audio is cached after it is stored', async () => {
+  const bucket = memoryBucket();
+  const worker = env(recordingLedger(), bucket);
+  const background: Promise<unknown>[] = [];
+  const { calls } = await withProviders({ cartesia: cartesiaAudio }, () => signedIn(async () => {
+    const response = await reportApi.fetch(paragraphRequest(), worker, { waitUntil: work => { background.push(work); } });
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
+    await Promise.all(background);
+    bucket.gets.length = 0;
+    const cached = await reportApi.fetch(paragraphRequest({ text: TEXT, storedOnly: true }), worker);
+    assert.equal(cached.headers.get('x-tts-audio'), response.headers.get('x-tts-audio'));
+    assert.deepEqual(new Uint8Array(await cached.arrayBuffer()), CARTESIA_MP3);
+    assert.deepEqual(bucket.gets, []);
+  }));
+  assert.equal(calls.length, 1);
+});
+
+test('a late synthesis serves the first stored bytes and leaves their timings intact', async () => {
+  const key = await audioKey('elevenlabs', TEXT);
+  const winningTimings = { ...ALIGNMENT, character_end_times_seconds: [0.06, 0.11, 0.16] };
+  const bucket = memoryBucket();
+  const worker = env(recordingLedger(), bucket, { CARTESIA_API_KEY: undefined });
+  const { calls } = await withProviders({ elevenlabs: () => {
+    bucket.objects.set(`${key}.mp3`, CARTESIA_MP3);
+    bucket.objects.set(`${key}.json`, new TextEncoder().encode(JSON.stringify(winningTimings)));
+    return elevenLabsAudio();
+  } }, () => signedIn(async () => {
+    const response = await reportApi.fetch(paragraphRequest(), worker);
+    assert.equal(response.headers.get('x-tts-audio'), key);
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
+    const timings = await reportApi.fetch(paragraphRequest({ text: TEXT, timings: true }), worker);
+    assert.deepEqual(await timings.json(), winningTimings);
+  }));
+  assert.equal(calls.length, 1);
+});
+
+for (const [behaviour, conditionalPut] of [
+  ['rejects', async () => { throw new Error('onlyIf not supported'); }],
+  ['answers null for a new object', async () => null],
+] as const) {
+  test(`when R2 ${behaviour} on the create-only write, the paid clip is still stored and not paid for again`, async () => {
+    const key = await audioKey('cartesia', TEXT);
+    const bucket = memoryBucket();
+    const put = bucket.put;
+    bucket.put = async (name: string, value: ArrayBuffer | string, options?: { onlyIf?: Headers }) => (options?.onlyIf
+      ? conditionalPut()
+      : put(name, value, options));
+    const worker = env(recordingLedger(), bucket);
+    const { calls } = await withProviders({ cartesia: cartesiaAudio }, () => signedIn(async () => {
+      const response = await reportApi.fetch(paragraphRequest(), worker);
+      assert.equal(response.headers.get('x-tts-audio'), key);
+      assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
+      assert.deepEqual(bucket.objects.get(`${key}.mp3`), CARTESIA_MP3);
+      const again = await reportApi.fetch(paragraphRequest({ text: TEXT, storedOnly: true }), worker);
+      assert.equal(again.status, 200);
+      assert.deepEqual(new Uint8Array(await again.arrayBuffer()), CARTESIA_MP3);
+    }));
+    assert.equal(calls.length, 1);
+  });
+}
+
+test('a clip stored while waiting for the turn is served without a provider or the paper being counted', async () => {
+  const key = await audioKey('cartesia', TEXT);
+  const bucket = memoryBucket();
+  const ledger = recordingLedger();
+  const turnFor = ledger.get;
+  ledger.get = (period: string) => {
+    const stub = turnFor(period);
+    return {
+      fetch: async (url: RequestInfo | URL, options?: RequestInit) => {
+        // Another request finishes the paragraph just as this one takes the turn.
+        if (period.startsWith('tts:making:') && JSON.parse(options!.body as string).action === 'reserve') bucket.objects.set(`${key}.mp3`, CARTESIA_MP3);
+        return stub.fetch(url, options);
+      },
+    };
+  };
+  const { response, calls } = await withProviders({ cartesia: cartesiaAudio }, () => signedIn(() => reportApi.fetch(paragraphRequest(), env(ledger, bucket))));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-tts-audio'), key);
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(ledger.calls, []);
+});
+
+test('a clip the bucket reports but cannot read is answered as unavailable, without a provider', async () => {
+  const key = await audioKey('cartesia', TEXT);
+  const bucket = memoryBucket();
+  bucket.head = async (name: string) => { bucket.heads.push(name); return name === `${key}.mp3` ? { key: name } : null; };
+  const { response, calls } = await withProviders({ cartesia: cartesiaAudio }, () => signedIn(() => reportApi.fetch(paragraphRequest(), env(recordingLedger(), bucket))));
+  assert.equal(response.status, 502);
+  assert.equal(calls.length, 0);
+});
+
+test('a cached clip without a usable length is skipped for the copy in R2', async () => {
+  const key = await audioKey('cartesia', TEXT);
+  const bucket = memoryBucket();
+  bucket.objects.set(`${key}.mp3`, CARTESIA_MP3);
+  const worker = env(recordingLedger(), bucket);
+  for (const length of ['', 'abc', '0']) {
+    const edge = memoryCache();
+    edge.entries.set(`https://papertok.internal/cache/read-aloud/${key}`, { bytes: new Uint8Array([1, 2]).buffer, headers: new Headers({ 'content-length': length }) });
+    const response = await signedIn(() => reportApi.fetch(paragraphRequest({ text: TEXT, storedOnly: true }), worker), edge);
+    assert.equal(response.status, 200, length);
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3, length);
+  }
+});
+
 test('two requests for the same new paragraph call the provider once, and both get its audio', async () => {
   const ledger = recordingLedger();
   const bucket = memoryBucket();
@@ -387,12 +588,15 @@ test('two requests for the same new paragraph call the provider once, and both g
     assert.deepEqual(new Uint8Array(await response.arrayBuffer()), CARTESIA_MP3);
   }
   assert.equal(calls.length, 1);
+  // Only the request making the paragraph checks with HEADs, once; the waiting one polls with GETs.
+  assert.deepEqual(bucket.heads, [`${await audioKey('cartesia', TEXT)}.mp3`, `${await audioKey('elevenlabs', TEXT)}.mp3`]);
   assert.deepEqual(ledger.calls.map(call => [call.action, call.amount]), [['reserve', TEXT.length]]);
 });
 
 test('when the request making a paragraph fails, a request waiting for it makes it', async () => {
   const ledger = recordingLedger();
-  const worker = env(ledger, memoryBucket(), { ELEVENLABS_API_KEY: undefined });
+  const bucket = memoryBucket();
+  const worker = env(ledger, bucket, { ELEVENLABS_API_KEY: undefined });
   const replies = [later(() => new Response('', { status: 500 })), cartesiaAudio];
   const { response: responses, calls } = await withProviders(
     { cartesia: () => replies.shift()!() },
@@ -401,11 +605,38 @@ test('when the request making a paragraph fails, a request waiting for it makes 
 
   assert.deepEqual(responses.map(response => response.status).sort(), [200, 502]);
   assert.equal(calls.length, 2);
+  const keys = [`${await audioKey('cartesia', TEXT)}.mp3`, `${await audioKey('elevenlabs', TEXT)}.mp3`];
+  // Each request that took the turn checked once with HEADs; waiting never does.
+  assert.deepEqual(bucket.heads, [...keys, ...keys]);
+  assert.ok(bucket.gets.length > 0 && bucket.gets.every(key => keys.includes(key)));
   assert.deepEqual(ledger.calls.map(call => call.action), ['reserve', 'release', 'reserve']);
 });
 
 const PAPERS_ROUTE = 'https://papertok-report-api.example/tts/papers';
 const papersRequest = (body: unknown, authorization: string | null = 'Bearer test-token') => paragraphRequest(body, authorization, PAPERS_ROUTE);
+
+test('paper marks cache misses and hits, and writing a mark supersedes a cached miss', async () => {
+  const key = await audioKey('cartesia', TEXT);
+  const bucket = memoryBucket({ [`${key}.mp3`]: CARTESIA_MP3 });
+  const worker = env(recordingLedger(), bucket);
+  const edge = memoryCache();
+  const ask = async (body: unknown) => (await reportApi.fetch(papersRequest(body), worker)).json();
+  await signedIn(async () => {
+    assert.deepEqual(await ask({ papers: ['paper-a'] }), { voiced: [] });
+    assert.equal(bucket.heads.length, 1);
+    assert.deepEqual(await ask({ papers: ['paper-a'] }), { voiced: [] });
+    assert.deepEqual(await ask({ usage: true, paperId: 'paper-a' }), { papersLeft: 2, dailyPapers: 2, paperOpen: false });
+    assert.equal(bucket.heads.length, 1);
+    assert.equal([...edge.entries.values()][0]?.headers.get('cache-control'), 'public, max-age=300');
+
+    assert.deepEqual(await ask({ paperId: 'paper-a', voiced: true, audio: [key] }), { voiced: true });
+    bucket.heads.length = 0;
+    assert.deepEqual(await ask({ papers: ['paper-a'] }), { voiced: ['paper-a'] });
+    assert.deepEqual(await ask({ usage: true, paperId: 'paper-a' }), { papersLeft: 2, dailyPapers: 2, paperOpen: true });
+    assert.deepEqual(bucket.heads, []);
+    assert.equal([...edge.entries.values()][1]?.headers.get('cache-control'), 'public, max-age=86400');
+  }, edge);
+});
 
 test('an account\'s new papers are counted once each, a third is refused, and stored audio stays free', async () => {
   const environment = env(recordingLedger(), memoryBucket(), { TTS_DAILY_USER_PAPERS: '2' });

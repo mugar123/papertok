@@ -89,9 +89,11 @@ const elevenLabs: Provider = {
       .catch((error: unknown) => {
         throw (error as Error)?.name === 'TimeoutError' ? error : new AIExplanationError('AI_UNAVAILABLE', 502);
       });
-    const audio = typeof body.audio_base64 === 'string' ? Uint8Array.from(atob(body.audio_base64), char => char.charCodeAt(0)).buffer : null;
-    if (!audio || audio.byteLength === 0) throw new AIExplanationError('AI_EMPTY_RESPONSE', 502);
-    return { audio, alignment: alignmentOf(body.alignment) };
+    const decoded = typeof body.audio_base64 === 'string' ? atob(body.audio_base64) : '';
+    if (!decoded.length) throw new AIExplanationError('AI_EMPTY_RESPONSE', 502);
+    const audio = new Uint8Array(decoded.length);
+    for (let index = 0; index < decoded.length; index++) audio[index] = decoded.charCodeAt(index);
+    return { audio: audio.buffer, alignment: alignmentOf(body.alignment) };
   },
 };
 
@@ -142,6 +144,65 @@ export function audioKey(provider: Provider['name'], text: string) {
  */
 const voicedKey = async (paperId: string) => `papers/${await sha256(Object.values(VOICES).join('\n'))}/${await sha256(paperId)}`;
 const AUDIO_KEY = /^tts\/[0-9a-f]{64}$/;
+const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
+const cacheRequest = (key: string) => new Request(`https://papertok.internal/cache/read-aloud/${key}`);
+
+type AudioStore = NonNullable<WorkerEnv['TTS_AUDIO']>;
+type ReadAloudResult = { body: ArrayBuffer | ReadableStream; type: string; key?: string; size?: number };
+
+function readCache(key: Request) {
+  return caches.default.match(key).catch(() => undefined);
+}
+
+async function writeCache(key: Request, response: Response) {
+  try {
+    await caches.default.put(key, response);
+  } catch {
+    // R2 remains the source of truth when the edge cache is unavailable.
+  } finally {
+    if (!response.bodyUsed) await response.body?.cancel().catch(() => undefined);
+  }
+}
+
+function fixedLength(body: ReadableStream, size: number) {
+  const { readable, writable } = new FixedLengthStream(size);
+  // pipeTo propagates failures to the readable side of the transform.
+  void body.pipeTo(writable).catch(() => undefined);
+  return readable;
+}
+
+function cacheAudio(key: Request, body: ArrayBuffer | ReadableStream, size: number) {
+  return writeCache(key, new Response(body instanceof ArrayBuffer ? body : fixedLength(body, size), {
+    headers: { 'content-type': 'audio/mpeg', 'content-length': String(size), 'cache-control': IMMUTABLE_CACHE },
+  }));
+}
+
+async function markedVoiced(store: AudioStore, mark: string) {
+  const positive = cacheRequest(mark);
+  if (await hasCachedMark(positive)) return true;
+  // A lookup that races a mark write must not overwrite the positive answer.
+  const negative = cacheRequest(`${mark}/missing`);
+  if (await hasCachedMark(negative)) return false;
+  const present = Boolean(await store.head(mark));
+  await cacheMark(present ? positive : negative, present);
+  return present;
+}
+
+async function hasCachedMark(key: Request) {
+  const cached = await readCache(key);
+  await cached?.body?.cancel().catch(() => undefined);
+  return Boolean(cached);
+}
+
+/**
+ * A mark is named by a paper's id, not by its content, so unlike a clip it is cached for a day
+ * rather than for good: a mark removed from R2 stops being served within that day.
+ */
+function cacheMark(key: Request, present: boolean) {
+  return writeCache(key, new Response(null, {
+    headers: { 'cache-control': present ? 'public, max-age=86400' : 'public, max-age=300' },
+  }));
+}
 
 const dayOf = (now = new Date()) => now.toISOString().slice(0, 10);
 
@@ -215,7 +276,7 @@ async function takePaper(env: WorkerEnv, uid: string, paperId: string, day: stri
  * stored timings of the audio the paragraph is served with instead, as JSON,
  * and never synthesizes.
  */
-export async function handleReadAloud(request: Request, env: WorkerEnv, keepAlive?: (work: Promise<unknown>) => void): Promise<{ body: ArrayBuffer; type: string; key?: string }> {
+export async function handleReadAloud(request: Request, env: WorkerEnv, keepAlive?: (work: Promise<unknown>) => void): Promise<ReadAloudResult> {
   if (Number(request.headers.get('content-length') || 0) > MAX_REQUEST_BYTES) {
     throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   }
@@ -232,18 +293,45 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
   if (text.length > MAX_PARAGRAPH_CHARS) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
 
   const keys = await Promise.all(PROVIDERS.map(provider => audioKey(provider.name, text)));
+  const storedKey = async () => {
+    for (const key of keys) {
+      const cached = await readCache(cacheRequest(key));
+      if (cached?.body) {
+        await cached.body.cancel().catch(() => undefined);
+        if (cachedLength(cached) !== null) return key;
+      }
+      if (await store.head(`${key}.mp3`)) return key;
+    }
+    return null;
+  };
   // The audio served is the first stored in the providers' order, and timings
   // belong to that clip alone: another voice speaks the same words at other times.
   if (payload?.timings === true) {
-    const served = (await Promise.all(keys.map(key => store.head(`${key}.mp3`)))).findIndex(Boolean);
-    const timings = served < 0 ? null : await store.get(`${keys[served]}.json`);
+    const served = await storedKey();
+    const timings = served === null ? null : await store.get(`${served}.json`);
     if (!timings) throw new AIExplanationError('AI_TIMINGS_NOT_STORED', 404);
     return { body: await timings.arrayBuffer(), type: 'application/json' };
   }
-  const storedAudio = async () => {
-    const found = await Promise.all(keys.map(key => store.get(`${key}.mp3`)));
-    const index = found.findIndex(Boolean);
-    return index < 0 ? null : { body: await found[index]!.arrayBuffer(), type: 'audio/mpeg', key: keys[index] };
+  const storedAudio = async (): Promise<ReadAloudResult | null> => {
+    for (const key of keys) {
+      const request = cacheRequest(key);
+      const cached = await readCache(request);
+      if (cached?.body) {
+        const size = cachedLength(cached);
+        if (size !== null) return { body: fixedLength(cached.body, size), size, type: 'audio/mpeg', key };
+        await cached.body.cancel().catch(() => undefined);
+      }
+      const object = await store.get(`${key}.mp3`);
+      if (!object) continue;
+      let body = object.body;
+      if (keepAlive) {
+        const [client, edge] = body.tee();
+        body = client;
+        keepAlive(cacheAudio(request, edge, object.size));
+      }
+      return { body: fixedLength(body, object.size), size: object.size, type: 'audio/mpeg', key };
+    }
+    return null;
   };
   const stored = await storedAudio();
   if (stored) return stored;
@@ -261,19 +349,45 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
     // A request that waited takes the turn only with time left for a provider's call; the viewer asks again.
     if (deadline - Date.now() < SYNTHESIS_TIMEOUT_MS + MAKING_POLL_MS) throw new AIExplanationError('AI_BUSY', 429);
     await new Promise(resolve => { setTimeout(resolve, MAKING_POLL_MS); });
+    // A GET of a missing object costs what a HEAD does, and a hit brings the audio with it.
     const made = await storedAudio();
     if (made) return made;
   }
-  const work = (async () => {
+  // The work may outlive its reader (`keepAlive`), so it never opens a stream: it answers with the
+  // clip it paid for, or null when the clip is already stored, which is then streamed below.
+  const work = (async (): Promise<ReadAloudResult | null> => {
     try {
       // Stored between this request's look at the bucket and its turn.
-      const made = await storedAudio();
-      if (made) return made;
+      if (await storedKey()) return null;
       const paper = account.unlimitedAI ? null : await takePaper(env, account.uid, paperId, dayOf());
       try {
-        const audio = await synthesize(env, store, account.uid, text, keys, deadline);
+        const { audio, alignment, key } = await synthesize(env, account.uid, text, keys, deadline);
+        // A turn can expire during synthesis. Keep the first clip and write only its timings.
+        const putAudio = (createOnly: boolean) => store.put(`${key}.mp3`, audio, {
+          ...(createOnly ? { onlyIf: new Headers({ 'if-none-match': '*' }) } : {}),
+          httpMetadata: { contentType: 'audio/mpeg' },
+        }).catch(logStorageError);
+        let saved = await putAudio(true);
+        let beaten = false;
+        if (!saved) {
+          // Another request stored this paragraph first: its clip, whose timings are its own, is served.
+          beaten = Boolean(await storedKey());
+          // Nothing is stored, so the create-only write was refused or failed rather than beaten.
+          // Store the paid clip plainly instead of paying for it again on the next listen.
+          if (!beaten) saved = await putAudio(false);
+        }
+        if (saved) {
+          if (alignment) {
+            await store.put(`${key}.json`, JSON.stringify(alignment), {
+              httpMetadata: { contentType: 'application/json' },
+            }).catch(logStorageError);
+          }
+          const cache = cacheAudio(cacheRequest(key), audio, audio.byteLength);
+          if (keepAlive) keepAlive(cache);
+          else await cache;
+        }
         await paper?.made().catch(() => undefined);
-        return audio;
+        return beaten ? null : { body: audio, type: 'audio/mpeg', key };
       } catch (error) {
         await paper?.giveBack().catch(() => undefined);
         throw error;
@@ -283,11 +397,26 @@ export async function handleReadAloud(request: Request, env: WorkerEnv, keepAliv
     }
   })();
   keepAlive?.(work.catch(() => undefined));
-  return work;
+  const made = await work;
+  if (made) return made;
+  const served = await storedAudio();
+  if (!served) throw new AIExplanationError('AI_UNAVAILABLE', 502);
+  return served;
 }
 
-/** Asks each provider in order, within its day and the reader's allowance, and stores the first audio. */
-async function synthesize(env: WorkerEnv, store: NonNullable<WorkerEnv['TTS_AUDIO']>, uid: string, text: string, keys: string[], deadline: number) {
+/** A cached clip's byte length, or null when the header is missing or not a positive whole number. */
+function cachedLength(cached: Response) {
+  const raw = cached.headers.get('content-length') ?? '';
+  const size = Number(raw);
+  return /^\d+$/.test(raw) && Number.isSafeInteger(size) && size > 0 ? size : null;
+}
+
+function logStorageError(error: unknown) {
+  console.error('Read-aloud audio not stored', error);
+}
+
+/** Asks each provider in order, within its day and the reader's allowance. */
+async function synthesize(env: WorkerEnv, uid: string, text: string, keys: string[], deadline: number) {
   const day = dayOf();
   let refusal = new AIExplanationError('AI_NOT_CONFIGURED', 503);
   for (const [index, provider] of PROVIDERS.entries()) {
@@ -317,14 +446,8 @@ async function synthesize(env: WorkerEnv, store: NonNullable<WorkerEnv['TTS_AUDI
     }
 
     try {
-      const { audio, alignment } = await provider.synthesize(text, apiKey, AbortSignal.timeout(Math.min(SYNTHESIS_TIMEOUT_MS, left)));
-      await Promise.all([
-        store.put(`${keys[index]}.mp3`, audio, { httpMetadata: { contentType: 'audio/mpeg' } }),
-        alignment ? store.put(`${keys[index]}.json`, JSON.stringify(alignment), { httpMetadata: { contentType: 'application/json' } }) : null,
-      ]).catch((error: unknown) => {
-        console.error('Read-aloud audio not stored', error);
-      });
-      return { body: audio, type: 'audio/mpeg', key: keys[index] };
+      const clip = await provider.synthesize(text, apiKey, AbortSignal.timeout(Math.min(SYNTHESIS_TIMEOUT_MS, left)));
+      return { ...clip, key: keys[index] };
     } catch (error) {
       await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, ledgerRequest).catch(() => undefined);
       refusal = error instanceof AIExplanationError
@@ -367,14 +490,14 @@ export async function handleVoicePapers(request: Request, env: WorkerEnv) {
     if (!paperId || paperId.length > MAX_PAPER_ID_CHARS) return usage;
     const counted = await peekRequestQuota(ledger, (await paperMarkers(account.uid, paperId, day)).counted);
     if (counted.code) throw ledgerFailure(counted.code);
-    const voiced = Boolean(await env.TTS_AUDIO?.head(await voicedKey(paperId)));
+    const voiced = env.TTS_AUDIO ? await markedVoiced(env.TTS_AUDIO, await voicedKey(paperId)) : false;
     return { ...usage, paperOpen: counted.remaining === 0 || voiced };
   }
   const store = env.TTS_AUDIO;
   if (!store) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   if (Array.isArray(payload?.papers)) {
     const ids = [...new Set(payload.papers.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= MAX_PAPER_ID_CHARS))].slice(0, MAX_PAPERS_ASKED);
-    const found = await Promise.all(ids.map(async id => Boolean(await store.head(await voicedKey(id)))));
+    const found = await Promise.all(ids.map(async id => markedVoiced(store, await voicedKey(id))));
     return { voiced: ids.filter((_, index) => found[index]) };
   }
   const paperId = typeof payload?.paperId === 'string' ? payload.paperId.trim() : '';
@@ -384,9 +507,11 @@ export async function handleVoicePapers(request: Request, env: WorkerEnv) {
     throw new AIExplanationError('AI_INVALID_REQUEST', 400);
   }
   const mark = await voicedKey(paperId);
-  if (await store.head(mark)) return { voiced: true };
-  const stored = await Promise.all(audio.map(key => store.head(`${key}.mp3`)));
-  if (!stored.every(Boolean)) return { voiced: false };
-  await store.put(mark, '');
+  if (!await store.head(mark)) {
+    const stored = await Promise.all(audio.map(key => store.head(`${key}.mp3`)));
+    if (!stored.every(Boolean)) return { voiced: false };
+    await store.put(mark, '');
+  }
+  await cacheMark(cacheRequest(mark), true);
   return { voiced: true };
 }
