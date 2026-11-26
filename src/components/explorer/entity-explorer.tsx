@@ -126,7 +126,7 @@ import ExplorerGuestGate from './explorer-guest-gate.tsx';
 import { pickEmptyVariant } from './explorer-empty-variant.ts';
 import { explorerAuthorIdentityUnverified, explorerFollowEntity, explorerJournalIngredient } from './explorer-follow-entity.ts';
 import { projectEntityFromLookup, projectLookupFunder } from './explorer-project-entity.ts';
-import { authorsSentinelMounted, papersFootReport, papersSentinelMounted } from './explorer-list-foot.ts';
+import { authorsSentinelMounted, papersFootReport, papersPartialNoticeShown, papersSentinelMounted } from './explorer-list-foot.ts';
 import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topic-navigation.ts';
 import { scoreQueryTopicPaper } from '../../utils/query-topic-search.ts';
 import { settleWithin } from '../../utils/async-timing.ts';
@@ -1545,6 +1545,9 @@ export default function EntityExplorer({
     else if (hasMore && filteredPapers.length === 0) papersMoreStatus = 'No matches yet. More publications remain to check.';
     else if (hasMore) papersMoreStatus = `${filteredPapers.length.toLocaleString(locale)} listed so far. More publications remain to check.`;
     else if (!papersError) papersMoreStatus = 'No more publications to check.';
+    // An earlier page that came back without one of its sources is not a check
+    // that failed; the strip above says so too, which a screen reader may miss.
+    else if (papersError === 'PARTIAL_PUBLICATIONS_LOAD_FAILED') papersMoreStatus = 'No more publications to check. Some could not be loaded.';
     else if (filteredPapers.length > 0) papersMoreStatus = 'More publications could not be checked.';
   }
   useEffect(() => {
@@ -2705,15 +2708,14 @@ export default function EntityExplorer({
                   foot of every list announcing a request that had not started.
                   A spinner that spins when nothing is loading is the one kind
                   of motion with no state to indicate. */}
-              {/* Before the sentinel, not after it. Measured 2026-09-12 on
-                  papertok.app: the strip rendered below the sentinel, so a
-                  reader at the foot of the list read "Loading more articles…"
-                  and, right under it, "Some publications could not be loaded" —
-                  two opposite claims stacked. In this order the page says what
-                  is missing from the list so far, and only then that more are
-                  on the way. Inside the grid as well, so it spans the rows
-                  rather than stopping 420px short of them. */}
-              {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
+              {/* Not while the list loads more on its own: its foot then says
+                  more are on the way, and the two read as opposite claims
+                  (`papersPartialNoticeShown`). Inside the grid, so it spans
+                  the rows rather than stopping 420px short of them. */}
+              {papersPartialNoticeShown({
+                isLoading: isLoadingPapers, isFetchingMore, hasError: Boolean(papersError), rows: filteredPapers.length,
+                hasMore, publicMode, awaitingReader: papersAwaitReader,
+              }) && (
                 <div className="explorer-inline-error" role="status">
                   <span>{getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED')}</span>
                   <Button variant="ghost" size="sm" onClick={retryPapers}>{'Try again'}</Button>
@@ -2835,7 +2837,8 @@ export default function EntityExplorer({
                 </div>
               ))}
             
-            {/* Same order as the publications strip above, for the same reason. */}
+            {/* A failed page ends the authors list (`hasMoreAuthors` goes
+                false), so this never shares the foot with the sentinel below. */}
             {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
               <div className="explorer-inline-error" role="status">
                 <span>{getUiErrorMessage('PARTIAL_AUTHORS_LOAD_FAILED')}</span>
