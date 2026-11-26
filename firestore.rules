@@ -400,6 +400,19 @@ service cloud.firestore {
           && request.resource.data.shownVersion.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}([.][0-9]{1,4})?');
       }
 
+      // The newest version of the Mac app's announcement of the reader's own
+      // agent that this account was shown, so it does not return on another Mac.
+      // A record of what was on screen, not of any agent being set up. Kept like
+      // privacyNotice above: its own document, fetched by id, written only by the
+      // owner, removed with the account by the service identity.
+      match /settings/agentIntro {
+        allow get: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly(['shownVersion'])
+          && request.resource.data.shownVersion is string
+          && request.resource.data.shownVersion.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}([.][0-9]{1,4})?');
+      }
+
       // The newest app version the fit survey opened for, so one ask settles
       // that version on every device. Its own document, holding one version
       // and no answer. Only fetched by id and only written by the client:
