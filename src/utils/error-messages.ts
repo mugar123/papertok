@@ -62,6 +62,7 @@ const ERROR_MESSAGES = {
     ORCID_CONNECTION_EXPIRED: 'This ORCID connection expired or was started from another account. Connect again from My profile.',
     ORCID_AUTHORIZATION_REFUSED: 'ORCID did not authorize PaperTok. Nothing was connected.',
     ORCID_RATE_LIMITED: 'ORCID is busy right now. Try again in a minute.',
+    ORCID_WRITE_LIMIT: 'PaperTok has reached a limit for ORCID account changes. Try again later.',
     ORCID_UNAVAILABLE: 'ORCID could not be reached. Nothing was connected.',
     ORCID_UNREACHABLE: 'PaperTok could not be reached. Check your connection and try again.',
     ORCID_NOT_CONFIGURED: 'Connecting ORCID is not available right now.',

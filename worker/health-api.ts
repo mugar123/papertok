@@ -39,7 +39,7 @@ export function getConfigurationHealth(env: WorkerEnv) {
     publishingConfigured,
     features: {
       ai: aiConfigured,
-      orcid: Boolean(configuredOrcidHost(env)),
+      orcid: quotaConfigured && Boolean(configuredOrcidHost(env)),
       zotero: isZoteroConfigured(env),
       scopus: scopusConfigured,
       email: emailConfigured && emailLedgerConfigured && emailSubscriptionsConfigured,

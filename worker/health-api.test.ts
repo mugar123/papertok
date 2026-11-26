@@ -38,8 +38,13 @@ test('AI readiness only checks the selected provider credential', () => {
   }
 });
 
-test('ORCID readiness needs a recognized registry, both OAuth credentials and a service account', () => {
-  const configured = { ...serviceAccount, ORCID_CLIENT_ID: 'APP-fixture', ORCID_CLIENT_SECRET: 'fake-orcid-secret' };
+test('ORCID readiness needs a recognized registry, both OAuth credentials, a service account and a quota ledger', () => {
+  const configured = {
+    ...serviceAccount,
+    ORCID_CLIENT_ID: 'APP-fixture',
+    ORCID_CLIENT_SECRET: 'fake-orcid-secret',
+    REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
+  };
   assert.equal(getConfigurationHealth(configured).features.orcid, true);
   assert.equal(getConfigurationHealth({ ...configured, ORCID_ENVIRONMENT: 'sandbox' }).features.orcid, true);
   for (const missing of [
@@ -47,6 +52,7 @@ test('ORCID readiness needs a recognized registry, both OAuth credentials and a 
     { ORCID_CLIENT_ID: '' },
     { ORCID_CLIENT_SECRET: '' },
     { FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: '' },
+    { REQUEST_QUOTA_LEDGER: undefined },
   ]) {
     assert.equal(getConfigurationHealth({ ...configured, ...missing }).features.orcid, false);
   }
