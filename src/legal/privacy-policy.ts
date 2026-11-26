@@ -14,7 +14,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so the account record identifies the text behind the notice.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-26.15';
+export const PRIVACY_POLICY_VERSION = '2026-11-26.16';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -190,6 +190,21 @@ export const PRIVACY_POLICY_VERSION = '2026-11-26.15';
  * that ships with its own pull request: Vercel reported #631 deployed at
  * 10:01:15Z on 26 November, and the instant stands a few minutes later
  * because that status does not say when papertok.app began serving it.
+ *
+ * Version 2026-11-26.16 describes the Mac app's chat with the reader's own
+ * agent (Claude Code, Codex or Antigravity): the messages, the open paper's
+ * text, the project's name and notes and the titles of its other chats go to
+ * that agent and from it to its provider, under the reader's own account with
+ * them; the agent can read the project's folder; the chats, notes and paper
+ * copies stay in the app's folder on that Mac, per account, until the project
+ * or the account is deleted there; and the account keeps the version of the
+ * Mac app's announcement of it that it was shown (`settings/agentIntro`,
+ * #633). Nicolás authorized storing and sending this on 2026-11-26. The
+ * notice's second bullet already announces the assistant a reader connects,
+ * the three bullets are at the dialog's limit, and what reaches PaperTok's
+ * servers is the key requests and MCP calls 2026-11-26.15 already describes
+ * and the one-version record, so the summary and this instant stay as
+ * 2026-11-26.15 left them.
  */
 export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-26T10:05:00Z';
 
