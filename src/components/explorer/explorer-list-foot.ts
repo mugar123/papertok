@@ -13,6 +13,23 @@ export function papersSentinelMounted({ publicMode, awaitingReader, hasMore, row
   return !publicMode && !awaitingReader && hasMore && rowsSettled && (rows > 0 || isFetchingMore);
 }
 
+/**
+ * Whether the papers list says that some of its publications could not be
+ * loaded: whenever it is not loading more on its own. A topic page often comes
+ * back without one of its sources (its second arXiv request waits for the
+ * first), and the error stays for the rest of the list, so shown while the
+ * list kept paging it sat above "Loading more articles…" as a contradiction.
+ * Where the list has ended, waits for "Keep looking" or is a visitor's
+ * preview, it says so and offers Try again.
+ */
+export function papersPartialNoticeShown({ isLoading, isFetchingMore, hasError, rows, hasMore, publicMode, awaitingReader }: {
+  isLoading: boolean; isFetchingMore: boolean; hasError: boolean; rows: number;
+  hasMore: boolean; publicMode: boolean; awaitingReader: boolean;
+}) {
+  const pagingOnItsOwn = hasMore && !publicMode && !awaitingReader;
+  return !isLoading && !isFetchingMore && hasError && rows > 0 && !pagingOnItsOwn;
+}
+
 export function authorsSentinelMounted({ publicMode, hasMore, rows, isFetchingMore }: {
   publicMode: boolean; hasMore: boolean; rows: number; isFetchingMore: boolean;
 }) {

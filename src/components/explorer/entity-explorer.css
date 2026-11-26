@@ -1639,9 +1639,39 @@
   contain-intrinsic-size: auto 100px;
 }
 
-/* No fill mode: under `content-visibility` a held first frame could pin a row at 0.35. */
-.explorer-grid--resolving > .list-row:not(.ex-skel-row):nth-child(-n + 8) {
-  animation: settle var(--motion-base) var(--ease-out);
+/* ─── The rows arriving ───
+   A list of papers arrives the way the search palette's answer does
+   (search-command.css, "The answer arriving"): in reading order, one step
+   after another, and from the eighth step on all together, so the part of a
+   page below the fold does not keep moving. The papers a further page brings
+   arrive the same way, where the loader stood or between the rows they sort
+   among; rows already shown stay still (`explorerShownBefore`).
+
+   Each row starts at a fifth of its opacity, about the weight of the skeleton
+   row or the loader it replaces, and mounts in the frame they leave (a
+   further page's first chunk mounts with the page, `explorerLandingRowBudget`),
+   so no frame between them is blank. Opacity runs on a straight line and the
+   travel on the curve: on opacity the curve reads as a flash with a tail.
+   `backwards` holds the first frame through the delay and leaves nothing
+   applied once the row lands.
+
+   `content-visibility: auto` on the row (above) skips what is inside it, not
+   the row's own animation. Measured 2026-11-26 in Chrome and in WebKit: rows
+   that mounted below the fold ran their animation there, and none of them
+   was left at its first frame when scrolled to. */
+.explorer-grid > .list-row[data-arriving] {
+  animation:
+    exRowDevelop var(--motion-base) linear backwards,
+    exRowRise 320ms var(--ease-out-expo) backwards;
+  animation-delay: calc(min(var(--arrival-step, 0), 8) * 32ms);
+}
+
+@keyframes exRowDevelop {
+  from { opacity: 0.2; }
+}
+
+@keyframes exRowRise {
+  from { transform: translateY(8px); }
 }
 
 
@@ -2769,7 +2799,6 @@
   .ehc-orcid-stamp svg,
   .explorer-container--author .ehc-header,
   .explorer-container--author.has-seed-name .ehc-header :is(.ehc-visual-slot, .ehc-info > :not(.ehc-title-row), .ehc-hero-aside > *),
-  .explorer-grid--resolving > .list-row:not(.ex-skel-row):nth-child(-n + 8),
   .ehc-spinner,
   .explorer-empty {
     animation: none;
@@ -2790,6 +2819,12 @@
     animation: none;
     opacity: 1;
     transform: none;
+  }
+
+  /* The paper rows keep their fade out of the skeleton or the loader, all at
+     once and without the rise. */
+  .explorer-grid > .list-row[data-arriving] {
+    animation: exRowDevelop var(--motion-base) linear backwards;
   }
 
   /* The press stays as a colour change; the squeeze is movement and goes.

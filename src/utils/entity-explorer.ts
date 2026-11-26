@@ -212,6 +212,44 @@ export function nextExplorerRowBudget(budget: number, total: number, chunk = EXP
 }
 
 /**
+ * The papers the reader has been shown, which do not arrive again
+ * (entity-explorer.css, "The rows arriving"). While a new list loads behind
+ * the skeleton (page 1: a first visit, a filter, a sort, a retry) nothing is
+ * on screen, so whatever lands next arrives, even if its first page came back
+ * empty and a later one brings the rows. Otherwise, each time the list or its
+ * tab changes, the rows that were on screen join the shown ones: a further
+ * page's papers arrive wherever they sort to (sorted by citations, a topic's
+ * next page lands between the rows it extends), rows still waiting for their
+ * chunk arrive when it mounts, and a list shown again by its tab arrives only
+ * with what it gained while hidden.
+ */
+export function explorerShownBefore({ shownBefore, previousRows, previousRowsOnScreen, reloading }: {
+  shownBefore: ReadonlySet<string>; previousRows: readonly string[]; previousRowsOnScreen: boolean; reloading: boolean;
+}): ReadonlySet<string> {
+  if (reloading) return new Set();
+  return previousRowsOnScreen ? new Set([...shownBefore, ...previousRows]) : shownBefore;
+}
+
+/**
+ * Each row's place in the sequence its arriving rows enter in, in reading
+ * order, or null for a row already shown (`explorerShownBefore`).
+ */
+export function explorerArrivalSteps(ids: readonly string[], shownBefore: ReadonlySet<string>) {
+  let step = 0;
+  return ids.map(id => (shownBefore.has(id) ? null : step++));
+}
+
+/**
+ * The row budget once a further page lands on a list whose rows were all
+ * mounted: its first chunk mounts with it, so the loader at the foot of the
+ * list gives way to rows in the same frame instead of to an empty foot until
+ * the next idle chunk. The rest follow in idle chunks (`nextExplorerRowBudget`).
+ */
+export function explorerLandingRowBudget({ budget, previousLength, length }: { budget: number; previousLength: number; length: number }) {
+  return budget >= previousLength && length > budget ? nextExplorerRowBudget(previousLength, length) : budget;
+}
+
+/**
  * How many pages the Explorer's list asks for on its own after the reader's
  * last request: after a page its filters emptied, which leaves no foot of the
  * list on screen to ask for the next one, or when that foot is still on

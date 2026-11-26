@@ -17,8 +17,13 @@ export const switchTrack = cva(
   },
 );
 
+// Off, the thumb is muted ink on the sunken track; on, paper on the ink one.
+// A paper thumb would all but vanish on the sunken track (about 1.1:1), where
+// a control's state needs 3:1; muted ink is 5.15:1 (6.95:1 dark), and the
+// lighter border tokens stay under 3:1. Its colour changes with the track's
+// under reduced motion too; only the travel is gated.
 export const switchThumb = cva(
-  'pointer-events-none block rounded-full bg-card shadow-[var(--shadow-sm)] motion-safe:transition-transform motion-safe:duration-150 translate-x-0.5',
+  'pointer-events-none block rounded-full bg-[var(--text-tertiary)] data-checked:bg-card shadow-[var(--shadow-sm)] transition-[background-color] duration-150 motion-safe:transition-[translate,background-color] translate-x-0.5',
   {
     variants: {
       size: {

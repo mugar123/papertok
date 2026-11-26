@@ -11,6 +11,9 @@ import {
   guestPreviewRows,
   shouldShowGuestGate,
   nextExplorerRowBudget,
+  explorerArrivalSteps,
+  explorerLandingRowBudget,
+  explorerShownBefore,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
   countPapersByArea,
@@ -259,6 +262,68 @@ test('the list mounts eight rows at a time and never more than it has', () => {
   assert.equal(nextExplorerRowBudget(30, 30), 30);
   assert.equal(nextExplorerRowBudget(8, 5), 5);
   assert.equal(nextExplorerRowBudget(-1, 0), 0);
+});
+
+const NONE: ReadonlySet<string> = new Set();
+// The rows of `ids` that arrive once the list changes, given what was shown.
+function arrival(ids: string[], change: Parameters<typeof explorerShownBefore>[0]) {
+  return explorerArrivalSteps(ids, explorerShownBefore(change));
+}
+
+test('a new list arrives whole, in reading order', () => {
+  // The skeleton takes the old rows off: the first page, or the same entity
+  // again after a filter or a sort, whose papers it shares arrive too.
+  const behindSkeleton = explorerShownBefore({ shownBefore: new Set(['a', 'b', 'c']), previousRows: ['a', 'b', 'c'], previousRowsOnScreen: true, reloading: true });
+  const landed = explorerShownBefore({ shownBefore: behindSkeleton, previousRows: ['a', 'b', 'c'], previousRowsOnScreen: false, reloading: false });
+  assert.deepEqual(explorerArrivalSteps(['b', 'a', 'd'], landed), [0, 1, 2]);
+});
+
+test('a new list whose first page the filters emptied arrives whole with the next page', () => {
+  // 60 rows on screen, then a filter: the skeleton, an empty first page that
+  // lands as the next one is asked for, then page 2 with rows the old list had.
+  const behindSkeleton = explorerShownBefore({ shownBefore: new Set(['a']), previousRows: ['a', 'b', 'c'], previousRowsOnScreen: true, reloading: true });
+  const emptyFirstPage = explorerShownBefore({ shownBefore: behindSkeleton, previousRows: ['a', 'b', 'c'], previousRowsOnScreen: false, reloading: false });
+  const secondPage = explorerShownBefore({ shownBefore: emptyFirstPage, previousRows: [], previousRowsOnScreen: true, reloading: false });
+  assert.deepEqual(explorerArrivalSteps(['b', 'c', 'd'], secondPage), [0, 1, 2]);
+});
+
+test('a further page brings in the papers not shown yet, wherever they sort to', () => {
+  // Appended below the rows it extends.
+  assert.deepEqual(arrival(['a', 'b', 'c', 'd'], { shownBefore: NONE, previousRows: ['a', 'b'], previousRowsOnScreen: true, reloading: false }), [null, null, 0, 1]);
+  // Sorted by citations, between them.
+  assert.deepEqual(
+    arrival(['d', 'a', 'b', 'e', 'c', 'f'], { shownBefore: NONE, previousRows: ['a', 'b', 'c'], previousRowsOnScreen: true, reloading: false }),
+    [0, null, null, 1, null, 2],
+  );
+});
+
+test('rows of a page still waiting for their chunk arrive when it mounts', () => {
+  // Page 2 (c–f) has mounted only c when the entity's details land and the
+  // list is rebuilt with the same papers.
+  const shown = explorerShownBefore({ shownBefore: new Set(['a', 'b']), previousRows: ['a', 'b', 'c'], previousRowsOnScreen: true, reloading: false });
+  assert.deepEqual(explorerArrivalSteps(['a', 'b', 'c', 'd', 'e', 'f'], shown), [null, null, null, 0, 1, 2]);
+});
+
+test('a list shown again by its tab arrives only with what it gained while hidden', () => {
+  // Papers -> Authors: the rows on screen count as shown.
+  const left = explorerShownBefore({ shownBefore: NONE, previousRows: ['a', 'b'], previousRowsOnScreen: true, reloading: false });
+  // Page 2 lands behind the Authors tab: nothing new was on screen.
+  const hidden = explorerShownBefore({ shownBefore: left, previousRows: ['a', 'b'], previousRowsOnScreen: false, reloading: false });
+  // Authors -> Papers.
+  const back = explorerShownBefore({ shownBefore: hidden, previousRows: ['a', 'b', 'c'], previousRowsOnScreen: false, reloading: false });
+  assert.deepEqual(explorerArrivalSteps(['a', 'b', 'c'], back), [null, null, 0]);
+
+  // A first page that landed behind another tab arrives whole when Papers opens.
+  const landedHidden = explorerShownBefore({ shownBefore: NONE, previousRows: [], previousRowsOnScreen: false, reloading: true });
+  const opened = explorerShownBefore({ shownBefore: landedHidden, previousRows: ['a', 'b'], previousRowsOnScreen: false, reloading: false });
+  assert.deepEqual(explorerArrivalSteps(['a', 'b'], opened), [0, 1]);
+});
+
+test('a further page mounts its first chunk with it, onto a list whose rows were all mounted', () => {
+  assert.equal(explorerLandingRowBudget({ budget: 60, previousLength: 60, length: 92 }), 68);
+  assert.equal(explorerLandingRowBudget({ budget: 60, previousLength: 60, length: 63 }), 63, 'a page shorter than a chunk mounts whole');
+  assert.equal(explorerLandingRowBudget({ budget: 40, previousLength: 60, length: 92 }), 40, 'rows still mounting keep their pace');
+  assert.equal(explorerLandingRowBudget({ budget: 60, previousLength: 60, length: 60 }), 60, 'the same rows again');
 });
 
 test('a page the filters emptied keeps the list looking while more pages remain, then waits for the reader', () => {

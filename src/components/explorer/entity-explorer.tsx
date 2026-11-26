@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent } from 'react';
+import type { ComponentProps, KeyboardEvent, MouseEvent } from 'react';
 import type { Paper } from '../../models/paper.ts';
 import type { ReaderMenu } from '../feed/paper-menu.tsx';
 import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
@@ -58,7 +58,10 @@ import {
   EXPLORER_AUTO_PAGES,
   EXPLORER_ROW_CHUNK,
   authorIdentityVerified,
+  explorerArrivalSteps,
+  explorerLandingRowBudget,
   explorerListErrorCode,
+  explorerShownBefore,
   explorerListState,
   explorerPageAllowance,
   entityPapersRequestKey,
@@ -126,7 +129,7 @@ import ExplorerGuestGate from './explorer-guest-gate.tsx';
 import { pickEmptyVariant } from './explorer-empty-variant.ts';
 import { explorerAuthorIdentityUnverified, explorerFollowEntity, explorerJournalIngredient } from './explorer-follow-entity.ts';
 import { projectEntityFromLookup, projectLookupFunder } from './explorer-project-entity.ts';
-import { authorsSentinelMounted, papersFootReport, papersSentinelMounted } from './explorer-list-foot.ts';
+import { authorsSentinelMounted, papersFootReport, papersPartialNoticeShown, papersSentinelMounted } from './explorer-list-foot.ts';
 import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topic-navigation.ts';
 import { scoreQueryTopicPaper } from '../../utils/query-topic-search.ts';
 import { settleWithin } from '../../utils/async-timing.ts';
@@ -158,6 +161,23 @@ function ParticipantName({ name }: { name: string }) {
       <TooltipTrigger render={<span ref={ref} className="project-participant-name" />}>{name}</TooltipTrigger>
       <TooltipContent>{name}</TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * A row of the papers list that rises into place when it mounts, `arrivalStep`
+ * steps after the first row arriving with it, or stays still with `null`
+ * (entity-explorer.css, "The rows arriving"). The step is read once, when the
+ * row mounts, so a row that stays mounted does not arrive again.
+ */
+function ArrivingPaperRow({ arrivalStep, style, ...props }: ComponentProps<typeof PaperListRow> & { arrivalStep: number | null }) {
+  const [step] = useState(arrivalStep);
+  return (
+    <PaperListRow
+      {...props}
+      data-arriving={step === null ? undefined : ''}
+      style={step === null ? style : { ...style, '--arrival-step': step }}
+    />
   );
 }
 
@@ -460,12 +480,6 @@ export default function EntityExplorer({
   }, []);
 
   const [activeTab, setActiveTab] = useState(() => resumed?.activeTab ?? 'papers');
-  const [rowsResolving, setRowsResolving] = useState(false);
-  const [rowsSeen, setRowsSeen] = useState({ loading: isLoadingPapers, tab: activeTab });
-  if (rowsSeen.loading !== isLoadingPapers || rowsSeen.tab !== activeTab) {
-    setRowsSeen({ loading: isLoadingPapers, tab: activeTab });
-    setRowsResolving(rowsSeen.tab === activeTab && rowsSeen.loading && !isLoadingPapers);
-  }
   // Whether the Authors tab has been opened on this entity. The list is
   // requested then and kept from then on; `activeTab` no longer drives the
   // fetch, so leaving the tab does not cancel it and coming back does not
@@ -1142,6 +1156,11 @@ export default function EntityExplorer({
     async function loadPapers() {
       if (page === 1) {
         setIsLoadingPapers(true);
+        // A filter or a sort changed past page 1 first starts that page with
+        // the new query, and the reset to page 1 cancels it before it can
+        // clear its own flag. Left set, it kept the old rows on screen in
+        // place of the skeleton.
+        setIsFetchingMore(false);
         setPapersError(null);
         setRowBudget(EXPLORER_ROW_CHUNK);
         // A new list is the reader's request.
@@ -1520,6 +1539,36 @@ export default function EntityExplorer({
   // the cut does prevent is page 2, by taking the sentinel off the page.
   const visiblePapers = useMemo(() => guestPreviewRows(mountedPapers, { publicMode }), [mountedPapers, publicMode]);
   const visibleAuthors = useMemo(() => guestPreviewRows(entityAuthors, { publicMode }), [entityAuthors, publicMode]);
+  // A new list loading behind the skeleton: no row of the papers list is on screen.
+  const papersReloading = isLoadingPapers && !isFetchingMore;
+  // The papers already shown, which do not arrive again
+  // (`explorerShownBefore`), and the step each other row enters on. What was
+  // on screen is read from the state this render replaces, not from the flags
+  // of this one: a first page the filters emptied lands in the same render
+  // that asks for the next one.
+  const [rowArrival, setRowArrival] = useState<{ list: Paper[]; tab: string; reloading: boolean; shownBefore: ReadonlySet<string> }>(
+    () => ({ list: filteredPapers, tab: activeTab, reloading: papersReloading, shownBefore: new Set() }),
+  );
+  if (rowArrival.list !== filteredPapers || rowArrival.tab !== activeTab || rowArrival.reloading !== papersReloading) {
+    setRowArrival({
+      list: filteredPapers,
+      tab: activeTab,
+      reloading: papersReloading,
+      shownBefore: explorerShownBefore({
+        shownBefore: rowArrival.shownBefore,
+        previousRows: guestPreviewRows(rowArrival.list.slice(0, rowBudget), { publicMode }).map(paper => paper.id),
+        previousRowsOnScreen: rowArrival.tab === 'papers' && !rowArrival.reloading,
+        reloading: papersReloading,
+      }),
+    });
+    if (page > 1) {
+      setRowBudget(budget => explorerLandingRowBudget({ budget, previousLength: rowArrival.list.length, length: filteredPapers.length }));
+    }
+  }
+  const arrivalSteps = useMemo(
+    () => explorerArrivalSteps(visiblePapers.map(paper => paper.id), rowArrival.shownBefore),
+    [visiblePapers, rowArrival.shownBefore],
+  );
   const papersGateOpen = shouldShowGuestGate({
     publicMode,
     loaded: filteredPapers.length,
@@ -1545,10 +1594,16 @@ export default function EntityExplorer({
     else if (hasMore && filteredPapers.length === 0) papersMoreStatus = 'No matches yet. More publications remain to check.';
     else if (hasMore) papersMoreStatus = `${filteredPapers.length.toLocaleString(locale)} listed so far. More publications remain to check.`;
     else if (!papersError) papersMoreStatus = 'No more publications to check.';
+    // An earlier page that came back without one of its sources is not a check
+    // that failed; the strip above says so too, which a screen reader may miss.
+    else if (papersError === 'PARTIAL_PUBLICATIONS_LOAD_FAILED') papersMoreStatus = 'No more publications to check. Some could not be loaded.';
     else if (filteredPapers.length > 0) papersMoreStatus = 'More publications could not be checked.';
   }
+  // Not while a new list loads behind the skeleton: the rows counted are the
+  // old list's, so the budget grew back to its length and the new list then
+  // mounted in one commit, with the foot's "Scroll for more" under the skeleton.
   useEffect(() => {
-    if (rowsSettled) return undefined;
+    if (rowsSettled || papersReloading) return undefined;
     const schedule = typeof window.requestIdleCallback === 'function'
       ? (fn: () => void) => window.requestIdleCallback(fn, { timeout: 400 })
       : (fn: () => void) => setTimeout(fn, 32);
@@ -1557,7 +1612,7 @@ export default function EntityExplorer({
       : (id: number) => clearTimeout(id);
     const handle = schedule(() => setRowBudget((budget) => nextExplorerRowBudget(budget, filteredPapers.length)));
     return () => cancel(handle);
-  }, [rowsSettled, rowBudget, filteredPapers.length]);
+  }, [rowsSettled, papersReloading, rowBudget, filteredPapers.length]);
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -2669,10 +2724,11 @@ export default function EntityExplorer({
           <>
 
             
-            <div className={`explorer-grid${rowsResolving ? ' explorer-grid--resolving' : ''}`}>
+            <div className="explorer-grid">
               {(!isLoadingPapers || isFetchingMore) && visiblePapers.map((paper, idx) => (
-                <PaperListRow
+                <ArrivingPaperRow
                   key={`${paper.id}-${idx}`}
+                  arrivalStep={arrivalSteps[idx]}
                   paper={paper}
                   onOpen={() => setSelectedPaper(paper)}
                   aside={hasKnownPaperCitationCount(paper) && (
@@ -2680,7 +2736,7 @@ export default function EntityExplorer({
                   )}
                 >
                   {(paper.authors?.length ?? 0) > 0 && <ListRowAuthors paper={paper} />}
-                </PaperListRow>
+                </ArrivingPaperRow>
               ))}
 
               {isLoadingPapers && !isFetchingMore && [1, 2, 3, 4, 5].map((n) => (
@@ -2705,15 +2761,14 @@ export default function EntityExplorer({
                   foot of every list announcing a request that had not started.
                   A spinner that spins when nothing is loading is the one kind
                   of motion with no state to indicate. */}
-              {/* Before the sentinel, not after it. Measured 2026-09-12 on
-                  papertok.app: the strip rendered below the sentinel, so a
-                  reader at the foot of the list read "Loading more articles…"
-                  and, right under it, "Some publications could not be loaded" —
-                  two opposite claims stacked. In this order the page says what
-                  is missing from the list so far, and only then that more are
-                  on the way. Inside the grid as well, so it spans the rows
-                  rather than stopping 420px short of them. */}
-              {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
+              {/* Not while the list loads more on its own: its foot then says
+                  more are on the way, and the two read as opposite claims
+                  (`papersPartialNoticeShown`). Inside the grid, so it spans
+                  the rows rather than stopping 420px short of them. */}
+              {papersPartialNoticeShown({
+                isLoading: isLoadingPapers, isFetchingMore, hasError: Boolean(papersError), rows: filteredPapers.length,
+                hasMore, publicMode, awaitingReader: papersAwaitReader,
+              }) && (
                 <div className="explorer-inline-error" role="status">
                   <span>{getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED')}</span>
                   <Button variant="ghost" size="sm" onClick={retryPapers}>{'Try again'}</Button>
@@ -2723,8 +2778,9 @@ export default function EntityExplorer({
               {/* Not for a visitor: the sentinel IS the request for page 2, so
                   leaving it on the page would make the two-row preview a coat
                   of paint over a list that kept loading itself. The wall below
-                  takes its place. */}
-              {papersSentinelMounted({
+                  takes its place. Nor under the skeleton of a new list, whose
+                  rows and `hasMore` are still the old list's. */}
+              {!papersReloading && papersSentinelMounted({
                 publicMode, awaitingReader: papersAwaitReader, hasMore, rowsSettled, rows: filteredPapers.length, isFetchingMore,
               }) && (
                 <div ref={observerRef} className="ehc-sentinel">
@@ -2835,7 +2891,8 @@ export default function EntityExplorer({
                 </div>
               ))}
             
-            {/* Same order as the publications strip above, for the same reason. */}
+            {/* A failed page ends the authors list (`hasMoreAuthors` goes
+                false), so this never shares the foot with the sentinel below. */}
             {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
               <div className="explorer-inline-error" role="status">
                 <span>{getUiErrorMessage('PARTIAL_AUTHORS_LOAD_FAILED')}</span>
