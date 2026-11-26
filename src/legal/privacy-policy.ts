@@ -187,12 +187,11 @@ export const PRIVACY_POLICY_VERSION = '2026-11-26.15';
  * and the third keeps the OpenAlex count and the Anthropic point without the
  * deletion schedule and Cloudflare's recovery history, which stay on the page,
  * so the three fit the dialog. This instant follows the rule above for a text
- * that ships with its own pull request: it stands at the end of the merge day.
- * If the merge slips to a later day, raise the page's "Last updated" date,
- * this version and this instant to that day before merging, and lower this
- * instant to the deployment's success time once the text is live.
+ * that ships with its own pull request: Vercel reported #631 deployed at
+ * 10:01:15Z on 26 November, and the instant stands a few minutes later
+ * because that status does not say when papertok.app began serving it.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-26T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-26T10:05:00Z';
 
 /**
  * The earliest instant (ISO UTC) at which the in-app notice may open, read
