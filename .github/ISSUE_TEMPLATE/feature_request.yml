@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest a change to PaperTok.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never include API keys, private user data, or authenticated responses. Remove personal information from screenshots and examples before posting.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe what you are trying to do and what gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the change and how it would help. Include an example if useful.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you tried another approach or workaround?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add relevant screenshots or examples. Remove API keys, private user data, and authenticated responses first.
