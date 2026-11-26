@@ -22,6 +22,13 @@ type CreateListAction = { type: 'open'; preset?: Partial<CreateListState> } | { 
 import { LIST_COLORS } from './list-colors.ts';
 
 /**
+ * The longest name a list is given, in UTF-16 units as the name field counts
+ * them. The rules accept up to 120. The Worker's `create_list` tool
+ * (worker/mcp-server.ts) holds a name to the same length.
+ */
+export const MAX_LIST_NAME_LENGTH = 80;
+
+/**
  * `color` starts on the first of the palette rather than on a random one,
  * because a reducer that reaches for `Math.random()` is no longer a function of
  * its arguments and cannot be tested by comparing states. The window dispatches

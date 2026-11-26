@@ -199,6 +199,15 @@ test('a custom feed is recorded without its id', () => {
   assert.equal(normalizeAnalyticsPath('/feeds/abcd1234'), '/feeds/:id');
 });
 
+test("one of the account's lists is recorded without its id", () => {
+  assert.equal(normalizeAnalyticsPath('/lists/list_0a1b2c3d4e5f60718293a4b5'), '/lists/:id');
+  assert.equal(normalizeAnalyticsPath('/lists/list_1732600000000/?from=assistant#top'), '/lists/:id');
+  assert.equal(sanitizeAnalyticsLocation('/lists/list_1732600000000', { origin: 'https://papertok.app' }), 'https://papertok.app/lists/:id');
+  // The index keeps its own path, and nothing deeper is a route.
+  assert.equal(normalizeAnalyticsPath('/lists'), '/lists');
+  assert.equal(normalizeAnalyticsPath('/lists/list_1/extra'), '/unknown');
+});
+
 test('a link PaperTok makes for a paper is recorded under one fixed path', () => {
   assert.equal(normalizeAnalyticsPath(getPublicPaperPath('arxiv', '2401.12345')!), '/paper/:id');
 });

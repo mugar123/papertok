@@ -39,6 +39,7 @@ import GuestWelcome from './components/public/guest-welcome.tsx'
 import AuthPrompt from './components/public/auth-prompt.tsx'
 import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
 import { getPublicPaperPath, isPublicRoutePath, keepsNavbarPath, legacyPaperRedirect, readablePaperPath } from './utils/public-navigation.ts'
+import { routePageKey } from './utils/route-metadata.ts'
 import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
 // Loaded eagerly: they remove the one-time OAuth values (Zotero's verifier,
@@ -389,7 +390,7 @@ function AppContent() {
           `initial` on the app's first render. */}
       <PageTransitionCustomProvider value={pageTransitionCustom}>
       <AnimatePresence mode="sync" initial={false} custom={pageTransitionCustom}>
-        <Routes location={location} key={location.pathname.startsWith('/settings/') ? '/settings' : location.pathname}>
+        <Routes location={location} key={routePageKey(location.pathname)}>
           {/* The sign-in page is gone; the address still works for old links
               and bookmarks: the onboarding, with the sign-in dialog open. */}
           {/* The entry address, by its own route rather than the wildcard
@@ -436,8 +437,9 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          {/* The lists, and with an id one list of the account's opened on them. */}
           <Route
-            path="/lists"
+            path="/lists/:listId?"
             element={
               <ProtectedRoute>
                 <PageTransition>

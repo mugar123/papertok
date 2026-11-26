@@ -13,7 +13,7 @@ Wrangler loads `worker/instrumentation.ts`, which reports errors from the Worker
 - `arxiv-api.ts` owns the arXiv beat (`takeArxivSeat`, kept through `upstream-pace.ts`), which `share-route.ts` and the email digest also take (a request the router hands to `/arxiv` takes only every other seat, the digest only the others), and `share-route.ts` reserves its own `share:` ceilings in the request-quota ledger. arXiv, share, the PDF proxy, the citation graph and paper figures set their own deadlines; the PDF proxy and paper figures fetch with their own timers instead of `fetchWithDeadline`.
 - `openalex-api.ts`, `citation-graph.ts`, `open-access.ts`, `arxiv-api.ts`, `pdf-proxy.ts`, `semantic-scholar.ts`, `scopus-api.ts`, `physics-api.ts` and `share-route.ts` own their provider handlers; `open-review-api.ts` owns OpenReview's sign-in and the lookup of one note by id. Small source handlers are in `source-api.ts`; health responses are in `health-api.ts`. `openalex-api.ts` also decides which budget tier a relayed request spends, and gives the paper harvest its own entry to the relay (`handleHarvestOpenAlex`).
 - The paper corpus (see [Paper store](#paper-store)): `paper-store.ts` owns its rows, lanes, vectors and ranking; `paper-sources.ts` harvests each source by calling the provider handlers above in-process; `paper-enrichment.ts` enriches stored papers; `paper-quality.ts` stores their nightly quality signals; `paper-harvest.ts` runs them as a Workflow; `paper-feed.ts` owns the reader routes.
-- `mcp-server.ts` owns the public MCP server at `/mcp` (see [MCP server](#mcp-server)); its tools call the provider handlers above in-process.
+- `mcp-server.ts` owns the MCP server at `/mcp` (see [MCP server](#mcp-server)); its tools call the provider handlers above in-process, and its account tools read the caller's own lists and feeds through `firestore-admin.ts`. `agent-token.ts` owns the agent token an account's caller presents there and `POST /mcp/token`, which mints it.
 - Existing feature modules own AI, accounts, institutions, notifications, lists and ledgers.
 
 Provider modules use the shared runtime and HTTP helpers. `http.ts` imports nothing; `provider-runtime.ts` imports `http.ts`, the request-quota ledger and `upstream-pace.ts`. Neither imports the router or a provider module. OpenAlex relay, graph and share requests reserve against the same budget in `provider-runtime.ts`.
@@ -659,6 +659,7 @@ npx wrangler secret put ZOTERO_CLIENT_SECRET # that application's client secret
 npx wrangler secret put ZOTERO_TOKEN_KEY # at least 32 random characters; seals each reader's Zotero key. Changing it disconnects every account
 npx wrangler secret put ORCID_CLIENT_ID # the client id (APP-...) of PaperTok's public API client at orcid.org/developer-tools, or at sandbox.orcid.org while ORCID_ENVIRONMENT is "sandbox"; the /orcid routes answer 503 ORCID_NOT_CONFIGURED without both
 npx wrangler secret put ORCID_CLIENT_SECRET # that client's secret
+openssl rand -hex 32 | npx wrangler secret put MCP_AGENT_TOKEN_SECRET # at least 32 random characters; signs the agent tokens of /mcp/token. Without it that route and a /mcp request that presents a token answer 503, and /mcp without a token is unaffected. Changing it refuses every token already issued
 npm run worker:deploy:dry-run
 npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health then names this commit
 ```
@@ -771,7 +772,7 @@ The native workers.dev route is disabled and the frontend accepts only the custo
 domain in production. Publish a bundle configured with that domain before deploying
 this setting; see [Production Worker hostname](#production-worker-hostname).
 
-Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/zotero/connect`, `/zotero/complete`, `/zotero/status`, `/zotero/send`, `/zotero/disconnect`, `/orcid/connect`, `/orcid/complete`, `/orcid/disconnect`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/resources/full-text`, `/ai/rewrite`, `/ai/annotate`, `/ai/translate-paper`, `/ai/quota`, `/tts/paragraph`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/mcp` (see [MCP server](#mcp-server)), `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. Hugging Face and OpenReview's search are keyless discovery sources; OpenReview's lookup by id signs in (below). NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
+Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/share/image/paper/:key`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/zotero/connect`, `/zotero/complete`, `/zotero/status`, `/zotero/send`, `/zotero/disconnect`, `/orcid/connect`, `/orcid/complete`, `/orcid/disconnect`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/resources/figures`, `/resources/full-text`, `/ai/rewrite`, `/ai/annotate`, `/ai/translate-paper`, `/ai/quota`, `/tts/paragraph`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/mcp` and `/mcp/token` (see [MCP server](#mcp-server)), `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. Hugging Face and OpenReview's search are keyless discovery sources; OpenReview's lookup by id signs in (below). NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
 
 `/sources/openreview` has two forms, both answering `{ notes, count }` and cached 30 minutes.
 `?q=` searches OpenReview's forum notes and drops imported records. `?id=` answers the one
@@ -1861,7 +1862,7 @@ existing secret before deploying these routes. Local requests need a test
 | Billed `/openalex/*` | 300 units (30 searches or 300 lists), and 1,000 units per UTC day | Existing minute, daily and tier ceilings |
 | `/openalex/*` lookups by id | 300 cache misses, and 3,000 per UTC day | None: a lookup costs no unit |
 | `/share/*` | 20 uncached lookups | Existing 60/minute and 1,000/day lookup ceilings and provider budgets |
-| `/mcp` | 30 tool calls, cache hits included | The limits above of the routes its tools call (see [MCP server](#mcp-server)) |
+| `/mcp` | 30 tool calls, cache hits included; a request with an agent token is counted per account instead | The limits above of the routes its tools call (see [MCP server](#mcp-server)) |
 
 OpenAlex and share attach the caller as the existing reservation’s second
 subject (OpenAlex the caller's day as a third), so a refused caller spends no shared
@@ -1887,14 +1888,21 @@ worker/open-access-route.test.ts worker/paper-feed.test.ts worker/paper-sources.
 
 ## MCP server
 
-`POST /mcp` is a public, read-only [Model Context Protocol](https://modelcontextprotocol.io)
-server with no account (ENG-91, phase 1). `mcp-server.ts` implements the
+`POST /mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
+server (ENG-91). A request without an `Authorization` header is public,
+read-only and has no account: it lists and calls the three tools of phase 1.
+Since those tools were published, the one thing such a request sees changed is
+`serverInfo.version` in the `initialize` answer, now `1.2.0`. A request with an
+agent token also gets the account tools its scopes allow: tools that read the
+account, and tools that write to it for a token that asked for a write scope
+(see [Agent tokens](#agent-tokens), [Account tools](#account-tools) and
+[Account write tools](#account-write-tools)). `mcp-server.ts` implements the
 Streamable HTTP transport without sessions or server-sent events: each POST
 carries one JSON-RPC message and receives one `application/json` answer.
 Notifications receive `202`; a message without a string `method` receives
 `400` with `-32600`, as the server sends no requests a client could answer. GET
-and other methods except the router's CORS
-preflight receive `405`, batches
+and every other method that reaches the handler receive `405`; the router
+answers a CORS preflight (`OPTIONS`) itself, with `204`. Batches
 receive `-32600`, and bodies above 16 KB receive `413`. It negotiates protocol
 versions `2025-11-25` and `2025-06-18`. It does not speak `2025-03-26`, whose
 transport requires batches (the two later versions dropped them): `initialize`
@@ -1913,13 +1921,13 @@ SDK is not used, so the package lock is unchanged.
 | `find_open_access(doi)` | `/oa` | `is_oa`, `oa_status`, best location, licence and up to 5 locations, with `omitted` counting the rest. It takes a DOI only: a paper known by its arXiv or OpenAlex id needs `get_paper` first for its DOI |
 
 ENG-91's phase 1 also lists `get_citation_graph(id)` and `get_figures(arxiv_id)`.
-The citation graph waits for phase 2: the browser's `/citation-graph` requires a
-Firebase identity and charges each reader's share of the credential-backed
-providers' minute allowance, and MCP callers have no account yet. Figures are
-not in this phase either. `/resources/figures` is public with a per-IP
+The citation graph is an account tool: the browser's `/citation-graph` requires
+a Firebase identity and charges each reader's share of the credential-backed
+providers' minute allowance, so a caller without an account has no share to
+charge. Figures are not offered yet. `/resources/figures` is public with a per-IP
 allowance of 20 misses a minute, but it does not take the arXiv beat's seat:
 each miss fetches arXiv's HTML rendering and ar5iv's at once. Offering it to
-agents waits for phase 2, with the citation graph (ENG-91).
+agents waits for a later phase (ENG-91).
 
 Both paper tools include `taxonomySources` when they return categories, concepts or
 topics. Its keys name those fields and its values are `arxiv` or `openalex`.
@@ -1937,7 +1945,7 @@ Only taxonomy and its public paper identifiers enter this cache. A cache miss
 or eviction leaves detail with the evidence from its own provider response.
 The lookup makes the same provider requests either way.
 
-Tools return the existing `Paper` shape without the provider's `raw` record,
+The paper tools return the existing `Paper` shape without the provider's `raw` record,
 the `summary` that repeats the abstract, the feed's internal fields (the
 adapter's `provider` label among them) and `sourceType`, which
 `mapOpenAlexWork` writes as `journal` for every work that is not a conference
@@ -1971,7 +1979,7 @@ preprint server's (Zenodo, OSF, SSRN, bioRxiv, TechRxiv and the others
 `arxivDoiSaysPublished` lists) keeps that DOI and stays a preprint, in the app
 as in the tools. A client
 reads a tool result up to a ceiling (Claude Code's default is about 25,000
-tokens) and each result carries its payload as text and as structured content. Every tool calls the existing route handler with the
+tokens) and each result carries its payload as text and as structured content. Every public tool calls the existing route handler with the
 caller's `CF-Connecting-IP`, so it uses the same argument validation, cache
 keys, arXiv beat and per-IP miss limits as the browser (see
 [Public lookup caller limits](#public-lookup-caller-limits)). ENG-91 puts
@@ -2008,7 +2016,9 @@ Arguments are validated before any reservation; `sources` is read in any case
 once (`https://doi.org/10.1234/a%3Fb` is `10.1234/a?b`), while a DOI given as
 itself is read as written. Each `tools/call` then
 reserves one unit of an MCP allowance of 30 calls per IP per UTC minute through
-`reserveCallerMinute`; cache hits count too. A refusal, a missing
+`reserveCallerMinute`; cache hits count too. A call with an agent token
+reserves the unit against its account instead (`reserveAccountMinute`): 30
+calls per account per UTC minute, from any address. A refusal, a missing
 `PDF_RATE_LIMIT_SECRET` and a provider failure are tool results with
 `isError: true` and a `code` (`PROVIDER_RATE_LIMITED` with
 `retryAfterSeconds`, `PROVIDER_QUOTA_NOT_CONFIGURED` for a missing secret or
@@ -2045,7 +2055,249 @@ id or other argument to logs or analytics.
 To connect from Claude, add a custom connector with the URL
 `https://api.papertok.app/mcp` in claude.ai (Settings, Connectors). In Claude
 Code, run `claude mcp add --transport http papertok https://api.papertok.app/mcp`.
-No authentication is configured. claude.ai calls a custom connector from
+Neither sends a credential, so both get the three public tools. claude.ai calls
+a custom connector from
 Anthropic's servers rather than the reader's device, so its users share the
 per-IP allowances of those addresses; Claude Code calls from the reader's own
-address. Test with `node --test worker/mcp-server.test.ts`.
+address. Test with `node --test worker/mcp-server.test.ts worker/agent-token.test.ts`.
+
+### Agent tokens
+
+An agent that acts for a signed-in reader sends `Authorization: Bearer <agent
+token>` on `/mcp`. `POST /mcp/token` exists so that a PaperTok client can ask
+for that token with the reader's Firebase ID token and hand the agent only the
+agent token; no client in this repository asks for one yet. Every signed-in
+route accepts the ID token; `/mcp` alone accepts an agent token, and it accepts
+no ID token.
+
+`POST /mcp/token` (`agent-token.ts`) requires an `Origin` in the allowlist and
+a Firebase ID token, which it checks with Identity Toolkit on every request
+without the 60-second identity cache, because a token outlives that cache. The
+body is optional: `{ "scopes": ["account:read", "lists:write"] }`, at most
+1 KB. There are three scopes: `account:read` for the tools that read the
+account, `lists:write` for `create_list` and `add_papers_to_list`, and
+`feeds:write` for `create_feed`. An absent body, or one without `scopes`, asks
+for `account:read` alone: a scope that writes is given only to a request that
+names it, and a token carries exactly the scopes its request listed. The
+answer is `{ token, expiresAt, scopes }` with `Cache-Control: no-store`;
+`expiresAt` is an ISO date 30 minutes ahead.
+
+Two allowances of the request-quota ledger bound the route, both per UTC
+minute. One address can make 60 requests (`reserveCallerMinute`), signed in or
+not; the unit is taken after the body is read and before Identity Toolkit is
+asked, so a request past it costs no lookup. One account can then mint 20
+tokens (`reserveAccountMinute`). A request without `CF-Connecting-IP` cannot be
+counted and is answered `503`.
+
+| Status | `code` | When |
+| --- | --- | --- |
+| 400 | `INVALID_BODY`, `INVALID_SCOPE` | The body is not a JSON object, or `scopes` is not a list of known scopes, each named once |
+| 401 | `AUTH_REQUIRED` | No Firebase ID token, or one Identity Toolkit refuses. An agent token is refused here too |
+| 403 | `ORIGIN_NOT_ALLOWED` | The `Origin` is missing or outside the allowlist |
+| 204 | none | A CORS preflight (`OPTIONS`) from an allowed `Origin`, answered by the router |
+| 405 | `METHOD_NOT_ALLOWED` | Any other method but POST |
+| 413 | `PAYLOAD_TOO_LARGE` | A body above 1 KB |
+| 429 | `AGENT_TOKEN_RATE_LIMITED` | The address's 60 requests or the account's 20 tokens of the minute are spent; `Retry-After` counts to the next minute |
+| 502 | `AGENT_TOKEN_FAILED` | An error the route does not name; it is logged and reported |
+| 503 | `AGENT_TOKEN_NOT_CONFIGURED` | `MCP_AGENT_TOKEN_SECRET` is missing or shorter than 32 characters; Identity Toolkit is not asked |
+| 503 | `AUTH_NOT_CONFIGURED`, `AUTH_UNAVAILABLE` | `FIREBASE_WEB_API_KEY` is missing, or Identity Toolkit did not answer |
+| 503 | `AGENT_TOKEN_QUOTA_NOT_CONFIGURED`, `QUOTA_LEDGER_UNAVAILABLE` | The ledger binding, `PDF_RATE_LIMIT_SECRET` or the request's `CF-Connecting-IP` is missing, or the ledger did not answer (with `Retry-After`) |
+
+A token is `ptka1.<payload>.<signature>`, both parts base64url. The payload is
+the JSON `{ uid, scopes, iat, exp }` with times in seconds. The signature is an
+HMAC-SHA-256, keyed with `MCP_AGENT_TOKEN_SECRET`, of `papertok-agent-token:v1:`
+followed by the payload part. Nothing is stored, so a token cannot be revoked
+before it expires: signing out of PaperTok does not end it, and changing the
+secret ends every token at once. `verifyAgentToken` refuses a token above 2,048
+characters, another prefix, a signature that does not verify
+(`crypto.subtle.verify`) or is not the one spelling of its bytes, a payload
+that is not the JSON above, a scope outside the list and an `exp` that has
+passed.
+
+On `/mcp`, an `Authorization` header that is present must carry a valid agent
+token. Any other value (an expired or changed token, a Firebase ID token,
+another scheme, an empty header) is answered `401` with `WWW-Authenticate:
+Bearer` and the JSON-RPC error `-32001`, whatever the message asks,
+notifications included. The server never serves such a request as an anonymous
+one. A Worker without the secret cannot check a signature, so it answers a
+value shaped as an agent token (`ptka1`, three parts, at most 2,048 characters)
+`503` with `-32002`; a value of any other shape is still `401`, since its
+shape alone refuses it. With a valid token, `tools/list` adds the account tools
+the token's scopes allow, and `initialize` words its instructions for those
+scopes (`instructionsFor`): the opening says "Read-only" only for a token
+without a write scope, the sentences that name the reading tools are sent only
+with `account:read`, and a sentence about the write tools only with a write
+scope. A request without a token gets the instructions it always got,
+unchanged. Each `tools/call` is counted against the account. The subject of that
+counter is an HMAC-SHA-256 of the namespace, the UTC minute and the Firebase
+user ID, keyed with `PDF_RATE_LIMIT_SECRET`, so the ledger holds no user ID. A
+tool's route still receives the caller's `CF-Connecting-IP`, so the routes'
+per-address allowances count the address as before. An account tool called
+without a token, or with a token that lacks its scope, is answered `-32602
+Unknown tool`, as any name that is no tool.
+
+Provision the secret as [Deployment](#deployment) shows, and keep it apart
+from `PDF_RATE_LIMIT_SECRET`: one signs credentials, the other only keys
+counters. A local Worker needs a disposable value of at least 32 characters in
+`.dev.vars`. The Firebase emulators' tokens are refused by Identity Toolkit, so
+`/mcp/token` cannot be exercised against them; the tests stub Identity
+Toolkit's answer.
+
+### Account tools
+
+These five need the `account:read` scope and change nothing. They return each
+paper by name: its identifiers, title, first authors and a date. Their sources
+establish little more. A Semantic Scholar recommendation carries no review
+status and often names a repository as its venue, an OpenCitations record has
+only a work type to read a status from, and a saved copy holds what a card
+showed. `get_paper` returns the paper itself.
+
+| Tool | Asked | Result |
+| --- | --- | --- |
+| `find_similar_papers(id, limit?)` | `/related` in-process with the account, which answers from the cache the app's requests fill when both ask with the same identifier, and charges a miss to the account's share of the providers' minute. The cache key keeps the identifier's case: a tool sends a DOI lowercased and the app sends it as its record holds it, so a DOI with capitals has an entry for each. Semantic Scholar is asked by a publisher's DOI, else by arXiv id (it does not resolve arXiv's own DOIs); an OpenAlex or PubMed id is first looked up as `get_paper` looks it up, one unbilled OpenAlex work | Up to `limit` (default and most 10) of Semantic Scholar's 20 recommendations in its order: `title`, up to 20 `authors` (names), `year`, `doi`, `arxivId` and an `id` for `get_paper` (the publisher's DOI, else the arXiv id) where the record has them. `omitted.papers` counts the recommendations past the limit and a paper's `omitted.authors` the names cut. No venue, review status, citation count, abstract or categories. A paper Semantic Scholar has not indexed is the error `PAPER_NOT_INDEXED`; one with neither a DOI nor an arXiv id is `INVALID_ARGUMENTS` |
+| `get_citation_graph(id)` | `/citation-graph?doi=&limit=8` in-process with the account. The limit is the app's, so a tool and the app share one cache entry, and one set of billed OpenAlex calls (`exploration` tier), when they send the DOI in the same case; the key keeps the case, and a tool sends the DOI lowercased. An arXiv id is asked as arXiv's own DOI (`10.48550/arxiv.<id>`), and an OpenAlex or PubMed id is looked up for the work's DOI first | `references` and `citations`, up to 8 each: `id` (a DOI or `openalex:W…`), `title`, up to 5 `authors` (names; `omitted.authors` counts the names cut, of at most 20 the route keeps), `year`, `doi`, and `citationCount` where the route knows it. `counts` relays how many papers of each relation the sources list and `omitted` how many of those are not returned. `source`, `partial` and `degraded` are the route's: `degraded: true` means a source failed and the lists and counts can be short |
+| `list_my_lists()` | One Firestore query of `users/{uid}/lists` for 51 documents, and a count when there are more | Up to 50 lists in document-id order: `id`, `name`, `paperCount`, `public` (true only when the Worker has set `publicShareId`) `updatedAt` when the list records it, and `url`, `https://papertok.app/lists/<id>`, which opens for that account only. `omitted.lists` counts the rest |
+| `get_list(listId)` | `users/{uid}/lists/{listId}`, then one `batchGet` of the first 100 `paperIds` in `users/{uid}/savedPapers` | The list as above with `papers` in its order, up to 100 and inside 36,000 bytes of JSON; `omitted.papers` counts the rest. A paper has its PaperTok `id` and, from its saved copy, `title`, up to 5 `authors` (of at most 20 a copy keeps), `published`, `doi` and `arxivId`. A paper without a saved copy is `{ id, metadata: "unavailable" }`. An entry of `paperIds` that is not a usable document name (not text, empty, `.`, `..`, a name Firestore reserves (`__…__`) or above 500 characters) is not counted or returned. A `listId` of that kind is `INVALID_ARGUMENTS`, and a list that does not exist under this account is `NOT_FOUND` |
+| `list_my_feeds()` | `users/{uid}/settings/customFeeds`, read through `parseCustomFeeds` as the app reads it | At most 8 feeds: `id`, `name`, `order` (`newest` or `best`), up to 20 `ingredients` (`area` and `category` by taxonomy id, `topic`, `author` and `journal` by OpenAlex id with `label`, `keyword` with `query`) and `url`, `https://papertok.app/feeds/<id>`, which opens for that account only. An account without the document has no feeds |
+
+The `uid` of every Firestore path is the one in the agent token. No argument,
+header or URL parameter names an account, and each tool refuses unknown
+arguments. The three tools that read Firestore are not cached: nothing is
+written to `caches.default`, and each call reads the documents again. One call
+reads at most 101 documents (`get_list`), so an account's 30 calls a minute
+read at most 3,030. Without the Firestore service account they fail with
+`ACCOUNT_DATA_NOT_CONFIGURED`, logged as a 503; a Firestore or token-exchange
+failure is `UPSTREAM_UNAVAILABLE`. `find_similar_papers` relays a Semantic
+Scholar `429` as `UPSTREAM_RATE_LIMITED` with `retryAfterSeconds` (60 when
+Semantic Scholar names no wait) and an outage as `UPSTREAM_UNAVAILABLE` or
+`UPSTREAM_TIMEOUT`; an account past its share of the providers' minute gets
+the routes' `PROVIDER_RATE_LIMITED` from either tool.
+
+### Account write tools
+
+Three tools write to the account, each for a token that asked for its scope by
+name. The caller is an AI agent, and text inside a paper may have steered it,
+so the tools make private lists and custom feeds and add papers to private
+lists, and nothing else: none publishes, deletes, renames, reorders or removes
+a paper, and every call is bounded per UTC day. Their annotations say
+`readOnlyHint: false`, `destructiveHint: false` and `openWorldHint: false`;
+`idempotentHint` is true only for `add_papers_to_list`.
+
+| Tool | Scope | Writes | Result |
+| --- | --- | --- | --- |
+| `create_list(name, paperIds?, requestId?)` | `lists:write` | `users/{uid}/lists/list_<24 hex>` and a copy of each paper in `users/{uid}/savedPapers`, in one commit | `{ list: { id, name, paperCount, public: false, url }, added: [{ id, title? }], notAdded: [{ id, code }] }`. `name` is 1 to 80 characters after whitespace is collapsed (`MAX_LIST_NAME_LENGTH`, which the app's name field uses too); `paperIds` at most 25. When ids were given and none could be added, nothing is created: `NO_PAPERS_ADDED` with `notAdded` |
+| `add_papers_to_list(listId, paperIds)` | `lists:write` | `paperIds` and `updatedAt` of the list, and the new copies, in one commit pinned to the version of the list it read | `{ list, added, notAdded }`. 1 to 25 `paperIds`, appended in order without duplicates. A list that does not exist under this account is `NOT_FOUND`; one with `publicShareId` is `LIST_IS_PUBLIC`, because the app keeps a published list's public copy in step and this write would leave it behind. A list holds 500 papers (`MAX_LIST_PAPER_IDS`): a list already full is `LIST_FULL` with `limit`, and papers that do not fit are `notAdded` with `LIST_FULL`. A paper the list holds is `ALREADY_IN_LIST`, so the same call again is a success that writes nothing. When nothing is added and nothing was already there: `NO_PAPERS_ADDED`. A list that changed between the read and the write is read again, once; a second change is `LIST_CHANGED` |
+| `create_feed(name, order?, fromPaperId \| ingredients, include?, requestId?)` | `feeds:write` | `feeds` and `updatedAt` of `users/{uid}/settings/customFeeds`, in a Firestore transaction on that document | `{ feed: { id, name, order, ingredients, url }, notAdded }`. `order` is `newest` (the default, as in the app) or `best`. See below |
+
+**Papers.** Each id is read as `get_paper` reads it and looked up through the
+same code (`paperOf`): the same relays, agent tier, arXiv pacing and
+per-address allowances. At most four lookups run at once, and all of a call's
+lookups share a 20-second deadline. A paper is filed under the id of the
+record found, which is how the app keys it: the arXiv id of an arXiv record,
+`openalex:W…` of an OpenAlex one. A paper asked for by arXiv id that OpenAlex
+answered, because the arXiv beat refused the agent, is filed under the arXiv
+id asked for, as the feed files that preprint. The same id names the saved
+copy (`encodeFirestoreDocId`) and goes into `paperIds`. The copy is what
+`buildSavedPaperPayload` makes of the tool's own paper record, the function
+the app's save uses, so it holds only keys `firestore.rules` accepts and omits
+what the record lacks; it has no `savedAt`, which stamps the reader's own
+save. The record is `get_paper`'s without the cut of its categories to five
+(`COPY_BOUNDS`): the copy keeps up to the 20 the app's own save keeps
+(`storedClassification`), because the app does not ask again for a copy it
+holds. A copy filed under an arXiv id that OpenAlex answered for has
+`primaryCategory: ''` and no `categories`, the app's way of storing an unknown
+classification: OpenAlex's subject names are not the preprint's arXiv
+categories. It keeps arXiv's own when a search left them at the edge, and
+OpenAlex's `primaryTopic` either way. A copy the account already holds is left
+as it is. The app deletes no `savedPapers` document, so a copy outlives its
+list until the account is deleted (`account-deletion.ts`). `notAdded` codes:
+`INVALID_ID` (not an identifier), `DUPLICATE` (named twice, or two identifiers
+of one paper), `LOOKUP_TIMEOUT`, and the lookup's own code (`NOT_FOUND`,
+`PROVIDER_RATE_LIMITED` or `UPSTREAM_RATE_LIMITED` with `retryAfterSeconds`,
+`UPSTREAM_UNAVAILABLE`, `UPSTREAM_TIMEOUT`).
+
+The app's ids are not one scheme, so a paper filed here can be the same work
+as a card the app keys otherwise: the paper page builds an OpenAlex work with
+the bare id `W…` (`formatOpenAlexWorkAsPaper`), and the feed keys a paper a
+specialist source listed by that source's id (`biorxiv:…`, `inspire:…`,
+`crossref:…`). The list still opens the right paper, since its page is found
+by the copy's DOI or arXiv id, but the save window of such a card does not
+show the list as holding it.
+
+**What the tools leave out.** The app's own save also writes the interaction
+record (`users/{uid}/interactions`), counts the save in the interaction
+profile the feed ranks by, and sends a `save_change` event. The tools write
+none of these: an agent filing a paper is not the reader's signal. So a paper
+an agent added is in its list and has a copy, but its card's Save control is
+not lit, since that reads the interactions, and the paper does not move the
+recommendations.
+
+**The list document** is the one the app's "New list" writes: `id`, `name`,
+`emoji` (`Folder`, the form's default), `paperIds`, `createdAt` as an ISO
+string and `updatedAt` as a timestamp. It has no `color` (the app paints a
+list without one by its id) and never `publicShareId`, `onProfile` or
+`publicSyncedAt`. The rules accept only a fixed key list on update, so a
+field outside it would refuse every later edit by the owner.
+
+**`create_feed`.** With `fromPaperId` the Worker reads the paper's OpenAlex
+work (an arXiv id as arXiv's own DOI, one unbilled lookup) and builds the
+ingredients itself: its topics by their OpenAlex ids and names, the primary
+one first, at most 3, and with `include: ["topics", "authors"]` its first 3
+authors. No keyword is generated. With `ingredients`, each is validated by
+`parseFeedIngredient`; a `topic`, `author` or `journal` is then looked up on
+OpenAlex through the agent-tier relay (`/topics`, `/concepts` for a `C…` id,
+`/authors`, `/sources`, with `select=id,display_name`, unbilled), at most 10 a
+call, and stored with OpenAlex's name. A `label` the caller sent is never
+stored. `notAdded` entries carry `index` (the place in `ingredients`) or the
+`ingredient`, and a code: `INVALID_INGREDIENT`, `TOO_MANY_LOOKUPS`,
+`LOOKUP_TIMEOUT`, `ENTITY_NOT_CONFIRMED` (OpenAlex answered with another id or
+no usable name), the lookup's own code, or the limit `ingredientProblem`
+names (`DUPLICATE`, `FEED_FULL`, `JOURNALS_FULL`, `ENTITIES_FULL`,
+`KEYWORDS_FULL`). With no ingredient left: `NO_FEED_INGREDIENTS`. The
+transaction reads the document through `parseCustomFeeds`, checks the eight
+feeds (`FEED_LIMIT_REACHED` with `limit`), the name (`FEED_NAME_TAKEN`) and
+the account's ceilings against it, adds the feed with `withFeedAdded` and
+writes `{ feeds, updatedAt }` only when the app would read the list back
+unaltered, as `changeCustomFeeds` does. A transaction that loses to another
+write runs once more; a second loss is `FEEDS_CHANGED`. A new feed asks the
+providers for nothing by itself. When the reader opens it, the app's
+`/store/papers` request names its authors, topics, journals and keywords as
+follows, which are written to `followed_lanes` and harvested within the
+allowances described under [Paper store](#paper-store): 50 lanes a reader a
+day, a keyword counting as three.
+
+**`requestId`** (8 to 64 of `A-Z a-z 0-9 _ -`) makes a create repeatable: the
+document id is the start of the SHA-256 of the account, the kind and the
+`requestId`, so the same call names the same list or feed. A list is created
+with a must-not-exist precondition. The first call with a `requestId` wins: a
+later call with it returns the list or feed the first one made, with
+`existing: true` and without `added` or `notAdded`, changes nothing and spends
+nothing, whatever its other arguments ask for. The arguments are not compared,
+so a caller that reuses a `requestId` for a different call reads that from
+`existing: true` and the returned name, `paperCount` or ingredients. Without a
+`requestId` the id is random.
+
+**Limits.** Each paper or OpenAlex entity a tool looks up counts as one more
+call of the account's minute (30 calls), so a `create_list` with 25 papers
+costs 26 and a call cannot ask the providers for more than `get_paper` could;
+past the minute the call is `PROVIDER_RATE_LIMITED` before any lookup. Per
+account and UTC day, in the request-quota ledger (`reserveAccountDay`):
+
+| Counted | A day | Code |
+| --- | --- | --- |
+| Lists created | 20 | `LISTS_DAILY_LIMIT` |
+| Feeds created | 20 | `FEEDS_DAILY_LIMIT` |
+| Papers added, by either list tool | 200 | `PAPERS_DAILY_LIMIT` |
+
+A refusal carries `limit`, `remaining` and `retryAfterSeconds` (to the next
+UTC midnight). The units are reserved before any lookup or write: one list or
+feed, and one paper for each id that could be looked up. A call gives back
+what it did not write (`releaseRequestQuota`): the papers it did not add, and
+everything when nothing was written. A request for more papers than are left
+is refused whole, with `remaining` saying how many would fit. Arguments are
+checked before anything is reserved, read or asked, and unknown arguments are
+refused, so no argument sets an account, an emoji, a colour or a public flag.
+A commit Firestore refuses is `UPSTREAM_UNAVAILABLE`. Every id that becomes a
+document name is checked first: a `listId` or paper id that is empty, `.`,
+`..` or a name Firestore reserves (`__…__`) is refused as an argument or left
+out, not sent to Firestore.

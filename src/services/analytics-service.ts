@@ -429,6 +429,8 @@ export function normalizeAnalyticsPath(pathname = '/') {
   if (/^\/public\/list\/[^/]+$/.test(path)) return '/public/list/:id';
   // The account's own feed: its id stays out of the report.
   if (/^\/feeds\/[^/]+$/.test(path)) return '/feeds/:id';
+  // One of the account's own lists, and its id likewise.
+  if (/^\/lists\/[^/]+$/.test(path)) return '/lists/:id';
 
   return '/unknown';
 }

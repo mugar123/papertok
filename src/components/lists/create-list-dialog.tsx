@@ -39,6 +39,7 @@ import {
   canSubmitCreateList,
   createListFormReducer,
   CREATE_LIST_FORM_INITIAL,
+  MAX_LIST_NAME_LENGTH,
 } from '../../utils/create-list-form-model.ts';
 import { LIST_COLORS, randomListColorId, resolveListColorId } from '../../utils/list-colors.ts';
 import './create-list-dialog.css';
@@ -192,7 +193,7 @@ export default function CreateListDialog({
             placeholder={copy.namePlaceholder}
             ref={inputRef}
             value={state.name}
-            maxLength={80}
+            maxLength={MAX_LIST_NAME_LENGTH}
             aria-invalid={state.error ? 'true' : undefined}
             aria-describedby={state.error ? nameErrorId : undefined}
             onChange={(event) => dispatch({ type: 'name', value: event.target.value })}

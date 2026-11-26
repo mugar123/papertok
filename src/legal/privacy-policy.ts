@@ -14,7 +14,7 @@
  * disagree. A second change on a day that already has a version takes a suffix
  * ('2026-10-25.2'), so the account record identifies the text behind the notice.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-25.14';
+export const PRIVACY_POLICY_VERSION = '2026-11-26.15';
 
 /**
  * When the announced policy text went live, as an ISO UTC instant on or before
@@ -169,8 +169,30 @@ export const PRIVACY_POLICY_VERSION = '2026-11-25.14';
  * survey is asked once per version across devices. Before, only each browser
  * kept that version. It is one version string, no answer, used only to ask
  * less often, so the summary and this instant stay as 2026-11-24.12 left them.
+ *
+ * Version 2026-11-26.15 describes the agent token of the MCP server (ENG-91):
+ * an AI assistant a reader connects to their account receives that account's
+ * lists and custom feed definitions when it asks, and its calls, and the
+ * requests for a token, are counted per account under an identifier derived
+ * from the account and the minute; requests for a token are counted per
+ * address too. With a token that was asked for with a write scope the
+ * assistant can create private lists and custom feeds in the account and add
+ * papers to private lists, which are stored as the reader's own are and
+ * counted per account and day; it cannot publish or delete. The reader can
+ * delete those lists and feeds, and the copies of the papers stay until the
+ * account is deleted, as the copies of the reader's own saves do. The Worker
+ * answers such a request once this version is deployed, and no code in this
+ * repository asks for a token yet. Nicolás decided on 2026-11-26 that the
+ * notice, which has not opened yet, announces it: the second bullet says it,
+ * and the third keeps the OpenAlex count and the Anthropic point without the
+ * deletion schedule and Cloudflare's recovery history, which stay on the page,
+ * so the three fit the dialog. This instant follows the rule above for a text
+ * that ships with its own pull request: it stands at the end of the merge day.
+ * If the merge slips to a later day, raise the page's "Last updated" date,
+ * this version and this instant to that day before merging, and lower this
+ * instant to the deployment's success time once the text is live.
  */
-export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-23T23:59:59Z';
+export const PRIVACY_POLICY_EFFECTIVE_AT = '2026-11-26T23:59:59Z';
 
 /**
  * The earliest instant (ISO UTC) at which the in-app notice may open, read
@@ -197,8 +219,8 @@ export const PRIVACY_NOTICE_BASELINE_VERSION = '2026-11-07';
 /** At most three short bullets, the dialog's whole message, in display order. */
 export const PRIVACY_POLICY_CHANGE: readonly string[] = [
   "When you listen to a paper in the reader, the text of each paragraph is sent to Cartesia, or to ElevenLabs when Cartesia cannot answer, never your identity or your email; PaperTok stores the audio for anyone who listens to the same paragraph.",
-  "OpenAlex lookups now count per IP address each day, under a protected day identifier scheduled for deletion within three days; Cloudflare's 30-day recovery history may keep any deleted request counter.",
-  'Anthropic may run rewrites/explanations outside the EU.',
+  'An AI assistant you connect to PaperTok can read your lists and custom feeds and, with permission, create private ones.',
+  'OpenAlex lookups now count per IP address each day, under a protected day identifier. Anthropic may run rewrites/explanations outside the EU.',
 ];
 
 /**
@@ -211,8 +233,8 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
   clauses: readonly (readonly [said: string, onPage: RegExp])[];
   unsaid: readonly (readonly [claim: RegExp, why: string])[];
 } = {
-  // The changes since version 2026-11-20.9: Voice in the reader, the OpenAlex
-  // per-address count, Cloudflare's recovery history, and the Anthropic point.
+  // The changes since version 2026-11-20.9: Voice in the reader, the assistant
+  // a reader connects, the OpenAlex per-address count, and the Anthropic point.
   lead: 'When you listen to a paper',
   clauses: [
     ['When you listen to a paper in the reader, the text of each paragraph is sent to Cartesia', /When you listen to a paper in the reader, the text of each paragraph is sent to Cartesia/],
@@ -221,12 +243,11 @@ export const PRIVACY_POLICY_CHANGE_EVIDENCE: {
     ['PaperTok stores the audio for anyone who listens to the same paragraph', /PaperTok's server stores the audio[^.]*plays it to anyone who listens to the same paragraph/],
     ['count per IP address each day', /so that one address cannot use up the day's shared OpenAlex allowance: each address has 1,000 billed units and 3,000 lookups by identifier per UTC day/],
     ['a protected day identifier', /a second identifier, derived the same way from the address and the current day/],
-    ['scheduled for deletion within three days', /Each store's deletion is scheduled for at most three days after the first request it receives/],
-    ["Cloudflare's 30-day recovery history", /Cloudflare keeps a recovery history of that storage that reaches back 30 days/],
-    ['any deleted request counter', /The request counters this policy describes, whether kept under a hashed account identifier, a protected identifier derived from an IP address or a hashed recipient identifier/],
+    ['An AI assistant you connect to PaperTok', /If you connect an AI assistant to your PaperTok account/],
+    ['can read your lists and custom feeds', /the assistant can ask the MCP server for your lists, the papers in them and the definitions of your custom feeds/],
+    ['with permission, create private ones', /A key the app asks for with permission to write also lets the assistant create private lists and custom feeds in your account/],
     ['rewrites/explanations', /Paper explanations and rewrites are generated by a Claude language model/],
     ['outside the EU', /Anthropic may process the request in any region it serves, including outside the European Union/],
-    ['may keep', /a deleted counter may remain there/],
   ],
   unsaid: [
     [/\bPDF\b|full text|account|uid/i, 'the providers receive paragraph text only, nothing that identifies the reader'],

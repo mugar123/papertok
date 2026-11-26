@@ -47,6 +47,7 @@ import { handleScopus } from './scopus-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { handleShareRoute } from './share-route.ts';
 import { MCP_PATH, handleMcpRequest } from './mcp-server.ts';
+import { AGENT_TOKEN_PATH, AgentTokenError, handleAgentTokenRequest } from './agent-token.ts';
 import { getConfigurationHealth, handleAIHealth, handleEmailHealth, handleOpenAlexBudget, handleOpenAlexHealth, handleScopusHealth } from './health-api.ts';
 import {
   handleBioRxiv,
@@ -271,6 +272,26 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       captureWorkerException(error);
       console.error('MCP request failed', error);
       return json({ jsonrpc: '2.0', id: null, error: { code: -32603, message: 'Internal error' } }, 500, { 'cache-control': 'no-store' });
+    }
+  }
+  // Mints the token an agent presents to `/mcp` for a signed-in reader
+  // (worker/agent-token.ts). The app asks for it, so the Origin must be ours.
+  if (url.pathname === AGENT_TOKEN_PATH) {
+    if (!origin || !allowedOrigins(env).has(origin)) {
+      return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
+    }
+    const headers = { ...corsHeaders(origin, env), 'cache-control': 'no-store' };
+    if (request.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405, { ...headers, allow: 'POST' });
+    try {
+      return json(await handleAgentTokenRequest(request, env), 200, headers);
+    } catch (error) {
+      captureWorkerException(error);
+      const known = error instanceof AgentTokenError || error instanceof WorkerAuthError;
+      if (!known) console.error('Agent token request failed', error);
+      return json({ code: known ? error.code : 'AGENT_TOKEN_FAILED' }, known ? error.status : 502, {
+        ...headers,
+        ...(error instanceof AgentTokenError && error.retryAfter ? { 'retry-after': error.retryAfter } : {}),
+      });
     }
   }
   if (url.pathname === '/notifications/unsubscribe' && ['GET', 'POST'].includes(request.method)) {
