@@ -851,7 +851,11 @@ export async function identifyAnalyticsUser(user: AnalyticsUser | null) {
   client.identify(user.uid);
 }
 
-function canSendAnalytics() {
+/**
+ * Whether this address sends analytics at all: production only. Localhost and
+ * Vercel previews send nothing, so the fit survey is not offered there either.
+ */
+export function canSendAnalytics() {
   return typeof window !== 'undefined' && ANALYTICS_HOSTS.has(globalThis.location?.hostname);
 }
 

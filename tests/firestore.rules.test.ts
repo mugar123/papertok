@@ -33,6 +33,7 @@ import { normalizeReadingPreferences } from '../src/utils/user-settings.ts';
 import { createFollowEntity, createFollowKey } from '../src/utils/following.ts';
 import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
+import { pmfSurveyRecord } from '../src/services/pmf-survey-service.ts';
 import { orcidWorkDecisionWrite } from '../src/services/orcid-work-decisions-service.ts';
 import { PRIVACY_POLICY_VERSION } from '../src/legal/privacy-policy.ts';
 import {
@@ -1930,6 +1931,46 @@ test('ENG-196: recording it changes nothing in the user document', async () => {
   });
   await assertSucceeds(setDoc(privacyNoticeDoc(asAlice()), privacyNoticeRecord('2026-12-01'), { merge: true }));
   assert.deepEqual((await getDoc(doc(asAlice(), 'users', ALICE))).data(), { onboardingComplete: true, preferences: ['cs.AI'] });
+});
+
+// =========================================================================
+// ENG-249: the account's own record of the newest app version the fit survey
+// opened for, so the survey does not return on another device.
+// =========================================================================
+
+const pmfSurveyDoc = (db: ReturnType<typeof asAlice>, uid = ALICE) => doc(db, 'users', uid, 'settings', 'pmfSurvey');
+
+test('ENG-249: the owner records and reads the app version the survey opened for, as the app writes it', async () => {
+  await reset();
+  await assertSucceeds(setDoc(pmfSurveyDoc(asAlice()), pmfSurveyRecord('0.3.0')));
+  await assertSucceeds(setDoc(pmfSurveyDoc(asAlice()), pmfSurveyRecord('0.10.2')));
+  const record = await assertSucceeds(getDoc(pmfSurveyDoc(asAlice())));
+  assert.equal(record.get('askedVersion'), '0.10.2');
+});
+
+test('ENG-249: no other account and no guest reads or writes it, and the client cannot delete it', async () => {
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(pmfSurveyDoc(context.firestore()), { askedVersion: '0.3.0' });
+  });
+  await assertFails(getDoc(pmfSurveyDoc(asBob())));
+  await assertFails(getDoc(pmfSurveyDoc(asGuest())));
+  await assertFails(setDoc(pmfSurveyDoc(asBob()), pmfSurveyRecord('0.4.0')));
+  await assertFails(setDoc(pmfSurveyDoc(asGuest()), pmfSurveyRecord('0.4.0')));
+  await assertFails(deleteDoc(pmfSurveyDoc(asAlice())));
+  for (const db of [asAlice(), asBob(), asGuest()]) {
+    await assertFails(getDocs(collection(db, 'users', ALICE, 'settings')));
+  }
+});
+
+test('ENG-249: the record holds one app version and nothing else, no answer among it', async () => {
+  await reset();
+  for (const askedVersion of ['', 'garbage', '0.3.0-beta', 'v0.3.0', '0.3.', ' 0.3.0', '0.3.0 ', '1.2.3.4.5', '12345', 3, null]) {
+    await assertFails(setDoc(pmfSurveyDoc(asAlice()), { askedVersion }));
+  }
+  await assertFails(setDoc(pmfSurveyDoc(asAlice()), {}));
+  await assertFails(setDoc(pmfSurveyDoc(asAlice()), { askedVersion: '0.3.0', disappointment: 'very' }));
+  await assertSucceeds(setDoc(pmfSurveyDoc(asAlice()), { askedVersion: '1.2.3.4' }));
 });
 
 // =========================================================================

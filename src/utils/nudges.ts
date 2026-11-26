@@ -415,11 +415,16 @@ export function readingMinutePassed(visit: VisitNotices): VisitNotices {
  * `ask-account`), it may yet be, so the choice waits for the answer instead of
  * going to a nudge or to nothing, as when the minute of reading passes in a tab
  * that was suspended during the read. Once a read fails it stops waiting
- * (accountAnswerPending).
+ * (accountAnswerPending). In the same way, while the account is being asked
+ * whether the fit survey was already asked on another device (`surveyPending`),
+ * a nudge choice waits for the answer, so the survey is neither dropped from
+ * the visit nor chosen on an answer read too early. An owed privacy notice
+ * does not wait for it.
  */
-export function chooseVisitNotice(visit: VisitNotices, { gates, privacyOwed, privacyPending = false, eligible, dismissed, random }: { gates: { nudge: boolean; privacy: boolean }; privacyOwed: boolean; privacyPending?: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }): VisitNotices {
+export function chooseVisitNotice(visit: VisitNotices, { gates, privacyOwed, privacyPending = false, surveyPending = false, eligible, dismissed, random }: { gates: { nudge: boolean; privacy: boolean }; privacyOwed: boolean; privacyPending?: boolean; surveyPending?: boolean; eligible?: string[]; dismissed?: string[]; random?: () => number }): VisitNotices {
   const owed = gates.privacy && privacyOwed;
   if (visit.choiceMade || (gates.privacy && privacyPending)) return visit;
+  if (!owed && gates.nudge && surveyPending) return visit;
   if (!visitChoiceDue({ privacyOwed: owed, dwellDone: gates.nudge && visit.dwellDone })) return visit;
   return { ...visit, choiceMade: true, picked: pickVisitNotice({ privacyOwed: owed, eligible, dismissed, random }) };
 }
