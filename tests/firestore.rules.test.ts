@@ -1936,6 +1936,45 @@ test('ENG-196: recording it changes nothing in the user document', async () => {
 });
 
 // =========================================================================
+// The Mac app's announcement of the reader's own agent: the account's record
+// of the newest version it was shown, so it does not return on another Mac.
+// The Mac app writes { shownVersion } with a dated version such as these.
+// =========================================================================
+
+const agentIntroDoc = (db: ReturnType<typeof asAlice>, uid = ALICE) => doc(db, 'users', uid, 'settings', 'agentIntro');
+
+test('agent announcement: the owner records and reads the version shown', async () => {
+  await reset();
+  await assertSucceeds(setDoc(agentIntroDoc(asAlice()), { shownVersion: '2026-11-26' }));
+  await assertSucceeds(setDoc(agentIntroDoc(asAlice()), { shownVersion: '2027-01-15.2' }));
+  const record = await assertSucceeds(getDoc(agentIntroDoc(asAlice())));
+  assert.equal(record.get('shownVersion'), '2027-01-15.2');
+});
+
+test('agent announcement: no other account and no guest reads or writes it, and the client cannot delete it', async () => {
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(agentIntroDoc(context.firestore()), { shownVersion: '2026-11-26' });
+  });
+  await assertFails(getDoc(agentIntroDoc(asBob())));
+  await assertFails(getDoc(agentIntroDoc(asGuest())));
+  await assertFails(setDoc(agentIntroDoc(asBob()), { shownVersion: '2026-11-26' }));
+  await assertFails(setDoc(agentIntroDoc(asGuest()), { shownVersion: '2026-11-26' }));
+  await assertFails(deleteDoc(agentIntroDoc(asAlice())));
+});
+
+test('agent announcement: the record holds one version string and nothing else', async () => {
+  await reset();
+  for (const shownVersion of ['', 'yes', '2026-11-2', '2026-11-26.', '2026-11-26.12345', ' 2026-11-26', `2026-11-26${'0'.repeat(20)}`, 20261126, true, null, ['2026-11-26'], { v: '2026-11-26' }]) {
+    await assertFails(setDoc(agentIntroDoc(asAlice()), { shownVersion }));
+  }
+  await assertFails(setDoc(agentIntroDoc(asAlice()), {}));
+  await assertFails(setDoc(agentIntroDoc(asAlice()), { shownVersion: '2026-11-26', setUp: true }));
+  await assertFails(setDoc(agentIntroDoc(asAlice()), { shownVersion: '2026-11-26', agents: ['claude'] }));
+  await assertSucceeds(setDoc(agentIntroDoc(asAlice()), { shownVersion: '2026-11-26.1234' }));
+});
+
+// =========================================================================
 // ENG-249: the account's own record of the newest app version the fit survey
 // opened for, so the survey does not return on another device.
 // =========================================================================

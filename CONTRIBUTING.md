@@ -155,6 +155,14 @@ a session can finish, lints the files changed on the branch and in the working t
   copy the version actually shown if the account has no record or an older one.
   A failed write leaves the browser copy available to retry on a later visit.
 
+- The Mac app's one-time announcement of the reader's own agent keeps its record in its own
+  account document, like `privacyNotice`: `users/{uid}/settings/agentIntro`
+  (`{ shownVersion }`, a dated version). Deploy the Firestore rules for that document before
+  a Mac app build that reads it; until then the read is refused, and the app must keep the
+  announcement shut when the read fails. `privacy.html` describes the record (in the table
+  of what the account keeps and in what account deletion removes) no later than the first
+  Mac app build that writes it.
+
 - For release 0.4, replace the once-per-account rule in
   [`privacyNoticeOwed`](src/utils/nudges.ts) with notices for material changes.
   Mark a change as material when it adds a provider or data processor, stores or shares
