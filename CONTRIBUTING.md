@@ -17,6 +17,108 @@ Firebase values are required for authenticated flows. Protected scientific-provi
 email credentials belong in Cloudflare Worker secrets and must never be added to `.env.local`
 as `VITE_*` values.
 
+## Troubleshooting
+
+### Node version
+
+PaperTok needs Node 22.18 or later ([Run locally](README.md#run-locally));
+CI runs Node 22. Check yours from the repository root:
+
+```bash
+node --version
+```
+
+Below 22.18, the repo's own test command cannot run the `.ts` tests: Node's
+native type stripping is what lets `node --test` execute them, and `npm test`
+passes no stripping flag. Install Node 22.18 or later — for example,
+`nvm install 22` if you use nvm — then re-run `node --version` to confirm.
+
+### Sign-in fails with `auth/unauthorized-domain`
+
+The app shows "This domain is not authorized for sign-in." Firebase only
+allows sign-in from the domains listed under Authentication → Settings →
+Authorized domains in the Firebase console, and the app's `authDomain` is
+`papertok.app` ([`src/services/firebase.ts`](src/services/firebase.ts)). Add
+the hostname serving the app — `localhost` for local development — hostname
+only, without a port. Check whether it is already listed first: Firebase
+projects created after 28 April 2025 no longer include `localhost` by
+default. Only someone with access to the project's Firebase console can add
+a domain.
+
+Without console access, use the emulators instead: `npm run dev:emulators`
+signs in a disposable test account (`tester@example.com`) with no real Google
+or GitHub sign-in. It needs firebase-tools and Java 21 or later. Worker
+routes that require production identity reject emulator tokens, so those
+flows cannot be verified that way; see
+[local testing](worker/README.md#local-testing).
+
+### The Worker is not running
+
+The feed, AI features, email notifications, publishing public lists,
+institution access and account deletion all need the Cloudflare Worker. Start it in a second
+terminal:
+
+```bash
+npx wrangler dev --local --port 8787
+```
+
+`.env.local` points the frontend at `http://localhost:8787`. Without the
+Worker, the app still loads and Google/GitHub sign-in still works — Firebase
+is direct — and in development arXiv falls back to the Vite dev proxy, but
+the Worker-backed features above fail, and so do OpenAlex requests: with
+`.env.local` in place they are routed to the Worker, and only a setup with
+`VITE_PAPER_API_BASE_URL` unset sends them direct to OpenAlex. Reading a shared public list needs no Worker — it reads
+the document from Firestore directly — but publishing one does. A production
+build without `VITE_PAPER_API_BASE_URL` aborts: `vite build` refuses to ship
+a bundle that reaches no backend.
+
+### A feature answers 503
+
+A feature that needs a provider secret it does not have answers 503 with a
+code naming the missing piece, for example `AI_NOT_CONFIGURED`,
+`SCOPUS_NOT_CONFIGURED` or `OPENREVIEW_NOT_CONFIGURED`. The Worker itself
+keeps running. For which secret each feature needs and how to set it, see
+[Deployment](worker/README.md#deployment).
+
+### The build warns about a large bundle
+
+`npm run build` prints:
+
+```text
+(!) Some chunks are larger than 500 kB after minification.
+```
+
+That is Vite's default 500 kB chunk-size warning: the app entry chunk
+(`dist/assets/index-*.js`) is larger than the limit. It is a warning, not a
+failure — the build still succeeds and the bundle is still written. Do not
+silence it in an unrelated change; if the chunk keeps growing, open an issue
+about it instead.
+
+### Run one focused test before `npm run check`
+
+Tests are colocated `*.test.ts` files under `src/`, `worker/`, `proxy/`,
+`scripts/` and `eslint-rules/`. Run one file on its own for a fast signal
+before the full check:
+
+```bash
+node --test worker/router.test.ts
+```
+
+or the entry-point and routing tests together:
+
+```bash
+node --test worker/index.test.ts worker/router.test.ts
+```
+
+Then run the full check, which needs `.env.local` in place for the build:
+
+```bash
+npm run check
+```
+
+The Firestore rules suite runs separately and needs the emulators; see
+[`tests/README.md`](tests/README.md).
+
 ## Before Opening a Pull Request
 
 ```bash
