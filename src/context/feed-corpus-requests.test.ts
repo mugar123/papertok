@@ -540,3 +540,17 @@ test('the reader’s examples come before their publications in the request, acr
   assert.equal(likes.length, 3);
   assert.deepEqual(body.positiveIds.slice(0, 3), likes);
 });
+
+test('marking publications takes nothing from the ranking inputs a long request keeps (ENG-251)', async () => {
+  const long = (name: string) => `${name}-${'x'.repeat(600)}`;
+  const groups = [{ categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: [long('like'), ...Array.from({ length: 4 }, (_, index) => long(`pub-${index}`))], weight: 1 }];
+  const negativeIds = Array.from({ length: 24 }, (_, index) => long(`rejected-${index}`));
+  const request = { ...shared, groups, positiveIds: [], negativeIds, pageSize: 15 };
+  const everyExample = new Map(groups[0].positiveIds.map(id => [id, ['liked' as const]]));
+  const likeOnly = new Map([[long('like'), ['liked' as const]]]);
+  const [plain, seeded] = await bodiesOf({ ...request, exampleKindsById: everyExample }, { ...request, exampleKindsById: likeOnly });
+  assert.ok((plain.negativeIds?.length ?? 0) < negativeIds.length, 'the request was trimmed');
+  const { seedIds, ...rest } = seeded as typeof seeded & { seedIds?: string[] };
+  assert.deepEqual(seedIds, groups[0].positiveIds.slice(1));
+  assert.deepEqual(rest, plain);
+});

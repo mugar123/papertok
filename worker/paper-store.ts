@@ -1153,6 +1153,18 @@ function rankByUnitVectors<T extends Pick<Candidate, 'published' | 'quality'>>(r
 }
 
 /**
+ * A kept rank with the score and mark `fresh` gives it now, or marked as a
+ * publication's when it has none (ENG-251). Exported for its regression test.
+ */
+export function retraced(candidate: RankedCandidate, fresh: ReadonlyMap<number, RankedCandidate>): RankedCandidate {
+  const now = fresh.get(candidate.workId);
+  const rest: RankedCandidate = { ...candidate };
+  delete rest.fromSeed;
+  if (!now) return { ...rest, fromSeed: true };
+  return { ...rest, semanticScore: now.semanticScore, ...(now.fromSeed ? { fromSeed: true } : {}) };
+}
+
+/**
  * A candidate's score by these likes and rejections, from its unit vector
  * and its base score. Without likes, recency plus eligible quality is an
  * upper bound because a rejection can only lower the score. `fromSeed` says
@@ -1165,18 +1177,18 @@ function scorer(likedVectors: Float64Array[], rejectedVectors: Float64Array[], {
     const age = Math.max(0, now - Date.parse(published)) / DAY_MS;
     const recency = weight * 0.5 ** (age / RECENCY_HALF_LIFE_DAYS);
     const bonus = QUALITY_WEIGHT * (quality ?? 0);
-    let similarity = likedVectors.length && embedding ? -1 : 0;
-    let fromSeed = false;
-    if (embedding) {
+    // The closest like and the closest publication apart, each cosine computed once.
+    let closestLike = -Infinity;
+    let closestSeed = -Infinity;
+    if (likedVectors.length && embedding) {
       for (const positive of likedVectors) {
         const value = cosine(embedding, positive);
-        const seed = seedVectors?.has(positive) === true;
-        if (value > similarity || (value === similarity && fromSeed && !seed)) {
-          similarity = value;
-          fromSeed = seed;
-        }
+        if (seedVectors?.has(positive)) closestSeed = Math.max(closestSeed, value);
+        else closestLike = Math.max(closestLike, value);
       }
     }
+    const similarity = likedVectors.length && embedding ? Math.max(-1, closestLike, closestSeed) : 0;
+    const fromSeed = closestSeed > closestLike;
     const negative = rejection(embedding, rejectedVectors);
     // A fixed scale keeps an uninformative page from stretching its best
     // match to 100%. The client's contribution is bounded independently.
@@ -1686,6 +1698,8 @@ export interface KeptRanking {
   notableWalked: number;
   rankedAt: number;
   rankedBy: string;
+  // Ranked with the reader's publications among its examples (`seedIds`, ENG-251).
+  seeded?: boolean;
 }
 /** Keeps each order for `keptMs` from its last write. */
 export interface RankingCache {
@@ -1873,6 +1887,16 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
       const candidate = kept!.ranks[index] ?? null;
       return candidate && !ranked.excluded.has(candidate.workId) ? candidate : null;
     });
+    // A rank kept from an order ranked with publications, or reused by a
+    // request that has them (ENG-251), takes its score and mark from this
+    // ranking; one this ranking no longer holds is marked as a publication's,
+    // so the app names no like for a score it cannot trace. Orders that never
+    // had publications are reused as before.
+    if (query.seedIds.length || kept?.seeded) {
+      const fresh = new Map([...ranked.ranks, ...ranked.notable].map(candidate => [candidate.workId, candidate]));
+      served = served.map(candidate => candidate && retraced(candidate, fresh));
+      notable = notable.map(candidate => retraced(candidate, fresh));
+    }
     if (query.skipsSeen) ({ ranks: served, walked } = keptPassed(served, walked, ranked.ranks, FEED_CANDIDATE_LIMIT + AREA_CANDIDATE_LIMIT));
     const shown = new Set(served.map(candidate => candidate?.workId));
     const notablePassed = keptPassed(notable.slice(0, notableWalked), notableWalked, ranked.notable, NOTABLE_READ_PER_YEAR * NOTABLE_YEARS * FEED_MAX_CATEGORIES);
@@ -1937,6 +1961,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
       ...walks,
       rankedAt: now,
       rankedBy,
+      ...(query.seedIds.length ? { seeded: true } : {}),
     }, keptMs)
       .catch(error => console.warn('Feed ranking not cached', error));
     timings?.since('cacheWrite', step);

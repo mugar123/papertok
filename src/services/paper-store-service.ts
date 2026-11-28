@@ -219,16 +219,7 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
     order,
     ...(seen ? { seen: feedSeenFilter(seen), skipsSeen: true, ...(notable > 0 ? { notable } : {}), ...(continues ? { continues } : {}), ...(walk ? { walk } : {}) } : {}),
     ...(waitForLikes ? { waitForLikes } : {}),
-    // Which examples are the reader's publications (ENG-251), so the Worker
-    // says which papers one of them scored best. Kept in step with the
-    // examples as the request is trimmed.
-    seedIds: undefined as string[] | undefined,
   };
-  const markSeeds = () => {
-    const seeds = isExample ? body.positiveIds.filter(id => !isExample(id)) : [];
-    body.seedIds = seeds.length ? seeds : undefined;
-  };
-  markSeeds();
   while (body.excludedIds.length && new TextEncoder().encode(JSON.stringify(body.excludedIds)).byteLength > 6_000) body.excludedIds.pop();
   // Trim new signals before they can push the existing request over 16 KiB.
   // First the copies of an example several groups hold, while one group keeps
@@ -271,9 +262,14 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
       // request the follows' page.
       body.follows.pop();
     } else break;
-    markSeeds();
   }
-  const answer = askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
+  // Which examples are the reader's publications (ENG-251), so the Worker
+  // says which papers one of them scored best: added after the trimming, so
+  // they take nothing from the ranking inputs' 16,000 bytes. At most 10 ids
+  // the Worker can look up (about 2.6 KB) fit in the room the Worker leaves
+  // above that (MAX_BODY_BYTES in worker/paper-feed.ts).
+  const seedIds = isExample ? body.positiveIds.filter(id => !isExample(id)) : [];
+  const answer = askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }), ...(seedIds.length ? { seedIds } : {}) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
   if (exact) return answer;
   // The size limit may have removed examples from the plan. Keep only the
   // kinds actually sent with this page, alongside its semantic scores.
@@ -285,7 +281,7 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   // (`seedsScored`) leaves every paper of such a page without them: a paper
   // close to a publication alone would otherwise read as similar to a like.
   const kinds = exampleKindsById && [...new Set(body.positiveIds.flatMap(id => exampleKindsById.get(id) ?? []))];
-  const ranksBySeeds = Boolean(body.seedIds?.length);
+  const ranksBySeeds = seedIds.length > 0;
   return answer.then(({ papers, skipsSeen, seedsScored }) => {
     if (kinds?.length && (!ranksBySeeds || seedsScored)) {
       for (const paper of papers) if (!paper._semanticFromSeed) paper._semanticExampleKinds = kinds;

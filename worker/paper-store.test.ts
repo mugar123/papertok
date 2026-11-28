@@ -9,7 +9,7 @@ import test from 'node:test';
 
 import {
   FEED_CANDIDATE_LIMIT, arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, inKeywordTurns, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, rewriteWorks, thinLeaves, thinLeavesReport, unitVector, writeLaneRanks,
+  notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, retraced, rewriteWorks, thinLeaves, thinLeavesReport, unitVector, writeLaneRanks,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { FeedTimings } from './feed-timings.ts';
@@ -732,6 +732,7 @@ test("a paper closest to one of the reader's publications says so, and one close
     { paper: paper('2610.00004', 'The reader’s own paper', '2026-07-30T00:00:00.000Z'), lanes: ['q-bio.BM'] },
     { paper: paper('2610.00002', 'Close to the like', '2026-10-02T00:00:00.000Z'), lanes: ['q-bio.BM'] },
     { paper: paper('2610.00003', 'Close to the publication', '2026-10-03T00:00:00.000Z'), lanes: ['q-bio.BM'] },
+    { paper: paper('2610.00005', 'Opposite to the publication', '2026-10-01T00:00:00.000Z'), lanes: ['q-bio.BM'] },
   ], { now: NOW });
   const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id;
   const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
@@ -740,18 +741,33 @@ test("a paper closest to one of the reader's publications says so, and one close
   insert.run(idOf('2610.00004') as number, vector([0, 1]));
   insert.run(idOf('2610.00002') as number, vector([1, 0.05]));
   insert.run(idOf('2610.00003') as number, vector([0.05, 1]));
+  insert.run(idOf('2610.00005') as number, vector([0, -1]));
   const ask = (seedIds?: string[]) => readFeedPage(env, parseFeedRequest({
     categories: ['q-bio.BM'], positiveIds: ['2610.00001', '2610.00004'], pageSize: 5, ...(seedIds ? { seedIds } : {}),
   }), { now: NOW });
   const marks = (page: Awaited<ReturnType<typeof ask>>) => Object.fromEntries(page.map(item => [item.id, item._semanticFromSeed === true]));
-  assert.deepEqual(marks(await ask(['2610.00004'])), { '2610.00002': false, '2610.00003': true });
+  assert.deepEqual(marks(await ask(['2610.00004'])), { '2610.00002': false, '2610.00003': true, '2610.00005': false });
   // Without seeds nothing is marked, and the same papers rank in the same order.
   const plain = await ask();
-  assert.deepEqual(marks(plain), { '2610.00002': false, '2610.00003': false });
+  assert.deepEqual(marks(plain), { '2610.00002': false, '2610.00003': false, '2610.00005': false });
   assert.deepEqual(plain.map(item => item.id), (await ask(['2610.00004'])).map(item => item.id));
+  // A publication alone marks every paper, even one at a cosine of -1 to it.
+  const seedOnly = await readFeedPage(env, parseFeedRequest({ categories: ['q-bio.BM'], positiveIds: ['2610.00004'], seedIds: ['2610.00004'], pageSize: 5 }), { now: NOW });
+  assert.ok(seedOnly.length > 0 && seedOnly.every(item => item._semanticFromSeed === true));
   // A seed that is not among the examples is ignored.
   assert.deepEqual(parseFeedRequest({ positiveIds: ['a'], seedIds: ['a', 'b', 7] }).seedIds, ['a']);
   assert.deepEqual(parseFeedRequest({ positiveIds: ['a'] }).seedIds, []);
+});
+
+test('a rank kept from an earlier order takes its score and mark from the new ranking, or is marked when it has none (ENG-251)', () => {
+  const kept = { workId: 1, lanes: ['q-bio.BM'], semanticScore: 1, paperId: 'p1' };
+  const fresh = new Map([[1, { workId: 1, lanes: ['q-bio.BM'], semanticScore: 0.4, fromSeed: true }], [2, { workId: 2, lanes: [], semanticScore: 0.9 }]]);
+  // Scored by a like before, by a publication now: the mark comes with the new score.
+  assert.deepEqual(retraced(kept, fresh), { workId: 1, lanes: ['q-bio.BM'], semanticScore: 0.4, paperId: 'p1', fromSeed: true });
+  // Marked before, scored by a like now: the old mark goes.
+  assert.deepEqual(retraced({ workId: 2, lanes: [], semanticScore: 1, fromSeed: true }, fresh), { workId: 2, lanes: [], semanticScore: 0.9 });
+  // Not in the new ranking: nothing traces its score, so no like may be named for it.
+  assert.equal(retraced({ workId: 3, lanes: [], semanticScore: 1 }, fresh).fromSeed, true);
 });
 
 // D3 (Pablo, 2026-10-25): at most 10 journals a request. A journal's lane
