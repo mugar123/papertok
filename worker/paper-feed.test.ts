@@ -9,8 +9,8 @@ import type { WorkerEnv } from './env.ts';
 import type { FollowEntity } from '../src/utils/following.ts';
 import type { FeedPlan } from '../src/context/feed-corpus-requests.ts';
 import type { PaperStoreError } from './paper-store.ts';
-import { handleCorpusFeed } from './paper-feed.ts';
-import { CORPUS_DAYS, database, evictExpired, ingestPapers, quantize } from './paper-store.ts';
+import { handleCorpusFeed, lookupOrder } from './paper-feed.ts';
+import { CORPUS_DAYS, database, evictExpired, ingestPapers, parseFeedRequest, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
@@ -2294,4 +2294,20 @@ test('all accounts together add at most 6,000 papers the store lacked in a day b
   assert.deepEqual(asked, ['W7000001', 'W7000002']);
   assert.deepEqual((await ask({ ids: ['W7000004'] }, 'reader-2')).papers, []);
   assert.equal(asked.length, 2);
+});
+
+test('the lookup of missing examples reads the reader’s own before their publications, and a request without them keeps its order (ENG-251)', () => {
+  const publications = Array.from({ length: 10 }, (_, index) => `openalex:W${index + 1}`);
+  // As the request lists them: the computer science group's publications, then the mathematics group's like.
+  const query = parseFeedRequest({
+    groups: [
+      { categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: publications, weight: 1 },
+      { categories: ['math.OC'], exampleCategories: ['math.OC'], positiveIds: ['2610.00001'], weight: 1 },
+    ],
+    seedIds: publications,
+  });
+  assert.equal(query.positiveIds.indexOf('2610.00001'), 10, 'the request lists the like eleventh');
+  assert.deepEqual(lookupOrder(query).slice(0, 10), ['2610.00001', ...publications.slice(0, 9)]);
+  const plain = parseFeedRequest({ positiveIds: ['b', 'a'] });
+  assert.equal(lookupOrder(plain), plain.positiveIds);
 });

@@ -270,7 +270,8 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   // above that (MAX_BODY_BYTES in worker/paper-feed.ts).
   const seedIds = isExample ? body.positiveIds.filter(id => !isExample(id)) : [];
   const answer = askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }), ...(seedIds.length ? { seedIds } : {}) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
-  if (exact) return answer;
+  // The capability flag stays inside: an exact request answers as it did.
+  if (exact) return answer.then(({ papers, skipsSeen, loading, more }) => ({ papers, skipsSeen, loading, more }));
   // The size limit may have removed examples from the plan. Keep only the
   // kinds actually sent with this page, alongside its semantic scores.
   // The Worker's walkNamed fallback can return a kept rank scored against
