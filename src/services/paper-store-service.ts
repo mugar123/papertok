@@ -133,8 +133,16 @@ function loadingFollowsOf(value: unknown): LoadingFollow[] {
  * The groups' examples, then the ones of no group, as one request ranks by
  * them: what a Worker that reads no groups ranks by.
  */
-export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]) {
-  return [...new Set([...groups.flatMap(group => group.positiveIds), ...positiveIds])].slice(0, SEMANTIC_PROFILE_POSITIVE_CAP);
+/**
+ * Every example of a grouped request, each once. With `isExample`, the
+ * reader's own examples come before the rest (their publications, ENG-251),
+ * so the Worker's lookup of examples it lacks, which reads the first ten,
+ * reaches a like before a publication.
+ */
+export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[], isExample?: (id: string) => boolean) {
+  const ids = [...new Set([...groups.flatMap(group => group.positiveIds), ...positiveIds])];
+  const ordered = isExample ? [...ids.filter(isExample), ...ids.filter(id => !isExample(id))] : ids;
+  return ordered.slice(0, SEMANTIC_PROFILE_POSITIVE_CAP);
 }
 
 // The copy a request too long drops first: the oldest example the group
@@ -181,6 +189,8 @@ export function fetchCorpusPage(request: CorpusPageRequest & { exact: true }, op
 export function fetchCorpusPage(request: CorpusPageRequest, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean }>;
 export function fetchCorpusPage({ categories = [], areas = [], exact = false, groups, follows = [], positiveIds = [], exampleKindsById, negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, walk, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = servedFollows(follows).map(({ follow }) => follow);
+  // The reader's own examples have a kind; their publications (ENG-251) have none.
+  const isExample = exampleKindsById && ((id: string) => exampleKindsById.has(id));
   const body = {
     categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
     ...(areas.length ? { areas } : {}),
@@ -199,7 +209,7 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
       displayName: cutFollowText(displayName, 200),
       metadata: { query: cutFollowText(metadata?.query, 121), funder: cutFollowText(metadata?.funder, 81) },
     })),
-    positiveIds: groups ? corpusPositiveIds(groups, positiveIds) : positiveIds,
+    positiveIds: groups ? corpusPositiveIds(groups, positiveIds, isExample) : positiveIds,
     // Copies: the examples below may be trimmed, and the plan is the feed's.
     ...(groups ? { groups: groups.map(group => ({ ...group, positiveIds: [...group.positiveIds] })) } : {}),
     ...(negativeIds.length ? { negativeIds: negativeIds.slice(0, 24) } : {}),
@@ -240,7 +250,9 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
     else if (body.groups && body.positiveIds.length) {
       const grouped = new Set(body.groups.flatMap(group => group.positiveIds));
       const largest = body.groups.reduce((most, group) => (group.positiveIds.length > most.positiveIds.length ? group : most));
-      const dropped = body.positiveIds.findLast(id => !grouped.has(id)) ?? largest.positiveIds.at(-1);
+      // A publication goes before any of the reader's own examples.
+      const dropped = (isExample && body.positiveIds.findLast(id => !isExample(id)))
+        || (body.positiveIds.findLast(id => !grouped.has(id)) ?? largest.positiveIds.at(-1));
       body.positiveIds = body.positiveIds.filter(id => id !== dropped);
       for (const group of body.groups) group.positiveIds = group.positiveIds.filter(id => id !== dropped);
     } else if (body.follows.length > 1) {
@@ -257,7 +269,13 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   // kinds actually sent with this page, alongside its semantic scores.
   // The Worker's walkNamed fallback can return a kept rank scored against
   // earlier examples. Only the Worker can identify which examples scored it.
-  const kinds = exampleKindsById && [...new Set(body.positiveIds.flatMap(id => exampleKindsById.get(id) ?? []))];
+  // A page ranked by any publication of the reader (ENG-251) names no
+  // examples: the Worker scores each card by its closest example, and only it
+  // knows which, so a card close to a publication alone would otherwise read
+  // as similar to a like.
+  const kinds = exampleKindsById && body.positiveIds.every(id => exampleKindsById.has(id))
+    ? [...new Set(body.positiveIds.flatMap(id => exampleKindsById.get(id) ?? []))]
+    : undefined;
   return answer.then(({ papers, skipsSeen }) => {
     if (kinds?.length) {
       for (const paper of papers) paper._semanticExampleKinds = kinds;

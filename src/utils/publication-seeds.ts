@@ -2,6 +2,7 @@ import type { Paper } from '../models/paper.ts';
 import type { PositiveExample } from './interaction-profile.ts';
 
 import { areaKeyForCategory, areaKeyForOpenAlexTopic, leavesForOpenAlexTopic } from './area-accent.ts';
+import { doiPathId } from './open-alex-work.ts';
 import { canonicalArxivIdOf, canonicalDoiOf } from './paper-canonical-key.ts';
 
 /**
@@ -29,8 +30,15 @@ export const PUBLICATION_SEEDS_STALE_MS = 30 * 24 * 60 * 60 * 1000;
 
 const OPENALEX_WORK = /^(?:openalex:|https?:\/\/openalex\.org\/)?(W\d+)$/i;
 // The ids the Worker can look up when its corpus lacks the paper (paperIdLookup in worker/paper-sources.ts).
-const LOOKUP_ID = /^(?:openalex:W\d+|pmid:\d{1,12}|doi:10\.\d{4,9}\/\S+|\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+\/\d{7}(?:v\d+)?)$/i;
-const MAX_ID_LENGTH = 300;
+const LOOKUP_ID = /^(?:openalex:W\d+|pmid:\d{1,12}|\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+\/\d{7}(?:v\d+)?)$/i;
+const LOOKUP_DOI = /^(?:doi:)?(10\.\d{4,9}\/\S+)$/i;
+
+/** Whether the Worker can look the paper named `id` up: the forms paperIdLookup reads, a DOI within the relay's path limit. */
+export function workerCanLookUp(id: string) {
+  if (LOOKUP_ID.test(id)) return true;
+  const doi = LOOKUP_DOI.exec(id)?.[1];
+  return Boolean(doi && doiPathId(doi));
+}
 
 function openAlexWorkKey(id: unknown) {
   const match = typeof id === 'string' ? OPENALEX_WORK.exec(id.trim()) : null;
@@ -74,19 +82,25 @@ export function publicationCategory(paper: Pick<Partial<Paper>, 'primaryTopic' |
 /**
  * The publications the feed ranks by and the names of every work it leaves
  * out, from the reader's papers newest first (readerPapers in
- * orcid-service.ts). A publication needs an id the Worker can look up.
+ * orcid-service.ts) and the names of their works OpenAlex has no paper for
+ * (`unmatchedKeys`), which ORCID still lists. A publication needs an id the
+ * Worker can look up.
  */
-export function feedSeedsFrom(papers: ReadonlyArray<Partial<Paper>>) {
+export function feedSeedsFrom(papers: ReadonlyArray<Partial<Paper>>, unmatchedKeys: ReadonlyArray<string> = []) {
   const seeds: PositiveExample[] = [];
   const keys = new Set<string>();
+  const addKeys = (names: string[]) => {
+    const fresh = names.filter(key => !keys.has(key));
+    if (keys.size + fresh.length <= OWN_WORK_KEYS_MAX) fresh.forEach(key => keys.add(key));
+  };
   for (const paper of papers) {
     const id = typeof paper.id === 'string' ? paper.id.trim() : '';
-    const paperKeys = paperMatchKeys(paper);
-    if (keys.size + paperKeys.length <= OWN_WORK_KEYS_MAX) paperKeys.forEach(key => keys.add(key));
-    if (seeds.length < PUBLICATION_SEEDS_MAX && id.length <= MAX_ID_LENGTH && LOOKUP_ID.test(id) && !seeds.some(seed => seed.id === id)) {
+    addKeys(paperMatchKeys(paper));
+    if (seeds.length < PUBLICATION_SEEDS_MAX && workerCanLookUp(id) && !seeds.some(seed => seed.id === id)) {
       seeds.push({ id, category: publicationCategory(paper) });
     }
   }
+  for (const key of unmatchedKeys) addKeys([key]);
   return { seeds, keys: [...keys] };
 }
 

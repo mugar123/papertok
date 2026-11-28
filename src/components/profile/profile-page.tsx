@@ -381,8 +381,9 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const [decisionNote, setDecisionNote] = useState('');
   const [attempt, setAttempt] = useState(0);
-  // What the account keeps of these works for For you (ENG-251): null until read, or when the read failed.
-  const [keptSeeds, setKeptSeeds] = useState<FeedSeeds | null>(null);
+  // What the account keeps of these works for For you (ENG-251): undefined
+  // while it is read, null when the read failed or found nothing kept.
+  const [keptSeeds, setKeptSeeds] = useState<FeedSeeds | null | undefined>(undefined);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const suggestionsHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const hiddenToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -398,14 +399,15 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
 
   useEffect(() => {
     let live = true;
-    const kept = readFeedSeeds(uid, orcid.connectedAt).catch((error: unknown) => {
+    // Read beside the works, and needed only to decide whether to write: the list never waits for it.
+    readFeedSeeds(uid, orcid.connectedAt).then((kept) => {
+      if (live) setKeptSeeds(kept);
+    }, (error: unknown) => {
       console.warn('The publications For you ranks by could not be read', error);
-      return null;
+      if (live) setKeptSeeds(null);
     });
-    loadOrcidPublications(orcid.id, orcid.host, readOrcidWorkDecisions(uid, orcid.connectedAt)).then(async (result) => {
-      const keptNow = await kept;
+    loadOrcidPublications(orcid.id, orcid.host, readOrcidWorkDecisions(uid, orcid.connectedAt)).then((result) => {
       if (!live) return;
-      setKeptSeeds(keptNow);
       setLoaded(result);
       setDecisions(result.decisions);
       setRecent(new Map());
@@ -500,12 +502,13 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
   // is kept, so a lookup that failed cannot shorten what the feed knows.
   const connectedAt = orcid.connectedAt;
   useEffect(() => {
-    if (status !== 'ready' || !loaded || saving.size > 0 || !connectedAt) return;
+    if (status !== 'ready' || !loaded || !arranged || saving.size > 0 || !connectedAt || keptSeeds === undefined) return;
     if (loaded.attributed.failed || loaded.details === 'failed') return;
     let live = true;
     const timer = setTimeout(() => {
-      keepFeedSeeds(uid, connectedAt, papers, keptSeeds, feedSeedsStale).then((kept) => {
-        if (live) setKeptSeeds(kept);
+      // Saved only while the account's decisions are still these (saveFeedSeeds).
+      keepFeedSeeds(uid, connectedAt, arranged.publications, decisions, keptSeeds, feedSeedsStale).then((kept) => {
+        if (live && kept !== keptSeeds) setKeptSeeds(kept);
       }, (error: unknown) => {
         console.warn('The publications For you ranks by could not be kept', error);
       });
@@ -514,7 +517,7 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
       live = false;
       clearTimeout(timer);
     };
-  }, [status, loaded, saving, connectedAt, uid, papers, keptSeeds]);
+  }, [status, loaded, arranged, decisions, saving, connectedAt, uid, keptSeeds]);
 
   // OpenAlex knows production iDs only: a sandbox iD may name someone else
   // there, so it gets no citations, coauthors or suggestions.

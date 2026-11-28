@@ -1,9 +1,11 @@
 import type { PositiveExample } from '../utils/interaction-profile.ts';
 import type { OrcidConnection } from './orcid-connection-service.ts';
 
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import type { OrcidWorkDecisions } from './orcid-work-decisions-service.ts';
+
+import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase.ts';
-import { arrangeOrcidWorks, loadOrcidPublications, readerPapers } from './orcid-service.ts';
+import { arrangeOrcidWorks, loadOrcidPublications, readerPapers, unmatchedWorkKeys, type OrcidListedWork } from './orcid-service.ts';
 import { decisionsForConnection } from './orcid-work-decisions-service.ts';
 import { feedSeedsFrom, OWN_WORK_KEYS_MAX, PUBLICATION_SEEDS_MAX, sameFeedSeeds } from '../utils/publication-seeds.ts';
 
@@ -70,19 +72,52 @@ export function feedSeedsWrite(connectedAt: string, { seeds, keys }: { seeds: Po
   };
 }
 
-export async function saveFeedSeeds(uid: string, connectedAt: string, seeds: { seeds: PositiveExample[]; keys: string[] }) {
-  await setDoc(worksDoc(uid), feedSeedsWrite(connectedAt, seeds), { merge: true });
+function sameKeys(a: string[], b: string[]) {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every(key => right.has(key));
+}
+
+/** Whether two sets of decisions name the same works, whatever their order. */
+export function sameDecisions(a: OrcidWorkDecisions, b: OrcidWorkDecisions) {
+  return sameKeys(a.mine, b.mine) && sameKeys(a.notMine, b.notMine);
 }
 
 /**
- * Keeps the publications of `papers` (readerPapers, newest first) for the
- * connection, unless the account already keeps the same ones and they are
- * not stale. Returns what is kept now.
+ * Keeps `seeds`, worked out from the decisions `basis`, unless the account's
+ * decisions changed meanwhile (another tab, or this one while ORCID was
+ * answering): then it writes nothing and resolves false, so a work the reader
+ * just marked "Not mine" is never kept as theirs.
  */
-export async function keepFeedSeeds(uid: string, connectedAt: string, papers: Parameters<typeof feedSeedsFrom>[0], kept: FeedSeeds | null, isStale: (keptAt: number | null) => boolean) {
-  const next = feedSeedsFrom(papers);
+export async function saveFeedSeeds(uid: string, connectedAt: string, seeds: { seeds: PositiveExample[]; keys: string[] }, basis: OrcidWorkDecisions) {
+  const ref = worksDoc(uid);
+  return runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const stored = snapshot.get('connectedAt');
+    if (stored !== undefined && stored !== connectedAt) return false;
+    if (!sameDecisions(decisionsForConnection(snapshot, connectedAt), basis)) return false;
+    transaction.set(ref, feedSeedsWrite(connectedAt, seeds), { merge: true });
+    return true;
+  });
+}
+
+/** What the account keeps of the reader's publications (`publications`, arrangeOrcidWorks) under `decisions`. */
+export function feedSeedsOf(publications: OrcidListedWork[], decisions: OrcidWorkDecisions) {
+  return feedSeedsFrom(readerPapers(publications, decisions), unmatchedWorkKeys(publications));
+}
+
+/**
+ * Keeps the reader's publications for the connection, unless the account
+ * already keeps the same ones and they are not stale. Returns what is kept
+ * now, or `kept` when nothing was written because the decisions changed.
+ */
+export async function keepFeedSeeds(
+  uid: string, connectedAt: string, publications: OrcidListedWork[], decisions: OrcidWorkDecisions,
+  kept: FeedSeeds | null, isStale: (keptAt: number | null) => boolean,
+) {
+  const next = feedSeedsOf(publications, decisions);
   if (kept && sameFeedSeeds(kept, next) && !isStale(kept.keptAt)) return kept;
-  await saveFeedSeeds(uid, connectedAt, next);
+  if (!await saveFeedSeeds(uid, connectedAt, next, decisions)) return kept;
   return { ...next, keptAt: Date.now() };
 }
 
@@ -91,15 +126,16 @@ export async function keepFeedSeeds(uid: string, connectedAt: string, papers: Pa
  * For a reader who connected ORCID and has not opened My profile since, or
  * whose kept publications are stale. Rejects when ORCID, OpenAlex's list of
  * the iD's works or the account cannot be read, so nothing partial is kept.
+ * Resolves null when the decisions changed while ORCID was answering.
  */
 export async function refreshFeedSeeds(uid: string, orcid: Pick<OrcidConnection, 'id' | 'host' | 'connectedAt'>) {
   const connectedAt = orcid.connectedAt;
-  if (!connectedAt) return NO_SEEDS;
+  if (!connectedAt) return null;
   const snapshot = await getDoc(worksDoc(uid));
   const loaded = await loadOrcidPublications(orcid.id, orcid.host, Promise.resolve(decisionsForConnection(snapshot, connectedAt)));
   if (loaded.attributed.failed || loaded.details === 'failed') throw new Error('The works of the ORCID iD could not all be read');
   const { publications } = arrangeOrcidWorks(loaded, loaded.decisions);
-  const next = feedSeedsFrom(readerPapers(publications, loaded.decisions));
-  await saveFeedSeeds(uid, connectedAt, next);
+  const next = feedSeedsOf(publications, loaded.decisions);
+  if (!await saveFeedSeeds(uid, connectedAt, next, loaded.decisions)) return null;
   return { ...next, keptAt: Date.now() };
 }

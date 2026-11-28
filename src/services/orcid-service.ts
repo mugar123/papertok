@@ -465,6 +465,18 @@ export function readerPapers(publications: OrcidListedWork[], decisions: OrcidWo
   return papers;
 }
 
+/**
+ * The names of the reader's publications OpenAlex has no paper for: a work
+ * of their ORCID record by its identifiers, and a work they added by the name
+ * they added it under. For you leaves these out too (ENG-251).
+ */
+export function unmatchedWorkKeys(publications: OrcidListedWork[]) {
+  return [...new Set(publications.flatMap((item) => {
+    if (item.paper) return [];
+    return item.kind === 'record' ? recordWorkKeys(item.work) : [item.key];
+  }))];
+}
+
 /** The OpenAlex work ids (`W123`) of `papers`, in their order, each once. */
 export function readerWorkIds(papers: Paper[]) {
   return [...new Set(papers.map(paper => openAlexWorkId(paper.id)).filter((id): id is string => id !== null))];

@@ -4,7 +4,7 @@ import type { Paper } from '../models/paper.ts';
 import { formatOpenAlexWorkAsPaper } from './open-alex-work.ts';
 import {
   feedSeedsFrom, feedSeedsStale, isOwnWork, OWN_WORK_KEYS_MAX, paperMatchKeys, PUBLICATION_SEEDS_MAX,
-  PUBLICATION_SEEDS_STALE_MS, publicationCategory, publicationSeedAllowance, sameFeedSeeds,
+  PUBLICATION_SEEDS_STALE_MS, publicationCategory, publicationSeedAllowance, sameFeedSeeds, workerCanLookUp,
 } from './publication-seeds.ts';
 
 // Synthetic OpenAlex works, as My profile reads the reader's publications.
@@ -75,4 +75,18 @@ test('the same publications and names need no write', () => {
   assert.equal(sameFeedSeeds(kept, { seeds: [{ id: 'openalex:W1', category: 'cs.CV' }], keys: ['openalex:W1'] }), true);
   assert.equal(sameFeedSeeds(kept, { seeds: [{ id: 'openalex:W1', category: 'cs.LG' }], keys: ['openalex:W1'] }), false);
   assert.equal(sameFeedSeeds(kept, { seeds: kept.seeds, keys: [] }), false);
+});
+
+test('a publication ranks only by an id the Worker looks up, and works OpenAlex lacks are still left out', () => {
+  assert.equal(workerCanLookUp('openalex:W1'), true);
+  assert.equal(workerCanLookUp('pmid:123'), true);
+  assert.equal(workerCanLookUp('2401.12345v2'), true);
+  assert.equal(workerCanLookUp('doi:10.1000/abc'), true);
+  // Past the relay's 240-character path, or a provider id the Worker does not read.
+  assert.equal(workerCanLookUp(`doi:10.1000/${'a'.repeat(240)}`), false);
+  assert.equal(workerCanLookUp('semantic-scholar:abc'), false);
+  const { seeds, keys } = feedSeedsFrom([{ id: `doi:10.1000/${'a'.repeat(240)}` }, { id: 'openalex:W2' }], ['doi:10.1000/orcid-only', 'arxiv:2401.00001']);
+  assert.deepEqual(seeds.map(seed => seed.id), ['openalex:W2']);
+  assert.ok(keys.includes('doi:10.1000/orcid-only') && keys.includes('arxiv:2401.00001'));
+  assert.equal(isOwnWork({ id: 'x', doi: '10.1000/ORCID-ONLY' }, new Set(keys)), true);
 });

@@ -400,10 +400,20 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (!uid || !orcidId || !orcidHost || !orcidConnectedAt) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const keep = (kept: FeedSeeds) => {
-      if (!live) return;
+    const keep = (kept: FeedSeeds | null) => {
+      if (!live || !kept) return;
       publicationSeeds.current = kept.seeds;
-      ownWorkKeys.current = new Set(kept.keys);
+      const keys = new Set(kept.keys);
+      ownWorkKeys.current = keys;
+      if (keys.size === 0) return;
+      // Keys that arrive after cards are on screen, or after a restored list,
+      // still take the reader's works out of it. The plan the list was asked
+      // with stands; its next refresh plans with the publications.
+      const own = (paper: Paper) => isOwnWork(paper, keys);
+      setPapers(current => (current.some(own) ? current.filter(paper => !own(paper)) : current));
+      for (const [mode, snapshot] of Object.entries(feedCache.current)) {
+        if (snapshot?.papers?.some(own)) feedCache.current[mode] = { ...snapshot, papers: snapshot.papers.filter(paper => !own(paper)) };
+      }
     };
     const connection = `${uid}:${orcidId}:${orcidConnectedAt}`;
     readFeedSeeds(uid, orcidConnectedAt).then((kept) => {
@@ -1019,7 +1029,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     } finally {
       if (sessionId === feedSessionId.current) isTraversingNetwork.current = false;
     }
-  }, [calculateAndAttachScore, isKnownPaper, userPreferences]);
+  }, [calculateAndAttachScore, isKnownPaper, isOwnPaper, userPreferences]);
 
   // Load user interactions
   useEffect(() => {
@@ -1268,7 +1278,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // late book and a re-rank keep each card on its side of the reader.
     visiblePaperIdRef.current ??= restoredReaderCardId(activeUserId.current, snapshot.papers);
     notableAfterRef.current = snapshot.notableAfter ?? null;
-    setPapers(snapshot.papers);
+    setPapers(snapshot.papers.filter(paper => !isOwnPaper(paper)));
     setPage(snapshot.page || 0);
     setHasMore(snapshot.hasMore !== false);
 
@@ -1294,7 +1304,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       recovery: pending.length > 0 ? recoverFeedAbstracts(pending) : null,
       publications: classifyFeedPublications(snapshot.papers),
     });
-  }, [followShownPapers]);
+  }, [followShownPapers, isOwnPaper]);
 
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
@@ -1753,7 +1763,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [
     userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
-    profileSignals, isKnownPaper, markPaperViewed, readerLean,
+    profileSignals, isKnownPaper, isOwnPaper, markPaperViewed, readerLean,
     calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent, user?.uid,
     lastVisit, restoreFeedSnapshot, scheduleFeedSnapshotWrite,
   ]);
@@ -1905,7 +1915,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setFeedMode(newMode);
       setTimeout(() => loadPapers(true, newMode, undefined, { listShown: false }), 0);
     }
-  }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
+  }, [feedMode, hasMore, isKnownPaper, isOwnPaper, loadPapers, page, papers]);
 
   // A due automatic retry is the next load. The scroll sentinel stays mounted
   // under the first wait's veil, and must not start pages in front of it.
