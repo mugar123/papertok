@@ -14,6 +14,8 @@ import { connectOrcid, orcidRecordUrl } from '../../services/orcid-connection-se
 import { CITING_WORKS_PAGE_SIZE, getWorksCiting, twelveMonthsBefore } from '../../services/open-alex-service.ts';
 import { arrangeOrcidWorks, citedWorkIds, citedWorksState, frequentCoauthors, loadOrcidPublications, orcidWorkKeys, othersCitations, readerPapers, readerWorkIds } from '../../services/orcid-service.ts';
 import { readOrcidWorkDecisions, saveOrcidWorkDecision } from '../../services/orcid-work-decisions-service.ts';
+import { keepFeedSeeds, readFeedSeeds, type FeedSeeds } from '../../services/orcid-feed-seeds-service.ts';
+import { feedSeedsStale } from '../../utils/publication-seeds.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';
 import { getPublicPaperPath } from '../../utils/public-navigation.ts';
@@ -365,6 +367,9 @@ function FrequentCoauthors({ coauthors }: { coauthors: Coauthor[] }) {
  * another record, or the same iD connected again, starts empty and a late
  * answer for the previous one is dropped.
  */
+// How long the list stands before its works are kept for For you, so a run of decisions writes once.
+const FEED_SEEDS_SAVE_DELAY_MS = 1500;
+
 function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string }) {
   const openPaper = useOpenPaper();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -376,6 +381,8 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const [decisionNote, setDecisionNote] = useState('');
   const [attempt, setAttempt] = useState(0);
+  // What the account keeps of these works for For you (ENG-251): null until read, or when the read failed.
+  const [keptSeeds, setKeptSeeds] = useState<FeedSeeds | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const suggestionsHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const hiddenToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -391,8 +398,14 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
 
   useEffect(() => {
     let live = true;
-    loadOrcidPublications(orcid.id, orcid.host, readOrcidWorkDecisions(uid, orcid.connectedAt)).then((result) => {
+    const kept = readFeedSeeds(uid, orcid.connectedAt).catch((error: unknown) => {
+      console.warn('The publications For you ranks by could not be read', error);
+      return null;
+    });
+    loadOrcidPublications(orcid.id, orcid.host, readOrcidWorkDecisions(uid, orcid.connectedAt)).then(async (result) => {
+      const keptNow = await kept;
       if (!live) return;
+      setKeptSeeds(keptNow);
       setLoaded(result);
       setDecisions(result.decisions);
       setRecent(new Map());
@@ -481,6 +494,28 @@ function OrcidPublications({ orcid, uid }: { orcid: OrcidConnection; uid: string
   const hidden = (arranged?.candidates ?? []).filter(candidate => candidate.decision === 'notMine' && !recent.has(candidate.key));
   const attributed = loaded?.attributed;
   const papers = useMemo(() => (arranged ? readerPapers(arranged.publications, decisions) : []), [arranged, decisions]);
+  // For you ranks by the newest of these works and leaves them all out of the
+  // feed (ENG-251): once the list stands, with no decision being saved, the
+  // account keeps them when they changed or are stale. Only a complete read
+  // is kept, so a lookup that failed cannot shorten what the feed knows.
+  const connectedAt = orcid.connectedAt;
+  useEffect(() => {
+    if (status !== 'ready' || !loaded || saving.size > 0 || !connectedAt) return;
+    if (loaded.attributed.failed || loaded.details === 'failed') return;
+    let live = true;
+    const timer = setTimeout(() => {
+      keepFeedSeeds(uid, connectedAt, papers, keptSeeds, feedSeedsStale).then((kept) => {
+        if (live) setKeptSeeds(kept);
+      }, (error: unknown) => {
+        console.warn('The publications For you ranks by could not be kept', error);
+      });
+    }, FEED_SEEDS_SAVE_DELAY_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [status, loaded, saving, connectedAt, uid, papers, keptSeeds]);
+
   // OpenAlex knows production iDs only: a sandbox iD may name someone else
   // there, so it gets no citations, coauthors or suggestions.
   const onOpenAlex = orcid.host === 'orcid.org';

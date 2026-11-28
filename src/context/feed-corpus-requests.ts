@@ -40,11 +40,15 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
   if (current && page > 0) return current;
   const { groups, unassignedPositiveIds } = planInterestGroups(input);
   const positiveIds = corpusPositiveIds(groups, unassignedPositiveIds);
+  // A publication the reader has not liked, saved or read is no reason a card
+  // can name (ENG-251): it has no kind, so a page ranked by publications alone
+  // says nothing about similarity.
+  const examples = new Set(input.examples.map(example => example.id));
   return {
     groups,
     unassignedPositiveIds,
     positiveIds,
-    ...(profile && { exampleKindsById: positiveExampleKinds(profile, positiveIds) }),
+    ...(profile && { exampleKindsById: positiveExampleKinds(profile, positiveIds.filter(id => examples.has(id))) }),
     dormantCategories: dormantCategories(input.selected, input.deselected),
     interestProgress: interestProgress(input),
     coldAdded: coldAddedInterests(input),

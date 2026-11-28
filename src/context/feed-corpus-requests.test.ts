@@ -472,3 +472,23 @@ test('every page of one list ranks by the same likes and rejections when the req
     assert.deepEqual(inputs(tenth), inputs(first), `the eleventh page, ${extra} characters longer`);
   }
 });
+
+test('a page ranked by the reader’s publications alone names no reason on its cards (ENG-251)', async () => {
+  const profile = createEmptyInteractionProfile();
+  const plan = feedPlanFor(null, 0, { ...memory({ selected: ['cs.LG'] }), publications: [{ id: 'openalex:W1', category: 'cs.LG' }] }, profile);
+  assert.deepEqual(plan.groups[0].positiveIds, ['openalex:W1']);
+  const card = (await fetchCorpusPage(mainCorpusRequest(plan, shared), {
+    apiBase: 'https://store.example',
+    fetchWorker: async () => Response.json({ papers: [{ id: 'near', _semanticScore: 0.9 }] }),
+  })).papers[0];
+  assert.equal(card._semanticExampleKinds, undefined);
+  assert.equal(feedReason({ ...card, _debugScore: scorePaperForRecommendation(card) }, null, 'feed', 'Research Paper'), null);
+
+  // Beside a like, the card names the like only.
+  recordInteractionEvent(profile, { paperId: 'liked', kind: 'like', category: 'cs.LG' });
+  const withLike = feedPlanFor(null, 0, {
+    ...memory({ selected: ['cs.LG'], examples: readProfileSignals(profile).positiveExamples }),
+    publications: [{ id: 'openalex:W1', category: 'cs.LG' }],
+  }, profile);
+  assert.deepEqual([...withLike.exampleKindsById!.keys()], ['liked']);
+});

@@ -712,17 +712,28 @@ service cloud.firestore {
       // the next one. The Worker deletes it on Disconnect, on a new connection
       // and with the account, past these rules. The rest of users/{uid}/orcid,
       // the pending ORCID sign-in, stays closed by the catch-all below.
+      // The same document keeps what For you learns from the account's
+      // publications (ENG-251, src/services/orcid-feed-seeds-service.ts):
+      // `feedSeeds`, up to 10 works to rank by, `feedKeys`, up to 300 names of
+      // works to leave out of the feed, and `feedAt`, when they were read. A
+      // write of them alone may create the document, so the decision lists
+      // may be missing.
       match /orcid/works {
         allow get: if ownsUserTree(userId);
         allow create, update: if ownsUserTree(userId)
-          && request.resource.data.keys().hasOnly(['connectedAt', 'mine', 'notMine', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['connectedAt', 'mine', 'notMine', 'updatedAt', 'feedSeeds', 'feedKeys', 'feedAt'])
           && request.resource.data.connectedAt is string
           && request.resource.data.connectedAt
             == get(/databases/$(database)/documents/users/$(userId)).data.get('orcid', {}).get('connectedAt', null)
-          && request.resource.data.mine is list
-          && request.resource.data.mine.size() <= 1000
-          && request.resource.data.notMine is list
-          && request.resource.data.notMine.size() <= 1000
+          && request.resource.data.get('mine', []) is list
+          && request.resource.data.get('mine', []).size() <= 1000
+          && request.resource.data.get('notMine', []) is list
+          && request.resource.data.get('notMine', []).size() <= 1000
+          && request.resource.data.get('feedSeeds', []) is list
+          && request.resource.data.get('feedSeeds', []).size() <= 10
+          && request.resource.data.get('feedKeys', []) is list
+          && request.resource.data.get('feedKeys', []).size() <= 300
+          && (!('feedAt' in request.resource.data) || request.resource.data.feedAt is timestamp)
           && request.resource.data.updatedAt == request.time;
       }
 
