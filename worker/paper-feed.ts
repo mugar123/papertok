@@ -428,6 +428,8 @@ export async function handleCorpusFeed(
     papers,
     ...(query.skipsSeen ? { skipsSeen: true as const } : {}),
     ...(saysMore ? { more: ranksLeft && query.page < FEED_LAST_PAGE } : {}),
+    // The app trusts `_semanticFromSeed` only from a Worker that says it marks it (ENG-251).
+    ...(query.seedIds.length ? { seedsScored: true as const } : {}),
     ...loadingField,
   };
 }

@@ -248,6 +248,9 @@ export interface Paper {
   _semanticScore?: number;
   // Captured with the response so a re-rank can still explain this score.
   _semanticExampleKinds?: ReadonlyArray<'liked' | 'saved' | 'read'>;
+  // The Worker scored the paper closest to one of the reader's publications
+  // (ENG-251), not to an example of theirs: no reason names one.
+  _semanticFromSeed?: boolean;
   // Set by the corpus on a notable paper it adds to a page, which the feed
   // places (placeNotableCards): one of the most-cited papers of the reader's
   // categories.

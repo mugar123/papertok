@@ -503,6 +503,19 @@ test('a page ranked by the reader’s publications alone names no reason on its 
   assert.deepEqual(sent, ['liked', 'openalex:W1']);
   assert.equal(mixed._semanticExampleKinds, undefined);
   assert.equal(feedReason({ ...mixed, _debugScore: scorePaperForRecommendation(mixed) }, null, 'feed', 'Research Paper'), null);
+
+  // A Worker that marks the papers a publication scored best: the others name the like, as before.
+  let seeds: unknown;
+  const marked = (await fetchCorpusPage(mainCorpusRequest(withLike, shared), {
+    apiBase: 'https://store.example',
+    fetchWorker: async (_url, init) => {
+      seeds = (JSON.parse(String(init.body)) as { seedIds?: string[] }).seedIds;
+      return Response.json({ seedsScored: true, papers: [{ id: 'near-like', _semanticScore: 0.9 }, { id: 'near-pub', _semanticScore: 0.9, _semanticFromSeed: true }] });
+    },
+  })).papers;
+  assert.deepEqual(seeds, ['openalex:W1']);
+  const reasonOf = (card: (typeof marked)[number]) => feedReason({ ...card, _debugScore: scorePaperForRecommendation(card) }, null, 'feed', 'Research Paper')?.text ?? null;
+  assert.deepEqual(marked.map(reasonOf), ['Similar to papers you liked', null]);
 });
 
 test('the reader’s examples come before their publications in the request, across groups and when it is trimmed (ENG-251)', async () => {

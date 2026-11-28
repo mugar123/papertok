@@ -109,7 +109,7 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
     throw sourceResponseError('/store/papers', response.status, refusal);
   }
-  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown; loading?: unknown; more?: unknown } | null;
+  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown; loading?: unknown; more?: unknown; seedsScored?: unknown } | null;
   // The Worker always answers a list, empty when nothing matches.
   const papers = answer?.papers;
   if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
@@ -117,7 +117,7 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
   // Even a pre-versioning corpus response owns its conference field. A later
   // versioned snapshot can supersede it after either library copy is reloaded.
   const snapshots = papers.map(paper => paper.corpusUpdatedAt === undefined ? { ...paper, corpusUpdatedAt: 0 } : paper);
-  return { papers: snapshots, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more };
+  return { papers: snapshots, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more, seedsScored: answer?.seedsScored === true };
 }
 
 /** The follows an exact answer says are still loading; a Worker that does not say any answers none. */
@@ -219,7 +219,16 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
     order,
     ...(seen ? { seen: feedSeenFilter(seen), skipsSeen: true, ...(notable > 0 ? { notable } : {}), ...(continues ? { continues } : {}), ...(walk ? { walk } : {}) } : {}),
     ...(waitForLikes ? { waitForLikes } : {}),
+    // Which examples are the reader's publications (ENG-251), so the Worker
+    // says which papers one of them scored best. Kept in step with the
+    // examples as the request is trimmed.
+    seedIds: undefined as string[] | undefined,
   };
+  const markSeeds = () => {
+    const seeds = isExample ? body.positiveIds.filter(id => !isExample(id)) : [];
+    body.seedIds = seeds.length ? seeds : undefined;
+  };
+  markSeeds();
   while (body.excludedIds.length && new TextEncoder().encode(JSON.stringify(body.excludedIds)).byteLength > 6_000) body.excludedIds.pop();
   // Trim new signals before they can push the existing request over 16 KiB.
   // First the copies of an example several groups hold, while one group keeps
@@ -262,6 +271,7 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
       // request the follows' page.
       body.follows.pop();
     } else break;
+    markSeeds();
   }
   const answer = askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
   if (exact) return answer;
@@ -269,16 +279,16 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
   // kinds actually sent with this page, alongside its semantic scores.
   // The Worker's walkNamed fallback can return a kept rank scored against
   // earlier examples. Only the Worker can identify which examples scored it.
-  // A page ranked by any publication of the reader (ENG-251) names no
-  // examples: the Worker scores each card by its closest example, and only it
-  // knows which, so a card close to a publication alone would otherwise read
-  // as similar to a like.
-  const kinds = exampleKindsById && body.positiveIds.every(id => exampleKindsById.has(id))
-    ? [...new Set(body.positiveIds.flatMap(id => exampleKindsById.get(id) ?? []))]
-    : undefined;
-  return answer.then(({ papers, skipsSeen }) => {
-    if (kinds?.length) {
-      for (const paper of papers) paper._semanticExampleKinds = kinds;
+  // A page ranked by the reader's publications too (ENG-251) names the
+  // examples only on the papers the Worker scored closest to one of the
+  // reader's own (`_semanticFromSeed` unset). A Worker that does not say
+  // (`seedsScored`) leaves every paper of such a page without them: a paper
+  // close to a publication alone would otherwise read as similar to a like.
+  const kinds = exampleKindsById && [...new Set(body.positiveIds.flatMap(id => exampleKindsById.get(id) ?? []))];
+  const ranksBySeeds = Boolean(body.seedIds?.length);
+  return answer.then(({ papers, skipsSeen, seedsScored }) => {
+    if (kinds?.length && (!ranksBySeeds || seedsScored)) {
+      for (const paper of papers) if (!paper._semanticFromSeed) paper._semanticExampleKinds = kinds;
     }
     return { papers, skipsSeen };
   });
