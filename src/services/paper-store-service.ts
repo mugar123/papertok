@@ -130,11 +130,8 @@ function loadingFollowsOf(value: unknown): LoadingFollow[] {
 }
 
 /**
- * The groups' examples, then the ones of no group, as one request ranks by
- * them: what a Worker that reads no groups ranks by.
- */
-/**
- * Every example of a grouped request, each once. With `isExample`, the
+ * Every example of a grouped request, each once: the groups' examples, then
+ * the ones of no group, what a Worker that reads no groups ranks by. With `isExample`, the
  * reader's own examples come before the rest (their publications, ENG-251),
  * so the Worker's lookup of examples it lacks, which reads the first ten,
  * reaches a like before a publication.

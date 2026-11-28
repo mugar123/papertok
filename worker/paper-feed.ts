@@ -335,7 +335,7 @@ export async function handleCorpusFeed(
   // Work the page does not wait for; awaited when nothing can outlive the response.
   later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
   timings?: FeedTimings,
-): Promise<{ papers: Paper[]; skipsSeen?: true; more?: boolean; loading?: Array<{ type: string; canonicalId: string }> }> {
+): Promise<{ papers: Paper[]; skipsSeen?: true; more?: boolean; seedsScored?: true; loading?: Array<{ type: string; canonicalId: string }> }> {
   const bodyRead = Date.now();
   const body = await readBody<FeedRequestBody & { ids?: unknown }>(request).finally(() => timings?.since('body', bodyRead));
   // The reservation, timed on its own while the follows are read beside it.
