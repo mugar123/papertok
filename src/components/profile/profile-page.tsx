@@ -14,7 +14,8 @@ import { connectOrcid, orcidRecordUrl } from '../../services/orcid-connection-se
 import { CITING_WORKS_PAGE_SIZE, getWorksCiting, twelveMonthsBefore } from '../../services/open-alex-service.ts';
 import { arrangeOrcidWorks, citedWorkIds, citedWorksState, frequentCoauthors, loadOrcidPublications, orcidWorkKeys, othersCitations, readerPapers, readerWorkIds } from '../../services/orcid-service.ts';
 import { readOrcidWorkDecisions, saveOrcidWorkDecision } from '../../services/orcid-work-decisions-service.ts';
-import { keepFeedSeeds, readFeedSeeds, type FeedSeeds } from '../../services/orcid-feed-seeds-service.ts';
+import { keepFeedSeeds } from '../../services/orcid-feed-seeds-service.ts';
+import { readFeedSeeds, type FeedSeeds } from '../../services/orcid-feed-seeds-store.ts';
 import { feedSeedsStale } from '../../utils/publication-seeds.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { safeDoiUrl } from '../../utils/external-url.ts';

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { feedSeedsForConnection, feedSeedsOf, feedSeedsWrite, sameDecisions } from './orcid-feed-seeds-service.ts';
+import { feedSeedsOf } from './orcid-feed-seeds-service.ts';
+import { feedSeedsForConnection, feedSeedsWrite, sameDecisions } from './orcid-feed-seeds-store.ts';
 
 const snapshot = (data: Record<string, unknown>) => ({ get: (field: string) => data[field] });
 const CONNECTED_AT = '2026-11-20T10:00:00.000Z';

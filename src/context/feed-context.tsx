@@ -176,7 +176,8 @@ import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
 import { recoverFeedAbstracts } from '../services/feed-abstract-service.ts';
 import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/feed-abstract-wait.ts';
 import { feedSeedsStale, isOwnWork } from '../utils/publication-seeds.ts';
-import { readFeedSeeds, refreshFeedSeeds, type FeedSeeds } from '../services/orcid-feed-seeds-service.ts';
+import { refreshFeedSeeds } from '../services/orcid-feed-seeds-service.ts';
+import { readFeedSeeds, type FeedSeeds } from '../services/orcid-feed-seeds-store.ts';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
 // instead of riding in the boot graph of every route.

@@ -4,6 +4,7 @@ import type { PositiveExample } from './interaction-profile.ts';
 import { areaKeyForCategory, areaKeyForOpenAlexTopic, leavesForOpenAlexTopic } from './area-accent.ts';
 import { doiPathId } from './open-alex-work.ts';
 import { canonicalArxivIdOf, canonicalDoiOf } from './paper-canonical-key.ts';
+import { OWN_WORK_KEYS_MAX, PUBLICATION_SEEDS_MAX } from './publication-seed-limits.ts';
 
 /**
  * For you learns from the reader's own publications once ORCID is connected
@@ -19,16 +20,9 @@ import { canonicalArxivIdOf, canonicalDoiOf } from './paper-canonical-key.ts';
  * disconnected or connected again, and with the account.
  */
 
-/** How many publications the feed ranks by at most: the Worker looks up 10 examples it lacks. */
-export const PUBLICATION_SEEDS_MAX = 10;
+export { OWN_WORK_KEYS_MAX, PUBLICATION_SEEDS_MAX };
 /** The reader's own examples after which the publications no longer rank: the plan's whole room. */
 export const PUBLICATION_SEEDS_FADE_EXAMPLES = 24;
-/**
- * How many names of the reader's works the account keeps to leave them out of
- * For you: about three for each of the 300 works My profile lists
- * (ORCID_LISTED_WORKS_MAX), with room for the works the reader added.
- */
-export const OWN_WORK_KEYS_MAX = 1000;
 /** How long the kept publications stand before the feed reads the reader's works again. */
 export const PUBLICATION_SEEDS_STALE_MS = 30 * 24 * 60 * 60 * 1000;
 

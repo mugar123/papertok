@@ -35,7 +35,7 @@ import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE 
 import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
 import { pmfSurveyRecord } from '../src/services/pmf-survey-service.ts';
 import { orcidWorkDecisionWrite } from '../src/services/orcid-work-decisions-service.ts';
-import { feedSeedsWrite } from '../src/services/orcid-feed-seeds-service.ts';
+import { feedSeedsWrite } from '../src/services/orcid-feed-seeds-store.ts';
 import { PRIVACY_POLICY_VERSION } from '../src/legal/privacy-policy.ts';
 import { WRITTEN_ARXIV_COPY, WRITTEN_FALLBACK_COPY, WRITTEN_OPENALEX_COPY, writtenFeeds, writtenList } from '../worker/test-support/mcp-written-documents.ts';
 import {
