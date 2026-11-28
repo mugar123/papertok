@@ -39,12 +39,16 @@ type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 
 export function feedPlanFor(current: FeedPlan | null, page: number, input: InterestMemoryInput, profile?: InteractionProfile): FeedPlan {
   if (current && page > 0) return current;
   const { groups, unassignedPositiveIds } = planInterestGroups(input);
-  const positiveIds = corpusPositiveIds(groups, unassignedPositiveIds);
+  // A publication the reader has not liked, saved or read is no reason a card
+  // can name (ENG-251): it has no kind, and fetchCorpusPage tells the Worker
+  // which ids are publications. It comes after the reader's own examples.
+  const examples = new Set(input.examples.map(example => example.id));
+  const positiveIds = corpusPositiveIds(groups, unassignedPositiveIds, id => examples.has(id));
   return {
     groups,
     unassignedPositiveIds,
     positiveIds,
-    ...(profile && { exampleKindsById: positiveExampleKinds(profile, positiveIds) }),
+    ...(profile && { exampleKindsById: positiveExampleKinds(profile, positiveIds.filter(id => examples.has(id))) }),
     dormantCategories: dormantCategories(input.selected, input.deselected),
     interestProgress: interestProgress(input),
     coldAdded: coldAddedInterests(input),

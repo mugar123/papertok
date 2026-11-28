@@ -472,3 +472,85 @@ test('every page of one list ranks by the same likes and rejections when the req
     assert.deepEqual(inputs(tenth), inputs(first), `the eleventh page, ${extra} characters longer`);
   }
 });
+
+test('a page ranked by the reader’s publications alone names no reason on its cards (ENG-251)', async () => {
+  const profile = createEmptyInteractionProfile();
+  const plan = feedPlanFor(null, 0, { ...memory({ selected: ['cs.LG'] }), publications: [{ id: 'openalex:W1', category: 'cs.LG' }] }, profile);
+  assert.deepEqual(plan.groups[0].positiveIds, ['openalex:W1']);
+  const card = (await fetchCorpusPage(mainCorpusRequest(plan, shared), {
+    apiBase: 'https://store.example',
+    fetchWorker: async () => Response.json({ papers: [{ id: 'near', _semanticScore: 0.9 }] }),
+  })).papers[0];
+  assert.equal(card._semanticExampleKinds, undefined);
+  assert.equal(feedReason({ ...card, _debugScore: scorePaperForRecommendation(card) }, null, 'feed', 'Research Paper'), null);
+
+  // Beside a like, the Worker may have scored the card by the publication, so
+  // the page names no reason either; the like comes first in the request.
+  recordInteractionEvent(profile, { paperId: 'liked', kind: 'like', category: 'cs.LG' });
+  const withLike = feedPlanFor(null, 0, {
+    ...memory({ selected: ['cs.LG'], examples: readProfileSignals(profile).positiveExamples }),
+    publications: [{ id: 'openalex:W1', category: 'cs.LG' }],
+  }, profile);
+  assert.deepEqual([...withLike.exampleKindsById!.keys()], ['liked']);
+  let sent: string[] = [];
+  const mixed = (await fetchCorpusPage(mainCorpusRequest(withLike, shared), {
+    apiBase: 'https://store.example',
+    fetchWorker: async (_url, init) => {
+      sent = (JSON.parse(String(init.body)) as { positiveIds: string[] }).positiveIds;
+      return Response.json({ papers: [{ id: 'near', _semanticScore: 0.9 }] });
+    },
+  })).papers[0];
+  assert.deepEqual(sent, ['liked', 'openalex:W1']);
+  assert.equal(mixed._semanticExampleKinds, undefined);
+  assert.equal(feedReason({ ...mixed, _debugScore: scorePaperForRecommendation(mixed) }, null, 'feed', 'Research Paper'), null);
+
+  // A Worker that marks the papers a publication scored best: the others name the like, as before.
+  let seeds: unknown;
+  const marked = (await fetchCorpusPage(mainCorpusRequest(withLike, shared), {
+    apiBase: 'https://store.example',
+    fetchWorker: async (_url, init) => {
+      seeds = (JSON.parse(String(init.body)) as { seedIds?: string[] }).seedIds;
+      return Response.json({ seedsScored: true, papers: [{ id: 'near-like', _semanticScore: 0.9 }, { id: 'near-pub', _semanticScore: 0.9, _semanticFromSeed: true }] });
+    },
+  })).papers;
+  assert.deepEqual(seeds, ['openalex:W1']);
+  const reasonOf = (card: (typeof marked)[number]) => feedReason({ ...card, _debugScore: scorePaperForRecommendation(card) }, null, 'feed', 'Research Paper')?.text ?? null;
+  assert.deepEqual(marked.map(reasonOf), ['Similar to papers you liked', null]);
+});
+
+test('the reader’s examples come before their publications in the request, across groups and when it is trimmed (ENG-251)', async () => {
+  const profile = createEmptyInteractionProfile();
+  const long = (name: string) => `${name}-${'x'.repeat(900)}`;
+  // Physics holds nine publications; economics, a later group, holds two
+  // likes, and a like of no area belongs to no group, which the request
+  // trimmed first before publications existed.
+  for (const id of [long('like-a'), long('like-b')]) recordInteractionEvent(profile, { paperId: id, kind: 'like', category: 'econ.EM' });
+  recordInteractionEvent(profile, { paperId: long('like-c'), kind: 'like', category: '' });
+  const publications = Array.from({ length: 9 }, (_, index) => ({ id: long(`pub-${index}`), category: 'quant-ph' }));
+  const plan = feedPlanFor(null, 0, {
+    ...memory({ selected: ['quant-ph', 'econ.EM'], examples: readProfileSignals(profile).positiveExamples }),
+    publications,
+  }, profile);
+  assert.deepEqual(plan.positiveIds.slice(0, 3).map(id => id.slice(0, 6)).sort(), ['like-a', 'like-b', 'like-c']);
+  const [body] = await bodiesOf({ ...mainCorpusRequest(plan, shared), exampleKindsById: plan.exampleKindsById });
+  const likes = body.positiveIds.filter(id => id.startsWith('like-'));
+  const kept = body.positiveIds.filter(id => id.startsWith('pub-'));
+  // The request was too long: publications went first, and every like stayed.
+  assert.ok(kept.length < publications.length, 'the request was trimmed');
+  assert.equal(likes.length, 3);
+  assert.deepEqual(body.positiveIds.slice(0, 3), likes);
+});
+
+test('marking publications takes nothing from the ranking inputs a long request keeps (ENG-251)', async () => {
+  const long = (name: string) => `${name}-${'x'.repeat(600)}`;
+  const groups = [{ categories: ['cs.LG'], exampleCategories: ['cs.LG'], positiveIds: [long('like'), ...Array.from({ length: 4 }, (_, index) => long(`pub-${index}`))], weight: 1 }];
+  const negativeIds = Array.from({ length: 24 }, (_, index) => long(`rejected-${index}`));
+  const request = { ...shared, groups, positiveIds: [], negativeIds, pageSize: 15 };
+  const everyExample = new Map(groups[0].positiveIds.map(id => [id, ['liked' as const]]));
+  const likeOnly = new Map([[long('like'), ['liked' as const]]]);
+  const [plain, seeded] = await bodiesOf({ ...request, exampleKindsById: everyExample }, { ...request, exampleKindsById: likeOnly });
+  assert.ok((plain.negativeIds?.length ?? 0) < negativeIds.length, 'the request was trimmed');
+  const { seedIds, ...rest } = seeded as typeof seeded & { seedIds?: string[] };
+  assert.deepEqual(seedIds, groups[0].positiveIds.slice(1));
+  assert.deepEqual(rest, plain);
+});

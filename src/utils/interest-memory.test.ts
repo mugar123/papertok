@@ -491,3 +491,39 @@ test('a retired pick is no example category, so the first group lists every leaf
   const split = planInterestGroups(memory({ selected: ['q-bio.NC', 'bio.gen', 'bio.mol'], added: ['bio.mol'], examples: examples('bio.gen', 8) }));
   assert.deepEqual(split.groups.map(group => group.exampleCategories), [leaves('bio'), leaves('bio')]);
 });
+
+// ENG-251: the reader's publications rank For you, weaker than their own examples.
+test('publications fill the room the examples leave, in the groups of their areas, and weigh no group', () => {
+  const publications: PositiveExample[] = [
+    { id: 'openalex:W1', category: 'quant-ph' },
+    { id: 'openalex:W2', category: 'cs.CV' },
+    { id: 'openalex:W3', category: '' },
+  ];
+  const input = memory({ selected: ['quant-ph', 'econ.EM'], added: ['econ.EM'], examples: examples('quant-ph', 2) });
+  const plan = planInterestGroups({ ...input, publications });
+  const [physics, econ] = plan.groups;
+  // Physics ranks by its own publication, and by the one of an area the reader never picked.
+  assert.deepEqual(physics.positiveIds, ['quant-ph-0', 'quant-ph-1', 'openalex:W1', 'openalex:W2']);
+  assert.deepEqual(econ.positiveIds, []);
+  assert.deepEqual(plan.unassignedPositiveIds, ['openalex:W3']);
+  // The weights and what the app has learned are those without publications.
+  assert.deepEqual(plan.groups.map(group => group.weight), planInterestGroups(input).groups.map(group => group.weight));
+  assert.deepEqual(interestProgress({ ...input, publications }), interestProgress(input));
+});
+
+test('publications rank fewer as the examples grow, never past the cap, and never twice or in a removed area', () => {
+  const publications = Array.from({ length: 10 }, (_, index): PositiveExample => ({ id: `openalex:W${index}`, category: 'quant-ph' }));
+  const ranked = (input: InterestMemoryInput) => planInterestGroups({ ...input, publications }).groups
+    .flatMap(group => group.positiveIds).filter(id => id.startsWith('openalex:'));
+  assert.equal(ranked(memory({ selected: ['quant-ph'] })).length, 10);
+  assert.equal(ranked(memory({ selected: ['quant-ph'], examples: examples('quant-ph', 12) })).length, 5);
+  assert.equal(ranked(memory({ selected: ['quant-ph'], examples: examples('quant-ph', 24) })).length, 0);
+  // A publication the reader also liked is one of their examples, not a second copy.
+  const liked = memory({ selected: ['quant-ph'], examples: [{ id: 'openalex:W0', category: 'quant-ph' }] });
+  assert.deepEqual(planInterestGroups({ ...liked, publications }).groups[0].positiveIds.filter(id => id === 'openalex:W0'), ['openalex:W0']);
+  // The reader removed quantum physics: its publications rank nothing.
+  assert.deepEqual(ranked(memory({ selected: ['cs.CV'], deselected: ['quant-ph'] })), []);
+  // Together they never pass the request's 24.
+  const full = planInterestGroups({ ...memory({ selected: ['quant-ph'], examples: examples('quant-ph', 20) }), publications });
+  assert.ok(new Set(full.groups.flatMap(group => group.positiveIds)).size <= 24);
+});

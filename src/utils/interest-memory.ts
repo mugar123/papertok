@@ -1,6 +1,7 @@
 import { getAllLeafCategories, getCategoryArea } from '../data/categories.ts';
 import { areaKeyForCategory } from './area-accent.ts';
 import { SEMANTIC_PROFILE_POSITIVE_CAP } from './feed-interactions.ts';
+import { publicationSeedAllowance } from './publication-seeds.ts';
 import type { CategoryExposure, PositiveExample } from './interaction-profile.ts';
 import { rankPreferences } from './preference-ranking.ts';
 
@@ -44,6 +45,10 @@ export interface InterestMemoryInput {
   examples: PositiveExample[];
   exposure: Record<string, CategoryExposure>;
   affinities: Record<string, number>;
+  // The reader's own publications, newest first (ENG-251,
+  // src/utils/publication-seeds.ts). Only planInterestGroups reads them: they
+  // weigh no group and teach no interest.
+  publications?: PositiveExample[];
 }
 
 export interface InterestGroup { categories: string[]; exampleCategories: string[]; positiveIds: string[]; weight: number }
@@ -300,6 +305,31 @@ export function planInterestGroups(
     .filter(example => !areaKeyForCategory(example.category))
     .map(example => example.id)
     .filter(admit);
+
+  // Last, the reader's publications (ENG-251), in the room the examples
+  // leave and fewer the more examples the reader has: each joins the groups
+  // an example of its category would (a cold group its own area's, an
+  // established group its own area's and the never-picked areas'), and one
+  // of no area, or of an area never picked when no group is established,
+  // goes with the examples of no group. One the reader removed the area of
+  // ranks nothing.
+  const sleeping = dormantCategories(input.selected, input.deselected);
+  const picked = new Set(chosenIds(input.selected, dormantIds(input.selected, input.deselected)).map(areaKeyForCategory));
+  const seeds = (input.publications ?? []).flatMap((seed) => {
+    if (union.has(seed.id) || isDormantCategory(seed.category, sleeping)) return [];
+    const area = areaKeyForCategory(seed.category);
+    const holders = area ? groups.flatMap((group, index) => {
+      const own = areaKeyForCategory(group.categories[0]) === area;
+      return own || (group.neverPickedLeaves.length > 0 && !picked.has(area)) ? [index] : [];
+    }) : [];
+    // A picked area whose group the lanes left out ranks nothing, as its examples do not.
+    return holders.length === 0 && area && picked.has(area) ? [] : [{ id: seed.id, holders }];
+  }).slice(0, publicationSeedAllowance(input.examples.length));
+  for (const { id, holders } of seeds) {
+    if (!admit(id)) break;
+    if (holders.length) holders.forEach(index => positiveIds[index].push(id));
+    else unassignedPositiveIds.push(id);
+  }
 
   // The Worker places only a like no group names by `exampleCategories`, so
   // only beside one, and only in the first established group, are the leaves

@@ -146,6 +146,18 @@ async function addMissingPositives(env: FeedEnv, uid: string, positiveIds: strin
   }
 }
 
+/**
+ * The order the lookup of missing examples reads them in: the reader's own
+ * examples before their publications (ENG-251), since it reads the first
+ * LIKED_LOOKUP_MAX_PAPERS and the request lists the examples group by group.
+ * A request without publications keeps its order.
+ */
+export function lookupOrder({ positiveIds, seedIds }: { positiveIds: string[]; seedIds: string[] }) {
+  if (seedIds.length === 0) return positiveIds;
+  const seeds = new Set(seedIds);
+  return [...positiveIds.filter(id => !seeds.has(id)), ...positiveIds.filter(id => seeds.has(id))];
+}
+
 interface FollowedLane { lane: string; requested_at: string; harvested: number }
 
 /**
@@ -323,7 +335,7 @@ export async function handleCorpusFeed(
   // Work the page does not wait for; awaited when nothing can outlive the response.
   later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
   timings?: FeedTimings,
-): Promise<{ papers: Paper[]; skipsSeen?: true; more?: boolean; loading?: Array<{ type: string; canonicalId: string }> }> {
+): Promise<{ papers: Paper[]; skipsSeen?: true; more?: boolean; seedsScored?: true; loading?: Array<{ type: string; canonicalId: string }> }> {
   const bodyRead = Date.now();
   const body = await readBody<FeedRequestBody & { ids?: unknown }>(request).finally(() => timings?.since('body', bodyRead));
   // The reservation, timed on its own while the follows are read beside it.
@@ -382,7 +394,8 @@ export async function handleCorpusFeed(
   // lookup still running then goes on after the answer. A reader's first
   // page never waits, one like or many.
   const waitsForLikes = looksUp && body?.waitForLikes === true;
-  let lookup = waitsForLikes ? addMissingPositives(env, identity.uid, query.positiveIds) : null;
+  const lookupIds = lookupOrder(query);
+  let lookup = waitsForLikes ? addMissingPositives(env, identity.uid, lookupIds) : null;
   // Finished in time: the ranking below reads what it stored.
   const waited = Date.now();
   if (lookup && await settlesWithin(lookup, LIKES_WAIT_MS)) lookup = null;
@@ -413,7 +426,7 @@ export async function handleCorpusFeed(
   });
   // Otherwise after the page, not before it: a lookup can take seconds
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
-  if (looksUp && !waitsForLikes) lookup = addMissingPositives(env, identity.uid, query.positiveIds);
+  if (looksUp && !waitsForLikes) lookup = addMissingPositives(env, identity.uid, lookupIds);
   // The whole order serves the next pages only if this work leaves the
   // ranking as it was: a followed lane waiting for its first harvest, or
   // finishing it after the page read its candidates, or a like stored or
@@ -428,6 +441,8 @@ export async function handleCorpusFeed(
     papers,
     ...(query.skipsSeen ? { skipsSeen: true as const } : {}),
     ...(saysMore ? { more: ranksLeft && query.page < FEED_LAST_PAGE } : {}),
+    // The app trusts `_semanticFromSeed` only from a Worker that says it marks it (ENG-251).
+    ...(query.seedIds.length ? { seedsScored: true as const } : {}),
     ...loadingField,
   };
 }

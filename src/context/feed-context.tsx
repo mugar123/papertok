@@ -175,6 +175,9 @@ import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
 import { enrichPubmedIds } from '../services/europe-pmc-service.ts';
 import { recoverFeedAbstracts } from '../services/feed-abstract-service.ts';
 import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/feed-abstract-wait.ts';
+import { feedSeedsStale, isOwnWork } from '../utils/publication-seeds.ts';
+import { refreshFeedSeeds } from '../services/orcid-feed-seeds-service.ts';
+import { readFeedSeeds, type FeedSeeds } from '../services/orcid-feed-seeds-store.ts';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
 // instead of riding in the boot graph of every route.
@@ -187,6 +190,9 @@ const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
+// When a reader's kept publications are read again from ORCID (ENG-251): after the first screens.
+const PUBLICATION_SEEDS_REFRESH_DELAY_MS = 20_000;
+const isForYouMode = (mode: string | null) => mode === 'top' || mode === null;
 // Upper bound on the reading-library records fetched on demand by the library
 // screens. How many queries that costs depends on the `in` operator's cap,
 // which is stated once in `utils/firestore-limits.ts` and nowhere else — this
@@ -228,7 +234,7 @@ const NO_INTEREST_MEMORY: ScoringMemory = Object.freeze({ interestProgress: {}, 
 // measured in production, a signed-in visit to a public page fired the full
 // source cascade for a feed nobody was looking at.
 export function FeedProvider({ children, feedRouteActive = true }: PropsWithChildren<{ feedRouteActive?: boolean }>) {
-  const { user, userPreferences, deselectedPreferences, addedPreferences, followedAuthors } = useAuth();
+  const { user, userPreferences, deselectedPreferences, addedPreferences, followedAuthors, orcid } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const [papers, setPapers] = useState<Paper[]>([]);
   const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
@@ -375,6 +381,81 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     (paperId: string) => isPaperKnown(interactionProfile.current, paperId),
     [],
   );
+
+  // The reader's publications For you ranks by, and the names of their works
+  // it leaves out (ENG-251, src/utils/publication-seeds.ts), as the account
+  // keeps them for its ORCID connection. Read once per account and
+  // connection; when they are missing or stale they are read again from ORCID
+  // after the feed has settled, at most once a session, and a failure keeps
+  // what was there.
+  const publicationSeeds = useRef<FeedSeeds['seeds']>([]);
+  const ownWorkKeys = useRef<ReadonlySet<string>>(new Set());
+  const seedsRefreshTried = useRef(new Set<string>());
+  // For you only (ENG-251): the reader's works stay in Most recent.
+  const feedModeRef = useRef(feedMode);
+  useEffect(() => { feedModeRef.current = feedMode; }, [feedMode]);
+  const isOwnPaper = useCallback((paper: Pick<Paper, 'id' | 'doi' | 'arxivId'>, mode: string | null) => (
+    isForYouMode(mode) && isOwnWork(paper, ownWorkKeys.current)
+  ), []);
+  const orcidId = orcid?.id ?? null;
+  const orcidHost = orcid?.host ?? null;
+  const orcidConnectedAt = orcid?.connectedAt ?? null;
+  // The connection whose kept publications are missing or stale, once read.
+  const [seedsStaleFor, setSeedsStaleFor] = useState<string | null>(null);
+  const keepFeedSeedsRef = useRef<(kept: FeedSeeds | null, connection: string) => void>(() => {});
+  useEffect(() => {
+    // A plan made with the previous connection's publications must not ask for later pages.
+    if (publicationSeeds.current.length > 0) feedPlan.current = null;
+    publicationSeeds.current = [];
+    ownWorkKeys.current = new Set();
+    const uid = user?.uid;
+    if (!uid || !orcidId || !orcidHost || !orcidConnectedAt) return;
+    let live = true;
+    const connection = `${uid}:${orcidId}:${orcidConnectedAt}`;
+    const keep = (kept: FeedSeeds | null, from: string) => {
+      if (!live || !kept || from !== connection) return;
+      publicationSeeds.current = kept.seeds;
+      const keys = new Set(kept.keys);
+      ownWorkKeys.current = keys;
+      if (keys.size === 0) return;
+      // Keys that arrive after cards are on screen, or after a restored list,
+      // still take the reader's works out of it. The plan the list was asked
+      // with stands; its next refresh plans with the publications.
+      const own = (paper: Paper) => isOwnWork(paper, keys);
+      if (isForYouMode(feedModeRef.current)) setPapers(current => (current.some(own) ? current.filter(paper => !own(paper)) : current));
+      const cached = feedCache.current.top;
+      if (cached?.papers?.some(own)) feedCache.current.top = { ...cached, papers: cached.papers.filter(paper => !own(paper)) };
+    };
+    keepFeedSeedsRef.current = keep;
+    readFeedSeeds(uid, orcidConnectedAt).then((kept) => {
+      keep(kept, connection);
+      if (live && feedSeedsStale(kept.keptAt)) setSeedsStaleFor(connection);
+    }, (error) => {
+      console.warn('The publications the feed ranks by could not be read', error);
+    });
+    return () => {
+      live = false;
+    };
+  }, [user?.uid, orcidId, orcidHost, orcidConnectedAt]);
+
+  // Kept publications that are missing or stale are read again from ORCID
+  // and OpenAlex, as My profile reads them: only while the feed is on screen,
+  // well after its first screen, at most once a session per connection, and
+  // not when another tab or My profile kept fresh ones meanwhile
+  // (refreshFeedSeeds reads them first).
+  useEffect(() => {
+    const uid = user?.uid;
+    const connection = uid && orcidId && orcidHost && orcidConnectedAt ? `${uid}:${orcidId}:${orcidConnectedAt}` : null;
+    if (!feedRouteActive || !connection || seedsStaleFor !== connection || seedsRefreshTried.current.has(connection)) return;
+    const timer = setTimeout(() => {
+      seedsRefreshTried.current.add(connection);
+      refreshFeedSeeds(uid!, { id: orcidId!, host: orcidHost!, connectedAt: orcidConnectedAt }).then(
+        kept => keepFeedSeedsRef.current(kept, connection),
+        (error) => { console.warn('The publications the feed ranks by could not be read again', error); },
+      );
+    }, PUBLICATION_SEEDS_REFRESH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [feedRouteActive, seedsStaleFor, user?.uid, orcidId, orcidHost, orcidConnectedAt]);
 
   // A card counts as seen once it was on screen: the dwell and the skip the
   // card reports call this. So does a load for a notable paper it passes over
@@ -928,7 +1009,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           !readPaperIdsRef.current.has(candidate.id) &&
           !notInterestedIdsRef.current.has(candidate.id) &&
           !sessionSeenPapers.current.has(candidate.id) &&
-          !isKnownPaper(candidate.id)
+          !isKnownPaper(candidate.id) &&
+          !isOwnPaper(candidate, feedModeRef.current)
       ).slice(0, 5);
 
         if (newGraphPapers.length > 0) {
@@ -969,7 +1051,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     } finally {
       if (sessionId === feedSessionId.current) isTraversingNetwork.current = false;
     }
-  }, [calculateAndAttachScore, isKnownPaper, userPreferences]);
+  }, [calculateAndAttachScore, isKnownPaper, isOwnPaper, userPreferences]);
 
   // Load user interactions
   useEffect(() => {
@@ -1218,7 +1300,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // late book and a re-rank keep each card on its side of the reader.
     visiblePaperIdRef.current ??= restoredReaderCardId(activeUserId.current, snapshot.papers);
     notableAfterRef.current = snapshot.notableAfter ?? null;
-    setPapers(snapshot.papers);
+    setPapers(snapshot.papers.filter(paper => !isOwnPaper(paper, mode)));
     setPage(snapshot.page || 0);
     setHasMore(snapshot.hasMore !== false);
 
@@ -1244,7 +1326,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       recovery: pending.length > 0 ? recoverFeedAbstracts(pending) : null,
       publications: classifyFeedPublications(snapshot.papers),
     });
-  }, [followShownPapers]);
+  }, [followShownPapers, isOwnPaper]);
 
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
@@ -1313,6 +1395,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       && !savedPaperIdsRef.current.has(paper.id)
       && !sessionSeenPapers.current.has(paper.id)
       && !isKnownPaper(paper.id)
+      && !isOwnPaper(paper, activeMode)
     );
 
     // Whether this load's store requests wait the first screen's deadline.
@@ -1331,6 +1414,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         examples: profileSignals.current.positiveExamples,
         exposure: profileSignals.current.categoryExposure,
         affinities: profileSignals.current.categoryAffinities,
+        publications: publicationSeeds.current,
       }, interactionProfile.current);
       let newPapers: Paper[] = [];
       let rankingSeen = false;
@@ -1515,7 +1599,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           !readPaperIdsRef.current.has(p.id) &&
           !likedPaperIdsRef.current.has(p.id) &&
           !savedPaperIdsRef.current.has(p.id) &&
-          !isKnownPaper(p.id)
+          !isKnownPaper(p.id) &&
+          !isOwnPaper(p, activeMode)
         );
         // `filtered` holds only this page's unseen notable cards now.
         const plan = planUnshowablePage({
@@ -1700,7 +1785,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [
     userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
-    profileSignals, isKnownPaper, markPaperViewed, readerLean,
+    profileSignals, isKnownPaper, isOwnPaper, markPaperViewed, readerLean,
     calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent, user?.uid,
     lastVisit, restoreFeedSnapshot, scheduleFeedSnapshotWrite,
   ]);
@@ -1836,7 +1921,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         !readPaperIdsRef.current.has(p.id) &&
         !likedPaperIdsRef.current.has(p.id) &&
         !savedPaperIdsRef.current.has(p.id) &&
-        !isKnownPaper(p.id)
+        !isKnownPaper(p.id) &&
+        !isOwnPaper(p, newMode)
       );
       
       setPapers(refiltered);
@@ -1851,7 +1937,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setFeedMode(newMode);
       setTimeout(() => loadPapers(true, newMode, undefined, { listShown: false }), 0);
     }
-  }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
+  }, [feedMode, hasMore, isKnownPaper, isOwnPaper, loadPapers, page, papers]);
 
   // A due automatic retry is the next load. The scroll sentinel stays mounted
   // under the first wait's veil, and must not start pages in front of it.

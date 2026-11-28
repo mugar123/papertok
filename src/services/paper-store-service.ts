@@ -109,7 +109,7 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
     throw sourceResponseError('/store/papers', response.status, refusal);
   }
-  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown; loading?: unknown; more?: unknown } | null;
+  const answer = await response.json().catch(markUnreachable) as { papers?: Paper[]; skipsSeen?: unknown; loading?: unknown; more?: unknown; seedsScored?: unknown } | null;
   // The Worker always answers a list, empty when nothing matches.
   const papers = answer?.papers;
   if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
@@ -117,7 +117,7 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
   // Even a pre-versioning corpus response owns its conference field. A later
   // versioned snapshot can supersede it after either library copy is reloaded.
   const snapshots = papers.map(paper => paper.corpusUpdatedAt === undefined ? { ...paper, corpusUpdatedAt: 0 } : paper);
-  return { papers: snapshots, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more };
+  return { papers: snapshots, skipsSeen: answer?.skipsSeen === true, loading: loadingFollowsOf(answer?.loading), more, seedsScored: answer?.seedsScored === true };
 }
 
 /** The follows an exact answer says are still loading; a Worker that does not say any answers none. */
@@ -130,11 +130,16 @@ function loadingFollowsOf(value: unknown): LoadingFollow[] {
 }
 
 /**
- * The groups' examples, then the ones of no group, as one request ranks by
- * them: what a Worker that reads no groups ranks by.
+ * Every example of a grouped request, each once: the groups' examples, then
+ * the ones of no group, what a Worker that reads no groups ranks by. With `isExample`, the
+ * reader's own examples come before the rest (their publications, ENG-251),
+ * so the Worker's lookup of examples it lacks, which reads the first ten,
+ * reaches a like before a publication.
  */
-export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[]) {
-  return [...new Set([...groups.flatMap(group => group.positiveIds), ...positiveIds])].slice(0, SEMANTIC_PROFILE_POSITIVE_CAP);
+export function corpusPositiveIds(groups: InterestGroup[], positiveIds: string[], isExample?: (id: string) => boolean) {
+  const ids = [...new Set([...groups.flatMap(group => group.positiveIds), ...positiveIds])];
+  const ordered = isExample ? [...ids.filter(isExample), ...ids.filter(id => !isExample(id))] : ids;
+  return ordered.slice(0, SEMANTIC_PROFILE_POSITIVE_CAP);
 }
 
 // The copy a request too long drops first: the oldest example the group
@@ -181,6 +186,8 @@ export function fetchCorpusPage(request: CorpusPageRequest & { exact: true }, op
 export function fetchCorpusPage(request: CorpusPageRequest, options?: StoreOptions): Promise<{ papers: Paper[]; skipsSeen: boolean }>;
 export function fetchCorpusPage({ categories = [], areas = [], exact = false, groups, follows = [], positiveIds = [], exampleKindsById, negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, walk, waitForLikes = false, firstScreen = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = servedFollows(follows).map(({ follow }) => follow);
+  // The reader's own examples have a kind; their publications (ENG-251) have none.
+  const isExample = exampleKindsById && ((id: string) => exampleKindsById.has(id));
   const body = {
     categories: groups ? [...new Set(groups.flatMap(group => group.categories))] : categories,
     ...(areas.length ? { areas } : {}),
@@ -199,7 +206,7 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
       displayName: cutFollowText(displayName, 200),
       metadata: { query: cutFollowText(metadata?.query, 121), funder: cutFollowText(metadata?.funder, 81) },
     })),
-    positiveIds: groups ? corpusPositiveIds(groups, positiveIds) : positiveIds,
+    positiveIds: groups ? corpusPositiveIds(groups, positiveIds, isExample) : positiveIds,
     // Copies: the examples below may be trimmed, and the plan is the feed's.
     ...(groups ? { groups: groups.map(group => ({ ...group, positiveIds: [...group.positiveIds] })) } : {}),
     ...(negativeIds.length ? { negativeIds: negativeIds.slice(0, 24) } : {}),
@@ -240,7 +247,9 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
     else if (body.groups && body.positiveIds.length) {
       const grouped = new Set(body.groups.flatMap(group => group.positiveIds));
       const largest = body.groups.reduce((most, group) => (group.positiveIds.length > most.positiveIds.length ? group : most));
-      const dropped = body.positiveIds.findLast(id => !grouped.has(id)) ?? largest.positiveIds.at(-1);
+      // A publication goes before any of the reader's own examples.
+      const dropped = (isExample && body.positiveIds.findLast(id => !isExample(id)))
+        || (body.positiveIds.findLast(id => !grouped.has(id)) ?? largest.positiveIds.at(-1));
       body.positiveIds = body.positiveIds.filter(id => id !== dropped);
       for (const group of body.groups) group.positiveIds = group.positiveIds.filter(id => id !== dropped);
     } else if (body.follows.length > 1) {
@@ -251,16 +260,29 @@ export function fetchCorpusPage({ categories = [], areas = [], exact = false, gr
       body.follows.pop();
     } else break;
   }
-  const answer = askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
-  if (exact) return answer;
+  // Which examples are the reader's publications (ENG-251), so the Worker
+  // says which papers one of them scored best: added after the trimming, so
+  // they take nothing from the ranking inputs' 16,000 bytes. At most 10 ids
+  // the Worker can look up (about 2.6 KB) fit in the room the Worker leaves
+  // above that (MAX_BODY_BYTES in worker/paper-feed.ts).
+  const seedIds = isExample ? body.positiveIds.filter(id => !isExample(id)) : [];
+  const answer = askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }), ...(seedIds.length ? { seedIds } : {}) }, options, firstScreen ? FIRST_SCREEN_TIMEOUT_MS : STORE_TIMEOUT_MS);
+  // The capability flag stays inside: an exact request answers as it did.
+  if (exact) return answer.then(({ papers, skipsSeen, loading, more }) => ({ papers, skipsSeen, loading, more }));
   // The size limit may have removed examples from the plan. Keep only the
   // kinds actually sent with this page, alongside its semantic scores.
   // The Worker's walkNamed fallback can return a kept rank scored against
   // earlier examples. Only the Worker can identify which examples scored it.
+  // A page ranked by the reader's publications too (ENG-251) names the
+  // examples only on the papers the Worker scored closest to one of the
+  // reader's own (`_semanticFromSeed` unset). A Worker that does not say
+  // (`seedsScored`) leaves every paper of such a page without them: a paper
+  // close to a publication alone would otherwise read as similar to a like.
   const kinds = exampleKindsById && [...new Set(body.positiveIds.flatMap(id => exampleKindsById.get(id) ?? []))];
-  return answer.then(({ papers, skipsSeen }) => {
-    if (kinds?.length) {
-      for (const paper of papers) paper._semanticExampleKinds = kinds;
+  const ranksBySeeds = seedIds.length > 0;
+  return answer.then(({ papers, skipsSeen, seedsScored }) => {
+    if (kinds?.length && (!ranksBySeeds || seedsScored)) {
+      for (const paper of papers) if (!paper._semanticFromSeed) paper._semanticExampleKinds = kinds;
     }
     return { papers, skipsSeen };
   });

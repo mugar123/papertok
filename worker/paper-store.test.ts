@@ -722,6 +722,62 @@ test('a page ranks its lanes by the liked papers, says what each was found under
   assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.00001'").length, 1, 'past its date, still ranked by');
 });
 
+// ENG-251: the reader's publications rank as likes, and a paper one of them
+// scores best says so, so the app names no like as the reason for it.
+test("a paper closest to one of the reader's publications says so, and one closest to a like does not", async () => {
+  const { env, db } = corpus();
+  const paper = (id: string, title: string, published: string) => ({ ...arxivRecord, id, arxivId: id, title, published });
+  await ingestPapers(env, [
+    { paper: paper('2610.00001', 'Liked paper', '2026-07-30T00:00:00.000Z'), lanes: ['q-bio.BM'] },
+    { paper: paper('2610.00004', 'The reader’s own paper', '2026-07-30T00:00:00.000Z'), lanes: ['q-bio.BM'] },
+    { paper: paper('2610.00002', 'Close to the like', '2026-10-02T00:00:00.000Z'), lanes: ['q-bio.BM'] },
+    { paper: paper('2610.00003', 'Close to the publication', '2026-10-03T00:00:00.000Z'), lanes: ['q-bio.BM'] },
+    { paper: paper('2610.00005', 'Opposite to the publication', '2026-10-01T00:00:00.000Z'), lanes: ['q-bio.BM'] },
+  ], { now: NOW });
+  const idOf = (paperId: string) => rows(db, `SELECT work_id FROM work_keys WHERE key = 'arxiv:${paperId}'`)[0].work_id;
+  const vector = (values: number[]) => Buffer.from(quantize(values).buffer);
+  const insert = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  insert.run(idOf('2610.00001') as number, vector([1, 0]));
+  insert.run(idOf('2610.00004') as number, vector([0, 1]));
+  insert.run(idOf('2610.00002') as number, vector([1, 0.05]));
+  insert.run(idOf('2610.00003') as number, vector([0.05, 1]));
+  insert.run(idOf('2610.00005') as number, vector([0, -1]));
+  const ask = (seedIds?: string[]) => readFeedPage(env, parseFeedRequest({
+    categories: ['q-bio.BM'], positiveIds: ['2610.00001', '2610.00004'], pageSize: 5, ...(seedIds ? { seedIds } : {}),
+  }), { now: NOW });
+  const marks = (page: Awaited<ReturnType<typeof ask>>) => Object.fromEntries(page.map(item => [item.id, item._semanticFromSeed === true]));
+  assert.deepEqual(marks(await ask(['2610.00004'])), { '2610.00002': false, '2610.00003': true, '2610.00005': false });
+  // Without seeds nothing is marked, and the same papers rank in the same order.
+  const plain = await ask();
+  assert.deepEqual(marks(plain), { '2610.00002': false, '2610.00003': false, '2610.00005': false });
+  assert.deepEqual(plain.map(item => item.id), (await ask(['2610.00004'])).map(item => item.id));
+  // A publication alone marks every paper, even one at a cosine of -1 to it.
+  const seedOnly = await readFeedPage(env, parseFeedRequest({ categories: ['q-bio.BM'], positiveIds: ['2610.00004'], seedIds: ['2610.00004'], pageSize: 5 }), { now: NOW });
+  assert.ok(seedOnly.length > 0 && seedOnly.every(item => item._semanticFromSeed === true));
+  // A rank an order keeps keeps its score and mark together when a later
+  // page, sent without the publication, ranks again: the mark says where that
+  // score came from.
+  const kept = new Map<string, KeptRanking>();
+  const cache: RankingCache = {
+    get: async key => kept.get(key) ?? null,
+    put: async (key, ranking) => { kept.set(key, { ...ranking, ranks: ranking.ranks.slice(0, ranking.served), final: false }); },
+  };
+  const paged = async (page: number, seedIds?: string[]) => readFeedPage(env, parseFeedRequest({
+    categories: ['q-bio.BM'], positiveIds: ['2610.00001', '2610.00004'], page, pageSize: 1, ...(seedIds ? { seedIds } : {}),
+  }), { now: NOW, cache });
+  const [first] = await paged(0, ['2610.00004']);
+  await paged(1);
+  const [entry] = [...kept.values()];
+  const firstRank = entry.ranks[0]!;
+  assert.equal(firstRank.workId, idOf(first.id.replace(/^arxiv:/, '')));
+  assert.equal(first._semanticFromSeed, true, 'the first card is the one close to the publication');
+  assert.equal(firstRank.fromSeed, true);
+  assert.equal(firstRank.semanticScore, first._semanticScore);
+  // A seed that is not among the examples is ignored.
+  assert.deepEqual(parseFeedRequest({ positiveIds: ['a'], seedIds: ['a', 'b', 7] }).seedIds, ['a']);
+  assert.deepEqual(parseFeedRequest({ positiveIds: ['a'] }).seedIds, []);
+});
+
 // D3 (Pablo, 2026-10-25): at most 10 journals a request. A journal's lane
 // costs the harvest a list call a night whichever feed asks for it, so the cap
 // holds where the lanes are made, whatever a client sent.

@@ -1134,13 +1134,13 @@ export function rankBySimilarity<T extends { embedding: Int8Array | null; publis
  * request normalizes each candidate and like once, however many interest
  * groups rank it.
  */
-function rankByUnitVectors<T extends Pick<Candidate, 'published' | 'quality'>>(rows: T[], unitOf: (row: T) => Float64Array | null, likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order }: { now: number; order: keyof typeof RECENCY_WEIGHT }) {
-  const scoreOf = scorer(likedVectors, rejectedVectors, { now, order });
+function rankByUnitVectors<T extends Pick<Candidate, 'published' | 'quality'>>(rows: T[], unitOf: (row: T) => Float64Array | null, likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order, seedVectors }: { now: number; order: keyof typeof RECENCY_WEIGHT; seedVectors?: ReadonlySet<Float64Array> }) {
+  const scoreOf = scorer(likedVectors, rejectedVectors, { now, order, seedVectors });
   const ranked = rows
     .map(row => {
       const embedding = unitOf(row);
-      const { score, semanticScore } = scoreOf(embedding, row);
-      return { row, embedding, score, semanticScore };
+      const { score, semanticScore, fromSeed } = scoreOf(embedding, row);
+      return { row, embedding, score, semanticScore, fromSeed };
     })
     .sort((a, b) => scoreOrder(a.score, a.row.published, b.score, b.row.published));
   if (!likedVectors.length && !rejectedVectors.length) return ranked;
@@ -1155,21 +1155,33 @@ function rankByUnitVectors<T extends Pick<Candidate, 'published' | 'quality'>>(r
 /**
  * A candidate's score by these likes and rejections, from its unit vector
  * and its base score. Without likes, recency plus eligible quality is an
- * upper bound because a rejection can only lower the score.
+ * upper bound because a rejection can only lower the score. `fromSeed` says
+ * the closest example is one of the reader's publications (`seedVectors`,
+ * ENG-251), not a paper they liked, saved or read; a like wins a tie.
  */
-function scorer(likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order }: { now: number; order: keyof typeof RECENCY_WEIGHT }) {
+function scorer(likedVectors: Float64Array[], rejectedVectors: Float64Array[], { now, order, seedVectors }: { now: number; order: keyof typeof RECENCY_WEIGHT; seedVectors?: ReadonlySet<Float64Array> }) {
   const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
   return (embedding: Float64Array | null, { published, quality }: Pick<Candidate, 'published' | 'quality'>) => {
     const age = Math.max(0, now - Date.parse(published)) / DAY_MS;
     const recency = weight * 0.5 ** (age / RECENCY_HALF_LIFE_DAYS);
     const bonus = QUALITY_WEIGHT * (quality ?? 0);
-    const similarity = likedVectors.length && embedding
-      ? likedVectors.reduce((best, positive) => Math.max(best, cosine(embedding, positive)), -1) : 0;
+    // The closest like and the closest publication apart, each cosine computed once.
+    let closestLike = -Infinity;
+    let closestSeed = -Infinity;
+    if (likedVectors.length && embedding) {
+      for (const positive of likedVectors) {
+        const value = cosine(embedding, positive);
+        if (seedVectors?.has(positive)) closestSeed = Math.max(closestSeed, value);
+        else closestLike = Math.max(closestLike, value);
+      }
+    }
+    const similarity = likedVectors.length && embedding ? Math.max(-1, closestLike, closestSeed) : 0;
+    const fromSeed = closestSeed > closestLike;
     const negative = rejection(embedding, rejectedVectors);
     // A fixed scale keeps an uninformative page from stretching its best
     // match to 100%. The client's contribution is bounded independently.
     const semanticScore = Math.max(0, Math.min(1, (similarity - 0.4) / 0.4)) - negative;
-    return { score: similarity - NEGATIVE_WEIGHT * negative + recency + bonus, semanticScore };
+    return { score: similarity - NEGATIVE_WEIGHT * negative + recency + bonus, semanticScore, fromSeed };
   };
 }
 
@@ -1606,6 +1618,10 @@ export interface FeedQuery {
   // runs of one reader, such as two tabs, keep two walks. '' on any other
   // request, and when the request names no id of the expected form.
   walk: string;
+  // The reader's publications among `positiveIds` (ENG-251): they rank as
+  // likes do, and a paper one of them scores best says so (`_semanticFromSeed`),
+  // so the app names no like as the reason for it.
+  seedIds: string[];
 }
 
 /**
@@ -1620,7 +1636,14 @@ export interface FeedQuery {
  * row to check it against the filter, '' when the corpus no longer holds the
  * work: the next pages check it against theirs without reading it again.
  */
-export interface RankedCandidate { workId: number; lanes: string[]; semanticScore?: number; paperId?: string }
+export interface RankedCandidate {
+  workId: number; lanes: string[]; semanticScore?: number; paperId?: string;
+  // Its `semanticScore` came from one of the reader's publications (`seedIds`,
+  // ENG-251). A kept rank keeps its score and this mark together, as the
+  // ranking that scored it left them; a rank of a ranking without
+  // publications, before them included, was scored by examples alone.
+  fromSeed?: boolean;
+}
 /**
  * The order a reader's pages were served from, in an entry of the reader's
  * alone, kept from the last page that changed it for WALK_KEPT_MS when its
@@ -1730,6 +1753,8 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
   // the groups' ranking.
   const inputs = JSON.stringify({
     lanes, order: query.order, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), groups,
+    // Which examples are publications decides which ranks carry `fromSeed`; a request without any keeps its digest.
+    ...(query.seedIds.length ? { seeds: [...query.seedIds].sort() } : {}),
     ...(query.exact ? { exact: true, areas: [...query.areas].sort() } : {}),
     ...(query.sendsGroups && (query.order !== 'daily' || query.notable > 0) ? {
       groupsRanking: ranksWithQuality(query) ? GROUPS_RANKING : GROUPS_RANKING_WITHOUT_QUALITY,
@@ -1939,6 +1964,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     return [{
       ...paper,
       _semanticScore: candidate.semanticScore,
+      ...(candidate.fromSeed ? { _semanticFromSeed: true } : {}),
       ...(fetchedFor.length ? { _fetchedFor: fetchedFor } : {}),
       ...(follows.length ? { _followedEntityMatches: follows.map(({ type, canonicalId, displayName }) => ({ type, canonicalId, displayName: displayName || canonicalId })) } : {}),
       ...(notableIds.has(candidate.workId) ? { _notable: true } : {}),
@@ -2223,6 +2249,11 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   });
   const likes = vectorsOf(positiveIds);
   const negatives = vectorsOf(negativeIds);
+  // The reader's publications (ENG-251) that are not also one of their own
+  // examples under another id. `signalUnit` gives one vector object per work,
+  // so the groups' likes hold these same objects.
+  const ownExampleWorks = new Set(workIdsOf(query.positiveIds.filter(id => !query.seedIds.includes(id))));
+  const seedVectors = new Set(vectorsOf(workIdsOf(query.seedIds).filter(id => !ownExampleWorks.has(id))));
   // A liked paper is not offered again, and keeps its vector in the corpus. A
   // liked, rejected or excluded paper comes neither as a rank nor as a notable card.
   const excludedIds = query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : []);
@@ -2303,9 +2334,9 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   step = Date.now();
   // Each group ranked by its own likes, then the page shared by weight.
   const scored = interleaveByWeight(members.map((rows, index) => {
-    const ranked = rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order });
+    const ranked = rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: query.order, seedVectors });
     return (turnsWithoutLikes && !groupLikes[index].length ? categoriesInTurns(ranked, query.groups[index].categories) : ranked)
-      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }));
+      .map(({ row, semanticScore, fromSeed }) => ({ workId: row.workId, lanes: row.lanes, semanticScore, ...(fromSeed ? { fromSeed } : {}) }));
   }), query.groups.map(group => group.weight));
   const ranks = placed.size ? inKeywordTurns(scored, placed, keywordLanes, lanes.some(lane => !isKeywordLane(lane))) : scored;
   // A daily page goes day by day, the newest arrival's day first (UTC, by the
@@ -2325,8 +2356,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const yearsInTurns = (rows: Candidate[], rowLanes: string[]) => notableYearsInTurns(rows, rowLanes)
     .map(row => ({ row, semanticScore: -rejection(unitOf(row), negatives) }))
     .sort((a, b) => b.semanticScore - a.semanticScore);
-  const notableRank = ({ row, semanticScore }: { row: Candidate; semanticScore: number }): RankedCandidate =>
-    ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore });
+  const notableRank = ({ row, semanticScore, fromSeed }: { row: Candidate; semanticScore: number; fromSeed?: boolean }): RankedCandidate =>
+    ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore, ...(fromSeed ? { fromSeed } : {}) });
   // With a like, as the page: each group ranks the notable papers of its
   // categories by its own likes, the closest first and without recency, since
   // they are years old by design, or with the years in turns when it has none
@@ -2372,8 +2403,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const notableInGroupTurns = () => {
     const groupLanes = query.groups.map(group => group.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`));
     const ofLanes = groupLanes.map(lanes => notableCandidates.filter(candidate => candidate.lanes.some(lane => lanes.includes(lane))));
-    const rank = (index: number, rows: Candidate[]): Array<{ row: Candidate; semanticScore: number }> => (groupLikes[index].length
-      ? rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: 'relevance' })
+    const rank = (index: number, rows: Candidate[]): Array<{ row: Candidate; semanticScore: number; fromSeed?: boolean }> => (groupLikes[index].length
+      ? rankByUnitVectors(rows, unitOf, groupLikes[index], negatives, { now, order: 'relevance', seedVectors })
       : yearsInTurns(rows, groupLanes[index]));
     // The groups whose categories list each paper.
     const holders = new Map<number, number[]>();
@@ -2583,7 +2614,7 @@ const CATEGORY_ID = /^[\w.-]{1,32}$/;
 export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
   seen?: unknown; skipsSeen?: unknown; continues?: unknown; notable?: unknown; waitForLikes?: unknown; groups?: unknown;
-  exact?: unknown; areas?: unknown; walk?: unknown;
+  exact?: unknown; areas?: unknown; walk?: unknown; seedIds?: unknown;
 }
 
 // A run's id as the app draws it (crypto.randomUUID()), or another short opaque token.
@@ -2669,6 +2700,7 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     // Only a daily walk without `exact` (Most recent's) names its run. Any
     // other request, and any other value, names none and keeps its key.
     walk: skipsSeen && !exact && body?.order === 'daily' && typeof body.walk === 'string' && WALK_ID.test(body.walk) ? body.walk : '',
+    seedIds: paperIds(body?.seedIds).filter(id => positiveIds.includes(id)),
   };
 }
 

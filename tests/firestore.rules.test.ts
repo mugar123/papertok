@@ -35,6 +35,7 @@ import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE 
 import { privacyNoticeRecord } from '../src/services/privacy-notice-service.ts';
 import { pmfSurveyRecord } from '../src/services/pmf-survey-service.ts';
 import { orcidWorkDecisionWrite } from '../src/services/orcid-work-decisions-service.ts';
+import { feedSeedsWrite } from '../src/services/orcid-feed-seeds-store.ts';
 import { PRIVACY_POLICY_VERSION } from '../src/legal/privacy-policy.ts';
 import { WRITTEN_ARXIV_COPY, WRITTEN_FALLBACK_COPY, WRITTEN_OPENALEX_COPY, writtenFeeds, writtenList } from '../worker/test-support/mcp-written-documents.ts';
 import {
@@ -689,6 +690,39 @@ test('an account with an ORCID iD keeps its own decisions about the works attrib
   await assertFails(setDoc(ref, {
     connectedAt, mine: Array.from({ length: 1001 }, (_, index) => `doi:10.1000/${index}`), notMine: [], updatedAt: serverTimestamp(),
   }));
+});
+
+// What For you learns from the account's publications (ENG-251), kept in the
+// same document as the decisions and written as the app writes it.
+test('an account with an ORCID iD keeps the publications For you ranks by, beside its decisions', async () => {
+  await reset();
+  await seedLegacyUserDoc({ orcid: ORCID });
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'orcid', 'works');
+  const seeds = { seeds: [{ id: 'openalex:W1', category: 'cs.CV' }, { id: '2401.12345', category: '' }], keys: ['doi:10.1000/a', 'openalex:W1', 'arxiv:2401.12345'] };
+  // A first write of the publications alone creates the document, with no decision lists.
+  await assertSucceeds(setDoc(ref, feedSeedsWrite(ORCID.connectedAt, seeds), { merge: true }));
+  await assertSucceeds(setDoc(ref, orcidWorkDecisionWrite(ORCID.connectedAt, ['doi:10.1000/a'], 'mine'), { merge: true }));
+  await assertSucceeds(setDoc(ref, feedSeedsWrite(ORCID.connectedAt, { seeds: seeds.seeds.slice(0, 1), keys: seeds.keys }), { merge: true }));
+  const stored = await assertSucceeds(getDoc(ref));
+  assert.deepEqual(stored.get('mine'), ['doi:10.1000/a']);
+  assert.deepEqual(stored.get('feedSeeds'), [{ id: 'openalex:W1', category: 'cs.CV' }]);
+
+  // Nobody else reads or writes them.
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'orcid', 'works'), feedSeedsWrite(ORCID.connectedAt, seeds), { merge: true }));
+  await assertFails(setDoc(doc(asGuest(), 'users', ALICE, 'orcid', 'works'), feedSeedsWrite(ORCID.connectedAt, seeds), { merge: true }));
+  // At most 10 publications and 1,000 names, as lists, with a time for `feedAt`.
+  const many = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `openalex:W${index}`, category: '' }));
+  await assertFails(setDoc(ref, feedSeedsWrite(ORCID.connectedAt, { seeds: many(11), keys: [] }), { merge: true }));
+  await assertFails(setDoc(ref, feedSeedsWrite(ORCID.connectedAt, { seeds: [], keys: Array.from({ length: 1001 }, (_, index) => `doi:10.1000/${index}`) }), { merge: true }));
+  await assertFails(setDoc(ref, { ...feedSeedsWrite(ORCID.connectedAt, seeds), feedKeys: 'doi:10.1000/a' }, { merge: true }));
+  await assertFails(setDoc(ref, { ...feedSeedsWrite(ORCID.connectedAt, seeds), feedAt: 'yesterday' }, { merge: true }));
+  // Only the server's time: a reader cannot date their publications to keep them from being read again.
+  await assertFails(setDoc(ref, { ...feedSeedsWrite(ORCID.connectedAt, seeds), feedAt: new Date(Date.UTC(2099, 0, 1)) }, { merge: true }));
+  // Only for the connection the account holds now, and not without one.
+  await assertFails(setDoc(ref, feedSeedsWrite('2026-01-01T00:00:00.000Z', seeds), { merge: true }));
+  await seedLegacyUserDoc();
+  await assertFails(setDoc(ref, feedSeedsWrite(ORCID.connectedAt, seeds), { merge: true }));
 });
 
 test('no decision about attributed works is kept without a connected ORCID iD', async () => {
