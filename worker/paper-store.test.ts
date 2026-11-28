@@ -9,7 +9,7 @@ import test from 'node:test';
 
 import {
   FEED_CANDIDATE_LIMIT, arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, inKeywordTurns, ingestPapers, interleaveByWeight, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, retraced, rewriteWorks, thinLeaves, thinLeavesReport, unitVector, writeLaneRanks,
+  notableSince, readFeedPage, readNotableCandidates, readVector, reserveFeedRequest, rewriteWorks, thinLeaves, thinLeavesReport, unitVector, writeLaneRanks,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { FeedTimings } from './feed-timings.ts';
@@ -754,20 +754,28 @@ test("a paper closest to one of the reader's publications says so, and one close
   // A publication alone marks every paper, even one at a cosine of -1 to it.
   const seedOnly = await readFeedPage(env, parseFeedRequest({ categories: ['q-bio.BM'], positiveIds: ['2610.00004'], seedIds: ['2610.00004'], pageSize: 5 }), { now: NOW });
   assert.ok(seedOnly.length > 0 && seedOnly.every(item => item._semanticFromSeed === true));
+  // A rank an order keeps keeps its score and mark together when a later
+  // page, sent without the publication, ranks again: the mark says where that
+  // score came from.
+  const kept = new Map<string, KeptRanking>();
+  const cache: RankingCache = {
+    get: async key => kept.get(key) ?? null,
+    put: async (key, ranking) => { kept.set(key, { ...ranking, ranks: ranking.ranks.slice(0, ranking.served), final: false }); },
+  };
+  const paged = async (page: number, seedIds?: string[]) => readFeedPage(env, parseFeedRequest({
+    categories: ['q-bio.BM'], positiveIds: ['2610.00001', '2610.00004'], page, pageSize: 1, ...(seedIds ? { seedIds } : {}),
+  }), { now: NOW, cache });
+  const [first] = await paged(0, ['2610.00004']);
+  await paged(1);
+  const [entry] = [...kept.values()];
+  const firstRank = entry.ranks[0]!;
+  assert.equal(firstRank.workId, idOf(first.id.replace(/^arxiv:/, '')));
+  assert.equal(first._semanticFromSeed, true, 'the first card is the one close to the publication');
+  assert.equal(firstRank.fromSeed, true);
+  assert.equal(firstRank.semanticScore, first._semanticScore);
   // A seed that is not among the examples is ignored.
   assert.deepEqual(parseFeedRequest({ positiveIds: ['a'], seedIds: ['a', 'b', 7] }).seedIds, ['a']);
   assert.deepEqual(parseFeedRequest({ positiveIds: ['a'] }).seedIds, []);
-});
-
-test('a rank kept from an earlier order takes its score and mark from the new ranking, or is marked when it has none (ENG-251)', () => {
-  const kept = { workId: 1, lanes: ['q-bio.BM'], semanticScore: 1, paperId: 'p1' };
-  const fresh = new Map([[1, { workId: 1, lanes: ['q-bio.BM'], semanticScore: 0.4, fromSeed: true }], [2, { workId: 2, lanes: [], semanticScore: 0.9 }]]);
-  // Scored by a like before, by a publication now: the mark comes with the new score.
-  assert.deepEqual(retraced(kept, fresh), { workId: 1, lanes: ['q-bio.BM'], semanticScore: 0.4, paperId: 'p1', fromSeed: true });
-  // Marked before, scored by a like now: the old mark goes.
-  assert.deepEqual(retraced({ workId: 2, lanes: [], semanticScore: 1, fromSeed: true }, fresh), { workId: 2, lanes: [], semanticScore: 0.9 });
-  // Not in the new ranking: nothing traces its score, so no like may be named for it.
-  assert.equal(retraced({ workId: 3, lanes: [], semanticScore: 1 }, fresh).fromSeed, true);
 });
 
 // D3 (Pablo, 2026-10-25): at most 10 journals a request. A journal's lane
