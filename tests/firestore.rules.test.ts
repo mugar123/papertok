@@ -717,6 +717,8 @@ test('an account with an ORCID iD keeps the publications For you ranks by, besid
   await assertFails(setDoc(ref, feedSeedsWrite(ORCID.connectedAt, { seeds: [], keys: Array.from({ length: 1001 }, (_, index) => `doi:10.1000/${index}`) }), { merge: true }));
   await assertFails(setDoc(ref, { ...feedSeedsWrite(ORCID.connectedAt, seeds), feedKeys: 'doi:10.1000/a' }, { merge: true }));
   await assertFails(setDoc(ref, { ...feedSeedsWrite(ORCID.connectedAt, seeds), feedAt: 'yesterday' }, { merge: true }));
+  // Only the server's time: a reader cannot date their publications to keep them from being read again.
+  await assertFails(setDoc(ref, { ...feedSeedsWrite(ORCID.connectedAt, seeds), feedAt: new Date(Date.UTC(2099, 0, 1)) }, { merge: true }));
   // Only for the connection the account holds now, and not without one.
   await assertFails(setDoc(ref, feedSeedsWrite('2026-01-01T00:00:00.000Z', seeds), { merge: true }));
   await seedLegacyUserDoc();

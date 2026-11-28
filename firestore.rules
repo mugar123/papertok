@@ -733,7 +733,10 @@ service cloud.firestore {
           && request.resource.data.get('feedSeeds', []).size() <= 10
           && request.resource.data.get('feedKeys', []) is list
           && request.resource.data.get('feedKeys', []).size() <= 1000
-          && (!('feedAt' in request.resource.data) || request.resource.data.feedAt is timestamp)
+          // `feedAt` is the server's time of the write that set it, or stays as stored.
+          && (!('feedAt' in request.resource.data)
+            || request.resource.data.feedAt == request.time
+            || (resource != null && 'feedAt' in resource.data && request.resource.data.feedAt == resource.data.feedAt))
           && request.resource.data.updatedAt == request.time;
       }
 

@@ -399,15 +399,20 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const orcidId = orcid?.id ?? null;
   const orcidHost = orcid?.host ?? null;
   const orcidConnectedAt = orcid?.connectedAt ?? null;
+  // The connection whose kept publications are missing or stale, once read.
+  const [seedsStaleFor, setSeedsStaleFor] = useState<string | null>(null);
+  const keepFeedSeedsRef = useRef<(kept: FeedSeeds | null, connection: string) => void>(() => {});
   useEffect(() => {
+    // A plan made with the previous connection's publications must not ask for later pages.
+    if (publicationSeeds.current.length > 0) feedPlan.current = null;
     publicationSeeds.current = [];
     ownWorkKeys.current = new Set();
     const uid = user?.uid;
     if (!uid || !orcidId || !orcidHost || !orcidConnectedAt) return;
     let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const keep = (kept: FeedSeeds | null) => {
-      if (!live || !kept) return;
+    const connection = `${uid}:${orcidId}:${orcidConnectedAt}`;
+    const keep = (kept: FeedSeeds | null, from: string) => {
+      if (!live || !kept || from !== connection) return;
       publicationSeeds.current = kept.seeds;
       const keys = new Set(kept.keys);
       ownWorkKeys.current = keys;
@@ -420,25 +425,36 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const cached = feedCache.current.top;
       if (cached?.papers?.some(own)) feedCache.current.top = { ...cached, papers: cached.papers.filter(paper => !own(paper)) };
     };
-    const connection = `${uid}:${orcidId}:${orcidConnectedAt}`;
+    keepFeedSeedsRef.current = keep;
     readFeedSeeds(uid, orcidConnectedAt).then((kept) => {
-      keep(kept);
-      if (!live || !feedSeedsStale(kept.keptAt) || seedsRefreshTried.current.has(connection)) return;
-      seedsRefreshTried.current.add(connection);
-      // Well after the first screen: this reads ORCID and OpenAlex as My profile does.
-      timer = setTimeout(() => {
-        refreshFeedSeeds(uid, { id: orcidId, host: orcidHost, connectedAt: orcidConnectedAt }).then(keep, (error) => {
-          console.warn('The publications the feed ranks by could not be read again', error);
-        });
-      }, PUBLICATION_SEEDS_REFRESH_DELAY_MS);
+      keep(kept, connection);
+      if (live && feedSeedsStale(kept.keptAt)) setSeedsStaleFor(connection);
     }, (error) => {
       console.warn('The publications the feed ranks by could not be read', error);
     });
     return () => {
       live = false;
-      if (timer) clearTimeout(timer);
     };
   }, [user?.uid, orcidId, orcidHost, orcidConnectedAt]);
+
+  // Kept publications that are missing or stale are read again from ORCID
+  // and OpenAlex, as My profile reads them: only while the feed is on screen,
+  // well after its first screen, at most once a session per connection, and
+  // not when another tab or My profile kept fresh ones meanwhile
+  // (refreshFeedSeeds reads them first).
+  useEffect(() => {
+    const uid = user?.uid;
+    const connection = uid && orcidId && orcidHost && orcidConnectedAt ? `${uid}:${orcidId}:${orcidConnectedAt}` : null;
+    if (!feedRouteActive || !connection || seedsStaleFor !== connection || seedsRefreshTried.current.has(connection)) return;
+    const timer = setTimeout(() => {
+      seedsRefreshTried.current.add(connection);
+      refreshFeedSeeds(uid!, { id: orcidId!, host: orcidHost!, connectedAt: orcidConnectedAt }).then(
+        kept => keepFeedSeedsRef.current(kept, connection),
+        (error) => { console.warn('The publications the feed ranks by could not be read again', error); },
+      );
+    }, PUBLICATION_SEEDS_REFRESH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [feedRouteActive, seedsStaleFor, user?.uid, orcidId, orcidHost, orcidConnectedAt]);
 
   // A card counts as seen once it was on screen: the dwell and the skip the
   // card reports call this. So does a load for a notable paper it passes over

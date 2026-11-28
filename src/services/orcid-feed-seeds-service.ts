@@ -7,7 +7,7 @@ import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore
 import { db } from './firebase.ts';
 import { arrangeOrcidWorks, loadOrcidPublications, readerPapers, unmatchedWorkKeys, type OrcidListedWork } from './orcid-service.ts';
 import { decisionsForConnection } from './orcid-work-decisions-service.ts';
-import { feedSeedsFrom, OWN_WORK_KEYS_MAX, PUBLICATION_SEEDS_MAX, sameFeedSeeds } from '../utils/publication-seeds.ts';
+import { feedSeedsFrom, feedSeedsStale, OWN_WORK_KEYS_MAX, PUBLICATION_SEEDS_MAX, sameFeedSeeds } from '../utils/publication-seeds.ts';
 
 /**
  * The reader's publications For you ranks by and the names of every work it
@@ -132,6 +132,9 @@ export async function refreshFeedSeeds(uid: string, orcid: Pick<OrcidConnection,
   const connectedAt = orcid.connectedAt;
   if (!connectedAt) return null;
   const snapshot = await getDoc(worksDoc(uid));
+  // Another tab, or My profile, may have kept fresh ones since the feed read them.
+  const current = feedSeedsForConnection(snapshot, connectedAt);
+  if (!feedSeedsStale(current.keptAt)) return current;
   const loaded = await loadOrcidPublications(orcid.id, orcid.host, Promise.resolve(decisionsForConnection(snapshot, connectedAt)));
   if (loaded.attributed.failed || loaded.details === 'failed') throw new Error('The works of the ORCID iD could not all be read');
   const { publications } = arrangeOrcidWorks(loaded, loaded.decisions);
