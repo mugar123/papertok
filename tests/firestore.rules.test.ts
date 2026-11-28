@@ -711,10 +711,10 @@ test('an account with an ORCID iD keeps the publications For you ranks by, besid
   // Nobody else reads or writes them.
   await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'orcid', 'works'), feedSeedsWrite(ORCID.connectedAt, seeds), { merge: true }));
   await assertFails(setDoc(doc(asGuest(), 'users', ALICE, 'orcid', 'works'), feedSeedsWrite(ORCID.connectedAt, seeds), { merge: true }));
-  // At most 10 publications and 300 names, as lists, with a time for `feedAt`.
+  // At most 10 publications and 1,000 names, as lists, with a time for `feedAt`.
   const many = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `openalex:W${index}`, category: '' }));
   await assertFails(setDoc(ref, feedSeedsWrite(ORCID.connectedAt, { seeds: many(11), keys: [] }), { merge: true }));
-  await assertFails(setDoc(ref, feedSeedsWrite(ORCID.connectedAt, { seeds: [], keys: Array.from({ length: 301 }, (_, index) => `doi:10.1000/${index}`) }), { merge: true }));
+  await assertFails(setDoc(ref, feedSeedsWrite(ORCID.connectedAt, { seeds: [], keys: Array.from({ length: 1001 }, (_, index) => `doi:10.1000/${index}`) }), { merge: true }));
   await assertFails(setDoc(ref, { ...feedSeedsWrite(ORCID.connectedAt, seeds), feedKeys: 'doi:10.1000/a' }, { merge: true }));
   await assertFails(setDoc(ref, { ...feedSeedsWrite(ORCID.connectedAt, seeds), feedAt: 'yesterday' }, { merge: true }));
   // Only for the connection the account holds now, and not without one.

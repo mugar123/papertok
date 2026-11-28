@@ -714,7 +714,7 @@ service cloud.firestore {
       // the pending ORCID sign-in, stays closed by the catch-all below.
       // The same document keeps what For you learns from the account's
       // publications (ENG-251, src/services/orcid-feed-seeds-service.ts):
-      // `feedSeeds`, up to 10 works to rank by, `feedKeys`, up to 300 names of
+      // `feedSeeds`, up to 10 works to rank by, `feedKeys`, up to 1,000 names of
       // works to leave out of the feed, and `feedAt`, when they were read. A
       // write of them alone may create the document, so the decision lists
       // may be missing.
@@ -732,7 +732,7 @@ service cloud.firestore {
           && request.resource.data.get('feedSeeds', []) is list
           && request.resource.data.get('feedSeeds', []).size() <= 10
           && request.resource.data.get('feedKeys', []) is list
-          && request.resource.data.get('feedKeys', []).size() <= 300
+          && request.resource.data.get('feedKeys', []).size() <= 1000
           && (!('feedAt' in request.resource.data) || request.resource.data.feedAt is timestamp)
           && request.resource.data.updatedAt == request.time;
       }

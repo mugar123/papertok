@@ -50,7 +50,7 @@ test('the newest publications with an id the Worker can look up are kept, with t
   assert.ok(keys.includes('openalex:W12'));
   // Repeated works are kept once, and the names stop at their cap.
   assert.equal(feedSeedsFrom([{ id: 'openalex:W1' }, { id: 'openalex:W1' }]).seeds.length, 1);
-  const lots = Array.from({ length: 400 }, (_, index) => ({ id: `openalex:W${index}` }));
+  const lots = Array.from({ length: 1200 }, (_, index) => ({ id: `openalex:W${index}` }));
   assert.equal(feedSeedsFrom(lots).keys.length, OWN_WORK_KEYS_MAX);
 });
 

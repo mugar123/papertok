@@ -191,6 +191,7 @@ const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
 // When a reader's kept publications are read again from ORCID (ENG-251): after the first screens.
 const PUBLICATION_SEEDS_REFRESH_DELAY_MS = 20_000;
+const isForYouMode = (mode: string | null) => mode === 'top' || mode === null;
 // Upper bound on the reading-library records fetched on demand by the library
 // screens. How many queries that costs depends on the `in` operator's cap,
 // which is stated once in `utils/firestore-limits.ts` and nowhere else — this
@@ -389,7 +390,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const publicationSeeds = useRef<FeedSeeds['seeds']>([]);
   const ownWorkKeys = useRef<ReadonlySet<string>>(new Set());
   const seedsRefreshTried = useRef(new Set<string>());
-  const isOwnPaper = useCallback((paper: Pick<Paper, 'id' | 'doi' | 'arxivId'>) => isOwnWork(paper, ownWorkKeys.current), []);
+  // For you only (ENG-251): the reader's works stay in Most recent.
+  const feedModeRef = useRef(feedMode);
+  useEffect(() => { feedModeRef.current = feedMode; }, [feedMode]);
+  const isOwnPaper = useCallback((paper: Pick<Paper, 'id' | 'doi' | 'arxivId'>, mode: string | null) => (
+    isForYouMode(mode) && isOwnWork(paper, ownWorkKeys.current)
+  ), []);
   const orcidId = orcid?.id ?? null;
   const orcidHost = orcid?.host ?? null;
   const orcidConnectedAt = orcid?.connectedAt ?? null;
@@ -410,10 +416,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // still take the reader's works out of it. The plan the list was asked
       // with stands; its next refresh plans with the publications.
       const own = (paper: Paper) => isOwnWork(paper, keys);
-      setPapers(current => (current.some(own) ? current.filter(paper => !own(paper)) : current));
-      for (const [mode, snapshot] of Object.entries(feedCache.current)) {
-        if (snapshot?.papers?.some(own)) feedCache.current[mode] = { ...snapshot, papers: snapshot.papers.filter(paper => !own(paper)) };
-      }
+      if (isForYouMode(feedModeRef.current)) setPapers(current => (current.some(own) ? current.filter(paper => !own(paper)) : current));
+      const cached = feedCache.current.top;
+      if (cached?.papers?.some(own)) feedCache.current.top = { ...cached, papers: cached.papers.filter(paper => !own(paper)) };
     };
     const connection = `${uid}:${orcidId}:${orcidConnectedAt}`;
     readFeedSeeds(uid, orcidConnectedAt).then((kept) => {
@@ -988,7 +993,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           !notInterestedIdsRef.current.has(candidate.id) &&
           !sessionSeenPapers.current.has(candidate.id) &&
           !isKnownPaper(candidate.id) &&
-          !isOwnPaper(candidate)
+          !isOwnPaper(candidate, feedModeRef.current)
       ).slice(0, 5);
 
         if (newGraphPapers.length > 0) {
@@ -1278,7 +1283,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // late book and a re-rank keep each card on its side of the reader.
     visiblePaperIdRef.current ??= restoredReaderCardId(activeUserId.current, snapshot.papers);
     notableAfterRef.current = snapshot.notableAfter ?? null;
-    setPapers(snapshot.papers.filter(paper => !isOwnPaper(paper)));
+    setPapers(snapshot.papers.filter(paper => !isOwnPaper(paper, mode)));
     setPage(snapshot.page || 0);
     setHasMore(snapshot.hasMore !== false);
 
@@ -1373,7 +1378,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       && !savedPaperIdsRef.current.has(paper.id)
       && !sessionSeenPapers.current.has(paper.id)
       && !isKnownPaper(paper.id)
-      && !isOwnPaper(paper)
+      && !isOwnPaper(paper, activeMode)
     );
 
     // Whether this load's store requests wait the first screen's deadline.
@@ -1578,7 +1583,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           !likedPaperIdsRef.current.has(p.id) &&
           !savedPaperIdsRef.current.has(p.id) &&
           !isKnownPaper(p.id) &&
-          !isOwnPaper(p)
+          !isOwnPaper(p, activeMode)
         );
         // `filtered` holds only this page's unseen notable cards now.
         const plan = planUnshowablePage({
@@ -1900,7 +1905,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         !likedPaperIdsRef.current.has(p.id) &&
         !savedPaperIdsRef.current.has(p.id) &&
         !isKnownPaper(p.id) &&
-        !isOwnPaper(p)
+        !isOwnPaper(p, newMode)
       );
       
       setPapers(refiltered);

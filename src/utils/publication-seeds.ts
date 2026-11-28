@@ -23,8 +23,12 @@ import { canonicalArxivIdOf, canonicalDoiOf } from './paper-canonical-key.ts';
 export const PUBLICATION_SEEDS_MAX = 10;
 /** The reader's own examples after which the publications no longer rank: the plan's whole room. */
 export const PUBLICATION_SEEDS_FADE_EXAMPLES = 24;
-/** How many names of the reader's works the account keeps to leave them out of For you. */
-export const OWN_WORK_KEYS_MAX = 300;
+/**
+ * How many names of the reader's works the account keeps to leave them out of
+ * For you: about three for each of the 300 works My profile lists
+ * (ORCID_LISTED_WORKS_MAX), with room for the works the reader added.
+ */
+export const OWN_WORK_KEYS_MAX = 1000;
 /** How long the kept publications stand before the feed reads the reader's works again. */
 export const PUBLICATION_SEEDS_STALE_MS = 30 * 24 * 60 * 60 * 1000;
 
